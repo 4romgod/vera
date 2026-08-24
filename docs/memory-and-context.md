@@ -1,36 +1,48 @@
 # Vera Memory and Context Architecture
 
-**Status:** Proposed — reviewed and intentionally held 24 August 2026; no
-V1 work depends on this document
-**Version:** 0.1
+**Status:** Proposed for broader memory and retention policy; the separation of
+durable state, rebuildable execution scratchpad, and disposable model context
+is Accepted through
+[ADR-0007](decisions/0007-separate-durable-state-from-model-context.md) and is
+required by V1
+**Version:** 0.2
 **Last updated:** 24 August 2026
 
 ## Purpose
 
 The initial discussion used the word `scratchpad` to explore how Vera would
 retain temporary information while a request was being processed. It considered
-a Markdown file, then Redis, and separately discussed PostgreSQL and vector
-search for long-term memory.
+a Markdown file, then Redis, and separately discussed a durable database and
+vector search for long-term memory.
 
 That exploration identified a real need, but it combined several different
 information lifecycles. This document separates them so that storage products
 can be selected against explicit semantics.
 
-## The five information layers
+The original `scratchpad` meant the live working state of an entire flow, not
+merely private notes inside one model invocation. That distinction is preserved
+below.
+
+## The six information layers
 
 ```mermaid
 flowchart TB
     H["1. Conversation and event history<br/>What was communicated and what happened?"]
     O["2. Operational state<br/>What is Vera committed to doing now?"]
-    C["3. Model context / scratchpad<br/>What does this model call need to see?"]
-    M["4. Long-term memory<br/>What selected information should Vera retain?"]
-    K["5. Knowledge sources<br/>What external material can Vera retrieve?"]
+    W["3. Execution scratchpad / active working set<br/>What is this run working with now?"]
+    C["4. Model context<br/>What does this model call need to see?"]
+    M["5. Long-term memory<br/>What selected information should Vera retain?"]
+    K["6. Knowledge sources<br/>What external material can Vera retrieve?"]
 
+    H --> W
+    O --> W
+    W --> C
     H --> C
     O --> C
     M --> C
     K --> C
     C --> P["Structured proposal or response"]
+    P -->|"tentative working update"| W
     P -->|"validated transition"| O
     P -->|"governed memory candidate"| M
 ```
@@ -76,9 +88,34 @@ Operational state must survive process restart. It must support atomic or
 otherwise safe transitions and prevent two workers from performing the same
 side effect accidentally.
 
-This is not a scratchpad and should not be represented primarily as Markdown.
+This is not disposable scratchpad data and should not be represented primarily
+as Markdown or only in Redis.
 
-## Model context and scratchpad
+## Execution scratchpad and active working set
+
+The execution scratchpad is the isolated, mutable workspace of one active run.
+It may contain:
+
+- a working copy of the original request and current step;
+- tentative model proposals and orchestration decisions;
+- the current plan and selected capability;
+- intermediate tool or capability results;
+- temporary summaries, errors, and retry information;
+- references to artifacts or related work; and
+- counters or leases used while coordinating the active run.
+
+Redis is the leading V1 experiment candidate for this layer because it offers
+structured values, atomic operations, TTLs, and efficient isolated access. The
+scratchpad is nevertheless rebuildable. Anything required for recovery,
+authorization, audit, idempotency, or explaining an external effect must be
+persisted first in the authoritative operational store.
+
+Losing Redis may discard reproducible intermediate work. It must not erase a
+task, approval, accepted decision, invocation identity, completed effect, or
+durable event. On loss, Vera reconstructs the working set from durable records
+and either resumes or safely classifies the run.
+
+## Model context
 
 Model context is a bounded projection assembled for one model invocation. It can
 contain working information such as:
@@ -93,8 +130,9 @@ contain working information such as:
 - policy constraints;
 - errors the model is being asked to diagnose.
 
-The scratchpad is the optional working portion of this projection: temporary
-notes or intermediate structured results useful during reasoning.
+Model context may include selected scratchpad content, but it is not the entire
+scratchpad. One run can assemble several different provider- and purpose-bound
+contexts from the same working set.
 
 Key rules:
 
@@ -103,8 +141,8 @@ Key rules:
 - its contents are not all presumed true;
 - it cannot grant authority;
 - it may expire after the invocation or run;
-- durable facts are promoted through an explicit process, not by copying the
-  whole scratchpad into memory.
+- durable facts are promoted through an explicit process, not by copying either
+  the whole context or scratchpad into memory.
 
 ## Long-term memory
 
@@ -155,6 +193,7 @@ sequenceDiagram
     participant Policy
     participant History
     participant State
+    participant WorkingSet as Execution scratchpad
     participant Memory
     participant Knowledge
     participant Model
@@ -163,6 +202,7 @@ sequenceDiagram
     Policy-->>Orch: Allowed scopes and sensitivity limits
     Orch->>History: Select relevant messages and events
     Orch->>State: Read task/run projection
+    Orch->>WorkingSet: Select relevant temporary working state
     Orch->>Memory: Retrieve scoped memory with provenance
     Orch->>Knowledge: Retrieve permitted source material
     Orch->>Orch: Rank, redact, bound, and label context
@@ -199,18 +239,42 @@ Markdown is appropriate for project design, human-readable reports, selected
 artifacts, and debugging exports. It is not an adequate authoritative store for
 concurrent runtime transitions.
 
-### PostgreSQL
+### MongoDB
 
-PostgreSQL is the leading candidate for durable operational state and structured
-memory because it can express relationships, transactions, constraints, and
-migrations. This is a proposed decision pending a persistence experiment.
+MongoDB is the leading V1 experiment candidate for authoritative operational
+state. It also fits future structured long-term memory, provided operational
+records and governed memory remain logically separate and follow different
+access, retention, and promotion rules.
+
+Vera must not treat document flexibility as permission for schema drift.
+Application schemas, database validation, explicit document versions, unique
+idempotency indexes, and concurrency controls remain required. The persistence
+experiment must prove the required durability and transition semantics before
+MongoDB is accepted as the backend.
 
 ### Redis
 
-Redis remains a possible supporting component for caches, leases, rate limits,
-queues, pub/sub, and short-lived coordination. It should not become the sole
-source of active-run truth merely because the original concept used the word
-scratchpad.
+Redis is the leading V1 experiment candidate for the active execution
+scratchpad. Each run receives an isolated, versioned working set with an
+explicit expiration policy. Redis may later also support leases, rate limits,
+queues, caching, or pub/sub when demonstrated.
+
+Redis is never the sole source of facts needed for recovery or safe effects. A
+scratchpad update that follows a durable transition is a rebuildable projection;
+failure to update it must be recoverable from MongoDB without duplicating work.
+
+### V1 storage experiment topology
+
+```mermaid
+flowchart LR
+    CORE["Vera core"] -->|"authoritative transitions"| OPS["MongoDB candidate<br/>operational records"]
+    CORE <-->|"temporary working state"| WORK["Redis candidate<br/>execution scratchpad"]
+    OPS -. "rehydrate after loss" .-> WORK
+    OPS -->|"explicit governed promotion"| MEMORY["MongoDB candidate<br/>future long-term memory"]
+```
+
+The arrows express authority, not a required deployment topology. The
+experiment may reject Redis and retain MongoDB alone.
 
 ### Artifact storage
 
@@ -240,7 +304,10 @@ memory.
 - What operational data retention is required?
 - Will model contexts be retained for debugging, redacted, or discarded?
 - Which data may be sent to each provider?
-- What is the initial authoritative database and migration strategy?
+- Do the MongoDB and Redis candidates pass the recovery and failure-window
+  experiment, or should V1 use MongoDB alone?
+- What backup, migration, and deployment strategy should an accepted MongoDB
+  backend use?
 - When is memory promotion automatic, approval-based, or forbidden?
 - How will deletion propagate to derived indexes and artifacts?
 

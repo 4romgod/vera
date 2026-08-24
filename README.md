@@ -1,21 +1,27 @@
 # Vera
 
-Vera is a proposed personal AI orchestration system: one consistent interface
+Vera is a personal AI orchestration system: one consistent interface
 through which its owner can express intent while Vera selects and coordinates
 the appropriate models, tools, workflows, machines, and services.
 
 ## Current status
 
-Vera is in discovery and foundation design. No implementation stack, runtime
-architecture, or source layout has been approved yet.
+Vera is in foundation validation. Its TypeScript/Node.js/npm-workspaces
+monorepo direction and logical runtime architecture are accepted. The exact
+source layout, API framework, persistence backend, and progress transport will
+be selected only after the relevant experiments produce evidence.
+The current persistence hypothesis is MongoDB for durable authority and Redis
+for a rebuildable per-run execution scratchpad, compared against the simpler
+MongoDB-only alternative.
 
 As of 24 August 2026, the Product Charter, the Domain Model's core
 vocabulary, the System Architecture's logical shape, the Capability Model's
 contract, Security and Trust, and the Engineering Method are Accepted. V1
-scope was trimmed to a solo-buildable slice — see
+scope was trimmed to a solo-buildable slice and its first experimental journey
+was selected — see
 [ADR-0008](docs/decisions/0008-trim-v1-scope-and-ratify-foundation.md).
-Memory and Context, the exact V1 capability, and the first end-to-end
-request remain open on purpose.
+The broader Memory and Context design and specific storage products remain open
+on purpose.
 
 The repository is currently the durable source of truth for the project. Chat
 history and external source material may inform the project, but decisions only
@@ -34,9 +40,9 @@ The foundation currently covers:
 - context, scratchpads, operational state, and long-term memory;
 - model providers, specialist capabilities, and external orchestrators;
 - security and trust boundaries;
-- the proposed V1 proof;
+- the accepted V1 experimental scope;
 - the architect-builder engineering method;
-- proposed architecture decisions awaiting owner review.
+- accepted and proposed architecture decisions with explicit status.
 
 Documents and decisions carry their own statuses. A **Proposed** document is a
 basis for review, not an approved implementation instruction. Accepted

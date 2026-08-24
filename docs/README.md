@@ -14,12 +14,16 @@ targeted documents provide cleaner context than one enormous instruction file.
 
 ## Foundation review, 24 August 2026
 
-The foundation was reviewed against a decision register on this date. The
-Product Charter, the Domain Model's core vocabulary, the System
+The owner reviewed the foundation and its unresolved decisions on this date.
+The Product Charter, the Domain Model's core vocabulary, the System
 Architecture's logical shape, the Capability Model's contract, Security and
 Trust, and the Engineering Method are now Accepted. V1 scope was trimmed —
 see [ADR-0008](decisions/0008-trim-v1-scope-and-ratify-foundation.md).
-Memory and Context and the exact V1 capability remain open on purpose.
+The durable-state/execution-scratchpad/model-context separation and the V1
+experimental journey are also accepted. Broader memory design and the exact
+persistence backend remain open on purpose. The current experiment hypothesis
+uses MongoDB for durable authority and Redis for a rebuildable execution
+scratchpad; it is not yet a production selection.
 
 ## Recommended reading order
 
@@ -48,10 +52,10 @@ flowchart TD
 | [Discovery Record](discovery-record.md) | Living | What do we know, recommend, assume, and still need to learn? |
 | [Domain Model](domain-model.md) | Accepted (core) | What do conversation, task, run, capability, event, approval, and memory mean? |
 | [System Architecture](system-architecture.md) | Accepted (shape) | What are Vera's major components and how does a request move through them? |
-| [Memory and Context](memory-and-context.md) | Proposed (held) | What is durable truth, working state, model context, and long-term memory? |
+| [Memory and Context](memory-and-context.md) | Proposed (except accepted separation principle) | What is durable truth, working state, model context, and long-term memory? |
 | [Capability Model](capability-model.md) | Accepted (contract) | How does Vera discover and invoke models, tools, agents, and specialist workflows? |
 | [Security and Trust](security-and-trust.md) | Accepted | What may Vera access or change, and who authorizes it? |
-| [V1 Definition](v1-definition.md) | Proposed (trimmed) | What exact architectural claim must the first version prove? |
+| [V1 Definition](v1-definition.md) | Accepted (experimental scope) | What exact architectural claim must the first version prove? |
 | [Engineering Method](engineering-method.md) | Accepted | How do we turn discovery into bounded, verifiable implementation work? |
 | [Architecture decisions](decisions/README.md) | Mixed — see index | Which consequential choices are recommended, why, and with what consequences? |
 

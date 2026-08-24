@@ -1,12 +1,11 @@
 # Vera Capability Model
 
 **Status:** Accepted (capability declaration shape, invocation lifecycle,
-selection checks, and resource/delegation budget model); capability
-selection remains open
+selection checks, and resource/delegation budget model)
 **Version:** 0.1
 **Last updated:** 24 August 2026
-**Accepted:** 24 August 2026 (owner) — which capability V1 invokes first is
-still open, see [Discovery Record](discovery-record.md).
+**Accepted:** 24 August 2026 (owner) — V1 capability selected during
+ratification; future registry design remains open
 
 ## Purpose
 
@@ -264,17 +263,21 @@ run.
 ## V1 capability requirement
 
 V1 needs one real capability, not a catalog of hypothetical integrations. The
-leading candidate is a development capability that delegates a bounded request
-to an existing coding workflow or Codex-backed process.
+selected capability is `development_planning@1`, initially backed by Codex. It
+accepts a ticket and an explicitly selected, read-only project context and
+returns one versioned implementation-plan artifact.
 
-Before selection, we must define:
+For V1:
 
-- how it is invoked;
-- what project context it receives;
-- what credentials it needs;
-- how it reports progress and artifacts;
-- whether it supports cancellation;
-- which actions require approval;
-- what successful completion means.
+- Vera invokes it through a versioned adapter contract after validating input;
+- the capability receives only context displayed in the approval request;
+- raw credentials are never capability input;
+- invocation state, progress, errors, and artifacts are exposed through Vera's
+  polled resources;
+- cancellation is best-effort and its observed outcome is recorded;
+- sending scoped context to cloud Codex requires explicit approval; and
+- success means one schema-valid plan artifact is durably associated with the
+  invocation, using that invocation ID as the idempotency identity.
 
-The candidate remains open in the [Discovery Record](discovery-record.md).
+The exact adapter mechanism remains an output of the capability-boundary
+experiment. See the [V1 Definition](v1-definition.md#required-first-journey).

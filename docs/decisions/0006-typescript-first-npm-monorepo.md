@@ -14,7 +14,7 @@ clients, shared contracts, and capability adapters.
 The project needs a primary language and repository model without preventing a
 specialist capability from using a more suitable runtime.
 
-## Proposed decision
+## Decision
 
 Use a monorepo with TypeScript and Node.js as the primary application stack,
 managed initially with npm workspaces.
@@ -55,7 +55,7 @@ Do not select the exact source folder layout through this ADR.
 - **Multiple repositories immediately:** rejected because the expected units
   are initially closely coupled and owned together.
 
-## Evidence required for acceptance
+## Follow-up evidence
 
 - Confirm the first capability does not depend on a Python-only architecture.
 - Spike structured model output and one local-model adapter in TypeScript.

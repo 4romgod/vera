@@ -28,13 +28,14 @@ erasing why a choice was made.
 | [0004](0004-api-first-client-independent-core.md) | Accepted | Vera begins API-first and clients do not own core semantics. |
 | [0005](0005-isolate-independent-streams-of-work.md) | Accepted | Independent work has explicit identity and isolated state/context. |
 | [0006](0006-typescript-first-npm-monorepo.md) | Accepted | Use a TypeScript/Node-first monorepo managed initially with npm workspaces. |
-| [0007](0007-separate-durable-state-from-model-context.md) | Proposed | Separate authoritative durable state from disposable model context. |
+| [0007](0007-separate-durable-state-from-model-context.md) | Accepted | Separate authoritative durable state, rebuildable execution scratchpad, and disposable model context without selecting a storage product. |
 | [0008](0008-trim-v1-scope-and-ratify-foundation.md) | Accepted | Ratify the foundation review and trim V1 scope to a solo-buildable slice. |
 
-ADRs 0001–0006 and 0008 were accepted 24 August 2026 following the owner's
-review of the foundation documentation. ADR-0007's separation-of-concerns
-principle is treated as settled by that same review; its specific choice of
-PostgreSQL remains open pending the durable-transition/recovery experiment.
+ADRs 0001–0008 were accepted 24 August 2026 following the owner's review of
+the foundation documentation. ADR-0007 accepts a semantic boundary, not a
+storage product. MongoDB plus a rebuildable Redis scratchpad is the current V1
+experiment hypothesis; the durable backend and two-store topology remain
+unselected pending the durable-transition/recovery experiment.
 
 ## ADR rules
 
