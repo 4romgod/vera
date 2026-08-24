@@ -9,6 +9,14 @@ the appropriate models, tools, workflows, machines, and services.
 Vera is in discovery and foundation design. No implementation stack, runtime
 architecture, or source layout has been approved yet.
 
+As of 24 August 2026, the Product Charter, the Domain Model's core
+vocabulary, the System Architecture's logical shape, the Capability Model's
+contract, Security and Trust, and the Engineering Method are Accepted. V1
+scope was trimmed to a solo-buildable slice — see
+[ADR-0008](docs/decisions/0008-trim-v1-scope-and-ratify-foundation.md).
+Memory and Context, the exact V1 capability, and the first end-to-end
+request remain open on purpose.
+
 The repository is currently the durable source of truth for the project. Chat
 history and external source material may inform the project, but decisions only
 become authoritative when they are recorded and accepted here.

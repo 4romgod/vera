@@ -12,6 +12,15 @@ depending on old chat history.
 The documentation is intentionally split by concern. A short index and
 targeted documents provide cleaner context than one enormous instruction file.
 
+## Foundation review, 24 August 2026
+
+The foundation was reviewed against a decision register on this date. The
+Product Charter, the Domain Model's core vocabulary, the System
+Architecture's logical shape, the Capability Model's contract, Security and
+Trust, and the Engineering Method are now Accepted. V1 scope was trimmed —
+see [ADR-0008](decisions/0008-trim-v1-scope-and-ratify-foundation.md).
+Memory and Context and the exact V1 capability remain open on purpose.
+
 ## Recommended reading order
 
 ```mermaid
@@ -35,16 +44,16 @@ flowchart TD
 
 | Document | Status | Question it answers |
 |---|---|---|
-| [Product Charter](product-charter.md) | Proposed | Why should Vera exist, and what promise must it keep? |
-| [Discovery Record](discovery-record.md) | Proposed | What do we know, recommend, assume, and still need to learn? |
-| [Domain Model](domain-model.md) | Proposed | What do conversation, task, run, capability, event, approval, and memory mean? |
-| [System Architecture](system-architecture.md) | Proposed | What are Vera's major components and how does a request move through them? |
-| [Memory and Context](memory-and-context.md) | Proposed | What is durable truth, working state, model context, and long-term memory? |
-| [Capability Model](capability-model.md) | Proposed | How does Vera discover and invoke models, tools, agents, and specialist workflows? |
-| [Security and Trust](security-and-trust.md) | Proposed | What may Vera access or change, and who authorizes it? |
-| [V1 Definition](v1-definition.md) | Proposed | What exact architectural claim must the first version prove? |
-| [Engineering Method](engineering-method.md) | Proposed | How do we turn discovery into bounded, verifiable implementation work? |
-| [Architecture decisions](decisions/README.md) | Proposed set | Which consequential choices are recommended, why, and with what consequences? |
+| [Product Charter](product-charter.md) | Accepted | Why should Vera exist, and what promise must it keep? |
+| [Discovery Record](discovery-record.md) | Living | What do we know, recommend, assume, and still need to learn? |
+| [Domain Model](domain-model.md) | Accepted (core) | What do conversation, task, run, capability, event, approval, and memory mean? |
+| [System Architecture](system-architecture.md) | Accepted (shape) | What are Vera's major components and how does a request move through them? |
+| [Memory and Context](memory-and-context.md) | Proposed (held) | What is durable truth, working state, model context, and long-term memory? |
+| [Capability Model](capability-model.md) | Accepted (contract) | How does Vera discover and invoke models, tools, agents, and specialist workflows? |
+| [Security and Trust](security-and-trust.md) | Accepted | What may Vera access or change, and who authorizes it? |
+| [V1 Definition](v1-definition.md) | Proposed (trimmed) | What exact architectural claim must the first version prove? |
+| [Engineering Method](engineering-method.md) | Accepted | How do we turn discovery into bounded, verifiable implementation work? |
+| [Architecture decisions](decisions/README.md) | Mixed — see index | Which consequential choices are recommended, why, and with what consequences? |
 
 ## Authority model
 
@@ -126,7 +135,9 @@ Source layout will follow those decisions instead of pretending to make them.
 ## Documentation stop condition
 
 This foundation is now broad enough to support experiments. No additional
-design document should be created until the structured-model-proposal and
-durable-transition/recovery experiments have produced evidence. Existing
+design document should be created until the structured-model-proposal,
+durable-transition/recovery, and capability-boundary experiments have
+produced evidence — see [Discovery Record](discovery-record.md#required-experiments-before-architecture-approval)
+for why these three gate further design and the other two do not. Existing
 documents may be corrected or updated when review or experimental results
 justify the change.

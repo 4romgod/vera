@@ -1,8 +1,9 @@
 # Vera Security and Trust Model
 
-**Status:** Proposed
+**Status:** Accepted
 **Version:** 0.1
 **Last updated:** 24 August 2026
+**Accepted:** 24 August 2026 (owner)
 
 ## Purpose
 

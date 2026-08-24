@@ -1,7 +1,8 @@
 # ADR-0004: API-First, Client-Independent Core
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 24 August 2026
+**Decided:** 24 August 2026 (owner)
 
 ## Context
 

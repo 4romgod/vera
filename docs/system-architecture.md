@@ -1,8 +1,13 @@
 # Vera System Architecture
 
-**Status:** Proposed
+**Status:** Accepted (logical architecture, component responsibilities,
+request lifecycle, and architectural invariants); persistence, streaming
+transport, and deployment topology remain open
 **Version:** 0.1
 **Last updated:** 24 August 2026
+**Accepted:** 24 August 2026 (owner) — persistence choice, streaming
+protocol, and deployment topology are deferred to the durable-transition/
+recovery and client-event-consumption experiments.
 
 ## Purpose
 

@@ -1,6 +1,7 @@
 # Vera Memory and Context Architecture
 
-**Status:** Proposed
+**Status:** Proposed — reviewed and intentionally held 24 August 2026; no
+V1 work depends on this document
 **Version:** 0.1
 **Last updated:** 24 August 2026
 

@@ -1,6 +1,7 @@
 # Vera Discovery Record
 
-**Status:** Proposed
+**Status:** Living discovery log — not subject to owner acceptance like a
+spec or decision record; see [docs/README.md](README.md#authority-model)
 **Version:** 0.1
 **Last updated:** 24 August 2026
 
@@ -112,7 +113,9 @@ accepted facts:
 
 - Vera begins as a single-owner personal system.
 - The first interface can be an HTTP client or thin CLI rather than a GUI.
-- The first deployment may run primarily on the owner's Mac Mini.
+- The initial deployment is Mac-Mini-only. V1 does not need to keep
+  working while that machine is offline or restarted; revisit after V1
+  works once. (Confirmed 24 August 2026 — see Open system questions 1–2.)
 - Cloud model providers and local models may both be used.
 - At least one real specialist capability must be delegated to in V1.
 - Long-term personal memory can be delayed, but identity, authorization, and
@@ -122,11 +125,12 @@ accepted facts:
 
 ## Open product questions
 
-1. What is the first real end-to-end user request Vera must handle?
-2. Is the first specialist capability software development, research,
+1. **Which behaviours would make the owner prefer Vera over opening a
+   specialist directly?** Flagged 24 August 2026 as the project's primary
+   open question — answer it before resolving the rest of this list.
+2. What is the first real end-to-end user request Vera must handle?
+3. Is the first specialist capability software development, research,
    cloud operations, or something smaller and safer?
-3. Which behaviours would make the owner prefer Vera over opening a specialist
-   directly?
 4. How proactive may Vera be without an explicit request?
 5. Which classes of action always require approval?
 6. What information may Vera retain automatically, and for how long?
@@ -135,9 +139,13 @@ accepted facts:
 
 ## Open system questions
 
-1. Is the initial deployment local-only, cloud-hosted, or hybrid?
-2. Must active work continue when the Mac Mini is offline or restarted?
-3. What availability and recovery guarantees are required for V1?
+1. ~~Is the initial deployment local-only, cloud-hosted, or hybrid?~~
+   Resolved by working assumption, 24 August 2026: local-only (Mac Mini).
+2. ~~Must active work continue when the Mac Mini is offline or restarted?~~
+   Resolved by working assumption, 24 August 2026: no.
+3. What availability and recovery guarantees are required for V1? — the
+   durable-transition/recovery experiment answers this for the single-node
+   case; multi-node guarantees stay out of scope.
 4. How will a client receive progress: polling, server-sent events, WebSockets,
    notifications, or a combination?
 5. How are credentials brokered without exposing secrets to models?
@@ -151,37 +159,41 @@ accepted facts:
 
 ## Required experiments before architecture approval
 
-These experiments are now the next project work. Further speculative design is
-paused until the first two experiments produce evidence that can confirm or
-correct the proposed architecture.
+These experiments are now the next project work. As of 24 August 2026, three
+of the five gate further design work; the other two are required before
+later work but do not block the gate. See
+[ADR-0008](decisions/0008-trim-v1-scope-and-ratify-foundation.md).
 
-### Structured model proposal
+### Structured model proposal — required, gates further design
 
 Demonstrate that a TypeScript service can request and validate a structured
 proposal from at least one model provider, reject invalid output, and operate
 against a deterministic fake during tests.
 
-### Local-model boundary
-
-Demonstrate a minimal provider adapter against Ollama without allowing
-Ollama-specific response shapes to leak into Vera's domain model.
-
-### Durable transition and recovery
+### Durable transition and recovery — required, gates further design
 
 Persist a task and run, interrupt the application during execution, restart it,
 and prove that work is recovered or safely classified without duplicating a
 side effect.
 
-### Capability boundary
+### Capability boundary — required, gates further design
 
 Invoke one external capability through a versioned schema and capture progress,
 result, failure, and cancellation without giving the capability direct access
 to Vera's internal database representation.
 
-### Client event consumption
+### Local-model boundary — deferred
+
+Demonstrate a minimal provider adapter against Ollama without allowing
+Ollama-specific response shapes to leak into Vera's domain model. Not
+required before V1: V1 needs one real model provider, not necessarily a
+local one.
+
+### Client event consumption — deferred
 
 Use a minimal HTTP client to create work and observe ordered execution events.
 The experiment should inform, not prematurely fix, the streaming transport.
+Not required before V1 implementation begins; informs the V1.1 client work.
 
 ## Principal risks
 

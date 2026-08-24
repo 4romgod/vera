@@ -1,6 +1,9 @@
 # ADR-0007: Separate Durable State from Model Context
 
-**Status:** Proposed
+**Status:** Proposed — the durable/disposable separation principle is
+treated as settled (see [ADR-0008](0008-trim-v1-scope-and-ratify-foundation.md));
+PostgreSQL specifically remains open pending the durable-transition
+experiment
 **Date:** 24 August 2026
 
 ## Context

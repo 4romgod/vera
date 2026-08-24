@@ -1,8 +1,9 @@
 # Vera Product Charter
 
-**Status:** Proposed
+**Status:** Accepted
 **Version:** 0.1
 **Last updated:** 24 August 2026
+**Accepted:** 24 August 2026 (owner)
 
 ## Purpose
 
@@ -214,9 +215,12 @@ safe by:
 
 ## Approval
 
-This charter remains proposed until the owner explicitly accepts it. Acceptance
-of this charter will approve the product direction and principles, not any
-particular technology or architecture.
+Accepted by the owner on 24 August 2026, via the foundation decision review
+recorded in [ADR-0008](decisions/0008-trim-v1-scope-and-ratify-foundation.md).
+Acceptance of this charter approves the product direction and principles
+defined above; it does not by itself approve any particular technology,
+architecture, or the V1 scope, which are tracked through their own decision
+records.
 
 Detailed implications are developed in the
 [System Architecture](system-architecture.md),

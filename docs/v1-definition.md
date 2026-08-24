@@ -1,8 +1,41 @@
 # Vera V1 Definition
 
-**Status:** Proposed
-**Version:** 0.1
+**Status:** Proposed — scope trimmed 24 August 2026 during the foundation
+review; final acceptance is pending the questions listed below
+**Version:** 0.2
 **Last updated:** 24 August 2026
+
+## Scope change, 24 August 2026
+
+V1 as originally drafted (v0.1) specified roughly thirty acceptance criteria
+spanning durability, recovery, resource and delegation budgets with
+child-task inheritance, approvals, a formal cancellation protocol, live
+steering, concurrency isolation, and versioned capability contracts — more
+than a solo build should attempt before validating the underlying product
+idea. This version cuts scope. Full rationale is recorded in
+[ADR-0008](decisions/0008-trim-v1-scope-and-ratify-foundation.md).
+
+Removed or deferred to V1.1:
+
+- **Live steering** of an in-flight run. V1 supports cancel-and-resubmit as
+  a new task instead of steering semantics.
+- **Multi-dimension resource and delegation budgets.** V1 enforces one
+  overall ceiling per run (a maximum step count or wall-clock duration)
+  rather than the full envelope covering cost, tokens, retries, child-task
+  count, and delegation depth with parent/child inheritance.
+- **A formal cancellation protocol.** V1 supports a best-effort stop
+  request and records the resulting run state; it does not guarantee which
+  external side effects were or were not stopped.
+
+Kept, because the hypothesis cannot be tested without them:
+
+- A durable task and run representation that survives a process restart.
+- One demonstrated recovery after a forced process termination.
+- A structured, validated model proposal, including at least one rejection
+  case.
+- One real approval boundary that blocks execution until granted.
+- One real specialist capability invocation with a recorded result.
+- Idempotency for the one side-effecting operation used in the journey.
 
 ## Purpose
 
@@ -57,7 +90,8 @@ journey must nevertheless exercise this complete shape:
 7. A consequential operation pauses for explicit approval.
 8. Vera records progress, decisions, invocations, errors, and artifacts as
    inspectable events.
-9. The owner can steer or request cancellation.
+9. The owner can request cancellation on a best-effort basis, or start a new
+   task; live steering of the active run is deferred to V1.1.
 10. Vera returns a result and a traceable explanation of what occurred.
 
 Software-development delegation is the leading candidate because it reflects
@@ -73,7 +107,7 @@ are understood.
 - Add a message to a conversation.
 - Retrieve a conversation and its messages.
 - List conversations with a useful summary and recent status.
-- Associate task-creating and steering messages explicitly with affected work.
+- Associate task-creating messages explicitly with the task they create.
 
 ### Tasks and runs
 
@@ -96,27 +130,36 @@ are understood.
 - Register or configure exactly one real specialist capability.
 - Validate its versioned input and output.
 - Record invocation, progress, result, errors, and produced artifacts.
-- Define timeout and cancellation behaviour.
+- Define a per-invocation timeout. Cancellation is best-effort only in V1
+  (see Scope change above).
 - Prevent the capability from depending on Vera's private database schema.
 
-### Resource and delegation budgets
+### Resource ceiling (trimmed for V1)
 
-- Assign every run finite configured ceilings for model usage or cost,
-  wall-clock duration, steps, capability invocations, retries, child-task count,
-  and delegation depth.
-- Enforce ceilings in deterministic policy code rather than prompts.
-- Allocate child work from the parent's remaining budget without resetting it.
-- Stop safely or request explicit owner approval before extending a limit.
-- Record budget allocation, consumption, exhaustion, and extension as events.
+- Assign every run one finite ceiling — a maximum step count or wall-clock
+  duration, configured per run.
+- Enforce the ceiling in deterministic policy code, not in a prompt.
+- Stop safely when the ceiling is reached and record why.
+- Record ceiling assignment, consumption, and exhaustion as events.
+
+Full multi-dimension budgets — cost, tokens, retries, child-task count,
+delegation depth, and parent/child inheritance — are deferred to V1.1, once
+a specialist capability with real cost data is in use. The target design for
+that later work stays recorded in the
+[Capability Model](capability-model.md#resource-and-delegation-budgets) and
+[Security and Trust](security-and-trust.md#resource-and-delegation-budgets).
 
 ### Control and observability
 
 - Retrieve an ordered event history for a run.
 - Observe work in progress from an HTTP client.
-- Request cancellation and distinguish request from confirmed outcome.
-- Submit steering input with explicit semantics.
+- Request cancellation on a best-effort basis and record the resulting run
+  state.
 - Inspect why a capability was selected and which policy allowed it.
 - Correlate logs and events without exposing secrets.
+
+Live steering of an in-flight run is deferred to V1.1; the owner cancels and
+starts a new task instead.
 
 ### Durability and concurrency
 
@@ -149,7 +192,7 @@ V1 is complete only when the following can be demonstrated reproducibly.
 
 - Two simultaneous tasks have distinct context, events, outputs, errors, and
   cancellation state.
-- Steering one task does not modify the other.
+- Cancelling or retrying one task does not modify the other.
 - A capability receives only the context and authority declared for its
   invocation.
 
@@ -163,16 +206,14 @@ V1 is complete only when the following can be demonstrated reproducibly.
   the demonstrated side effect.
 - Provider timeout, capability timeout, validation failure, and policy denial
   are distinguishable outcomes.
-- Exhausting a configured budget stops new work without an uncontrolled retry or
-  delegation loop.
-- A child task cannot reset or expand the parent's cost, retry, time, invocation,
-  or delegation-depth ceilings.
+- Exhausting the configured ceiling stops new work without an uncontrolled
+  retry loop.
 
 ### Human control
 
 - The owner can inspect current work and its relevant history.
 - The owner can grant or deny a requested approval.
-- The owner can request cancellation and see whether cancellation succeeded.
+- The owner can request cancellation and see the resulting run state.
 - The owner can understand which capability was chosen and what evidence was
   produced.
 
@@ -200,7 +241,12 @@ V1 does not require:
 - perfect model or provider routing;
 - a marketplace or plugin ecosystem;
 - adoption of Redis, Temporal, LangGraph, an Agents SDK, or any other framework
-  before its need is demonstrated.
+  before its need is demonstrated;
+- live steering of an in-flight run — cancel-and-resubmit instead;
+- multi-dimension resource budgets with child-task or delegation-depth
+  inheritance — a single per-run ceiling is sufficient;
+- a cancellation protocol that guarantees which external effects were
+  stopped — best-effort stop and a recorded outcome only.
 
 ## Security floor
 
@@ -209,8 +255,8 @@ Even as a prototype, V1 must not:
 - place secrets in model prompts, model-visible context, or ordinary logs;
 - allow a model to choose its own effective permissions;
 - execute undeclared arbitrary side effects through a generic tool;
-- run with unlimited model calls, retries, capability invocations, duration,
-  child tasks, or delegation depth;
+- run with unlimited model calls, retries, capability invocations, or
+  duration;
 - treat retrieved or external content as trusted instructions;
 - silently promote model inference into durable personal memory;
 - claim cancellation reversed an external action when it only stopped waiting;
@@ -220,29 +266,35 @@ Even as a prototype, V1 must not:
 
 Implementation should not begin until:
 
-1. the Product Charter is accepted;
-2. the first specialist capability is selected;
-3. steering and cancellation semantics are defined sufficiently for V1;
-4. the initial deployment assumption is confirmed;
-5. the required approval boundary is chosen;
-6. the minimum capability contract is approved;
-7. the technology recommendations that affect the first slice are either
-   accepted or replaced through explicit decisions.
+1. ~~the Product Charter is accepted~~ — done, 24 August 2026.
+2. the first specialist capability is selected — **open**.
+3. ~~steering and cancellation semantics are defined sufficiently for V1~~ —
+   done: steering is deferred to V1.1, cancellation is best-effort only.
+4. the initial deployment assumption is confirmed — **resolved by working
+   assumption**: Mac-Mini-only, no offline continuity required for V1 (see
+   [Discovery Record](discovery-record.md)).
+5. the required approval boundary is chosen — **open**, depends on which
+   capability is selected.
+6. ~~the minimum capability contract is approved~~ — done via the
+   [Capability Model](capability-model.md).
+7. the technology recommendations that affect the first slice are accepted
+   — done for language, runtime, and monorepo structure
+   ([ADR-0006](decisions/0006-typescript-first-npm-monorepo.md)); the
+   durable-state backend remains conditionally accepted pending the
+   durable-transition/recovery experiment
+   ([ADR-0007](decisions/0007-separate-durable-state-from-model-context.md)).
 
 ## Questions blocking V1 approval
 
 1. What exact owner request will serve as the first demonstration?
 2. What real specialist capability will Vera invoke?
 3. What side effect will demonstrate approval and idempotency safely?
-4. Must execution continue while the Mac Mini is offline?
-5. Is V1 allowed to send project or personal context to a cloud model?
-6. Should steering affect the active run, create a successor run, or create a
-   related task for the first journey?
-7. What minimum result must Vera return synchronously, and what may be observed
+4. Is V1 allowed to send project or personal context to a cloud model?
+5. What minimum result must Vera return synchronously, and what may be observed
    asynchronously?
 
-Until these are answered, this document is a testable proposal rather than an
-implementation assignment.
+Until these are answered, this document remains proposed. The scope
+reduction above is settled independent of these answers.
 
 The logical design behind this slice is documented in the
 [System Architecture](system-architecture.md), with specialized detail in

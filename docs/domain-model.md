@@ -1,8 +1,11 @@
 # Vera Domain Model
 
-**Status:** Proposed
+**Status:** Accepted (core vocabulary and critical distinctions); the open
+questions below are explicitly excluded from this acceptance
 **Version:** 0.1
 **Last updated:** 24 August 2026
+**Accepted:** 24 August 2026 (owner) — accepts the Core concepts and
+Critical distinctions sections as Vera's shared language.
 
 ## Purpose
 
@@ -342,6 +345,9 @@ Parent-child relationships must define:
 - what context and authority were delegated.
 
 ## Questions to resolve
+
+None of the following are settled by the acceptance above; they remain open
+and do not block use of the accepted vocabulary.
 
 - When does a steering message modify an open task versus create a new task?
 - Which lifecycle details should be public API contracts?
