@@ -1,13 +1,14 @@
 # Vera System Architecture
 
 **Status:** Accepted (logical architecture, component responsibilities,
-request lifecycle, and architectural invariants); persistence, post-V1 progress
-transport, and deployment topology remain open
-**Version:** 0.2
+request lifecycle, architectural invariants, initial modular API shape, and V1
+operational storage); post-V1 progress transport and deployment topology remain open
+**Version:** 0.4
 **Last updated:** 24 August 2026
-**Accepted:** 24 August 2026 (owner) — persistence choice, post-V1 progress
-transport, and deployment topology are deferred to the durable-transition/
-recovery and client-event-consumption experiments; V1 uses HTTP polling.
+**Accepted:** 24 August 2026 (owner) — post-V1 progress transport and deployment
+topology are deferred; V1 uses HTTP polling. The initial Fastify/Zod modular API
+is accepted by ADR-0009. MongoDB operational truth and the Redis scratchpad are
+accepted by ADR-0010.
 
 ## Purpose
 
@@ -319,13 +320,91 @@ flowchart TD
 Isolation is logical and enforceable, not merely a naming convention. Context,
 authority, cancellation, errors, and artifacts are scoped to the relevant work.
 
+## Current implemented slice
+
+The production slice now wraps the permanent model decision boundary in a
+durable task lifecycle inside `apps/api`:
+
+```mermaid
+sequenceDiagram
+    actor Owner
+    participant API as "Fastify API"
+    participant Life as "Task lifecycle"
+    participant Mongo as "MongoDB authority"
+    participant Redis as "Redis scratchpad"
+    participant Model as "Provider port / Ollama"
+    participant Policy as "Schema, registry, and approval policy"
+    participant Capability as "development_planning@1"
+
+    Owner->>API: POST /v1/tasks + idempotency key
+    API->>Life: Validated owner request
+    Life->>Mongo: Create versioned task/run aggregate
+    Life->>Redis: Project rebuildable working state
+    Life->>Model: Message + exact proposal schema
+    Model-->>Life: Provider-neutral candidate + usage
+    Life->>Policy: Validate proposal and capability arguments
+    Life->>Mongo: Record decision, event, and exact approval request
+    Life->>Redis: Project awaiting-approval state
+    Life-->>Owner: 202 + task, run, approval, and links
+    Owner->>API: Approve exact action
+    Life->>Mongo: Persist approval and invocation identity
+    Life->>Capability: Execute with persisted ID and arguments
+    Capability->>Model: Request schema-valid implementation plan
+    Model-->>Capability: Structured plan + usage
+    Life->>Mongo: Record result and terminal events
+    Life->>Redis: Project terminal state
+    Life-->>Owner: 202 + completed run
+    opt Redis state is missing
+        Life->>Mongo: Read authoritative aggregate
+        Life->>Redis: Rebuild newer projection
+    end
+```
+
+The MongoDB document is the atomic V1 task aggregate: current task/run state and
+the event proving each transition are replaced together under optimistic
+version control. Redis receives only a schema-versioned, expiring projection;
+projection failure cannot roll back or erase durable truth. Exact mechanics and
+rationale are in [ADR-0010](decisions/0010-use-mongodb-for-operational-truth-and-redis-for-scratchpads.md).
+
+The two current `POST` handlers deliberately await their model-backed boundary
+before returning. Their `202 Accepted` status establishes durable-resource and
+polling semantics; it does not claim that work was detached to a background
+worker. Replacing this with an untracked in-process promise would weaken crash
+recovery. Returning before model work begins requires a later, explicit durable
+dispatch/worker boundary rather than a fire-and-forget callback.
+
+This is still not the entire V1 journey. Conversation resources, selected
+read-only repository context, the final Codex-backed specialist adapter,
+artifact identity, resource ceilings, and cancellation remain. The current
+model-backed planner is a real schema-bound
+capability implementation, not permission to claim those later boundaries are
+finished.
+
+The app binds to loopback by default because authentication is not yet
+implemented. Health is process liveness. Readiness verifies provider
+connectivity, configured-model availability, MongoDB, Redis, and lifecycle
+recovery without running inference.
+
 ## Proposed API resource shape
 
 The initial conversation proposed a single endpoint with an optional `flow_id`,
 then evolved toward flow-oriented resources. The refined domain model separates
 the user-visible conversation from executable work.
 
-The following API shape is illustrative, not accepted:
+The implemented V1 lifecycle paths are:
+
+```text
+POST   /v1/tasks                         # requires Idempotency-Key
+GET    /v1/tasks/{task_id}
+GET    /v1/runs/{run_id}
+GET    /v1/runs/{run_id}/events
+POST   /v1/approvals/{approval_id}/decision
+POST   /v1/model-decisions               # low-level decision diagnostic
+GET    /health
+GET    /ready
+```
+
+The broader target shape remains illustrative:
 
 ```text
 POST   /v1/conversations
@@ -356,7 +435,8 @@ For V1, accepting a task-producing message returns `202 Accepted` with the
 conversation, task, and run identifiers. Clients poll run, event, approval, and
 artifact resources. Live steering is deferred; changed intent creates a new
 task after best-effort cancellation where necessary. Exact paths and schemas
-remain outputs of the experiments.
+beyond the two implemented endpoints are decided as the durable lifecycle is
+implemented.
 
 ## Initial deployment hypothesis
 
@@ -428,7 +508,8 @@ restarts, loses connectivity, or becomes unavailable.
 ## Decisions and unresolved questions
 
 Related decisions are indexed in [Architecture Decisions](decisions/README.md).
-Open questions and required experiments remain in the
+Open questions and required implementation evidence remain in the
 [Discovery Record](discovery-record.md). V1 uses HTTP polling; persistence,
-later streaming transport, framework, deployment, and exact API shapes are not
-accepted by this document.
+later streaming transport, deployment, and the remaining resource API shapes
+are not accepted by this document. Fastify, Zod, the modular API layout, and the
+model decision endpoint are accepted by ADR-0009.

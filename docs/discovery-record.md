@@ -90,7 +90,10 @@ The following parts of the demonstrated workflow are not adopted:
 ## Technology direction
 
 TypeScript, Node.js, npm workspaces, and the monorepo model are accepted through
-ADR-0006. Other entries remain recommendations or explicit deferrals.
+ADR-0006. Fastify, Zod, the first modular-monolith source layout, and the Ollama
+adapter boundary are accepted through ADR-0009. MongoDB operational truth and
+Redis scratchpads are accepted through ADR-0010. Other entries remain
+recommendations or explicit deferrals.
 
 | Concern | Recommendation | Confidence | Reason |
 |---|---|---:|---|
@@ -102,8 +105,11 @@ ADR-0006. Other entries remain recommendations or explicit deferrals.
 | Python | Secondary capability runtime managed with `uv` | High | Use where Python libraries provide a real advantage. |
 | Java/JVM | Capability-specific only | High | No foundational requirement currently justifies another core runtime. |
 | Contract format | Language-neutral HTTP/events plus OpenAPI or JSON Schema | High | Prevents TypeScript internals from becoming cross-process contracts. |
-| Durable operational store | MongoDB candidate | Medium-high | Matches the owner's document-database experience and evolving records; the recovery experiment must prove validation, concurrency, idempotency, and durability. |
-| Active execution scratchpad | Redis candidate | Medium | Matches the original per-flow working-set design through isolated structured state, atomic operations, and TTL; it must be rebuildable and justify a second datastore. |
+| API framework | Fastify 5 | High | Provides a schema-first HTTP boundary while leaving the domain framework-independent. |
+| Runtime schema | Zod 4 producing draft-07 JSON Schema at external boundaries | High | Keeps runtime validation and TypeScript types aligned; real Ollama structured-output evidence passed. |
+| Initial source layout | Modular monolith in `apps/api` | High | Preserves internal boundaries without speculative packages or services; shared packages wait for a second consumer. |
+| Durable operational store | MongoDB selected for V1 | High | A versioned aggregate and optimistic compare-and-swap preserve transition state and events atomically while matching owner expertise. |
+| Active execution scratchpad | Redis selected for V1 | High | Holds a versioned, TTL-bound projection with stale-write protection and no exclusive authority. |
 | Long-term memory store | MongoDB candidate, later | Medium | Operational records and governed memory may share a deployment but must keep separate semantics, access, and retention. |
 | PostgreSQL | Fallback, not preferred | Medium | Technically strong, but no longer the leading candidate given owner maintainability and a credible MongoDB design. |
 | DynamoDB | Revisit for AWS-first deployment | Medium | Familiar and capable, but introduces a cloud dependency and early access-pattern commitment into the Mac-Mini-first V1. |
@@ -124,13 +130,12 @@ accepted facts:
   once. (Confirmed 24 August 2026 — see Open system questions 1–2.)
 - Cloud model providers and local models may both be used.
 - At least one real specialist capability must be delegated to in V1.
-- The persistence experiment begins with MongoDB as durable authority and Redis
-  as a rebuildable execution scratchpad, while retaining MongoDB-only as the
-  simpler comparison.
+- V1 persistent mode uses MongoDB as durable authority and Redis as a
+  rebuildable execution scratchpad. Memory adapters are test-only.
 - Long-term personal memory can be delayed, but identity, authorization, and
   durable operational state cannot be deferred entirely.
-- The exact source layout should follow deployable processes and trust
-  boundaries rather than precede them.
+- The initial source layout is resolved by ADR-0009: one modular API app, with
+  packages extracted only for real cross-app or cross-process reuse.
 
 ## V1 product hypothesis
 
@@ -161,9 +166,9 @@ That advantage is a hypothesis to validate, not an accepted product fact.
    Resolved by working assumption, 24 August 2026: execution pauses while the
    machine is unavailable; durable work is recovered or safely classified on
    restart.
-3. What availability and recovery guarantees are required for V1? — the
-   durable-transition/recovery experiment answers this for the single-node
-   case; multi-node guarantees stay out of scope.
+3. What availability and recovery guarantees are required for V1? — persistent
+   mode is single-node and must recover or safely classify interrupted work;
+   multi-node guarantees stay out of scope.
 4. ~~How will a V1 client receive progress?~~ Resolved for V1: polling.
    Server-sent events, WebSockets, and notifications remain future options.
 5. How are credentials brokered without exposing secrets to models?
@@ -177,44 +182,55 @@ That advantage is a hypothesis to validate, not an accepted product fact.
    explicit approval; never credentials or unrelated personal context.
 10. What numerical cost, time, retry, invocation, and delegation-depth ceilings
     should V1 use within its required budget mechanism?
-11. Does Redis provide enough working-set, TTL, coordination, or inspection
-    value to justify a second datastore over MongoDB alone?
+11. ~~Does Redis justify a second datastore?~~ Resolved for V1 by ADR-0010:
+    yes, as a rebuildable TTL-bound projection; MongoDB remains authoritative.
 
-## Required experiments before architecture approval
+## Implementation evidence and next increments
 
-These experiments are now the next project work. As of 24 August 2026, three
-of the five gate further design work; the other two are required before
-later work but do not block the gate. See
-[ADR-0008](decisions/0008-trim-v1-scope-and-ratify-foundation.md).
+Work proceeds as production increments with explicit executable evidence. The
+first increment completed the structured-model and local-provider boundaries.
+The remaining entries are required capabilities, not permission to postpone
+implementation. See
+[ADR-0009](decisions/0009-implement-the-model-decision-boundary.md).
 
-### Structured model proposal — required, gates further design
+### Structured model proposal — completed
 
-Demonstrate that a TypeScript service can request and validate a structured
-proposal from at least one model provider, reject invalid output, and operate
-against a deterministic fake during tests.
+The TypeScript API requests `ModelProposal` schema v1 from a real Ollama model,
+rejects invalid and unauthorized shapes, validates exact proposal arguments,
+and operates against a deterministic adapter in tests. Direct-response and
+development-delegation conformance cases passed on 24 August 2026. The first
+real-model run also proved why capability-specific argument schemas must be
+part of structured generation: a generic object schema was safely rejected by
+policy but allowed a malformed input shape.
 
-### Durable transition and recovery — required, gates further design
+### Durable lifecycle and storage adapters — implemented; core failure proof recorded
 
-Use MongoDB as the candidate durable authority and Redis as the candidate active
-scratchpad. Persist a task and run, interrupt the application during execution,
-restart it, and prove that work is recovered or safely classified without
-duplicating a side effect. Delete Redis state mid-run and simulate failure after
-a MongoDB commit but before its Redis projection update. Prove that the working
-set is rebuilt, or safely reject Redis if MongoDB alone is simpler and
-sufficient.
+The code now persists one versioned task aggregate through a MongoDB port,
+claims transitions with optimistic concurrency, stores exact approvals and
+invocation identity before execution, emits ordered events, and projects a
+newer-only TTL scratchpad to Redis. Deterministic tests prove idempotent
+submission, one execution across concurrent approvals, conflict behavior,
+failure persistence, and scratchpad rebuild. Real MongoDB 8.2 and Redis 8.10
+verification then forced termination after the invocation identity was durable,
+restarted Vera, resumed the same invocation, and recorded exactly one start and
+one success. Deleting Redis state rebuilt version 5 from MongoDB, and an attempted
+version-4 projection could not overwrite it.
 
-### Capability boundary — required, gates further design
+### Capability boundary — partially implemented
 
-Invoke one external capability through a versioned schema and capture progress,
-result, failure, and cancellation without giving the capability direct access
-to Vera's internal database representation.
+After explicit approval, the registered `development_planning@1` executor
+receives only schema-validated proposed arguments plus a code-created invocation
+identity. It returns a schema-valid plan with provider usage metadata; success
+or failure is durable. The final V1 boundary still needs selected read-only
+project context, the Codex-backed adapter, artifact identity, timeout, progress,
+and cancellation.
 
-### Local-model boundary — deferred
+### Local-model boundary — completed
 
-Demonstrate a minimal provider adapter against Ollama without allowing
-Ollama-specific response shapes to leak into Vera's domain model. Not
-required before V1: V1 needs one real model provider, not necessarily a
-local one.
+The API calls Ollama through a narrow provider port and normalizes proposal,
+usage, latency, timeout, unavailable-provider, and invalid-response outcomes.
+Ollama response shapes do not enter Vera's domain contracts. Real conformance
+and built-HTTP tests passed on 24 August 2026.
 
 ### Client event consumption — deferred
 
@@ -244,17 +260,18 @@ required before V1 implementation begins and informs V1.1 client work.
 
 The project has not selected:
 
-- an API framework;
 - an agent or graph framework;
 - a durable workflow engine;
 - an ORM;
-- final production adoption or topology of MongoDB and Redis;
 - a post-V1 streaming or notification protocol;
 - an authentication provider;
 - a mobile or web framework;
 - a monorepo task runner;
-- an exact source-code folder structure;
 - a model provider as Vera's permanent default.
+
+Fastify is selected for the API, Zod for runtime schemas, and the initial source
+layout is `apps/api` with `packages/*` reserved for genuine sharing. These are
+accepted in ADR-0009.
 
 The logical component boundaries and illustrative API are documented in the
 [System Architecture](system-architecture.md). They do not override this list of

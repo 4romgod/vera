@@ -30,12 +30,16 @@ erasing why a choice was made.
 | [0006](0006-typescript-first-npm-monorepo.md) | Accepted | Use a TypeScript/Node-first monorepo managed initially with npm workspaces. |
 | [0007](0007-separate-durable-state-from-model-context.md) | Accepted | Separate authoritative durable state, rebuildable execution scratchpad, and disposable model context without selecting a storage product. |
 | [0008](0008-trim-v1-scope-and-ratify-foundation.md) | Accepted | Ratify the foundation review and trim V1 scope to a solo-buildable slice. |
+| [0009](0009-implement-the-model-decision-boundary.md) | Accepted | Implement the first production decision boundary as a Fastify/Zod modular TypeScript API with Ollama and deterministic adapters. |
+| [0010](0010-use-mongodb-for-operational-truth-and-redis-for-scratchpads.md) | Accepted | Use MongoDB for authoritative V1 task aggregates and Redis for rebuildable, expiring run scratchpads. |
 
 ADRs 0001–0008 were accepted 24 August 2026 following the owner's review of
-the foundation documentation. ADR-0007 accepts a semantic boundary, not a
-storage product. MongoDB plus a rebuildable Redis scratchpad is the current V1
-experiment hypothesis; the durable backend and two-store topology remain
-unselected pending the durable-transition/recovery experiment.
+the foundation documentation. ADR-0007 accepted a semantic boundary without
+selecting products at that time. ADR-0009 records the owner-directed start of
+implementation and the first executable vertical slice. ADR-0010 resolves the
+storage decision: MongoDB is authoritative and Redis is a rebuildable
+projection. ADR-0010 records the required real-process recovery evidence; that
+behavior remains a regression criterion, not an undecided product choice.
 
 ## ADR rules
 

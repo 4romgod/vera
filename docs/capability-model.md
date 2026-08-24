@@ -2,7 +2,7 @@
 
 **Status:** Accepted (capability declaration shape, invocation lifecycle,
 selection checks, and resource/delegation budget model)
-**Version:** 0.1
+**Version:** 0.2
 **Last updated:** 24 August 2026
 **Accepted:** 24 August 2026 (owner) — V1 capability selected during
 ratification; future registry design remains open
@@ -139,6 +139,36 @@ Vera's code must then verify:
 - a safe idempotency identity exists for side effects.
 
 The model does not invent a capability, permission, credential, or contract.
+
+### Proposal arguments are not invocation input
+
+The model-visible `invoke_capability` proposal contains only versioned routing
+arguments that the model may infer from owner intent. For
+`development_planning@1`, those arguments are:
+
+```text
+objective: string
+ticket:
+  reference: string
+  details: string
+project:
+  name: string
+```
+
+They are untrusted proposed data. They do not include, and cannot create:
+
+- an invocation identity or idempotency key;
+- approved context manifests or source contents;
+- effective authority, permissions, or credentials;
+- enforced budgets, timeouts, or retry limits; or
+- an approval decision.
+
+After proposal validation and policy evaluation, Vera's code constructs the
+full capability invocation envelope from the proposed arguments plus those
+authoritative fields. The invocation schema is therefore distinct from the
+model proposal schema even when both refer to the same capability version.
+This distinction prevents a model from authoring its own authority and lets the
+invocation contract grow without silently broadening the proposal contract.
 
 ## Resource and delegation budgets
 
@@ -279,5 +309,7 @@ For V1:
 - success means one schema-valid plan artifact is durably associated with the
   invocation, using that invocation ID as the idempotency identity.
 
-The exact adapter mechanism remains an output of the capability-boundary
-experiment. See the [V1 Definition](v1-definition.md#required-first-journey).
+The implemented adapter invokes the configured structured-output model behind a
+capability port and records its validated result and provider metadata. The
+final Codex transport and bounded project-context handoff remain to be
+implemented. See the [V1 Definition](v1-definition.md#required-first-journey).

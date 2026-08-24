@@ -1,0 +1,38 @@
+{
+  "name": "vera",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Personal AI orchestration system",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "npm@10.9.8",
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm test",
+    "dev": "npm run dev --workspace @vera/api",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "infra:down": "docker compose down",
+    "infra:up": "docker compose up -d --wait",
+    "lint": "eslint .",
+    "start": "npm run start --workspace @vera/api",
+    "test": "npm run test --workspaces --if-present",
+    "test:ollama": "npm run test:ollama --workspace @vera/api",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "26.2.0",
+    "eslint": "10.9.0",
+    "prettier": "3.6.2",
+    "tsx": "4.23.12",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.67.0"
+  }
+}

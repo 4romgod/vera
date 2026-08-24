@@ -1,7 +1,7 @@
 # Vera V1 Definition
 
-**Status:** Accepted (experimental V1 scope)
-**Version:** 0.4
+**Status:** Accepted
+**Version:** 0.6
 **Last updated:** 24 August 2026
 **Accepted:** 24 August 2026 (owner) — completion still requires the evidence
 in this document
@@ -48,8 +48,9 @@ a miniature imitation of the entire long-term product, nor merely an API that
 calls a model and stores its response.
 
 This document defines the behavioural proof required before Vera expands into
-multiple clients, broad memory, or many specialist capabilities. It does not
-select an implementation framework or repository structure.
+multiple clients, broad memory, or many specialist capabilities. The initial
+implementation framework and repository structure are selected by ADR-0009;
+persistence and the remaining resource API are selected in later decisions.
 
 ## V1 hypothesis
 
@@ -125,7 +126,7 @@ the result by polling versioned HTTP resources; streaming is deferred.
 The journey is worthwhile only if Vera removes meaningful orchestration work:
 selecting the specialist, assembling and disclosing only approved context,
 persisting the task across failure, enforcing limits, obtaining approval, and
-returning one inspectable artifact and execution trace. The experiments must
+returning one inspectable artifact and execution trace. Implementation evidence must
 test whether that experience is preferable to opening Codex and manually
 performing those steps. The documentation does not assume the answer is yes.
 
@@ -152,8 +153,12 @@ The successful artifact contains at least:
 - risks and explicit decision points; and
 - a verification plan tied to the objective.
 
-The versioned schema and maximum context size are experiment outputs. The
-semantic fields above are V1 requirements.
+The versioned proposal and initial capability proposal-argument schemas are
+accepted by ADR-0009. They do not replace the enriched invocation contract
+below, whose authoritative fields are created by code. The maximum approved
+context size remains to be set when the context
+assembler and capability invocation are implemented. The semantic fields above
+are V1 requirements.
 
 ## V1 functional scope
 
@@ -318,9 +323,7 @@ V1 does not require:
 - automatic acquisition or rotation of credentials;
 - perfect model or provider routing;
 - a marketplace or plugin ecosystem;
-- production commitment to Redis, MongoDB, Temporal, LangGraph, an Agents SDK,
-  or another product before its experiment demonstrates the required semantics
-  and value;
+- a durable workflow engine, agent framework, or graph framework;
 - live steering of an in-flight run — cancel-and-resubmit instead;
 - hierarchical child-task budgets, inherited delegation budgets, recursive
   delegation, or runtime budget expansion;
@@ -341,7 +344,7 @@ Even as a prototype, V1 must not:
 - claim cancellation reversed an external action when it only stopped waiting;
 - expose server-only credentials or policy logic to a client package.
 
-## Implementation gates
+## Implementation sequence
 
 The scope decisions required before implementation are resolved:
 
@@ -358,30 +361,39 @@ The scope decisions required before implementation are resolved:
    before selected project or ticket context is sent to cloud Codex.
 6. ~~the minimum capability contract is approved~~ — done via the
    [Capability Model](capability-model.md).
-7. the technology recommendations that affect the first slice are accepted
-   — done for language, runtime, and monorepo structure
-   ([ADR-0006](decisions/0006-typescript-first-npm-monorepo.md)); the
-   durable-state separation is accepted; MongoDB as durable authority plus a
-   rebuildable Redis scratchpad is the working hypothesis, not an accepted
-   backend or topology, pending the durable-transition/recovery experiment
-   ([ADR-0007](decisions/0007-separate-durable-state-from-model-context.md)).
+7. the technology decisions affecting the first slice are accepted — language,
+   runtime, and monorepo through
+   [ADR-0006](decisions/0006-typescript-first-npm-monorepo.md), and the modular
+   Fastify/Zod API plus model boundary through
+   [ADR-0009](decisions/0009-implement-the-model-decision-boundary.md). MongoDB
+   authoritative operational state plus a rebuildable Redis scratchpad is
+   accepted by
+   [ADR-0010](decisions/0010-use-mongodb-for-operational-truth-and-redis-for-scratchpads.md).
 
-Implementation begins with the three gating experiments in the
-[Discovery Record](discovery-record.md#required-experiments-before-architecture-approval),
-not with a production scaffold or final folder structure.
+Implementation proceeds in production vertical increments. The implemented
+spine now includes strict HTTP validation, real and deterministic model
+adapters, the closed `ModelProposal` v1 contract, MongoDB task/run/event truth,
+Redis scratchpad projection, idempotent task submission, persisted approval and
+invocation identity, ordered events, restart inspection, and schema-bound
+planning execution after approval.
+
+This is not V1 completion. The current planning executor uses the configured
+structured-output model; the accepted journey still requires selected
+read-only project context, the final specialist adapter, a versioned artifact,
+finite resource ceilings, cancellation, and conversations. Forced-process
+recovery, scratchpad loss, and persistent idempotency have real local evidence.
 
 ## Decisions to validate during V1
 
 - Cloud disclosure is allowed only for the exact project/ticket context shown
   in an approval request; credentials and unrelated personal context are never
   included.
-- `202 Accepted` plus polling is sufficient for the first client. The client
-  event experiment may justify server-sent events or another transport later.
+- `202 Accepted` plus polling is sufficient for the first durable-task client.
+  Later client evidence may justify server-sent events or another transport.
 - The plan artifact is a useful, safely idempotent outcome for the first
   journey.
-- MongoDB satisfies durable transition, validation, concurrency, and recovery
-  requirements; Redis can be lost and rebuilt; and Redis provides enough value
-  over MongoDB alone to justify operating both.
+- The selected MongoDB/Redis implementation satisfies forced-restart,
+  projection-loss, concurrency, backup, and migration requirements.
 - Vera's orchestration, control, recovery, and trace make this journey more
   useful than invoking the specialist manually.
 

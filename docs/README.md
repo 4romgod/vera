@@ -20,10 +20,13 @@ Architecture's logical shape, the Capability Model's contract, Security and
 Trust, and the Engineering Method are now Accepted. V1 scope was trimmed —
 see [ADR-0008](decisions/0008-trim-v1-scope-and-ratify-foundation.md).
 The durable-state/execution-scratchpad/model-context separation and the V1
-experimental journey are also accepted. Broader memory design and the exact
-persistence backend remain open on purpose. The current experiment hypothesis
-uses MongoDB for durable authority and Redis for a rebuildable execution
-scratchpad; it is not yet a production selection.
+journey are also accepted. Broader personal-memory and retention design remains
+open on purpose. ADR-0010 selects MongoDB for durable operational authority and
+Redis for a rebuildable execution scratchpad.
+
+Implementation began on the same date. ADR-0009 accepts the first production
+source layout and model decision boundary. ADR-0010 accepts the durable
+task/run/approval lifecycle and operational storage topology.
 
 ## Recommended reading order
 
@@ -52,10 +55,11 @@ flowchart TD
 | [Discovery Record](discovery-record.md) | Living | What do we know, recommend, assume, and still need to learn? |
 | [Domain Model](domain-model.md) | Accepted (core) | What do conversation, task, run, capability, event, approval, and memory mean? |
 | [System Architecture](system-architecture.md) | Accepted (shape) | What are Vera's major components and how does a request move through them? |
+| [HTTP API](api.md) | Accepted (implemented paths) | How does a client submit, inspect, approve, and audit work? |
 | [Memory and Context](memory-and-context.md) | Proposed (except accepted separation principle) | What is durable truth, working state, model context, and long-term memory? |
 | [Capability Model](capability-model.md) | Accepted (contract) | How does Vera discover and invoke models, tools, agents, and specialist workflows? |
 | [Security and Trust](security-and-trust.md) | Accepted | What may Vera access or change, and who authorizes it? |
-| [V1 Definition](v1-definition.md) | Accepted (experimental scope) | What exact architectural claim must the first version prove? |
+| [V1 Definition](v1-definition.md) | Accepted | What exact architectural claim must the first version prove? |
 | [Engineering Method](engineering-method.md) | Accepted | How do we turn discovery into bounded, verifiable implementation work? |
 | [Architecture decisions](decisions/README.md) | Mixed — see index | Which consequential choices are recommended, why, and with what consequences? |
 
@@ -130,18 +134,23 @@ rather than surviving only as a transcript.
 - Raw credentials, personal secrets, and private transcripts do not belong in
   documentation.
 
-## What is intentionally absent
+## Current implementation boundary
 
-There is no application, package, service, or deployment folder structure yet.
-The architecture must first establish process, trust, and ownership boundaries.
-Source layout will follow those decisions instead of pretending to make them.
+The repository now has one deployable application under `apps/api`. It is a
+modular monolith; internal modules preserve domain, application, adapter, and
+HTTP boundaries without creating packages before a second consumer exists.
+`packages/*` is reserved for code genuinely shared by multiple apps or
+processes. See [ADR-0009](decisions/0009-implement-the-model-decision-boundary.md)
+and [ADR-0010](decisions/0010-use-mongodb-for-operational-truth-and-redis-for-scratchpads.md).
 
-## Documentation stop condition
+## Documentation and implementation cadence
 
-This foundation is now broad enough to support experiments. No additional
-design document should be created until the structured-model-proposal,
-durable-transition/recovery, and capability-boundary experiments have
-produced evidence — see [Discovery Record](discovery-record.md#required-experiments-before-architecture-approval)
-for why these three gate further design and the other two do not. Existing
-documents may be corrected or updated when review or experimental results
-justify the change.
+The documentation foundation is complete enough to support implementation.
+Consequential decisions are recorded when they are made, while each production
+increment must finish with executable evidence. The structured model proposal,
+local-model boundary, state machine, approval claim, and schema-bound planning
+execution now have deterministic evidence. Real MongoDB/Redis forced-restart,
+projection-loss, and idempotency evidence also passes. Bounded project context,
+final specialist integration, artifacts, ceilings, and cancellation remain;
+see the
+[Discovery Record](discovery-record.md#implementation-evidence-and-next-increments).
