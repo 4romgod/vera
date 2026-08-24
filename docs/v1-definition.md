@@ -1,8 +1,45 @@
 # Vera V1 Definition
 
-**Status:** Proposed
-**Version:** 0.1
+**Status:** Accepted (experimental V1 scope)
+**Version:** 0.4
 **Last updated:** 24 August 2026
+**Accepted:** 24 August 2026 (owner) — completion still requires the evidence
+in this document
+
+## Scope change, 24 August 2026
+
+V1 as originally drafted (v0.1) specified roughly thirty acceptance criteria
+spanning durability, recovery, resource and delegation budgets with
+child-task inheritance, approvals, a formal cancellation protocol, live
+steering, concurrency isolation, and versioned capability contracts — more
+than a solo build should attempt before validating the underlying product
+idea. This version cuts scope. Full rationale is recorded in
+[ADR-0008](decisions/0008-trim-v1-scope-and-ratify-foundation.md).
+
+Removed or deferred to V1.1:
+
+- **Live steering** of an in-flight run. V1 supports cancel-and-resubmit as
+  a new task instead of steering semantics.
+- **Hierarchical delegation and inherited child-task budgets.** V1 has no
+  recursive delegation or child tasks. It still enforces multiple flat,
+  finite ceilings because an orchestration loop without them is unsafe.
+- **A formal cancellation protocol.** V1 supports a best-effort stop
+  request and records the resulting run state; it does not guarantee which
+  external side effects were or were not stopped.
+
+Kept, because the hypothesis cannot be tested without them:
+
+- A durable task and run representation that survives a process restart.
+- One isolated active execution scratchpad that can be deleted and rebuilt from
+  durable state without losing accepted work.
+- One demonstrated recovery after a forced process termination.
+- A structured, validated model proposal, including at least one rejection
+  case.
+- One real approval boundary that blocks execution until granted.
+- One real specialist capability invocation with a recorded result.
+- Idempotency for the one side-effecting operation used in the journey.
+- Finite ceilings for model calls, capability invocations, retries, elapsed
+  work, and cost or provider usage where measurable.
 
 ## Purpose
 
@@ -34,6 +71,8 @@ flowchart LR
     CORE --> POLICY["Policy and one approval boundary"]
     CORE --> CAP["One real specialist capability"]
     CORE --> STATE["Durable state and events"]
+    CORE <--> WORK["Rebuildable active working set"]
+    STATE -. "rehydrate" .-> WORK
     CAP --> ART["Result or artifact"]
     STATE --> CLIENT
     ART --> CLIENT
@@ -43,8 +82,17 @@ Anything not required to prove this slice is presumptively outside V1.
 
 ## Required first journey
 
-The exact specialist capability remains an open discovery decision. The first
-journey must nevertheless exercise this complete shape:
+The accepted V1 request is:
+
+> Vera, prepare an implementation plan for this Gatherle ticket: [ticket
+> details]. Use the local Gatherle repository as read-only project context.
+
+The single real specialist is `development_planning@1`, a versioned capability
+backed initially by Codex. It may analyze only the supplied ticket and an
+explicitly selected, read-only project context. It may not edit the project,
+run arbitrary commands, create a branch, or open a pull request in V1.
+
+The journey exercises this complete shape:
 
 1. The owner creates or continues a conversation through an HTTP client.
 2. A message requests a distinct outcome.
@@ -52,18 +100,60 @@ journey must nevertheless exercise this complete shape:
 4. Vera assembles bounded context and requests a structured proposal from a
    model or deterministic test double.
 5. Vera validates the proposal and applies policy.
-6. Vera either responds directly or invokes the one approved specialist
-   capability.
-7. A consequential operation pauses for explicit approval.
-8. Vera records progress, decisions, invocations, errors, and artifacts as
+6. Vera proposes the `development_planning@1` capability and the exact context
+   that would be disclosed.
+7. Before any selected project or ticket context is sent to the cloud-backed
+   capability, Vera pauses for explicit owner approval.
+8. On approval, Vera invokes the capability once with bounded input and
+   authority. On denial, it records the decision and sends nothing.
+9. Vera records progress, decisions, invocations, errors, and artifacts as
    inspectable events.
-9. The owner can steer or request cancellation.
-10. Vera returns a result and a traceable explanation of what occurred.
+10. The owner can request cancellation on a best-effort basis, or start a new
+   task; live steering of the active run is deferred to V1.1.
+11. Vera creates exactly one versioned internal plan artifact for the
+    capability invocation and returns a traceable explanation of what occurred.
 
-Software-development delegation is the leading candidate because it reflects
-the original vision and provides a real existing specialist. It is not accepted
-until its invocation, credential, sandbox, cancellation, and success contracts
-are understood.
+Creating the internal plan artifact is V1's controlled side effect. Its
+idempotency identity is the capability invocation ID: retrying the same
+invocation must return or update the same artifact identity, never create a
+duplicate. The first HTTP response is `202 Accepted` with conversation, task,
+and run identifiers. V1 clients observe state, events, approval requests, and
+the result by polling versioned HTTP resources; streaming is deferred.
+
+### Product value under test
+
+The journey is worthwhile only if Vera removes meaningful orchestration work:
+selecting the specialist, assembling and disclosing only approved context,
+persisting the task across failure, enforcing limits, obtaining approval, and
+returning one inspectable artifact and execution trace. The experiments must
+test whether that experience is preferable to opening Codex and manually
+performing those steps. The documentation does not assume the answer is yes.
+
+### Minimum capability contract
+
+The `development_planning@1` input contains:
+
+- the owner-stated outcome and ticket text or reference;
+- the selected project identity;
+- a bounded context manifest naming every included project source;
+- the approved source contents or summaries; and
+- the invocation identity and enforced limits.
+
+Vera's local context assembler selects read-only project sources before the
+approval request. The approval view must make the manifest and cloud destination
+inspectable; the capability cannot discover additional local files itself.
+
+The successful artifact contains at least:
+
+- the ticket identity and interpreted objective;
+- scope, non-goals, assumptions, and unresolved questions;
+- an ordered implementation approach;
+- affected project areas supported by the supplied context;
+- risks and explicit decision points; and
+- a verification plan tied to the objective.
+
+The versioned schema and maximum context size are experiment outputs. The
+semantic fields above are V1 requirements.
 
 ## V1 functional scope
 
@@ -73,7 +163,7 @@ are understood.
 - Add a message to a conversation.
 - Retrieve a conversation and its messages.
 - List conversations with a useful summary and recent status.
-- Associate task-creating and steering messages explicitly with affected work.
+- Associate task-creating messages explicitly with the task they create.
 
 ### Tasks and runs
 
@@ -82,6 +172,18 @@ are understood.
 - Show current state without erasing event history.
 - Support retry as a new run rather than reopening a terminal run.
 - Represent waiting for approval separately from waiting for an external system.
+
+### Execution scratchpad
+
+- Maintain one isolated, schema-versioned active working set per run.
+- Store the current step, tentative proposals, working plan, selected
+  capability, intermediate results, temporary errors, and artifact references.
+- Never use the scratchpad as the sole record of an approval, accepted proposal,
+  invocation identity, completed effect, or durable event.
+- Rebuild it from durable state after loss, or move the run to review when safe
+  reconstruction is impossible.
+- Apply explicit expiration after a terminal run without treating TTL deletion
+  timing as a correctness mechanism.
 
 ### Proposals and policy
 
@@ -96,33 +198,45 @@ are understood.
 - Register or configure exactly one real specialist capability.
 - Validate its versioned input and output.
 - Record invocation, progress, result, errors, and produced artifacts.
-- Define timeout and cancellation behaviour.
+- Define a per-invocation timeout. Cancellation is best-effort only in V1
+  (see Scope change above).
 - Prevent the capability from depending on Vera's private database schema.
 
-### Resource and delegation budgets
+### Resource ceilings (flat for V1)
 
-- Assign every run finite configured ceilings for model usage or cost,
-  wall-clock duration, steps, capability invocations, retries, child-task count,
-  and delegation depth.
-- Enforce ceilings in deterministic policy code rather than prompts.
-- Allocate child work from the parent's remaining budget without resetting it.
-- Stop safely or request explicit owner approval before extending a limit.
-- Record budget allocation, consumption, exhaustion, and extension as events.
+- Assign every run finite maximums for model calls, capability invocations,
+  retries, and wall-clock duration or execution steps.
+- Assign a cost or provider-usage maximum when the selected provider exposes a
+  measurable unit; record explicitly when it does not.
+- Fix delegation depth at one: Vera may invoke the selected capability, but
+  neither Vera nor that capability may create child Vera tasks in V1.
+- Enforce every ceiling in deterministic policy code, not in a prompt.
+- Stop safely when any ceiling is reached and record why.
+- Record ceiling assignment, consumption, and exhaustion as events.
+
+Hierarchical allocation, child-task inheritance, dynamic budget extensions,
+and recursive delegation are deferred to V1.1. The target design stays in the
+[Capability Model](capability-model.md#resource-and-delegation-budgets) and
+[Security and Trust](security-and-trust.md#resource-and-delegation-budgets).
 
 ### Control and observability
 
 - Retrieve an ordered event history for a run.
 - Observe work in progress from an HTTP client.
-- Request cancellation and distinguish request from confirmed outcome.
-- Submit steering input with explicit semantics.
+- Request cancellation on a best-effort basis and record the resulting run
+  state.
 - Inspect why a capability was selected and which policy allowed it.
 - Correlate logs and events without exposing secrets.
+
+Live steering of an in-flight run is deferred to V1.1; the owner cancels and
+starts a new task instead.
 
 ### Durability and concurrency
 
 - Run at least two unrelated tasks concurrently without state or context
   contamination.
 - Interrupt and restart Vera during active work.
+- Delete an active run's scratchpad during execution.
 - Recover, resume, or safely classify interrupted work according to a documented
   rule.
 - Prevent a retry or recovery operation from duplicating a demonstrated
@@ -149,7 +263,7 @@ V1 is complete only when the following can be demonstrated reproducibly.
 
 - Two simultaneous tasks have distinct context, events, outputs, errors, and
   cancellation state.
-- Steering one task does not modify the other.
+- Cancelling or retrying one task does not modify the other.
 - A capability receives only the context and authority declared for its
   invocation.
 
@@ -157,22 +271,27 @@ V1 is complete only when the following can be demonstrated reproducibly.
 
 - A forced process termination during execution does not lose the task or
   completed event history.
+- Losing the active scratchpad does not lose an accepted decision, approval,
+  invocation identity, effect record, or artifact reference.
+- If a durable transition succeeds but its working-set projection update fails,
+  restart reconstructs the projection from durable state.
 - After restart, interrupted work is deterministically resumed, failed, or
   placed in a review state according to documented semantics.
 - A repeated request carrying the same idempotency identity does not duplicate
   the demonstrated side effect.
 - Provider timeout, capability timeout, validation failure, and policy denial
   are distinguishable outcomes.
-- Exhausting a configured budget stops new work without an uncontrolled retry or
-  delegation loop.
-- A child task cannot reset or expand the parent's cost, retry, time, invocation,
-  or delegation-depth ceilings.
+- Exhausting the configured ceiling stops new work without an uncontrolled
+  retry loop.
+- Exhausting any configured model-call, capability-invocation, retry, duration,
+  step, or measurable-usage ceiling records which limit stopped the run.
+- A proposal for recursive delegation or a child task is rejected in V1.
 
 ### Human control
 
 - The owner can inspect current work and its relevant history.
 - The owner can grant or deny a requested approval.
-- The owner can request cancellation and see whether cancellation succeeded.
+- The owner can request cancellation and see the resulting run state.
 - The owner can understand which capability was chosen and what evidence was
   produced.
 
@@ -199,8 +318,14 @@ V1 does not require:
 - automatic acquisition or rotation of credentials;
 - perfect model or provider routing;
 - a marketplace or plugin ecosystem;
-- adoption of Redis, Temporal, LangGraph, an Agents SDK, or any other framework
-  before its need is demonstrated.
+- production commitment to Redis, MongoDB, Temporal, LangGraph, an Agents SDK,
+  or another product before its experiment demonstrates the required semantics
+  and value;
+- live steering of an in-flight run — cancel-and-resubmit instead;
+- hierarchical child-task budgets, inherited delegation budgets, recursive
+  delegation, or runtime budget expansion;
+- a cancellation protocol that guarantees which external effects were
+  stopped — best-effort stop and a recorded outcome only.
 
 ## Security floor
 
@@ -209,8 +334,8 @@ Even as a prototype, V1 must not:
 - place secrets in model prompts, model-visible context, or ordinary logs;
 - allow a model to choose its own effective permissions;
 - execute undeclared arbitrary side effects through a generic tool;
-- run with unlimited model calls, retries, capability invocations, duration,
-  child tasks, or delegation depth;
+- run with unlimited model calls, retries, capability invocations, or
+  duration;
 - treat retrieved or external content as trusted instructions;
 - silently promote model inference into durable personal memory;
 - claim cancellation reversed an external action when it only stopped waiting;
@@ -218,31 +343,47 @@ Even as a prototype, V1 must not:
 
 ## Implementation gates
 
-Implementation should not begin until:
+The scope decisions required before implementation are resolved:
 
-1. the Product Charter is accepted;
-2. the first specialist capability is selected;
-3. steering and cancellation semantics are defined sufficiently for V1;
-4. the initial deployment assumption is confirmed;
-5. the required approval boundary is chosen;
-6. the minimum capability contract is approved;
-7. the technology recommendations that affect the first slice are either
-   accepted or replaced through explicit decisions.
+1. ~~the Product Charter is accepted~~ — done, 24 August 2026.
+2. ~~the first specialist capability is selected~~ — done:
+   `development_planning@1`, initially backed by Codex.
+3. ~~steering and cancellation semantics are defined sufficiently for V1~~ —
+   done: steering is deferred to V1.1, cancellation is best-effort only.
+4. the initial deployment assumption is confirmed — **resolved by working
+   assumption**: Mac-Mini-only, with no execution during an outage but with
+   durable recovery or safe classification after restart (see the
+   [Discovery Record](discovery-record.md)).
+5. ~~the required approval boundary is chosen~~ — done: explicit approval
+   before selected project or ticket context is sent to cloud Codex.
+6. ~~the minimum capability contract is approved~~ — done via the
+   [Capability Model](capability-model.md).
+7. the technology recommendations that affect the first slice are accepted
+   — done for language, runtime, and monorepo structure
+   ([ADR-0006](decisions/0006-typescript-first-npm-monorepo.md)); the
+   durable-state separation is accepted; MongoDB as durable authority plus a
+   rebuildable Redis scratchpad is the working hypothesis, not an accepted
+   backend or topology, pending the durable-transition/recovery experiment
+   ([ADR-0007](decisions/0007-separate-durable-state-from-model-context.md)).
 
-## Questions blocking V1 approval
+Implementation begins with the three gating experiments in the
+[Discovery Record](discovery-record.md#required-experiments-before-architecture-approval),
+not with a production scaffold or final folder structure.
 
-1. What exact owner request will serve as the first demonstration?
-2. What real specialist capability will Vera invoke?
-3. What side effect will demonstrate approval and idempotency safely?
-4. Must execution continue while the Mac Mini is offline?
-5. Is V1 allowed to send project or personal context to a cloud model?
-6. Should steering affect the active run, create a successor run, or create a
-   related task for the first journey?
-7. What minimum result must Vera return synchronously, and what may be observed
-   asynchronously?
+## Decisions to validate during V1
 
-Until these are answered, this document is a testable proposal rather than an
-implementation assignment.
+- Cloud disclosure is allowed only for the exact project/ticket context shown
+  in an approval request; credentials and unrelated personal context are never
+  included.
+- `202 Accepted` plus polling is sufficient for the first client. The client
+  event experiment may justify server-sent events or another transport later.
+- The plan artifact is a useful, safely idempotent outcome for the first
+  journey.
+- MongoDB satisfies durable transition, validation, concurrency, and recovery
+  requirements; Redis can be lost and rebuilt; and Redis provides enough value
+  over MongoDB alone to justify operating both.
+- Vera's orchestration, control, recovery, and trace make this journey more
+  useful than invoking the specialist manually.
 
 The logical design behind this slice is documented in the
 [System Architecture](system-architecture.md), with specialized detail in

@@ -1,7 +1,8 @@
 # ADR-0004: API-First, Client-Independent Core
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 24 August 2026
+**Decided:** 24 August 2026 (owner)
 
 ## Context
 
@@ -43,5 +44,6 @@ redesigning Vera's execution system.
 
 ## Follow-up
 
-The exact API resources and progress transport remain proposed in the
+V1 uses `202 Accepted` plus polling. Exact API resources and any later
+streaming or notification transport remain illustrative in the
 [System Architecture](../system-architecture.md).

@@ -1,7 +1,9 @@
 # Vera Discovery Record
 
-**Status:** Proposed
-**Version:** 0.1
+**Status:** Living discovery log — not subject to owner acceptance like a
+spec or decision record; see the
+[Documentation Guide](README.md#authority-model)
+**Version:** 0.2
 **Last updated:** 24 August 2026
 
 ## Purpose
@@ -24,15 +26,16 @@ The initial discovery considered:
 - the current repository, which contained only a one-line README;
 - the owner's current experience and preferences: strongest in the Node/npm
   ecosystem, able to work in Python, and interested in a monorepo supporting
-  future clients.
+  future clients; experienced with MongoDB and DynamoDB, able to write SQL but
+  less inclined to maintain a SQL-first system.
 
 The raw conversation and transcript are source material, not project authority.
 They are intentionally not copied into this repository.
 
 ## Current product direction
 
-The following ideas have strong support but remain proposed until the Product
-Charter is accepted:
+The following directions are now supported by the accepted Product Charter and
+foundation decisions:
 
 - Vera is a personal AI orchestration system and consistent user interface.
 - Vera is the whole system rather than one model or framework.
@@ -47,9 +50,8 @@ Charter is accepted:
 
 ## Decision candidates from initial discovery
 
-The original conversation established several strong directions. They are
-recorded as proposed decisions until the owner accepts the Product Charter and
-reviews each record:
+The original conversation established several strong directions. The owner
+accepted their decision records during the foundation review:
 
 | Decision | Record |
 |---|---|
@@ -60,7 +62,7 @@ reviews each record:
 | Independent work has explicit identity and isolated state and context. | [ADR-0005](decisions/0005-isolate-independent-streams-of-work.md) |
 
 Later recommendations for a TypeScript/npm monorepo and for separating durable
-state from model context are also proposed in [ADR-0006](decisions/0006-typescript-first-npm-monorepo.md)
+state from model context are accepted in [ADR-0006](decisions/0006-typescript-first-npm-monorepo.md)
 and [ADR-0007](decisions/0007-separate-durable-state-from-model-context.md).
 
 ## Engineering-method learnings
@@ -85,9 +87,10 @@ The following parts of the demonstrated workflow are not adopted:
 - treating a second model's agreement as validation;
 - using repository Markdown as runtime operational state.
 
-## Recommended technology direction
+## Technology direction
 
-These are recommendations, not accepted decisions.
+TypeScript, Node.js, npm workspaces, and the monorepo model are accepted through
+ADR-0006. Other entries remain recommendations or explicit deferrals.
 
 | Concern | Recommendation | Confidence | Reason |
 |---|---|---:|---|
@@ -99,8 +102,11 @@ These are recommendations, not accepted decisions.
 | Python | Secondary capability runtime managed with `uv` | High | Use where Python libraries provide a real advantage. |
 | Java/JVM | Capability-specific only | High | No foundational requirement currently justifies another core runtime. |
 | Contract format | Language-neutral HTTP/events plus OpenAPI or JSON Schema | High | Prevents TypeScript internals from becoming cross-process contracts. |
-| Durable operational store | PostgreSQL candidate | Medium | Likely fit for authoritative state and transactional transitions; semantics must be defined first. |
-| Redis | Defer | High | Add only for demonstrated caching, locking, queueing, or transient coordination needs. |
+| Durable operational store | MongoDB candidate | Medium-high | Matches the owner's document-database experience and evolving records; the recovery experiment must prove validation, concurrency, idempotency, and durability. |
+| Active execution scratchpad | Redis candidate | Medium | Matches the original per-flow working-set design through isolated structured state, atomic operations, and TTL; it must be rebuildable and justify a second datastore. |
+| Long-term memory store | MongoDB candidate, later | Medium | Operational records and governed memory may share a deployment but must keep separate semantics, access, and retention. |
+| PostgreSQL | Fallback, not preferred | Medium | Technically strong, but no longer the leading candidate given owner maintainability and a credible MongoDB design. |
+| DynamoDB | Revisit for AWS-first deployment | Medium | Familiar and capable, but introduces a cloud dependency and early access-pattern commitment into the Mac-Mini-first V1. |
 | Agent framework | Defer | High | Domain and execution semantics must be defined before evaluating frameworks. |
 | Durable workflow engine | Defer | High | Recovery, retry, cancellation, and idempotency requirements must come first. |
 | Mobile client | React Native candidate | Medium | Fits the TypeScript ecosystem, but no client should be scaffolded during foundation design. |
@@ -112,76 +118,110 @@ accepted facts:
 
 - Vera begins as a single-owner personal system.
 - The first interface can be an HTTP client or thin CLI rather than a GUI.
-- The first deployment may run primarily on the owner's Mac Mini.
+- The initial deployment is Mac-Mini-only. No work executes while that machine
+  is offline, but durable state must survive and be recovered or safely
+  classified after restart. Revisit continuous availability after V1 works
+  once. (Confirmed 24 August 2026 — see Open system questions 1–2.)
 - Cloud model providers and local models may both be used.
 - At least one real specialist capability must be delegated to in V1.
+- The persistence experiment begins with MongoDB as durable authority and Redis
+  as a rebuildable execution scratchpad, while retaining MongoDB-only as the
+  simpler comparison.
 - Long-term personal memory can be delayed, but identity, authorization, and
   durable operational state cannot be deferred entirely.
 - The exact source layout should follow deployable processes and trust
   boundaries rather than precede them.
 
+## V1 product hypothesis
+
+The first request is: "Prepare an implementation plan for this Gatherle ticket
+using the selected local repository as read-only project context." Vera will
+delegate to the Codex-backed `development_planning@1` capability, ask for
+approval before the shown context is sent to the cloud, and persist one
+versioned plan artifact idempotently.
+
+This tests whether Vera is better than opening the specialist directly because
+it selects the capability, scopes and approves context, preserves work through
+failure, enforces resource limits, and provides one durable result and trace.
+That advantage is a hypothesis to validate, not an accepted product fact.
+
 ## Open product questions
 
-1. What is the first real end-to-end user request Vera must handle?
-2. Is the first specialist capability software development, research,
-   cloud operations, or something smaller and safer?
-3. Which behaviours would make the owner prefer Vera over opening a specialist
-   directly?
-4. How proactive may Vera be without an explicit request?
-5. Which classes of action always require approval?
-6. What information may Vera retain automatically, and for how long?
-7. What should Vera do when intent is ambiguous or no suitable capability is
+1. How proactive may Vera be without an explicit request?
+2. Which action and disclosure classes must always require approval beyond V1?
+3. What information may Vera retain automatically, and for how long?
+4. What should Vera do when intent is ambiguous or no suitable capability is
    available?
 
 ## Open system questions
 
-1. Is the initial deployment local-only, cloud-hosted, or hybrid?
-2. Must active work continue when the Mac Mini is offline or restarted?
-3. What availability and recovery guarantees are required for V1?
-4. How will a client receive progress: polling, server-sent events, WebSockets,
-   notifications, or a combination?
+1. ~~Is the initial deployment local-only, cloud-hosted, or hybrid?~~
+   Resolved by working assumption, 24 August 2026: local-only (Mac Mini).
+2. ~~Must active work continue when the Mac Mini is offline or restarted?~~
+   Resolved by working assumption, 24 August 2026: execution pauses while the
+   machine is unavailable; durable work is recovered or safely classified on
+   restart.
+3. What availability and recovery guarantees are required for V1? — the
+   durable-transition/recovery experiment answers this for the single-node
+   case; multi-node guarantees stay out of scope.
+4. ~~How will a V1 client receive progress?~~ Resolved for V1: polling.
+   Server-sent events, WebSockets, and notifications remain future options.
 5. How are credentials brokered without exposing secrets to models?
 6. What is the minimum capability protocol needed for progress, cancellation,
    retries, approvals, artifacts, and errors?
-7. What are the exact semantics of steering work that is already running?
+7. ~~What are the V1 semantics of steering work already running?~~ Resolved:
+   live steering is deferred; V1 uses best-effort cancellation and a new task.
 8. How will local and remote capabilities authenticate with Vera?
-9. Which information is safe to send to cloud model providers?
+9. ~~Which information may V1 send to cloud Codex?~~ Resolved for the first
+   journey: only the exact project/ticket context displayed for and granted
+   explicit approval; never credentials or unrelated personal context.
 10. What numerical cost, time, retry, invocation, and delegation-depth ceilings
     should V1 use within its required budget mechanism?
+11. Does Redis provide enough working-set, TTL, coordination, or inspection
+    value to justify a second datastore over MongoDB alone?
 
 ## Required experiments before architecture approval
 
-These experiments are now the next project work. Further speculative design is
-paused until the first two experiments produce evidence that can confirm or
-correct the proposed architecture.
+These experiments are now the next project work. As of 24 August 2026, three
+of the five gate further design work; the other two are required before
+later work but do not block the gate. See
+[ADR-0008](decisions/0008-trim-v1-scope-and-ratify-foundation.md).
 
-### Structured model proposal
+### Structured model proposal — required, gates further design
 
 Demonstrate that a TypeScript service can request and validate a structured
 proposal from at least one model provider, reject invalid output, and operate
 against a deterministic fake during tests.
 
-### Local-model boundary
+### Durable transition and recovery — required, gates further design
 
-Demonstrate a minimal provider adapter against Ollama without allowing
-Ollama-specific response shapes to leak into Vera's domain model.
+Use MongoDB as the candidate durable authority and Redis as the candidate active
+scratchpad. Persist a task and run, interrupt the application during execution,
+restart it, and prove that work is recovered or safely classified without
+duplicating a side effect. Delete Redis state mid-run and simulate failure after
+a MongoDB commit but before its Redis projection update. Prove that the working
+set is rebuilt, or safely reject Redis if MongoDB alone is simpler and
+sufficient.
 
-### Durable transition and recovery
-
-Persist a task and run, interrupt the application during execution, restart it,
-and prove that work is recovered or safely classified without duplicating a
-side effect.
-
-### Capability boundary
+### Capability boundary — required, gates further design
 
 Invoke one external capability through a versioned schema and capture progress,
 result, failure, and cancellation without giving the capability direct access
 to Vera's internal database representation.
 
-### Client event consumption
+### Local-model boundary — deferred
+
+Demonstrate a minimal provider adapter against Ollama without allowing
+Ollama-specific response shapes to leak into Vera's domain model. Not
+required before V1: V1 needs one real model provider, not necessarily a
+local one.
+
+### Client event consumption — deferred
 
 Use a minimal HTTP client to create work and observe ordered execution events.
-The experiment should inform, not prematurely fix, the streaming transport.
+V1 uses polling; this experiment should determine whether a later client needs
+server-sent events, WebSockets, notifications, or another transport. It is not
+required before V1 implementation begins and informs V1.1 client work.
 
 ## Principal risks
 
@@ -191,11 +231,13 @@ The experiment should inform, not prematurely fix, the streaming transport.
 | Model output is treated as authority | Unsafe or incorrect side effects | Validate proposals and enforce deterministic policy. |
 | Framework owns Vera's semantics | Vendor lock-in and difficult migrations | Keep domain entities and contracts framework-independent. |
 | Redis becomes the only active-state store | Lost or incoherent work after failures | Define durability first and use an authoritative store. |
+| MongoDB and Redis diverge during a partial failure | Stale working state drives incorrect execution | Make MongoDB authoritative, update Redis only as a rebuildable projection, and test the failure window. |
+| Flexible MongoDB documents drift silently | Recovery and migrations become unpredictable | Enforce application schemas, collection validation, document versions, and indexes. |
 | Credentials enter prompts or logs | Security compromise | Use scoped handles and a credential broker boundary. |
 | Documentation becomes generated clutter | Builders receive noisy or contradictory context | Create only purposeful artifacts and assign authority clearly. |
 | Shared monorepo packages become a grab bag | Clients gain server-only dependencies or secrets | Define runtime and trust boundaries before package layout. |
 | Multi-agent complexity arrives early | Non-determinism without user value | Prove one bounded delegation path first. |
-| Model or capability loop consumes unbounded resources | Unexpected cost, unavailable service, or uncontrolled delegation | Enforce finite run budgets and inherited child limits in deterministic policy. |
+| Model or capability loop consumes unbounded resources | Unexpected cost, unavailable service, or uncontrolled delegation | Enforce finite run ceilings and forbid recursive delegation in V1; require inherited child limits before later enabling child tasks. |
 | Memory stores unsupported inference as fact | Loss of user trust | Record provenance, confidence, scope, and deletion rules. |
 
 ## Explicit non-decisions
@@ -206,9 +248,8 @@ The project has not selected:
 - an agent or graph framework;
 - a durable workflow engine;
 - an ORM;
-- Redis;
-- a production database topology;
-- a streaming protocol;
+- final production adoption or topology of MongoDB and Redis;
+- a post-V1 streaming or notification protocol;
 - an authentication provider;
 - a mobile or web framework;
 - a monorepo task runner;

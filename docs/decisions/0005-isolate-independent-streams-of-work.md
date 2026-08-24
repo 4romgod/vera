@@ -1,7 +1,8 @@
 # ADR-0005: Isolate Independent Streams of Work
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 24 August 2026
+**Decided:** 24 August 2026 (owner)
 
 ## Context
 
@@ -47,5 +48,6 @@ observability, recovery, and client continuity.
 
 ## Follow-up
 
-The [Domain Model](../domain-model.md) proposes the refined entities and leaves
-steering semantics open for V1 approval.
+The [Domain Model](../domain-model.md) defines the refined entities. V1 defers
+live steering and uses best-effort cancellation followed by a new task;
+post-V1 steering semantics remain open.

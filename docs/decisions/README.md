@@ -22,18 +22,20 @@ erasing why a choice was made.
 
 | ADR | Status | Decision |
 |---|---|---|
-| [0001](0001-vera-is-the-whole-system.md) | Proposed | Vera is the whole assistant system, not a model or framework. |
-| [0002](0002-vera-delegates-to-specialist-capabilities.md) | Proposed | Vera is the top-level orchestrator and may invoke specialist orchestrators. |
-| [0003](0003-models-propose-code-controls-effects.md) | Proposed | Models provide proposals; application code controls state and side effects. |
-| [0004](0004-api-first-client-independent-core.md) | Proposed | Vera begins API-first and clients do not own core semantics. |
-| [0005](0005-isolate-independent-streams-of-work.md) | Proposed | Independent work has explicit identity and isolated state/context. |
-| [0006](0006-typescript-first-npm-monorepo.md) | Proposed | Use a TypeScript/Node-first monorepo managed initially with npm workspaces. |
-| [0007](0007-separate-durable-state-from-model-context.md) | Proposed | Separate authoritative durable state from disposable model context. |
+| [0001](0001-vera-is-the-whole-system.md) | Accepted | Vera is the whole assistant system, not a model or framework. |
+| [0002](0002-vera-delegates-to-specialist-capabilities.md) | Accepted | Vera is the top-level orchestrator and may invoke specialist orchestrators. |
+| [0003](0003-models-propose-code-controls-effects.md) | Accepted | Models provide proposals; application code controls state and side effects. |
+| [0004](0004-api-first-client-independent-core.md) | Accepted | Vera begins API-first and clients do not own core semantics. |
+| [0005](0005-isolate-independent-streams-of-work.md) | Accepted | Independent work has explicit identity and isolated state/context. |
+| [0006](0006-typescript-first-npm-monorepo.md) | Accepted | Use a TypeScript/Node-first monorepo managed initially with npm workspaces. |
+| [0007](0007-separate-durable-state-from-model-context.md) | Accepted | Separate authoritative durable state, rebuildable execution scratchpad, and disposable model context without selecting a storage product. |
+| [0008](0008-trim-v1-scope-and-ratify-foundation.md) | Accepted | Ratify the foundation review and trim V1 scope to a solo-buildable slice. |
 
-The first five decision candidates come directly from the original Vera design
-conversation. They remain proposed because the Product Charter has not yet been
-accepted by the owner. ADRs 0006 and 0007 are later recommendations and are also
-proposed.
+ADRs 0001–0008 were accepted 24 August 2026 following the owner's review of
+the foundation documentation. ADR-0007 accepts a semantic boundary, not a
+storage product. MongoDB plus a rebuildable Redis scratchpad is the current V1
+experiment hypothesis; the durable backend and two-store topology remain
+unselected pending the durable-transition/recovery experiment.
 
 ## ADR rules
 

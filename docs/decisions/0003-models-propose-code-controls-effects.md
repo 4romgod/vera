@@ -1,7 +1,8 @@
 # ADR-0003: Models Propose; Code Controls Effects
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 24 August 2026
+**Decided:** 24 August 2026 (owner)
 
 ## Context
 

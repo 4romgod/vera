@@ -1,7 +1,8 @@
 # ADR-0001: Vera Is the Whole Assistant System
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 24 August 2026
+**Decided:** 24 August 2026 (owner)
 
 ## Context
 

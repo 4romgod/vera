@@ -1,8 +1,11 @@
 # Vera Domain Model
 
-**Status:** Proposed
-**Version:** 0.1
+**Status:** Accepted (core vocabulary and critical distinctions); the open
+questions below are explicitly excluded from this acceptance
+**Version:** 0.2
 **Last updated:** 24 August 2026
+**Accepted:** 24 August 2026 (owner) — accepts the Core concepts and
+Critical distinctions sections as Vera's shared language.
 
 ## Purpose
 
@@ -261,10 +264,14 @@ conversation may discuss or create several tasks.
 A task is what the owner wants accomplished. A run is one attempt to accomplish
 it. Retries and recovery must not overwrite earlier attempts.
 
-### Run state is not scratchpad text
+### Run state is not the execution scratchpad
 
 Statuses, approvals, errors, invocations, and side effects are authoritative
-operational state. A model's working notes are optional disposable context.
+operational state. The execution scratchpad may cache the prompt, current step,
+tentative decisions, plan, intermediate results, and other mutable working data,
+but it is rebuildable and cannot be the sole authority for accepted work. A
+model's context is a still smaller, disposable projection assembled for one
+invocation.
 
 ### Capability is not provider
 
@@ -343,12 +350,17 @@ Parent-child relationships must define:
 
 ## Questions to resolve
 
-- When does a steering message modify an open task versus create a new task?
+None of the following are settled by the acceptance above; they remain open
+and do not block use of the accepted vocabulary.
+
+- After V1, when does a steering message modify an open task versus create a
+  new task? V1 always uses a new task.
 - Which lifecycle details should be public API contracts?
 - Which event classes may contain sensitive or provider-specific data?
-- Are plans first-class durable entities or versioned artifacts attached to a
-  run?
-- Which memory types, if any, are allowed in V1?
+- Beyond V1, should plans become first-class durable entities? V1 stores its
+  implementation plan as a versioned artifact attached to an invocation.
+- Which memory types, if any, are allowed after V1? Broad personal memory is
+  excluded from V1.
 - When should capability invocation create a child task?
 - What guarantees are required for event ordering and delivery?
 - Which identifiers should clients persist and which should remain internal?

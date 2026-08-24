@@ -1,8 +1,9 @@
 # Vera Security and Trust Model
 
-**Status:** Proposed
+**Status:** Accepted
 **Version:** 0.1
 **Last updated:** 24 August 2026
+**Accepted:** 24 August 2026 (owner)
 
 ## Purpose
 
@@ -267,16 +268,21 @@ they describe.
 V1 must demonstrate:
 
 - an authenticated owner boundary, even if locally configured;
-- one explicit approval-gated side effect;
+- one explicit approval-gated external disclosure and capability invocation;
 - scoped capability input and authority;
 - no raw secrets in model context, logs, events, or artifacts;
 - rejection of an unauthorized structured proposal;
 - separation between two concurrent tasks;
-- finite configured ceilings for model calls, cost or usage, wall-clock time,
-  retries, capability invocations, child tasks, and delegation depth;
+- finite configured ceilings for model calls, measurable cost or usage,
+  wall-clock time or steps, retries, and capability invocations;
+- delegation depth fixed at one, with child Vera tasks and recursive delegation
+  rejected;
 - a demonstrated safe stop when at least one configured ceiling is reached;
-- proof that child delegation cannot reset or increase its parent's budget;
 - a deterministic audit trail for the demonstrated journey.
+
+The accepted target model above still requires inherited child budgets before
+Vera later permits child tasks. V1 proves the simpler safe case by forbidding
+them.
 
 ## Open questions
 

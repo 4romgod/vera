@@ -1,12 +1,17 @@
 # Vera System Architecture
 
-**Status:** Proposed
-**Version:** 0.1
+**Status:** Accepted (logical architecture, component responsibilities,
+request lifecycle, and architectural invariants); persistence, post-V1 progress
+transport, and deployment topology remain open
+**Version:** 0.2
 **Last updated:** 24 August 2026
+**Accepted:** 24 August 2026 (owner) — persistence choice, post-V1 progress
+transport, and deployment topology are deferred to the durable-transition/
+recovery and client-event-consumption experiments; V1 uses HTTP polling.
 
 ## Purpose
 
-This document describes Vera's proposed logical architecture: the major
+This document describes Vera's accepted logical architecture: the major
 components, their responsibilities, the boundaries between them, and the
 lifecycle of a request. It deliberately separates stable system semantics from
 replaceable products and frameworks.
@@ -66,7 +71,7 @@ flowchart TB
     end
 
     subgraph Boundary["External boundary"]
-        API["API and streaming interface"]
+        API["API and progress interface"]
         ID["Identity and request validation"]
     end
 
@@ -87,6 +92,7 @@ flowchart TB
 
     subgraph State["State and evidence"]
         OPS["Durable operational state"]
+        WORK["Rebuildable active working set"]
         EVENTS["Event journal and projections"]
         MEMORY["Long-term memory service"]
         ART["Artifact metadata and content"]
@@ -109,7 +115,10 @@ flowchart TB
     CONV --> OPS
     TASK --> OPS
     ORCH --> OPS
+    ORCH <--> WORK
+    OPS -. "rebuild" .-> WORK
     ORCH --> EVENTS
+    CONTEXT --> WORK
     CONTEXT --> MEMORY
     CAP --> ART
     ORCH --> OBS
@@ -123,14 +132,14 @@ preserving internal boundaries.
 
 ## Component responsibilities
 
-### API and streaming interface
+### API and progress interface
 
 - authenticate the initiating principal;
 - validate versioned request payloads;
 - apply idempotency and request-size rules;
 - create or continue conversations and tasks;
 - expose current projections, events, approvals, and artifacts;
-- stream progress without making the network connection the source of truth;
+- expose progress without making a network connection the source of truth;
 - contain minimal orchestration logic.
 
 ### Conversation service
@@ -183,6 +192,17 @@ preserving internal boundaries.
 - produce a disposable model-context projection;
 - avoid sending the entire conversation or database by default.
 
+### Active working-set service
+
+- maintain one isolated, versioned execution scratchpad per active run;
+- store tentative plans, current-step data, intermediate results, and other
+  disposable coordination state;
+- apply explicit retention and expiration without using TTL as execution truth;
+- require consequential decisions and effect identities to be durable before
+  they are acted upon; and
+- rebuild the working set from durable state after loss or classify the run for
+  review when safe reconstruction is impossible.
+
 ### Model gateway
 
 - provide a Vera-facing interface for structured reasoning and response
@@ -229,6 +249,7 @@ sequenceDiagram
     participant API
     participant Kernel as Vera kernel
     participant Store as Durable state
+    participant Working as Active working set
     participant Model as Model gateway
     participant Policy
     participant Capability
@@ -238,8 +259,10 @@ sequenceDiagram
     API->>Kernel: Validated principal and request
     Kernel->>Store: Create message, task, and run
     Kernel->>Store: Record run-started event
+    Kernel->>Working: Create rebuildable run scratchpad
     Kernel->>Model: Bounded context + proposal schema
     Model-->>Kernel: Structured proposal
+    Kernel->>Working: Cache tentative proposal
     Kernel->>Kernel: Validate proposal
     Kernel->>Policy: Authorize proposed next action
 
@@ -257,19 +280,24 @@ sequenceDiagram
     end
 
     opt allowed after policy or approval
+        Kernel->>Store: Persist accepted decision and invocation identity
+        Kernel->>Working: Project current durable state
         Kernel->>Capability: Versioned invocation
         Capability-->>Kernel: Progress events
         Kernel->>Store: Record progress
+        Kernel->>Working: Project temporary progress
         Capability-->>Kernel: Result / artifact / failure
         Kernel->>Store: Record outcome and final transition
     end
 
-    API-->>Client: Current state and event stream
+    API-->>Client: Current state and ordered events
     Client-->>Owner: Result and explanation
 ```
 
-The client connection may disappear at any point. Execution state remains in
-durable storage and can be retrieved after reconnection.
+The client connection or active working-set store may disappear at any point.
+Authoritative execution state remains in durable storage. The scratchpad can be
+reconstructed after reconnection or restart; accepted work never depends only
+on its survival.
 
 ## Concurrent work
 
@@ -307,7 +335,6 @@ POST   /v1/conversations/{conversation_id}/messages
 
 GET    /v1/tasks
 GET    /v1/tasks/{task_id}
-POST   /v1/tasks/{task_id}/steer
 
 GET    /v1/runs/{run_id}
 GET    /v1/runs/{run_id}/events
@@ -325,6 +352,12 @@ Clients should create new conversations or continue existing ones through
 ordinary UI actions. They retain opaque identifiers in the background; the
 owner should not have to speak or type IDs.
 
+For V1, accepting a task-producing message returns `202 Accepted` with the
+conversation, task, and run identifiers. Clients poll run, event, approval, and
+artifact resources. Live steering is deferred; changed intent creates a new
+task after best-effort cancellation where necessary. Exact paths and schemas
+remain outputs of the experiments.
+
 ## Initial deployment hypothesis
 
 ```mermaid
@@ -333,6 +366,7 @@ flowchart LR
         CLIENT["Postman / CLI"]
         VERA["Vera service"]
         DB["Durable database"]
+        WORKING["Active working-set store"]
         OLLAMA["Ollama"]
         LOCAL["Local capabilities"]
     end
@@ -344,6 +378,8 @@ flowchart LR
 
     CLIENT --> VERA
     VERA --> DB
+    VERA --> WORKING
+    DB -. "rebuild" .-> WORKING
     VERA --> OLLAMA
     VERA --> LOCAL
     VERA -->|"policy-controlled data"| MODELS
@@ -375,6 +411,7 @@ restarts, loses connectivity, or becomes unavailable.
 - one API client;
 - one model gateway with a deterministic fake and at least one real provider;
 - one real specialist capability;
+- one rebuildable active execution scratchpad per run;
 - durable tasks, runs, events, and approvals;
 - basic progress, cancellation, recovery, and artifact handling.
 
@@ -392,5 +429,6 @@ restarts, loses connectivity, or becomes unavailable.
 
 Related decisions are indexed in [Architecture Decisions](decisions/README.md).
 Open questions and required experiments remain in the
-[Discovery Record](discovery-record.md). Persistence, streaming, framework,
-deployment, and exact API choices are not accepted by this document.
+[Discovery Record](discovery-record.md). V1 uses HTTP polling; persistence,
+later streaming transport, framework, deployment, and exact API shapes are not
+accepted by this document.
