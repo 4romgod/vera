@@ -2,10 +2,9 @@
 
 **Status:** Proposed for broader memory and retention policy; the separation of
 durable state, rebuildable execution scratchpad, and disposable model context
-is Accepted through
-[ADR-0007](decisions/0007-separate-durable-state-from-model-context.md) and is
-required by V1
-**Version:** 0.2
+is Accepted through ADR-0007, and MongoDB/Redis operational storage is Accepted
+through ADR-0010
+**Version:** 0.3
 **Last updated:** 24 August 2026
 
 ## Purpose
@@ -104,9 +103,9 @@ It may contain:
 - references to artifacts or related work; and
 - counters or leases used while coordinating the active run.
 
-Redis is the leading V1 experiment candidate for this layer because it offers
-structured values, atomic operations, TTLs, and efficient isolated access. The
-scratchpad is nevertheless rebuildable. Anything required for recovery,
+Redis is the selected V1 store for this layer because it offers structured
+values, atomic operations, TTLs, and efficient isolated access. The scratchpad
+is nevertheless rebuildable. Anything required for recovery,
 authorization, audit, idempotency, or explaining an external effect must be
 persisted first in the authoritative operational store.
 
@@ -241,40 +240,45 @@ concurrent runtime transitions.
 
 ### MongoDB
 
-MongoDB is the leading V1 experiment candidate for authoritative operational
-state. It also fits future structured long-term memory, provided operational
-records and governed memory remain logically separate and follow different
-access, retention, and promotion rules.
+MongoDB is the selected V1 authoritative operational store. The implemented V1
+shape is one versioned task-execution aggregate per task, transitioned with
+optimistic compare-and-swap and protected by unique identity and idempotency
+indexes. It may also fit future structured long-term memory, provided
+operational records and governed memory remain logically separate and follow
+different access, retention, and promotion rules.
 
 Vera must not treat document flexibility as permission for schema drift.
 Application schemas, database validation, explicit document versions, unique
-idempotency indexes, and concurrency controls remain required. The persistence
-experiment must prove the required durability and transition semantics before
-MongoDB is accepted as the backend.
+idempotency indexes, and concurrency controls remain required. Product
+selection does not waive the forced-restart and migration evidence required
+before V1 is complete.
 
 ### Redis
 
-Redis is the leading V1 experiment candidate for the active execution
-scratchpad. Each run receives an isolated, versioned working set with an
-explicit expiration policy. Redis may later also support leases, rate limits,
-queues, caching, or pub/sub when demonstrated.
+Redis is the selected V1 active execution scratchpad. Each run receives an
+isolated, versioned working set with an explicit expiration policy. A stale
+write guard prevents an older aggregate projection from replacing a newer one.
+Redis may later also support leases, rate limits, queues, caching, or pub/sub
+when demonstrated.
 
 Redis is never the sole source of facts needed for recovery or safe effects. A
 scratchpad update that follows a durable transition is a rebuildable projection;
 failure to update it must be recoverable from MongoDB without duplicating work.
 
-### V1 storage experiment topology
+### V1 operational storage topology
 
 ```mermaid
 flowchart LR
-    CORE["Vera core"] -->|"authoritative transitions"| OPS["MongoDB candidate<br/>operational records"]
-    CORE <-->|"temporary working state"| WORK["Redis candidate<br/>execution scratchpad"]
+    CORE["Vera core"] -->|"authoritative transitions"| OPS["MongoDB<br/>operational records"]
+    CORE <-->|"temporary working state"| WORK["Redis<br/>execution scratchpad"]
     OPS -. "rehydrate after loss" .-> WORK
-    OPS -->|"explicit governed promotion"| MEMORY["MongoDB candidate<br/>future long-term memory"]
+    OPS -->|"explicit governed promotion"| MEMORY["Governed future memory store"]
 ```
 
-The arrows express authority, not a required deployment topology. The
-experiment may reject Redis and retain MongoDB alone.
+The arrows express authority. MongoDB and Redis are selected for the V1
+single-node deployment by
+[ADR-0010](decisions/0010-use-mongodb-for-operational-truth-and-redis-for-scratchpads.md).
+Long-term memory storage is not selected by that decision.
 
 ### Artifact storage
 
@@ -304,10 +308,9 @@ memory.
 - What operational data retention is required?
 - Will model contexts be retained for debugging, redacted, or discarded?
 - Which data may be sent to each provider?
-- Do the MongoDB and Redis candidates pass the recovery and failure-window
-  experiment, or should V1 use MongoDB alone?
-- What backup, migration, and deployment strategy should an accepted MongoDB
-  backend use?
+- What backup, migration, and deployment procedures will govern the selected
+  MongoDB backend?
+- What retention and inspection policy applies to Redis scratchpad projections?
 - When is memory promotion automatic, approval-based, or forbidden?
 - How will deletion propagate to derived indexes and artifacts?
 
