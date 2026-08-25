@@ -2,8 +2,8 @@
 
 **Status:** Accepted (capability declaration shape, invocation lifecycle,
 selection checks, and resource/delegation budget model)
-**Version:** 0.2
-**Last updated:** 24 August 2026
+**Version:** 0.3
+**Last updated:** 25 August 2026
 **Accepted:** 24 August 2026 (owner) — V1 capability selected during
 ratification; future registry design remains open
 
@@ -210,9 +210,17 @@ with a related but specialized contract:
 - data-handling constraints;
 - provider-specific failure modes.
 
-Ollama is a local model provider. A model hosted in Ollama may classify intent,
-draft a plan, summarize results, or converse. Ollama itself is not Vera's
-orchestrator and does not decide what infrastructure Vera may control.
+Ollama is the default local provider. OpenAI and Gemini are implemented cloud
+providers. All three sit behind the same Vera-owned structured-generation port;
+the deterministic provider supplies repeatable evidence. A model may classify
+intent, draft a plan, summarize results, or converse, but its provider is not
+Vera's orchestrator and does not decide what infrastructure Vera may control.
+
+Provider selection is explicit at process startup. Provider adapters normalize
+native schemas, readiness, usage, and failures while declaring whether data is
+owner-controlled or crosses a third party. Automatic fallback across those
+boundaries is forbidden. A new provider requires an adapter and conformance
+evidence rather than being assumed compatible because it accepts an API key.
 
 ## Example: development workflow
 

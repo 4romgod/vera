@@ -11,6 +11,7 @@ function providerWith(fetchImplementation: typeof globalThis.fetch) {
     model: 'test-model',
     timeoutMs: 1_000,
     readinessTimeoutMs: 250,
+    maxOutputTokens: 2_048,
     fetch: fetchImplementation,
   });
 }
@@ -77,13 +78,17 @@ void describe('Ollama model adapter', () => {
         stream: z.boolean(),
         think: z.boolean(),
         format: z.looseObject({}),
-        options: z.object({ temperature: z.number() }),
+        options: z.object({
+          temperature: z.number(),
+          num_predict: z.number(),
+        }),
       })
       .parse(requestBody);
     assert.equal(parsedRequest.model, 'test-model');
     assert.equal(parsedRequest.stream, false);
     assert.equal(parsedRequest.think, false);
     assert.equal(parsedRequest.options.temperature, 0);
+    assert.equal(parsedRequest.options.num_predict, 2_048);
     assert.ok(Object.keys(parsedRequest.format).length > 0);
     assert.equal(containsGrammarBound(parsedRequest.format), false);
   });

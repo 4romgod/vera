@@ -1,9 +1,10 @@
 # Vera Security and Trust Model
 
 **Status:** Accepted
-**Version:** 0.1
-**Last updated:** 24 August 2026
-**Accepted:** 24 August 2026 (owner)
+**Version:** 0.2
+**Last updated:** 25 August 2026
+**Accepted:** 24 August 2026 (owner); V1 perimeter clarified by ADR-0014 and
+cloud-provider policy clarified by ADR-0015 on 25 August 2026
 
 ## Purpose
 
@@ -31,7 +32,7 @@ flowchart LR
     end
 
     subgraph Vera["Vera-controlled boundary"]
-        API["Authenticated API"]
+        API["Loopback API<br/>owner_v1"]
         KERNEL["Kernel and policy"]
         STORE["Durable state"]
         BROKER["Credential broker"]
@@ -56,6 +57,11 @@ flowchart LR
 
 Running a service on the owner's Mac does not automatically make all inputs,
 models, packages, or invoked processes trusted.
+
+For V1 only, the trusted owner perimeter is the owner's Mac Mini account plus
+authenticated SSH access to Vera's code-enforced loopback listener. This is a
+deployment boundary, not a claim that loopback authenticates arbitrary HTTP
+callers. See [ADR-0014](decisions/0014-use-the-host-session-as-the-v1-owner-boundary.md).
 
 ## Threat categories
 
@@ -98,6 +104,12 @@ Raw credentials must not appear in:
 Models and clients should use opaque credential references. The credential
 broker resolves those references only for an authorized invocation and passes
 the minimum secret material to the execution environment.
+
+V1 model-provider API keys are a narrower interim case: they are server-only
+process configuration passed directly from a provider adapter into an HTTP
+authorization header. They are never model input or client-visible state. A
+credential broker remains required before Vera distributes capability
+credentials or supports multiple principals.
 
 ### Cross-task data leakage
 
@@ -180,9 +192,13 @@ The implemented flat V1 envelope allows one initial model decision, one
 capability invocation, one recovery retry, ten minutes of run duration, 40
 context files, 200,000 total context bytes, 40,000 bytes per context file, and
 a 100,000-byte plan artifact. Context, output, call, invocation, retry, and
-duration limits are enforced in code. A provider-usage ceiling remains required
-before V1 completion where the provider exposes a measurable unit; absence of
-measurable usage must be recorded explicitly.
+duration limits are enforced in code. Model adapters additionally send a
+configured maximum output-token request and record provider token usage when it
+is returned. Because V1 permits only one decision call and one capability
+invocation with bounded input, this provides a finite per-operation boundary.
+Cumulative token or monetary accounting is required before increasing those
+call counts or enabling provider fallback/routing; absence of measurable usage
+must remain explicit.
 
 ## Approval model
 
@@ -251,6 +267,15 @@ An initial classification scheme should distinguish at least:
 Provider and capability policies should declare which classes may cross their
 boundaries. Redaction does not replace authorization.
 
+Ollama and deterministic model providers are owner-controlled. Selecting an
+OpenAI or Gemini startup profile explicitly permits the owner message and
+minimal selected-project identity to cross that third-party model boundary.
+Repository contents, credentials, unrelated memory, and capability authority
+are excluded. Exact project context sent through a cloud-backed capability
+remains separately approval-gated. Vera never falls back automatically across
+provider boundaries. See
+[ADR-0015](decisions/0015-select-model-providers-through-explicit-profiles.md).
+
 ## Audit and observability
 
 Security-relevant records include:
@@ -270,17 +295,17 @@ they describe.
 
 ## V1 security floor
 
-This section remains the accepted security target. Authentication is
-intentionally not part of the current durable-worker and CLI increment because
-the local and remote identity design has not yet been selected. Consequently,
-the security floor is not yet complete: the implementation uses the explicit
-development principal `owner_v1`, binds to loopback, and must not be exposed to
-an untrusted network. Authentication is a pre-exposure requirement, not an
-assumption that loopback traffic is authenticated.
+This section remains the accepted security target. V1 establishes its
+authenticated owner boundary at the deployment perimeter: the trusted Mac Mini
+account and authenticated SSH session admit traffic to a listener whose
+configuration permits only loopback. The application uses the explicit
+principal `owner_v1` inside that perimeter. This is sufficient only for the
+single-owner V1 topology and does not authenticate HTTP callers independently.
+Application authentication remains a pre-exposure requirement.
 
 V1 must demonstrate:
 
-- an authenticated owner boundary, even if locally configured;
+- an authenticated owner deployment perimeter with code-enforced loopback;
 - one explicit approval-gated external disclosure and capability invocation;
 - scoped capability input and authority;
 - no raw secrets in model context, logs, events, or artifacts;
@@ -299,9 +324,11 @@ them.
 
 ## Open questions
 
-- How is the owner authenticated locally and remotely?
+- How will application-layer principals be issued, authenticated, and revoked
+  before Vera is exposed beyond the V1 host/SSH perimeter?
 - Where are credentials stored and how are short-lived credentials obtained?
-- Which data may be sent to local versus cloud models?
+- Which additional data classes, if any, may future cloud-model policies
+  authorize beyond owner messages and minimal selected-project identity?
 - What sandbox is required for local command and coding capabilities?
 - How are capability packages verified and updated?
 - Which approval decisions may be remembered, and for how long?

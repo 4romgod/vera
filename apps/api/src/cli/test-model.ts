@@ -1,15 +1,12 @@
 import { createEvaluateModelDecision } from '../application/evaluate-model-decision.ts';
 import { ModelDevelopmentPlanningCapability } from '../capabilities/model-development-planning-capability.ts';
 import { loadConfig } from '../config.ts';
-import { loadEnvironmentFile } from '../environment.ts';
-import { OllamaModelProvider } from '../model/ollama-model-provider.ts';
+import { loadEnvironmentFiles } from '../environment.ts';
+import { createModelProvider } from '../model/model-provider-registry.ts';
 
-loadEnvironmentFile();
-const config = loadConfig({
-  ...process.env,
-  VERA_MODEL_PROVIDER: 'ollama',
-});
-const provider = new OllamaModelProvider(config.ollama);
+loadEnvironmentFiles();
+const config = loadConfig();
+const provider = createModelProvider(config.model);
 const evaluate = createEvaluateModelDecision(provider);
 
 const cases = [
@@ -70,13 +67,13 @@ try {
     provider,
   ).execute({
     schemaVersion: 1,
-    invocationId: 'invocation_ollama_conformance',
+    invocationId: 'invocation_model_conformance',
     arguments: planningArguments,
-    project: { id: 'project_ollama_conformance', displayName: 'Vera' },
+    project: { id: 'project_model_conformance', displayName: 'Vera' },
     context: {
       manifest: {
         schemaVersion: 1,
-        projectId: 'project_ollama_conformance',
+        projectId: 'project_model_conformance',
         sourceKind: 'local_git',
         revision: 'conformance',
         generatedAt: new Date().toISOString(),

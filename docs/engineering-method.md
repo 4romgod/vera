@@ -1,9 +1,10 @@
 # Vera Engineering Method
 
 **Status:** Accepted
-**Version:** 0.1
-**Last updated:** 24 August 2026
-**Accepted:** 24 August 2026 (owner)
+**Version:** 0.2
+**Last updated:** 25 August 2026
+**Accepted:** 24 August 2026 (owner); provider evidence wording updated 25
+August 2026
 
 ## Purpose
 
@@ -154,9 +155,9 @@ or external-provider availability. It reuses the production output already
 built by CI rather than compiling a second time.
 
 Required CI must not download Ollama model weights or invoke a paid or
-third-party model or specialist. Real Ollama conformance, real specialist
-disclosure, and subjective output-quality evaluation are separate manual or
-explicitly triggered evidence classes. A future self-hosted model workflow must
+third-party model or specialist. Real Ollama, OpenAI, and Gemini conformance,
+real specialist disclosure, and subjective output-quality evaluation are
+separate manual or explicitly triggered evidence classes. A future self-hosted model workflow must
 not become a required pull-request check until its trust boundary, availability,
 and runtime budget are deliberately accepted.
 

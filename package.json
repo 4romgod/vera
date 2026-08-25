@@ -25,6 +25,7 @@
     "lint": "eslint .",
     "start": "npm run start --workspace @vera/api",
     "test": "npm run test --workspaces --if-present",
+    "test:model": "npm run test:model --workspace @vera/api",
     "test:ollama": "npm run test:ollama --workspace @vera/api",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "verify:persistent": "npm run build && npm run verify:persistent:compiled",

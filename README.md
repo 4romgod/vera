@@ -12,6 +12,12 @@ for HTTP and Zod for runtime and JSON Schema contracts. It implements a durable
 request-to-decision-to-approval-to-capability lifecycle, an asynchronous worker,
 a browser-neutral TypeScript client, and an owner CLI.
 
+The orchestration brain is selected at startup through a provider registry.
+Ollama remains the default owner-controlled provider; OpenAI and Gemini are
+implemented third-party providers, and the deterministic provider remains the
+repeatable test boundary. Provider-native payloads, credentials, and schema
+dialects stay behind adapters and do not enter Vera's domain contracts.
+
 `POST /v1/model-decisions` accepts a natural-language message. A model may
 propose a direct response or `development_planning@1`; Vera's code validates the
 closed, versioned proposal and routing arguments, then returns a direct response,
@@ -40,8 +46,11 @@ prevent concurrent execution. Redis remains a rebuildable scratchpad, not a
 queue. See
 [ADR-0013](docs/decisions/0013-dispatch-durable-work-with-mongodb-leases.md).
 The remaining V1 work is owner acceptance of an exact third-party specialist
-disclosure—initially through the default Codex adapter—and broader product
-evidence, not a Gatherle-specific module.
+disclosure—initially through the default Codex adapter—and real conformance for
+any cloud-brain profile the owner chooses to operate, not a module specific to
+one project. V1's authenticated perimeter is the trusted Mac Mini account and SSH
+session around a code-enforced loopback listener; application authentication is
+required before broader exposure.
 
 As of 24 August 2026, the Product Charter, the Domain Model's core
 vocabulary, the System Architecture's logical shape, the Capability Model's
@@ -95,8 +104,7 @@ Requirements:
 
 - Node.js 22 or newer;
 - npm 10 or newer;
-- Ollama listening on `http://127.0.0.1:11434` with the configured model. The
-  default is `gemma4-12b-64k:latest`; override it with `OLLAMA_MODEL`.
+- one configured model provider: Ollama locally, or an OpenAI or Gemini API key;
 - Codex CLI authenticated on the Vera host for the default `codex_cli` planning adapter.
   Override `CODEX_COMMAND` or select the explicit `model` adapter for local
   conformance work.
@@ -182,7 +190,8 @@ flowchart LR
 ```
 
 Forward API port `4310` through VS Code or SSH for normal MacBook testing. Vera
-still connects to Ollama, MongoDB, and Redis over Mac Mini loopback; database
+connects to MongoDB and Redis over Mac Mini loopback and, when the Ollama
+profile is selected, reaches Ollama there as well. Database or model-provider
 ports do not need forwarding for the application to work.
 
 In a VS Code Remote SSH window, install database extensions on the remote
@@ -198,16 +207,63 @@ ssh <mac-mini-ssh-host> redis-cli HGET \
 Forward MongoDB or Redis to alternate MacBook ports only when a local GUI or
 CLI must connect directly. Do not expose either service on the LAN.
 
-Create the local environment file at the repository root:
+Create the shared local environment file at the repository root:
 
 ```bash
 cp .env.example .env
 ```
 
-Vera loads `<repository-root>/.env` for both development and production
-startup. Existing shell environment variables take precedence. Only declared
-configuration is logged; Vera does not dump the complete environment because
-it may contain secrets.
+Vera loads `.env` for both development and production startup. It can also load
+one provider-specific profile before the shared file. Actual environment files
+are ignored by Git; committed `*.example` files contain no usable credentials.
+
+For Ollama:
+
+```bash
+cp .env.ollama.example .env.ollama
+VERA_PROFILE=ollama npm run dev
+```
+
+For OpenAI or Gemini, copy the corresponding template, replace its placeholder
+key, and select it at startup:
+
+```bash
+cp .env.openai.example .env.openai
+# Edit OPENAI_API_KEY in .env.openai
+VERA_PROFILE=openai npm run dev
+
+cp .env.gemini.example .env.gemini
+# Edit GEMINI_API_KEY in .env.gemini
+VERA_PROFILE=gemini npm run dev
+```
+
+Precedence is `launching shell > .env.<profile> > .env`. Profile names are
+case-insensitive at selection, normalized to lowercase, and restricted to safe
+filename characters. A selected profile that is absent or invalid fails
+startup. This makes temporary overrides straightforward:
+
+```bash
+OPENAI_MODEL=gpt-5-mini VERA_PROFILE=openai npm run dev
+```
+
+`VERA_MODEL_PROVIDER` accepts `ollama`, `openai`, `gemini`, or the
+non-production `deterministic` adapter. OpenAI defaults to `gpt-5-mini`; Gemini
+defaults to `gemini-2.5-flash`; both model names remain configurable because
+account access and provider aliases change. `MODEL_MAX_OUTPUT_TOKENS` is sent as
+the provider output ceiling. `GET /ready` verifies the configured credentials
+and model without running inference.
+
+Vera never falls back automatically between providers. An Ollama failure will
+not silently send the request to a cloud service, and a failed cloud request
+will not be retried through a different disclosure or cost boundary. Selecting
+an OpenAI or Gemini profile authorizes the owner message and minimal selected-
+project identity to cross that provider boundary for orchestration; it does not
+authorize repository files or capability execution.
+
+Only declared non-secret configuration is logged. API keys are sent only in
+provider transport headers and are not logged, persisted, placed in model
+content, or returned through the API. Cloud-provider base URLs must use HTTPS
+and cannot contain embedded credentials, query parameters, or fragments.
 
 `WORKER_CONCURRENCY` controls simultaneous run progression and
 `WORKER_POLL_INTERVAL_MS` controls idle discovery latency.
@@ -218,7 +274,15 @@ expires. MongoDB sockets, Redis commands, model calls, Git inspection, and
 specialist execution are all configured with finite deadlines so claimed work
 cannot wait forever.
 
-Run the real Ollama conformance cases:
+Run real conformance for whichever model profile is selected:
+
+```bash
+VERA_PROFILE=openai npm run test:model
+VERA_PROFILE=gemini npm run test:model
+VERA_PROFILE=ollama npm run test:model
+```
+
+The compatibility command for the default local provider remains:
 
 ```bash
 npm run test:ollama
@@ -230,8 +294,8 @@ During development, run the TypeScript source directly with automatic reloads:
 npm run dev
 ```
 
-The watcher follows the imported TypeScript source and the root `.env` file,
-while excluding `dist` and `node_modules`. Source imports use `.ts` extensions;
+The watcher follows the imported TypeScript source and root `.env*` files while
+excluding `dist` and `node_modules`. Source imports use `.ts` extensions;
 TypeScript rewrites them to `.js` only in compiled production output.
 
 To run the compiled production output instead:
@@ -320,6 +384,9 @@ VERA_MODEL_PROVIDER=deterministic VERA_PLANNING_ADAPTER=structured_model \
 Memory mode is not a persistence fallback and loses all work when the process
 stops. Persistent mode is the default.
 
-Authentication is deliberately deferred until its identity and transport model
-are designed. The service therefore binds to loopback, uses the development
-principal `owner_v1`, and must not be exposed to an untrusted network.
+V1 authenticates the owner at the deployment perimeter: Vera runs in the
+owner's Mac Mini session and remote access uses authenticated SSH to the
+loopback listener. The configuration rejects non-loopback `HOST` values and
+maps admitted requests to `owner_v1`. This is not application-layer caller
+authentication; that remains mandatory before any LAN, public, shared-host, or
+multi-user exposure.

@@ -35,6 +35,8 @@ erasing why a choice was made.
 | [0011](0011-use-generic-project-sources-and-bounded-context-snapshots.md) | Accepted | Represent projects generically and disclose only bounded, approved, hash-verified context snapshots to specialists. |
 | [0012](0012-late-bind-specialist-platforms-behind-capability-adapters.md) | Accepted | Keep capability semantics provider-neutral and late-bind explicit, auditable specialist adapters. |
 | [0013](0013-dispatch-durable-work-with-mongodb-leases.md) | Accepted | Derive asynchronous work from MongoDB state and coordinate workers with expiring per-run MongoDB leases. |
+| [0014](0014-use-the-host-session-as-the-v1-owner-boundary.md) | Accepted | Use the authenticated host/SSH session and a code-enforced loopback listener as V1's single-owner perimeter. |
+| [0015](0015-select-model-providers-through-explicit-profiles.md) | Accepted | Select Ollama, OpenAI, or Gemini through explicit startup profiles without silent cross-boundary fallback. |
 
 ADRs 0001–0008 were accepted 24 August 2026 following the owner's review of
 the foundation documentation. ADR-0007 accepted a semantic boundary without
@@ -49,6 +51,10 @@ ADR-0012 makes Codex the first registered planning adapter rather than a
 permanent capability or domain dependency.
 ADR-0013 makes `202 Accepted` genuinely asynchronous without turning Redis or
 an in-process promise into execution authority.
+ADR-0014 resolves V1's owner-boundary contradiction without claiming that
+loopback itself authenticates HTTP callers. ADR-0015 makes the model gateway
+operationally interchangeable while preserving provider-specific privacy,
+credentials, readiness, and failure behavior.
 
 ## ADR rules
 

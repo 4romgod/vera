@@ -3,8 +3,8 @@
 **Status:** Living discovery log — not subject to owner acceptance like a
 spec or decision record; see the
 [Documentation Guide](README.md#authority-model)
-**Version:** 0.2
-**Last updated:** 24 August 2026
+**Version:** 0.3
+**Last updated:** 25 August 2026
 
 ## Purpose
 
@@ -92,8 +92,9 @@ The following parts of the demonstrated workflow are not adopted:
 TypeScript, Node.js, npm workspaces, and the monorepo model are accepted through
 ADR-0006. Fastify, Zod, the first modular-monolith source layout, and the Ollama
 adapter boundary are accepted through ADR-0009. MongoDB operational truth and
-Redis scratchpads are accepted through ADR-0010. Other entries remain
-recommendations or explicit deferrals.
+Redis scratchpads are accepted through ADR-0010. The trusted V1 host perimeter
+is accepted through ADR-0014, and explicit Ollama/OpenAI/Gemini startup profiles
+through ADR-0015. Other entries remain recommendations or explicit deferrals.
 
 | Concern | Recommendation | Confidence | Reason |
 |---|---|---:|---|
@@ -107,6 +108,7 @@ recommendations or explicit deferrals.
 | Contract format | Language-neutral HTTP/events plus OpenAPI or JSON Schema | High | Prevents TypeScript internals from becoming cross-process contracts. |
 | API framework | Fastify 5 | High | Provides a schema-first HTTP boundary while leaving the domain framework-independent. |
 | Runtime schema | Zod 4 producing draft-07 JSON Schema at external boundaries | High | Keeps runtime validation and TypeScript types aligned; real Ollama structured-output evidence passed. |
+| Model providers | Explicit startup registry with Ollama, OpenAI, and Gemini adapters | High | Preserves one domain port while keeping credentials, schema dialects, usage, failures, and data boundaries provider-specific. |
 | Initial source layout | Modular monolith in `apps/api` | High | Preserves internal boundaries without speculative packages or services; shared packages wait for a second consumer. |
 | Durable operational store | MongoDB selected for V1 | High | A versioned aggregate and optimistic compare-and-swap preserve transition state and events atomically while matching owner expertise. |
 | Active execution scratchpad | Redis selected for V1 | High | Holds a versioned, TTL-bound projection with stale-write protection and no exclusive authority. |
@@ -235,6 +237,31 @@ The API calls Ollama through a narrow provider port and normalizes proposal,
 usage, latency, timeout, unavailable-provider, and invalid-response outcomes.
 Ollama response shapes do not enter Vera's domain contracts. Real conformance
 and built-HTTP tests passed on 24 August 2026.
+
+### Configurable model-provider boundary — implemented; keyed conformance remains
+
+The model gateway now constructs Ollama, OpenAI, Gemini, or deterministic
+adapters from an explicit startup registry. OpenAI uses the Responses API;
+Gemini uses `generateContent`. Both request provider-native structured JSON,
+normalize model, latency, usage, readiness, and failure metadata, and return an
+untrusted candidate to the same authoritative Vera schema validation used for
+Ollama. Unit conformance covers wire shape, schema conversion, credential
+headers, refusal or timeout classification, model-access readiness, usage, and
+the absence of upstream bodies from normalized errors.
+
+`VERA_PROFILE` selects `.env.<profile>` with shell variables taking precedence
+over the selected profile and the profile taking precedence over shared
+`.env`. Unsafe or absent selected profiles fail startup. Provider switching is
+process-wide and explicit; there is no automatic fallback across local and
+cloud data boundaries. OpenAI and Gemini API keys are server-only transport
+configuration. Real provider calls remain owner-run evidence because CI must
+not use secrets or incur model cost.
+
+Selecting a cloud brain authorizes the owner message and minimal selected-
+project identity to that provider. It does not disclose repository files. If
+the same cloud model is selected as the `structured_model` specialist, the
+existing exact context approval remains mandatory before project contents
+cross the boundary.
 
 ### Durable dispatch and client event consumption — implemented
 

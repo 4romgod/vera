@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, it } from 'node:test';
@@ -153,6 +153,44 @@ void describe('generic repository-aware planning journey', () => {
           entry.relativePath !== '.github/prompts/review.prompt.md' &&
           entry.bytes <= limits.maxFileBytes,
       ),
+    );
+  });
+
+  void it('omits a tracked file deleted from the working tree', async () => {
+    const rootPath = await createRepository({
+      name: 'deleted-file',
+      sourceMarker: 'removed-before-assembly',
+    });
+    await unlink(join(rootPath, 'src', 'request-tracing.ts'));
+
+    const bundle = await new LocalGitProjectContextAssembler().assemble({
+      project: {
+        schemaVersion: 1,
+        id: 'project_deleted_file',
+        principalId: 'owner_v1',
+        registrationKey: 'deleted-file',
+        displayName: 'Deleted file fixture',
+        normalizedName: 'deleted file fixture',
+        source: { kind: 'local_git', rootPath },
+        status: 'active',
+        createdAt: '2026-08-25T00:00:00.000Z',
+        updatedAt: '2026-08-25T00:00:00.000Z',
+      },
+      objective: 'Plan request tracing.',
+      ticket: { reference: 'DELETE-1', details: 'Trace requests.' },
+      limits: { maxFiles: 10, maxBytes: 50_000, maxFileBytes: 20_000 },
+    });
+
+    assert.equal(bundle.manifest.revision.endsWith('+working-tree'), true);
+    assert.equal(
+      bundle.manifest.entries.some(
+        (entry) => entry.relativePath === 'src/request-tracing.ts',
+      ),
+      false,
+    );
+    assert.doesNotMatch(
+      bundle.documents.map((document) => document.content).join('\n'),
+      /removed-before-assembly/u,
     );
   });
 

@@ -12,7 +12,7 @@ import { CodexDevelopmentPlanningCapability } from './codex-development-planning
 import { ModelDevelopmentPlanningCapability } from './model-development-planning-capability.ts';
 
 type AdapterFactoryContext = {
-  config: AppConfig;
+  config: Pick<AppConfig, 'planning' | 'storage'>;
   provider: ModelProvider;
 };
 

@@ -1,19 +1,42 @@
 import { loadConfig } from './config.ts';
-import { loadEnvironmentFile } from './environment.ts';
+import { loadEnvironmentFiles } from './environment.ts';
 import { createApp } from './wiring.ts';
 import { canonicalPlanningAdapterId } from './capabilities/development-planning-adapter-registry.ts';
 
-const environmentFile = loadEnvironmentFile();
+const environmentFiles = loadEnvironmentFiles();
 const config = loadConfig();
 const app = createApp(config);
+
+const remoteModelConfiguration =
+  config.model.provider === 'deterministic'
+    ? {}
+    : {
+        origin: new URL(config.model.baseUrl).origin,
+        timeoutMs: config.model.timeoutMs,
+        readinessTimeoutMs: config.model.readinessTimeoutMs,
+        maxOutputTokens: config.model.maxOutputTokens,
+      };
 
 app.log.info(
   {
     configuration: {
-      environmentFileLoaded: environmentFile.loaded,
+      environment: {
+        profile: environmentFiles.profile ?? 'default',
+        baseFileLoaded: environmentFiles.baseFile.loaded,
+        profileFileLoaded: environmentFiles.profileFile?.loaded ?? false,
+      },
       host: config.host,
       port: config.port,
-      modelProvider: config.modelProvider,
+      model: {
+        provider: config.model.provider,
+        model: config.model.model,
+        dataBoundary:
+          config.model.provider === 'ollama' ||
+          config.model.provider === 'deterministic'
+            ? 'owner_controlled'
+            : 'third_party',
+        ...remoteModelConfiguration,
+      },
       planning: {
         configuredAdapterId: config.planning.adapterId,
         resolvedAdapterId: canonicalPlanningAdapterId(
@@ -28,16 +51,6 @@ app.log.info(
           : {}),
       },
       worker: config.worker,
-      ...(config.modelProvider === 'ollama'
-        ? {
-            ollama: {
-              origin: new URL(config.ollama.baseUrl).origin,
-              model: config.ollama.model,
-              timeoutMs: config.ollama.timeoutMs,
-              readinessTimeoutMs: config.ollama.readinessTimeoutMs,
-            },
-          }
-        : {}),
       storage: {
         mode: config.storage.mode,
         ...(config.storage.mode === 'persistent'

@@ -267,7 +267,18 @@ export class LocalGitProjectContextAssembler
         skippedUnsafe += 1;
         continue;
       }
-      const fileInfo = await lstat(absolutePath);
+      let fileInfo;
+      try {
+        fileInfo = await lstat(absolutePath);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+          // `git ls-files --cached` includes tracked files deleted in the
+          // working tree. The bundle represents the current working tree, so
+          // an absent path is intentionally omitted.
+          continue;
+        }
+        throw error;
+      }
       if (!fileInfo.isFile() || fileInfo.isSymbolicLink()) {
         skippedUnsafe += 1;
         continue;
