@@ -56,7 +56,32 @@ export class DeterministicModelProvider implements ModelProvider {
       });
     }
 
-    const shouldDelegate = input.message.toLowerCase().includes('plan');
+    let ownerMessage = input.message;
+    let projectName = 'vera';
+    try {
+      const context = JSON.parse(input.message) as unknown;
+      if (
+        typeof context === 'object' &&
+        context !== null &&
+        'ownerMessage' in context &&
+        typeof context.ownerMessage === 'string'
+      ) {
+        ownerMessage = context.ownerMessage;
+        if (
+          'selectedProject' in context &&
+          typeof context.selectedProject === 'object' &&
+          context.selectedProject !== null &&
+          'displayName' in context.selectedProject &&
+          typeof context.selectedProject.displayName === 'string'
+        ) {
+          projectName = context.selectedProject.displayName;
+        }
+      }
+    } catch {
+      // A plain owner message is the normal input when no project is selected.
+    }
+
+    const shouldDelegate = ownerMessage.toLowerCase().includes('plan');
 
     const candidate = shouldDelegate
       ? {
@@ -65,16 +90,16 @@ export class DeterministicModelProvider implements ModelProvider {
           decisionSummary: 'The request asks for specialist software planning.',
           capability: { name: 'development_planning', version: 1 },
           arguments: {
-            objective: input.message,
-            ticket: { reference: 'untracked', details: input.message },
-            project: { name: 'vera' },
+            objective: ownerMessage,
+            ticket: { reference: 'untracked', details: ownerMessage },
+            project: { name: projectName },
           },
         }
       : {
           schemaVersion: 1,
           kind: 'respond',
           decisionSummary: 'The request can be answered directly.',
-          message: `Vera received: ${input.message}`,
+          message: `Vera received: ${ownerMessage}`,
         };
 
     return Promise.resolve({

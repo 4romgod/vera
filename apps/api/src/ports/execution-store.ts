@@ -23,6 +23,7 @@ export type ExecutionStore = {
     approvalId: string,
   ): Promise<TaskAggregate | null>;
   replace(aggregate: TaskAggregate, expectedVersion: number): Promise<boolean>;
+  findDispatchable(limit: number): Promise<TaskAggregate[]>;
   findRecoverable(): Promise<TaskAggregate[]>;
   checkReadiness(): Promise<void>;
   close(): Promise<void>;

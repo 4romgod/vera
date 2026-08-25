@@ -270,6 +270,14 @@ they describe.
 
 ## V1 security floor
 
+This section remains the accepted security target. Authentication is
+intentionally not part of the current durable-worker and CLI increment because
+the local and remote identity design has not yet been selected. Consequently,
+the security floor is not yet complete: the implementation uses the explicit
+development principal `owner_v1`, binds to loopback, and must not be exposed to
+an untrusted network. Authentication is a pre-exposure requirement, not an
+assumption that loopback traffic is authenticated.
+
 V1 must demonstrate:
 
 - an authenticated owner boundary, even if locally configured;

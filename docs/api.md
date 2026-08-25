@@ -1,8 +1,8 @@
 # Vera HTTP API
 
 **Status:** Accepted for implemented V1 paths
-**Version:** 0.2
-**Last updated:** 24 August 2026
+**Version:** 0.3
+**Last updated:** 25 August 2026
 
 ## Purpose
 
@@ -91,10 +91,16 @@ same key with the same complete task input returns the original task. Reusing
 it for different input returns `409 idempotency_key_reused`. Different
 principals may independently use the same key.
 
-Vera persists the task before asking a model. A provider failure therefore
+Vera persists the task before asking a model. A worker then discovers the
+`deciding` run from durable state. A provider failure therefore
 produces an inspectable terminal task instead of losing the accepted request.
 The response is `202 Accepted` because clients must treat task resources and
 polling—not the duration of this connection—as the execution contract.
+
+The initial response will normally have `runStatus: "deciding"`. Clients must
+poll `GET /v1/runs/{runId}` until the run becomes terminal or reaches
+`awaiting_approval`; they must not assume the submission response already
+contains an approval.
 
 Example waiting response, abbreviated:
 
@@ -254,9 +260,10 @@ execution it terminally cancels the run and rejects a pending approval. During
 execution it asks the adapter to abort. Cancellation is best effort: a
 capability that finishes before the abort is observed may still succeed.
 
-The current handler may complete model-backed planning before returning its
-`202` response, but clients must still poll the run resource: recovery and later
-long-running capabilities cannot depend on one HTTP connection.
+The cancellation and approval handlers also return after their durable
+transition. The worker performs subsequent execution asynchronously, so clients
+poll the run resource for the resulting terminal state. No long-running work
+depends on one HTTP connection.
 
 ## Events
 
@@ -309,13 +316,14 @@ Error envelopes use:
 | `409` | `idempotency_key_reused`, `approval_already_decided`, `concurrent_transition_failed` | The request conflicts with durable state. |
 | `422` | `invalid_project_source` | A project path is not a canonical local Git root. |
 | `502` | `provider_request_rejected`, `provider_response_invalid` | Provider boundary failed while using the diagnostic endpoint. |
-| `503` | `model_not_found`, `provider_unavailable`, `operational_store_unavailable`, `scratchpad_unavailable` | A required runtime dependency is unavailable. |
+| `503` | `model_not_found`, `provider_unavailable`, `operational_store_unavailable`, `scratchpad_unavailable`, `planning_capability_unavailable` | A required runtime dependency is unavailable. |
 | `504` | `provider_timeout` | The model provider exceeded its deadline. |
 | `500` | `internal_error` | An unexpected server failure; details remain in structured logs. |
 
 ## Current security boundary
 
-The API has no authentication yet. Loopback binding is mandatory for this
-increment. SSH forwarding may expose loopback ports to the owner's MacBook, but
-Vera must not bind to a LAN or public interface until identity, authentication,
-and transport policy are implemented.
+The API has no authentication yet; identity design is explicitly deferred, not
+implicitly solved. Loopback binding is mandatory for this increment. SSH
+forwarding may expose loopback ports to the owner's MacBook, but Vera must not
+bind to a LAN or public interface until identity, authentication, and transport
+policy are implemented.

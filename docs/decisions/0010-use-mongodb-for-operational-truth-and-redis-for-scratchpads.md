@@ -61,6 +61,11 @@ must not fall back silently to memory.
 
 ## Lifecycle contract selected with this decision
 
+The bullets below record the synchronous execution timing present when this ADR
+was accepted. [ADR-0013](0013-dispatch-durable-work-with-mongodb-leases.md)
+supersedes that timing with durable asynchronous dispatch; it does not change
+this ADR's MongoDB and Redis authority decision.
+
 - `POST /v1/tasks` requires an idempotency key, creates durable work, obtains a
   model decision, and returns `202 Accepted` with task and run resources.
 - `GET /v1/tasks/{id}` and `GET /v1/runs/{id}` return the current durable

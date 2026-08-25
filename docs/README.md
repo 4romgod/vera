@@ -27,6 +27,8 @@ ADR-0011 makes projects generic and constrains specialist disclosure to a
 bounded, approved, hash-verified context snapshot.
 ADR-0012 keeps specialist platforms late-bound behind provider-neutral
 capabilities while preserving their exact identity in approvals.
+ADR-0013 derives asynchronous work from durable MongoDB state and coordinates
+workers with expiring per-run leases; Redis remains a disposable scratchpad.
 
 Implementation began on the same date. ADR-0009 accepts the first production
 source layout and model decision boundary. ADR-0010 accepts the durable
@@ -34,6 +36,7 @@ task/run/approval lifecycle and operational storage topology.
 ADR-0011 accepts the generic project-source, context-manifest, snapshot, and
 idempotent plan-artifact boundaries. ADR-0012 records Codex as the default
 adapter rather than a permanent domain dependency.
+ADR-0013 accepts durable dispatch and the initial in-process worker topology.
 
 ## Recommended reading order
 
@@ -143,12 +146,14 @@ rather than surviving only as a transcript.
 
 ## Current implementation boundary
 
-The repository now has one deployable application under `apps/api`. It is a
-modular monolith; internal modules preserve domain, application, adapter, and
-HTTP boundaries without creating packages before a second consumer exists.
-`packages/*` is reserved for code genuinely shared by multiple apps or
-processes. See [ADR-0009](decisions/0009-implement-the-model-decision-boundary.md)
-and [ADR-0010](decisions/0010-use-mongodb-for-operational-truth-and-redis-for-scratchpads.md).
+The repository now has two applications: the deployable service under
+`apps/api` and an owner CLI under `apps/cli`. The API is a modular monolith;
+internal modules preserve domain, application, adapter, and HTTP boundaries.
+`packages/client` is the first genuine shared boundary: a browser-neutral
+TypeScript client used by the CLI and available to future user interfaces. See
+[ADR-0009](decisions/0009-implement-the-model-decision-boundary.md),
+[ADR-0010](decisions/0010-use-mongodb-for-operational-truth-and-redis-for-scratchpads.md),
+and [ADR-0013](decisions/0013-dispatch-durable-work-with-mongodb-leases.md).
 
 ## Documentation and implementation cadence
 
@@ -160,6 +165,8 @@ execution now have deterministic evidence. Real MongoDB/Redis forced-restart,
 projection-loss, and idempotency evidence also passes. The generic-project
 increment adds bounded hash-verified context, adapter-specific disclosure,
 specialist execution, versioned artifacts, ceilings, cancellation, and
-deterministic recovery evidence. The remaining acceptance step is an
+deterministic recovery evidence. Durable asynchronous pickup, cross-worker
+leases, polling-client behavior, and the owner CLI also have executable
+evidence. The remaining acceptance step is an
 owner-approved real-cloud-Codex invocation; see the
 [Discovery Record](discovery-record.md#implementation-evidence-and-next-increments).

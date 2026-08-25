@@ -14,7 +14,9 @@
   "packageManager": "npm@10.9.8",
   "scripts": {
     "build": "npm run build --workspaces --if-present",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm test",
+    "cli": "npm run dev --workspace @vera/cli --",
+    "check": "npm run format:check && npm run lint && npm run check:scripts && npm run typecheck && npm test",
+    "check:scripts": "node --check scripts/verify-persistent.mjs",
     "dev": "npm run dev --workspace @vera/api",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -24,7 +26,8 @@
     "start": "npm run start --workspace @vera/api",
     "test": "npm run test --workspaces --if-present",
     "test:ollama": "npm run test:ollama --workspace @vera/api",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "verify:persistent": "npm run build && node scripts/verify-persistent.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

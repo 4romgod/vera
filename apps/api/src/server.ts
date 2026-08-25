@@ -27,6 +27,7 @@ app.log.info(
             }
           : {}),
       },
+      worker: config.worker,
       ...(config.modelProvider === 'ollama'
         ? {
             ollama: {

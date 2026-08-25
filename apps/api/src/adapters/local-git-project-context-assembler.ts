@@ -11,6 +11,7 @@ import {
 import type { ProjectContextAssembler } from '../ports/project-context-assembler.ts';
 
 const executeFile = promisify(execFile);
+const gitCommandTimeoutMs = 30_000;
 
 const alwaysUsefulNames = new Set([
   'readme',
@@ -186,6 +187,7 @@ async function runGit(rootPath: string, args: string[]): Promise<string> {
   const result = await executeFile('git', ['-C', rootPath, ...args], {
     encoding: 'utf8',
     maxBuffer: 10 * 1024 * 1024,
+    timeout: gitCommandTimeoutMs,
   });
   return result.stdout;
 }

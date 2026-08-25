@@ -80,6 +80,7 @@ export class MongoDbExecutionStore implements ExecutionStore {
       new MongoClient(options.uri, {
         connectTimeoutMS: options.timeoutMs,
         serverSelectionTimeoutMS: options.timeoutMs,
+        socketTimeoutMS: options.timeoutMs,
       });
     this.database = this.client.db(options.database);
     this.collection = this.database.collection(COLLECTION_NAME);
@@ -182,6 +183,26 @@ export class MongoDbExecutionStore implements ExecutionStore {
     return documents.map((document) => this.parse(document));
   }
 
+  public async findDispatchable(limit: number): Promise<TaskAggregate[]> {
+    await this.ensureConnected();
+    const documents = await this.collection
+      .find({
+        $or: [
+          { 'run.status': 'deciding' },
+          { 'run.status': 'executing' },
+          { 'run.status': 'cancellation_requested' },
+          {
+            'run.status': 'awaiting_approval',
+            'run.approval.status': 'approved',
+          },
+        ],
+      })
+      .sort({ 'run.createdAt': 1 })
+      .limit(limit)
+      .toArray();
+    return documents.map((document) => this.parse(document));
+  }
+
   public async checkReadiness(): Promise<void> {
     await this.ensureConnected();
     await this.client.db().command({ ping: 1 });
@@ -258,6 +279,7 @@ export class MongoDbExecutionStore implements ExecutionStore {
         },
       ),
       this.collection.createIndex({ 'run.status': 1 }),
+      this.collection.createIndex({ 'run.status': 1, 'run.createdAt': 1 }),
     ]);
   }
 

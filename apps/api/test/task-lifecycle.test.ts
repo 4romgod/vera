@@ -142,6 +142,7 @@ function harness(options?: {
   budget?: RunBudget;
   clock?: () => string;
   contextAssembler?: ProjectContextAssembler;
+  executionMode?: 'inline' | 'worker';
 }) {
   const store = new InMemoryExecutionStore();
   const resources = new InMemoryResourceStore();
@@ -192,6 +193,9 @@ function harness(options?: {
     developmentPlanning: options?.registry ?? registryFor(capability),
     resources,
     contextAssembler,
+    ...(options?.executionMode === undefined
+      ? {}
+      : { executionMode: options.executionMode }),
     ...(options?.budget === undefined ? {} : { budget: options.budget }),
     clock: options?.clock ?? (() => '2026-08-24T18:00:00.000Z'),
     createId: (prefix) => `${prefix}_${String(++sequence)}`,
@@ -212,6 +216,46 @@ function harness(options?: {
 }
 
 void describe('task lifecycle', () => {
+  void it('persists commands immediately and progresses them only when a worker runs', async () => {
+    const test = harness({
+      decision: planningDecision(),
+      executionMode: 'worker',
+    });
+    const submitted = await test.lifecycle.submit({
+      message: 'plan request tracing',
+      requestKey: 'request-worker-progress',
+      principalId: 'owner_v1',
+    });
+
+    assert.equal(submitted.run.status, 'deciding');
+    assert.equal(test.evaluations(), 0);
+
+    const pending = await test.lifecycle.progressTask(
+      'owner_v1',
+      submitted.task.id,
+    );
+    assert.equal(pending.run.status, 'awaiting_approval');
+    assert.equal(test.evaluations(), 1);
+    const approval = pending.run.approval;
+    assert.ok(approval);
+
+    const approved = await test.lifecycle.decideApproval({
+      approvalId: approval.id,
+      decision: 'approved',
+      principalId: 'owner_v1',
+    });
+    assert.equal(approved.run.status, 'awaiting_approval');
+    assert.equal(approved.run.approval?.status, 'approved');
+    assert.equal(test.capability.calls.length, 0);
+
+    const completed = await test.lifecycle.progressTask(
+      'owner_v1',
+      submitted.task.id,
+    );
+    assert.equal(completed.run.status, 'succeeded');
+    assert.equal(test.capability.calls.length, 1);
+  });
+
   void it('durably completes direct responses and projects the run', async () => {
     const test = harness({ decision: responseDecision('Vera says hello.') });
     const aggregate = await test.lifecycle.submit({

@@ -1,0 +1,220 @@
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+
+import type { ArtifactResource, TaskResource, VeraApi } from '@vera/client';
+
+import { runCli } from '../src/main.ts';
+
+function task(
+  runStatus: TaskResource['runStatus'],
+  extra: Partial<TaskResource> = {},
+): TaskResource {
+  return {
+    schemaVersion: 1,
+    taskId: 'task_test',
+    runId: 'run_test',
+    taskStatus: runStatus === 'succeeded' ? 'completed' : 'active',
+    runStatus,
+    message: 'plan it',
+    createdAt: '2026-08-25T00:00:00.000Z',
+    updatedAt: '2026-08-25T00:00:00.000Z',
+    links: { task: '/task', run: '/run', events: '/events' },
+    ...extra,
+  };
+}
+
+function fakeApi(overrides: Partial<VeraApi>): VeraApi {
+  const unavailable = (): never => {
+    throw new Error('Unexpected client call.');
+  };
+  return {
+    registerProject: unavailable,
+    listProjects: unavailable,
+    getProject: unavailable,
+    createConversation: unavailable,
+    listConversations: unavailable,
+    getConversation: unavailable,
+    appendMessage: unavailable,
+    submitTask: unavailable,
+    getTask: unavailable,
+    getRun: unavailable,
+    getRunEvents: unavailable,
+    decideApproval: unavailable,
+    cancelRun: unavailable,
+    getArtifact: unavailable,
+    waitForRun: unavailable,
+    ...overrides,
+  };
+}
+
+void describe('Vera CLI', () => {
+  void it('shows exact disclosure before explicit plan approval', async () => {
+    const output: string[] = [];
+    const calls: string[] = [];
+    const pending = task('awaiting_approval', {
+      approval: {
+        id: 'approval_test',
+        status: 'pending',
+        reason: 'specialist_capability_invocation',
+        capability: { name: 'development_planning', version: 1 },
+        proposedArguments: { objective: 'plan it' },
+        destination: {
+          schemaVersion: 1,
+          adapterId: 'codex_cli',
+          provider: 'openai',
+          transport: 'local_process',
+          dataBoundary: 'third_party',
+        },
+        requestedAt: '2026-08-25T00:00:00.000Z',
+      },
+    });
+    const completed = task('succeeded', {
+      output: {
+        kind: 'development_plan',
+        artifact: {
+          id: 'artifact_test',
+          version: 1,
+          type: 'implementation_plan',
+          mediaType: 'application/json',
+          sha256: 'a'.repeat(64),
+          byteLength: 10,
+        },
+      },
+    });
+    const artifact = { id: 'artifact_test' } as ArtifactResource;
+    let waits = 0;
+    const client = fakeApi({
+      submitTask: () => {
+        calls.push('submit');
+        return Promise.resolve(task('deciding'));
+      },
+      waitForRun: () => {
+        calls.push('wait');
+        waits += 1;
+        return Promise.resolve(waits === 1 ? pending : completed);
+      },
+      decideApproval: (_approvalId, decision) => {
+        calls.push(`decide:${decision}`);
+        assert.match(output.join(''), /codex_cli/u);
+        return Promise.resolve(task('awaiting_approval'));
+      },
+      getArtifact: () => {
+        calls.push('artifact');
+        return Promise.resolve(artifact);
+      },
+    });
+
+    const exitCode = await runCli(
+      [
+        'plan',
+        '--project',
+        'project_test',
+        '--message',
+        'plan it',
+        '--approve',
+      ],
+      {
+        client,
+        stdout: {
+          write: (value) => {
+            output.push(String(value));
+            return true;
+          },
+        },
+        stderr: { write: () => true },
+        createIdempotencyKey: () => 'cli-test-key',
+      },
+    );
+
+    assert.equal(exitCode, 0);
+    assert.deepEqual(calls, [
+      'submit',
+      'wait',
+      'decide:approved',
+      'wait',
+      'artifact',
+    ]);
+  });
+
+  void it('rejects an interactive plan when confirmation is denied', async () => {
+    const pending = task('awaiting_approval', {
+      approval: {
+        id: 'approval_test',
+        status: 'pending',
+        reason: 'specialist_capability_invocation',
+        capability: { name: 'development_planning', version: 1 },
+        proposedArguments: {},
+        requestedAt: '2026-08-25T00:00:00.000Z',
+      },
+    });
+    let decision: string | undefined;
+    const client = fakeApi({
+      submitTask: () => Promise.resolve(task('deciding')),
+      waitForRun: () => Promise.resolve(pending),
+      decideApproval: (_approvalId, selected) => {
+        decision = selected;
+        return Promise.resolve(task('rejected'));
+      },
+    });
+
+    const exitCode = await runCli(
+      ['plan', '--project', 'project_test', '--message', 'plan it'],
+      {
+        client,
+        stdout: { write: () => true },
+        stderr: { write: () => true },
+        confirm: () => Promise.resolve(false),
+      },
+    );
+
+    assert.equal(exitCode, 2);
+    assert.equal(decision, 'rejected');
+  });
+
+  void it('appends a conversation message through the shared client', async () => {
+    let received: Parameters<VeraApi['appendMessage']>[0] | undefined;
+    const client = fakeApi({
+      appendMessage: (input) => {
+        received = input;
+        return Promise.resolve(task('deciding'));
+      },
+    });
+
+    const exitCode = await runCli(
+      [
+        'conversation',
+        'message',
+        'conversation_test',
+        '--content',
+        'Plan it.',
+        '--project',
+        'project_test',
+      ],
+      {
+        client,
+        stdout: { write: () => true },
+        stderr: { write: () => true },
+        createIdempotencyKey: () => 'message-test-key',
+      },
+    );
+
+    assert.equal(exitCode, 0);
+    assert.deepEqual(received, {
+      conversationId: 'conversation_test',
+      content: 'Plan it.',
+      projectId: 'project_test',
+      idempotencyKey: 'message-test-key',
+    });
+  });
+
+  void it('rejects invalid wait timeouts before calling the API', async () => {
+    await assert.rejects(
+      runCli(['run', 'wait', 'run_test', '--timeout-ms', 'not-a-number'], {
+        client: fakeApi({}),
+        stdout: { write: () => true },
+        stderr: { write: () => true },
+      }),
+      /--timeout-ms must be a positive integer/u,
+    );
+  });
+});

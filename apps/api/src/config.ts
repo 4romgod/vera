@@ -20,6 +20,9 @@ const EnvironmentSchema = z.object({
     .default('codex_cli'),
   CODEX_COMMAND: z.string().min(1).default('codex'),
   CODEX_MODEL: z.string().min(1).optional(),
+  WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(2),
+  WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(25).default(250),
+  WORKER_LEASE_MS: z.coerce.number().int().min(1_000).default(900_000),
 });
 
 export type AppConfig = {
@@ -48,6 +51,11 @@ export type AppConfig = {
         model?: string;
       };
     };
+  };
+  worker: {
+    concurrency: number;
+    pollIntervalMs: number;
+    leaseMs: number;
   };
 };
 
@@ -84,6 +92,11 @@ export function loadConfig(
             : { model: parsed.CODEX_MODEL }),
         },
       },
+    },
+    worker: {
+      concurrency: parsed.WORKER_CONCURRENCY,
+      pollIntervalMs: parsed.WORKER_POLL_INTERVAL_MS,
+      leaseMs: parsed.WORKER_LEASE_MS,
     },
   };
 }
