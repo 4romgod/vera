@@ -10,6 +10,7 @@ export function buildModelSystemPrompt(): string {
     'Never invent capabilities. Never claim that an action has been executed.',
     'decisionSummary must be a short rationale, not private chain-of-thought.',
     'For development_planning, extract a project name and ticket reference from the request. If no ticket reference is supplied, use "untracked".',
+    'When selectedProject is supplied, it is authoritative. Use its displayName as the proposed project name and do not invent a different project.',
     'For development_planning, arguments.objective is a plain string, not a nested object.',
     'For development_planning, objective and ticket.details must faithfully restate only the requested outcome. Do not add motives, architecture assumptions, technologies, protocol choices, implementation techniques, or acceptance criteria that the user did not state.',
     `Available capabilities:\n${JSON.stringify(ModelVisibleCapabilities)}`,

@@ -90,7 +90,10 @@ export class MongoDbExecutionStore implements ExecutionStore {
   ): Promise<CreateAggregateResult> {
     await this.ensureConnected();
     const result = await this.collection.updateOne(
-      { 'task.requestKey': aggregate.task.requestKey },
+      {
+        'task.principalId': aggregate.task.principalId,
+        'task.requestKey': aggregate.task.requestKey,
+      },
       { $setOnInsert: aggregate },
       { upsert: true },
     );
@@ -98,7 +101,10 @@ export class MongoDbExecutionStore implements ExecutionStore {
       return { created: true, aggregate };
     }
 
-    const existing = await this.findByRequestKey(aggregate.task.requestKey);
+    const existing = await this.findByRequestKey(
+      aggregate.task.principalId,
+      aggregate.task.requestKey,
+    );
     if (existing === null) {
       throw new Error('MongoDB idempotent create did not return an aggregate.');
     }
@@ -106,23 +112,43 @@ export class MongoDbExecutionStore implements ExecutionStore {
   }
 
   public async findByRequestKey(
+    principalId: string,
     requestKey: string,
   ): Promise<TaskAggregate | null> {
-    return this.findOne({ 'task.requestKey': requestKey });
+    return this.findOne({
+      'task.principalId': principalId,
+      'task.requestKey': requestKey,
+    });
   }
 
-  public async findByTaskId(taskId: string): Promise<TaskAggregate | null> {
-    return this.findOne({ 'task.id': taskId });
+  public async findByTaskId(
+    principalId: string,
+    taskId: string,
+  ): Promise<TaskAggregate | null> {
+    return this.findOne({
+      'task.principalId': principalId,
+      'task.id': taskId,
+    });
   }
 
-  public async findByRunId(runId: string): Promise<TaskAggregate | null> {
-    return this.findOne({ 'run.id': runId });
+  public async findByRunId(
+    principalId: string,
+    runId: string,
+  ): Promise<TaskAggregate | null> {
+    return this.findOne({
+      'task.principalId': principalId,
+      'run.id': runId,
+    });
   }
 
   public async findByApprovalId(
+    principalId: string,
     approvalId: string,
   ): Promise<TaskAggregate | null> {
-    return this.findOne({ 'run.approval.id': approvalId });
+    return this.findOne({
+      'task.principalId': principalId,
+      'run.approval.id': approvalId,
+    });
   }
 
   public async replace(
@@ -131,7 +157,11 @@ export class MongoDbExecutionStore implements ExecutionStore {
   ): Promise<boolean> {
     await this.ensureConnected();
     const result = await this.collection.replaceOne(
-      { 'task.id': aggregate.task.id, version: expectedVersion },
+      {
+        'task.principalId': aggregate.task.principalId,
+        'task.id': aggregate.task.id,
+        version: expectedVersion,
+      },
       aggregate,
     );
     return result.modifiedCount === 1;
@@ -145,6 +175,7 @@ export class MongoDbExecutionStore implements ExecutionStore {
           { 'run.status': 'deciding' },
           { 'run.status': 'executing' },
           { 'run.status': 'awaiting_approval' },
+          { 'run.status': 'cancellation_requested' },
         ],
       })
       .toArray();
@@ -188,6 +219,7 @@ export class MongoDbExecutionStore implements ExecutionStore {
       .listCollections({ name: COLLECTION_NAME }, { nameOnly: true })
       .hasNext();
     if (collectionExists) {
+      await this.migrateLegacyApprovalContract();
       await this.database.command({
         collMod: COLLECTION_NAME,
         validator: { $jsonSchema: MongoTaskAggregateJsonSchema },
@@ -201,9 +233,22 @@ export class MongoDbExecutionStore implements ExecutionStore {
         validationAction: 'error',
       });
     }
+    const indexes = await this.collection.indexes();
+    const legacyRequestIndex = indexes.find(
+      (index) =>
+        index.unique === true &&
+        Object.keys(index.key).length === 1 &&
+        index.key['task.requestKey'] === 1,
+    );
+    if (legacyRequestIndex?.name !== undefined) {
+      await this.collection.dropIndex(legacyRequestIndex.name);
+    }
     await Promise.all([
       this.collection.createIndex({ 'task.id': 1 }, { unique: true }),
-      this.collection.createIndex({ 'task.requestKey': 1 }, { unique: true }),
+      this.collection.createIndex(
+        { 'task.principalId': 1, 'task.requestKey': 1 },
+        { unique: true },
+      ),
       this.collection.createIndex({ 'run.id': 1 }, { unique: true }),
       this.collection.createIndex(
         { 'run.approval.id': 1 },
@@ -214,5 +259,70 @@ export class MongoDbExecutionStore implements ExecutionStore {
       ),
       this.collection.createIndex({ 'run.status': 1 }),
     ]);
+  }
+
+  private async migrateLegacyApprovalContract(): Promise<void> {
+    await this.collection.updateMany(
+      { 'run.approval.reason': 'external_capability_invocation' },
+      {
+        $set: { 'run.approval.reason': 'specialist_capability_invocation' },
+        $inc: { version: 1 },
+      },
+      { bypassDocumentValidation: true },
+    );
+    await this.collection.updateMany(
+      { 'run.approval.destination.kind': 'codex' },
+      [
+        {
+          $set: {
+            'run.approval.destination': {
+              schemaVersion: 1,
+              adapterId: 'codex_cli',
+              provider: 'openai',
+              transport: 'local_process',
+              dataBoundary: 'third_party',
+            },
+          },
+        },
+        {
+          $unset: [
+            'run.approval.destination.kind',
+            'run.approval.destination.trust',
+          ],
+        },
+        { $set: { version: { $add: ['$version', 1] } } },
+      ],
+      { bypassDocumentValidation: true },
+    );
+    await this.collection.updateMany(
+      { 'run.approval.destination.kind': 'model' },
+      [
+        {
+          $set: {
+            'run.approval.destination': {
+              schemaVersion: 1,
+              adapterId: 'structured_model',
+              provider: 'legacy_model',
+              transport: 'in_process',
+              dataBoundary: {
+                $cond: [
+                  { $eq: ['$run.approval.destination.trust', 'local'] },
+                  'owner_controlled',
+                  'third_party',
+                ],
+              },
+            },
+          },
+        },
+        {
+          $unset: [
+            'run.approval.destination.kind',
+            'run.approval.destination.trust',
+          ],
+        },
+        { $set: { version: { $add: ['$version', 1] } } },
+      ],
+      { bypassDocumentValidation: true },
+    );
   }
 }

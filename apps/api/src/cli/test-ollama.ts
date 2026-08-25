@@ -68,7 +68,28 @@ const planningArguments = {
 try {
   const planning = await new ModelDevelopmentPlanningCapability(
     provider,
-  ).execute(planningArguments, 'invocation_ollama_conformance');
+  ).execute({
+    schemaVersion: 1,
+    invocationId: 'invocation_ollama_conformance',
+    arguments: planningArguments,
+    project: { id: 'project_ollama_conformance', displayName: 'Vera' },
+    context: {
+      manifest: {
+        schemaVersion: 1,
+        projectId: 'project_ollama_conformance',
+        sourceKind: 'local_git',
+        revision: 'conformance',
+        generatedAt: new Date().toISOString(),
+        entries: [],
+        totalFiles: 0,
+        totalBytes: 0,
+        limits: { maxFiles: 1, maxBytes: 1, maxFileBytes: 1 },
+        exclusions: ['Conformance test supplies no repository evidence.'],
+      },
+      documents: [],
+    },
+    limits: { maxDurationMs: 120_000, maxArtifactBytes: 100_000 },
+  });
   const identityPreserved =
     planning.plan.objective === planningArguments.objective &&
     planning.plan.ticket.reference === planningArguments.ticket.reference &&

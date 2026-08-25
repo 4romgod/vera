@@ -110,6 +110,35 @@ void describe('HTTP API', () => {
     });
   });
 
+  void it('reports an unavailable planning specialist as not ready', async () => {
+    const provider = new FakeModelProvider({});
+    const app = buildApp({
+      evaluateModelDecision: createEvaluateModelDecision(provider),
+      provider,
+      readinessChecks: [
+        {
+          name: 'development_planning_capability',
+          check: () => Promise.reject(new Error('Codex is not authenticated')),
+        },
+      ],
+    });
+    apps.push(app);
+    const response = await app.inject({ method: 'GET', url: '/ready' });
+
+    assert.equal(response.statusCode, 503);
+    assert.deepEqual(response.json(), {
+      status: 'not_ready',
+      service: 'vera-api',
+      model: { name: 'fake', model: 'fake-v1' },
+      error: {
+        code: 'planning_capability_unavailable',
+        message:
+          'The development_planning_capability dependency is unavailable.',
+        dependency: 'development_planning_capability',
+      },
+    });
+  });
+
   void it('evaluates a request end to end through the HTTP boundary', async () => {
     const app = appFor({
       schemaVersion: 1,

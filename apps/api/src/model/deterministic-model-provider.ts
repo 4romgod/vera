@@ -8,6 +8,7 @@ import type {
 export class DeterministicModelProvider implements ModelProvider {
   public readonly name = 'deterministic';
   public readonly model = 'deterministic-v1';
+  public readonly dataBoundary = 'owner_controlled';
 
   public checkReadiness(): Promise<ModelProviderReadiness> {
     return Promise.resolve({
@@ -26,7 +27,8 @@ export class DeterministicModelProvider implements ModelProvider {
         candidate: {
           schemaVersion: 1,
           title: 'Deterministic implementation plan',
-          summary: `Plan for ${input.message}`,
+          summary:
+            'A deterministic plan produced from the approved project context.',
           scope: ['Implement and verify the requested change.'],
           nonGoals: [],
           assumptions: [

@@ -176,8 +176,13 @@ Budget rules:
   model failure;
 - capability-local limits may be stricter but cannot weaken Vera's envelope.
 
-The exact V1 numbers remain open, but infinite or implicit defaults are not
-permitted.
+The implemented flat V1 envelope allows one initial model decision, one
+capability invocation, one recovery retry, ten minutes of run duration, 40
+context files, 200,000 total context bytes, 40,000 bytes per context file, and
+a 100,000-byte plan artifact. Context, output, call, invocation, retry, and
+duration limits are enforced in code. A provider-usage ceiling remains required
+before V1 completion where the provider exposes a measurable unit; absence of
+measurable usage must be recorded explicitly.
 
 ## Approval model
 

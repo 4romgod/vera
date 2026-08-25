@@ -30,6 +30,28 @@ void describe('model decision boundary', () => {
     assert.equal(provider.inputs[0]?.message, 'plan request IDs');
   });
 
+  void it('supplies the selected project as authoritative orchestration context', async () => {
+    const provider = new FakeModelProvider({
+      schemaVersion: 1,
+      kind: 'respond',
+      decisionSummary: 'No specialist is needed.',
+      message: 'Hello.',
+    });
+
+    await createEvaluateModelDecision(provider)('plan this', {
+      selectedProject: { id: 'project_vera', displayName: 'Vera' },
+    });
+
+    assert.deepEqual(JSON.parse(provider.inputs[0]?.message ?? '{}'), {
+      ownerMessage: 'plan this',
+      selectedProject: { id: 'project_vera', displayName: 'Vera' },
+    });
+    assert.match(
+      provider.inputs[0]?.systemPrompt ?? '',
+      /selectedProject is supplied, it is authoritative/u,
+    );
+  });
+
   void it('turns a direct-response proposal into a response decision', async () => {
     const result = await evaluator({
       schemaVersion: 1,
@@ -42,7 +64,7 @@ void describe('model decision boundary', () => {
     assert.deepEqual(result.decision, { kind: 'respond', message: 'Hello.' });
   });
 
-  void it('requires approval for a valid external capability invocation', async () => {
+  void it('requires approval for a valid specialist capability invocation', async () => {
     const result = await evaluator({
       schemaVersion: 1,
       kind: 'invoke_capability',

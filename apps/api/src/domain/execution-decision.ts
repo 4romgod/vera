@@ -13,7 +13,7 @@ const ResponseDecisionSchema = z
 const ApprovalRequiredDecisionSchema = z
   .object({
     kind: z.literal('approval_required'),
-    reason: z.literal('external_capability_invocation'),
+    reason: z.literal('specialist_capability_invocation'),
     capability: z
       .object({
         name: z.literal('development_planning'),

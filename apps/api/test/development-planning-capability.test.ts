@@ -13,6 +13,29 @@ const arguments_ = {
   objective: 'Add request IDs without changing log message content.',
 };
 
+const invocation = {
+  schemaVersion: 1 as const,
+  invocationId: 'invocation_test',
+  arguments: arguments_,
+  project: { id: 'project_test', displayName: 'Vera' },
+  context: {
+    manifest: {
+      schemaVersion: 1 as const,
+      projectId: 'project_test',
+      sourceKind: 'local_git' as const,
+      revision: 'abc123',
+      generatedAt: '2026-08-24T18:00:00.000Z',
+      entries: [],
+      totalFiles: 0,
+      totalBytes: 0,
+      limits: { maxFiles: 40, maxBytes: 200_000, maxFileBytes: 40_000 },
+      exclusions: ['Test context is intentionally empty.'],
+    },
+    documents: [],
+  },
+  limits: { maxDurationMs: 60_000, maxArtifactBytes: 100_000 },
+};
+
 const content = {
   schemaVersion: 1,
   title: 'Add request IDs',
@@ -41,16 +64,20 @@ void describe('development planning capability', () => {
     const provider = new FakeModelProvider(content);
     const capability = new ModelDevelopmentPlanningCapability(provider);
 
-    const result = await capability.execute(arguments_, 'invocation_test');
+    const result = await capability.execute(invocation);
 
-    assert.deepEqual(result.plan.project, arguments_.project);
+    assert.deepEqual(result.plan.project, {
+      name: 'Vera',
+      id: 'project_test',
+      revision: 'abc123',
+    });
     assert.deepEqual(result.plan.ticket, arguments_.ticket);
     assert.equal(result.plan.objective, arguments_.objective);
     assert.equal(result.plan.title, content.title);
     assert.equal(provider.inputs.length, 1);
     assert.match(
       provider.inputs[0]?.systemPrompt ?? '',
-      /hard evidence boundary/u,
+      /complete evidence boundary/u,
     );
     assert.match(
       provider.inputs[0]?.systemPrompt ?? '',
@@ -58,9 +85,10 @@ void describe('development planning capability', () => {
     );
     assert.deepEqual(JSON.parse(provider.inputs[0]?.message ?? '{}'), {
       invocationId: 'invocation_test',
-      project: arguments_.project,
+      project: invocation.project,
       ticket: arguments_.ticket,
       objective: arguments_.objective,
+      context: invocation.context,
     });
   });
 
@@ -75,7 +103,7 @@ void describe('development planning capability', () => {
     );
 
     await assert.rejects(
-      capability.execute(arguments_, 'invocation_test'),
+      capability.execute(invocation),
       /failed schema validation/u,
     );
   });
@@ -94,8 +122,45 @@ void describe('development planning capability', () => {
     );
 
     await assert.rejects(
-      capability.execute(arguments_, 'invocation_test'),
-      /without repository evidence/u,
+      capability.execute(invocation),
+      /unapproved project area/u,
+    );
+  });
+
+  void it('does not treat a fictitious child of an approved file as approved', async () => {
+    const capability = new ModelDevelopmentPlanningCapability(
+      new FakeModelProvider({
+        ...content,
+        affectedProjectAreas: [
+          {
+            area: 'README.md/fictitious-child',
+            rationale: 'This path does not exist in the approved evidence.',
+          },
+        ],
+      }),
+    );
+
+    await assert.rejects(
+      capability.execute({
+        ...invocation,
+        context: {
+          ...invocation.context,
+          manifest: {
+            ...invocation.context.manifest,
+            entries: [
+              {
+                relativePath: 'README.md',
+                sha256: '0'.repeat(64),
+                bytes: 0,
+                selectionReason: 'Synthetic test evidence.',
+                classification: 'documentation',
+              },
+            ],
+            totalFiles: 1,
+          },
+        },
+      }),
+      /unapproved project area/u,
     );
   });
 });

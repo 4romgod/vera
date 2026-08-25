@@ -17,20 +17,25 @@ closed, versioned proposal and routing arguments, then returns a direct response
 an approval requirement, or a rejection. It never treats model output as
 authorization.
 
-`POST /v1/tasks` is the owner-facing orchestration entry point. Vera persists a
-versioned task aggregate in MongoDB before model work, projects temporary run
-state into Redis, records ordered events, waits on an exact approval, persists
-an invocation identity, and then executes `development_planning@1`. The
-capability currently uses the configured structured-output model to produce a
-validated plan. Task submission and approval decisions are idempotent, and
-interrupted safe work is inspected during lifecycle recovery.
+The owner-facing journey registers a generic project, creates a conversation,
+and posts a project-linked message. Vera persists a versioned task aggregate in
+MongoDB before model work, selects bounded Git-tracked context, shows its exact
+manifest and the configured specialist destination for approval, then executes
+the provider-neutral `development_planning@1` contract through a registered
+adapter. The default `codex_cli` adapter uses an ephemeral read-only snapshot.
+The resulting plan
+is stored as one versioned artifact keyed by invocation identity. Task,
+conversation, project, and artifact idempotency are principal-scoped.
 
 MongoDB is selected as V1's authoritative operational store and Redis as the
 rebuildable, expiring scratchpad through
 [ADR-0010](docs/decisions/0010-use-mongodb-for-operational-truth-and-redis-for-scratchpads.md).
-The remaining V1 work includes bounded project-context assembly, the final
-specialist adapter and plan artifact, resource ceilings, cancellation, and
-conversation resources.
+The implemented increment has deterministic recovery coverage and compiled
+MongoDB/Redis evidence across project registration, conversation submission,
+approval, artifact persistence, process restart, and Redis projection loss.
+The remaining V1 work is owner acceptance of an exact third-party specialist
+disclosure—initially through the default Codex adapter—and broader product
+evidence, not a Gatherle-specific module.
 
 As of 24 August 2026, the Product Charter, the Domain Model's core
 vocabulary, the System Architecture's logical shape, the Capability Model's
@@ -86,6 +91,9 @@ Requirements:
 - npm 10 or newer;
 - Ollama listening on `http://127.0.0.1:11434` with the configured model. The
   default is `gemma4-12b-64k:latest`; override it with `OLLAMA_MODEL`.
+- Codex CLI authenticated on the Vera host for the default `codex_cli` planning adapter.
+  Override `CODEX_COMMAND` or select the explicit `model` adapter for local
+  conformance work.
 - MongoDB on `127.0.0.1:27017` and Redis on `127.0.0.1:6379` for persistent
   operation. Docker Compose configuration is included.
 
@@ -198,10 +206,30 @@ In another terminal, test the full HTTP path:
 curl http://127.0.0.1:4310/health
 curl http://127.0.0.1:4310/ready
 
-TASK=$(curl --silent --request POST http://127.0.0.1:4310/v1/tasks \
+PROJECT=$(jq --null-input --arg root "$(pwd)" \
+  '{displayName:"Vera",source:{kind:"local_git",rootPath:$root}}' | \
+  curl --silent --request POST http://127.0.0.1:4310/v1/projects \
   --header 'content-type: application/json' \
-  --header "idempotency-key: manual-$(date +%s)" \
-  --data '{"message":"For project Vera, create an implementation plan for ticket VERA-101: add health monitoring to the API."}')
+  --header 'idempotency-key: register-vera-local' \
+  --data @-)
+
+PROJECT_ID=$(echo "$PROJECT" | jq --raw-output '.id')
+
+CONVERSATION=$(curl --silent --request POST \
+  http://127.0.0.1:4310/v1/conversations \
+  --header 'content-type: application/json' \
+  --header "idempotency-key: conversation-$(date +%s)" \
+  --data '{"title":"Vera planning test"}')
+
+CONVERSATION_ID=$(echo "$CONVERSATION" | jq --raw-output '.id')
+
+TASK=$(jq --null-input --arg projectId "$PROJECT_ID" \
+  '{content:"Prepare an implementation plan for VERA-101: add health monitoring to the API.",projectId:$projectId}' | \
+  curl --silent --request POST \
+  "http://127.0.0.1:4310/v1/conversations/$CONVERSATION_ID/messages" \
+  --header 'content-type: application/json' \
+  --header "idempotency-key: message-$(date +%s)" \
+  --data @-)
 
 echo "$TASK" | jq
 
@@ -210,22 +238,32 @@ APPROVAL_ID=$(echo "$TASK" | jq --raw-output '.approval.id')
 
 curl --silent "http://127.0.0.1:4310/v1/runs/$RUN_ID/events" | jq
 
-curl --silent --request POST \
+COMPLETED=$(curl --silent --request POST \
   "http://127.0.0.1:4310/v1/approvals/$APPROVAL_ID/decision" \
   --header 'content-type: application/json' \
-  --data '{"decision":"approved"}' | jq
+  --data '{"decision":"approved"}')
+
+echo "$COMPLETED" | jq
+
+ARTIFACT_ID=$(echo "$COMPLETED" | jq --raw-output '.output.artifact.id')
+curl --silent "http://127.0.0.1:4310/v1/artifacts/$ARTIFACT_ID" | jq
 
 curl --silent "http://127.0.0.1:4310/v1/runs/$RUN_ID" | jq
 ```
 
 `/health` reports only that the Vera process is alive. `/ready` checks the
-configured provider and model, MongoDB, Redis, and lifecycle recovery. The model
-readiness check does not run inference or spend inference tokens.
+configured provider and model, MongoDB, Redis, lifecycle recovery, and the
+configured planning specialist. For Codex this verifies both the CLI and login
+status. The model readiness check does not run inference or spend inference
+tokens.
 
-The task submission should stop in `awaiting_approval`. Approval executes the
-exact capability arguments that were displayed, records model metadata and the
-validated plan, and ends in `succeeded`. Repeating the same approval does not
-execute twice; sending the opposite decision returns a conflict.
+The message submission should stop in `awaiting_approval`. Inspect
+`approval.contextManifest` and `approval.destination` before approving: those
+are the only project files disclosed to the named adapter and provider. The
+default Codex adapter copies them into an ephemeral read-only snapshot. Approval records model
+metadata, persists one plan artifact, and ends in `succeeded`. Repeating the
+same approval neither invokes the capability again nor creates another
+artifact; sending the opposite decision returns a conflict.
 
 Provider failures are intentionally distinguishable:
 
@@ -238,6 +276,7 @@ Provider failures are intentionally distinguishable:
 | `provider_response_invalid` | 502 | The provider response violated its adapter contract. |
 | `operational_store_unavailable` | 503 | MongoDB or lifecycle recovery is unavailable. |
 | `scratchpad_unavailable` | 503 | Redis is unavailable. |
+| `planning_capability_unavailable` | 503 | The configured planning specialist is unavailable or not authenticated. |
 
 Client errors are sanitized. The server log records the internal classified
 cause and upstream status without returning provider details to the client.
@@ -246,7 +285,8 @@ For a fast one-process smoke test without Ollama or databases, explicitly use
 the deterministic and in-memory adapters:
 
 ```bash
-VERA_MODEL_PROVIDER=deterministic VERA_STORAGE_MODE=memory npm start
+VERA_MODEL_PROVIDER=deterministic VERA_PLANNING_ADAPTER=structured_model \
+  VERA_STORAGE_MODE=memory npm start
 ```
 
 Memory mode is not a persistence fallback and loses all work when the process
