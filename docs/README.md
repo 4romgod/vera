@@ -167,6 +167,8 @@ increment adds bounded hash-verified context, adapter-specific disclosure,
 specialist execution, versioned artifacts, ceilings, cancellation, and
 deterministic recovery evidence. Durable asynchronous pickup, cross-worker
 leases, polling-client behavior, and the owner CLI also have executable
-evidence. The remaining acceptance step is an
-owner-approved real-cloud-Codex invocation; see the
+evidence. Required CI now runs the compiled CLI-to-artifact journey with real
+ephemeral MongoDB and Redis plus deterministic owner-controlled adapters; it
+does not download models or call a third party. The only remaining acceptance
+step is owner approval of a real-cloud-Codex invocation; see the
 [Discovery Record](discovery-record.md#implementation-evidence-and-next-increments).

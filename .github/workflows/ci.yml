@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -16,7 +17,29 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
+    services:
+      mongodb:
+        # The PR already verifies the merge tree. Avoid pulling service images
+        # again for the subsequent main push; workflow_dispatch remains useful
+        # for an explicit rerun of the persistent gate.
+        image: ${{ github.event_name == 'push' && '' || 'mongo:8.2' }}
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok'"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: ${{ github.event_name == 'push' && '' || 'redis:8-alpine' }}
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -35,3 +58,7 @@ jobs:
 
       - name: Build production output
         run: npm run build
+
+      - name: Verify persistent orchestration
+        if: github.event_name != 'push'
+        run: npm run verify:persistent:compiled
