@@ -2,7 +2,7 @@
 
 **Status:** Accepted (capability declaration shape, invocation lifecycle,
 selection checks, and resource/delegation budget model)
-**Version:** 0.4
+**Version:** 0.5
 **Last updated:** 25 August 2026
 **Accepted:** 24 August 2026 (owner) — V1 capability selected during
 ratification; future registry design remains open
@@ -346,7 +346,8 @@ flowchart LR
     S --> W["Selected adapter writes only inside snapshot"]
     W --> V["Vera inspects Git effect and computes hashes + patch"]
     V --> R["Review-only software_change artifact"]
-    R -. "separate future authority" .-> X["Apply / commit / push / PR"]
+    R -. "separate exact approval" .-> X["Managed worktree application"]
+    X -. "separate future authority" .-> Y["Commit / push / PR"]
 ```
 
 The initial adapters are `codex_cli` for production and
@@ -361,3 +362,10 @@ disposable workspace. It does not authorize mutation of the registered project,
 a commit, a push, a pull request, credential access, or another network effect.
 Those require distinct future capabilities. See
 [ADR-0017](decisions/0017-produce-software-changes-as-isolated-patch-artifacts.md).
+
+The first of those distinct effects is now implemented as a durable
+`SoftwareChangeApplication` lifecycle, not as added authority inside
+`software_change@1`. It applies and stages an exact approved artifact in a
+managed Git worktree, verifies the filesystem and index independently, and
+leaves commit and publication unimplemented. See
+[ADR-0018](decisions/0018-apply-approved-software-changes-in-managed-git-worktrees.md).

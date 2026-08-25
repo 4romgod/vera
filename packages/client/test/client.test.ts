@@ -122,6 +122,88 @@ void describe('Vera HTTP client', () => {
     assert.equal(calls, 2);
   });
 
+  void it('creates and polls a controlled change application', async () => {
+    const requests: string[] = [];
+    let polls = 0;
+    const application = (
+      status: 'awaiting_approval' | 'applying' | 'succeeded',
+    ) => ({
+      schemaVersion: 1,
+      version: 1,
+      id: 'application_test',
+      status,
+      sourceArtifact: { id: 'artifact_test', sha256: 'a'.repeat(64) },
+      project: { id: 'project_test', displayName: 'Test' },
+      approval: {
+        id: 'approval_test',
+        status: status === 'awaiting_approval' ? 'pending' : 'approved',
+        reason: 'software_change_application',
+        sourceArtifact: { id: 'artifact_test', sha256: 'a'.repeat(64) },
+        project: { id: 'project_test', displayName: 'Test' },
+        effect: {
+          adapterId: 'local_git_worktree',
+          baseRevision: 'a'.repeat(40),
+          branchName: 'vera/change-test',
+          workspacePath: '/managed/application_test',
+          patchSha256: 'b'.repeat(64),
+          staged: true,
+          files: [],
+        },
+        requestedAt: '2026-08-25T00:00:00.000Z',
+      },
+      effect: {
+        id: 'effect_test',
+        status: status === 'succeeded' ? 'succeeded' : 'pending',
+      },
+      createdAt: '2026-08-25T00:00:00.000Z',
+      updatedAt: '2026-08-25T00:00:00.000Z',
+      links: { application: '/application', events: '/events' },
+    });
+    const client = new VeraClient({
+      baseUrl: 'http://vera.test',
+      fetch: (input, init) => {
+        const requestUrl =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        requests.push(`${init?.method ?? 'GET'} ${requestUrl}`);
+        const isCreate = requestUrl.includes('/artifacts/');
+        if (!isCreate) polls += 1;
+        return Promise.resolve(
+          new Response(
+            JSON.stringify(
+              isCreate
+                ? application('awaiting_approval')
+                : application(polls === 1 ? 'applying' : 'succeeded'),
+            ),
+            {
+              status: isCreate ? 202 : 200,
+              headers: { 'content-type': 'application/json' },
+            },
+          ),
+        );
+      },
+    });
+
+    const created = await client.createChangeApplication({
+      artifactId: 'artifact_test',
+      idempotencyKey: 'application-key',
+    });
+    const completed = await client.waitForChangeApplication(created.id, {
+      intervalMs: 1,
+    });
+
+    assert.equal(created.status, 'awaiting_approval');
+    assert.equal(completed.status, 'succeeded');
+    assert.equal(polls, 2);
+    assert.match(
+      requests[0] ?? '',
+      /POST .*\/v1\/artifacts\/artifact_test\/applications/u,
+    );
+  });
+
   void it('waits for a terminal conversation reply to be projected', async () => {
     let calls = 0;
     const client = new VeraClient({

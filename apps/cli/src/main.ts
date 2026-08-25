@@ -4,6 +4,7 @@ import { createInterface } from 'node:readline/promises';
 import {
   VeraClient,
   type Approval,
+  type ChangeApplicationResource,
   type TaskResource,
   type VeraApi,
 } from '@vera/client';
@@ -34,8 +35,13 @@ const usage = `Usage:
   vera run cancel <run-id>
   vera approval decide <approval-id> <approved|rejected>
   vera artifact show <artifact-id>
+  vera application show <application-id>
+  vera application wait <application-id> [--timeout-ms <milliseconds>]
+  vera application events <application-id>
+  vera application cancel <application-id>
   vera plan --project <project-id> --message <message> [--key <key>] [--approve]
   vera change --project <project-id> --message <message> [--key <key>] [--approve]
+  vera change apply --artifact <artifact-id> [--key <key>] [--approve]
 
 Global options:
   --url <base-url>   Defaults to VERA_API_URL or http://127.0.0.1:4310
@@ -105,6 +111,18 @@ function isTerminal(task: TaskResource): boolean {
 
 function isConversationTerminal(task: TaskResource): boolean {
   return isTerminal(task) && task.conversationReply?.status === 'projected';
+}
+
+function isApplicationTerminal(
+  application: ChangeApplicationResource,
+): boolean {
+  return [
+    'succeeded',
+    'rejected',
+    'failed',
+    'review_required',
+    'cancelled',
+  ].includes(application.status);
 }
 
 async function resolveApproval(input: {
@@ -343,6 +361,76 @@ export async function runCli(
   if (resource === 'artifact' && action === 'show') {
     print(stdout, await client.getArtifact(positional(args, 2, 'artifact-id')));
     return 0;
+  }
+
+  if (resource === 'application' && action === 'show') {
+    print(
+      stdout,
+      await client.getChangeApplication(positional(args, 2, 'application-id')),
+    );
+    return 0;
+  }
+  if (resource === 'application' && action === 'wait') {
+    const timeout = positiveIntegerOption(args, '--timeout-ms');
+    print(
+      stdout,
+      await client.waitForChangeApplication(
+        positional(args, 2, 'application-id'),
+        timeout === undefined ? undefined : { timeoutMs: timeout },
+      ),
+    );
+    return 0;
+  }
+  if (resource === 'application' && action === 'events') {
+    print(
+      stdout,
+      await client.getChangeApplicationEvents(
+        positional(args, 2, 'application-id'),
+      ),
+    );
+    return 0;
+  }
+  if (resource === 'application' && action === 'cancel') {
+    print(
+      stdout,
+      await client.cancelChangeApplication(
+        positional(args, 2, 'application-id'),
+      ),
+    );
+    return 0;
+  }
+
+  if (resource === 'change' && action === 'apply') {
+    const application = await client.createChangeApplication({
+      artifactId: requiredOption(args, '--artifact'),
+      idempotencyKey: option(args, '--key') ?? createKey(),
+    });
+    print(stdout, {
+      approval: {
+        approvalId: application.approval.id,
+        reason: application.approval.reason,
+        sourceArtifact: application.approval.sourceArtifact,
+        project: application.approval.project,
+        effect: application.approval.effect,
+      },
+    });
+    const approved =
+      args.includes('--approve') ||
+      (await confirm(
+        'Apply and stage this exact patch in the disclosed managed Git worktree?',
+      ));
+    let current = await client.decideChangeApplication({
+      applicationId: application.id,
+      decision: approved ? 'approved' : 'rejected',
+    });
+    if (!isApplicationTerminal(current)) {
+      stderr.write(
+        `Approval recorded. Waiting for change application ${current.id} to finish...\n`,
+      );
+      current = await client.waitForChangeApplication(current.id);
+    }
+    print(stdout, current);
+    return current.status === 'succeeded' ? 0 : 2;
   }
 
   if (resource === 'plan' || resource === 'change') {

@@ -37,6 +37,10 @@ scope and durably projects every terminal Vera reply.
 ADR-0017 adds provider-neutral software implementation as a review-only patch
 artifact produced in an isolated workspace, without repository mutation or
 publication authority.
+ADR-0018 adds exact, separately approved patch application in durable managed
+Git worktrees while leaving commit and publication authority absent. ADR-0019
+organizes the growing API by architectural role and cohesive responsibility,
+with executable dependency-boundary checks.
 
 Implementation began on the same date. ADR-0009 accepts the first production
 source layout and model decision boundary. ADR-0010 accepts the durable
@@ -83,6 +87,9 @@ flowchart TD
 | [V1 Definition](v1-definition.md) | Accepted | What exact architectural claim must the first version prove? |
 | [Engineering Method](engineering-method.md) | Accepted | How do we turn discovery into bounded, verifiable implementation work? |
 | [Architecture decisions](decisions/README.md) | Mixed — see index | Which consequential choices are recommended, why, and with what consequences? |
+
+The API's concrete source placement and dependency rules are documented in
+[`apps/api/README.md`](../apps/api/README.md).
 
 ## Authority model
 
@@ -192,10 +199,13 @@ hash-auditable limits, idempotent replies, and recovery after reply projection
 failure. The owner CLI exposes the same path through `vera chat`.
 The `vera change` path now has deterministic compiled persistence evidence and
 Codex-adapter isolation, path-safety, and Vera-derived patch tests.
+The separate change-application path has managed-worktree, exact staged-effect,
+idempotency, ordered-event, MongoDB validation, cancellation reconciliation,
+and project-mutation lease evidence.
 Required CI now runs the compiled CLI-to-artifact journey with real
 ephemeral MongoDB and Redis plus deterministic owner-controlled adapters; it
-does not download models or call a third party. The only remaining acceptance
-step for the V1 product path is owner approval of a real-cloud-Codex invocation.
+does not download models or call a third party. The owner separately approved
+and accepted the exact real-cloud-Codex V1 journey on 25 August 2026.
 Real OpenAI or Gemini calls require owner-supplied keys and remain explicit
 operator conformance rather than required CI; see the
 [Discovery Record](discovery-record.md#implementation-evidence-and-next-increments).

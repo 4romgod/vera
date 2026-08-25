@@ -2,13 +2,17 @@ import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
+import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join, sep } from 'node:path';
 import { promisify } from 'node:util';
 
 import { MongoClient } from 'mongodb';
 import { createClient } from 'redis';
 
-import { MongoDbWorkLeaseStore } from '../apps/api/dist/adapters/mongodb-work-lease-store.js';
+import { MongoDbWorkLeaseStore } from '../apps/api/dist/adapters/outbound/persistence/mongodb/mongodb-work-lease-store.js';
+import { MongoDbProjectMutationLeaseStore } from '../apps/api/dist/adapters/outbound/persistence/mongodb/mongodb-project-mutation-lease-store.js';
 import { VeraClient } from '../packages/client/dist/index.js';
 
 const executeFile = promisify(execFile);
@@ -16,8 +20,10 @@ const root = process.cwd();
 const mongodbUri = process.env.MONGODB_URI ?? 'mongodb://127.0.0.1:27017';
 const redisUrl = process.env.REDIS_URL ?? 'redis://127.0.0.1:6379';
 const database = `vera_verify_${randomUUID().replaceAll('-', '_')}`;
+const changeApplicationRoot = join(tmpdir(), `${database}_applications`);
 const operationTimeoutMs = 10_000;
 const runIds = new Set();
+const temporaryDirectories = new Set([changeApplicationRoot]);
 let child;
 let serverOutput = '';
 
@@ -58,6 +64,7 @@ async function startServer(port) {
       VERA_MODEL_PROVIDER: 'deterministic',
       VERA_PLANNING_ADAPTER: 'structured_model',
       VERA_CHANGE_ADAPTER: 'deterministic_change',
+      CHANGE_APPLICATION_ROOT: changeApplicationRoot,
       WORKER_CONCURRENCY: '2',
       WORKER_POLL_INTERVAL_MS: '25',
     },
@@ -85,6 +92,33 @@ async function startServer(port) {
   }
   processHandle.kill('SIGKILL');
   throw new Error(`Vera did not become ready.\n${serverOutput}`);
+}
+
+async function createGitFixture() {
+  const projectRoot = await mkdtemp(join(tmpdir(), 'vera-verify-project-'));
+  temporaryDirectories.add(projectRoot);
+  await executeFile('git', ['init', '--quiet'], { cwd: projectRoot });
+  await writeFile(
+    join(projectRoot, 'README.md'),
+    '# Persistent verification fixture\n',
+    'utf8',
+  );
+  await executeFile('git', ['add', 'README.md'], { cwd: projectRoot });
+  await executeFile(
+    'git',
+    [
+      '-c',
+      'user.name=Vera Verification',
+      '-c',
+      'user.email=vera@example.invalid',
+      'commit',
+      '--quiet',
+      '-m',
+      'verification fixture',
+    ],
+    { cwd: projectRoot },
+  );
+  return projectRoot;
 }
 
 async function stopServer() {
@@ -188,7 +222,61 @@ async function verifyLeaseExclusion() {
   }
 }
 
-async function verifyCliJourney(baseUrl, projectId) {
+async function verifyProjectMutationLeaseExclusion() {
+  const first = new MongoDbProjectMutationLeaseStore({
+    uri: mongodbUri,
+    database,
+    timeoutMs: 3_000,
+  });
+  const second = new MongoDbProjectMutationLeaseStore({
+    uri: mongodbUri,
+    database,
+    timeoutMs: 3_000,
+  });
+  const projectId = `project_lease_${randomUUID()}`;
+  const acquiredAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 60_000).toISOString();
+  try {
+    const claims = await Promise.all([
+      first.claim(
+        {
+          schemaVersion: 1,
+          projectId,
+          workerId: 'verification_application_worker_first',
+          token: 'verification_application_token_first',
+          acquiredAt,
+          expiresAt,
+        },
+        acquiredAt,
+      ),
+      second.claim(
+        {
+          schemaVersion: 1,
+          projectId,
+          workerId: 'verification_application_worker_second',
+          token: 'verification_application_token_second',
+          acquiredAt,
+          expiresAt,
+        },
+        acquiredAt,
+      ),
+    ]);
+    assert.deepEqual(claims.toSorted(), [false, true]);
+  } finally {
+    await Promise.allSettled([
+      first.release(projectId, 'verification_application_token_first'),
+      second.release(projectId, 'verification_application_token_second'),
+    ]);
+    await Promise.allSettled([first.close(), second.close()]);
+  }
+}
+
+async function verifyCliJourney(
+  baseUrl,
+  changeProjectId,
+  changeProjectRoot,
+  client,
+) {
   const planResult = await executeFile(
     process.execPath,
     [
@@ -197,7 +285,7 @@ async function verifyCliJourney(baseUrl, projectId) {
       '--url',
       baseUrl,
       '--project',
-      projectId,
+      changeProjectId,
       '--message',
       'Plan a deterministic CLI verification change.',
       '--key',
@@ -223,7 +311,7 @@ async function verifyCliJourney(baseUrl, projectId) {
       '--url',
       baseUrl,
       '--project',
-      projectId,
+      changeProjectId,
       '--message',
       'Implement a deterministic CLI verification marker.',
       '--key',
@@ -241,6 +329,82 @@ async function verifyCliJourney(baseUrl, projectId) {
   assert.match(changeResult.stdout, /"type": "software_change"/u);
   assert.match(changeResult.stdout, /VERA_DETERMINISTIC_CHANGE\.md/u);
   assert.match(changeResult.stdout, /new file mode 100644/u);
+
+  const artifactIds = [
+    ...changeResult.stdout.matchAll(/"id": "(artifact_[^"]+)"/gu),
+  ].map((match) => match[1]);
+  const changeArtifactId = artifactIds.at(-1);
+  assert.ok(changeArtifactId);
+  const applicationResult = await executeFile(
+    process.execPath,
+    [
+      'apps/cli/dist/bin.js',
+      'change',
+      'apply',
+      '--url',
+      baseUrl,
+      '--artifact',
+      changeArtifactId,
+      '--key',
+      'persistent-verification-cli-application',
+      '--approve',
+    ],
+    {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: operationTimeoutMs,
+      maxBuffer: 2 * 1024 * 1024,
+    },
+  );
+  assert.match(applicationResult.stdout, /"status": "succeeded"/u);
+  assert.match(applicationResult.stdout, /"staged": true/u);
+  assert.match(applicationResult.stdout, /"branchName": "vera\/change-/u);
+  const applicationIds = [
+    ...applicationResult.stdout.matchAll(/"id": "(application_[^"]+)"/gu),
+  ].map((match) => match[1]);
+  const applicationId = applicationIds.at(-1);
+  assert.ok(applicationId);
+  const application = await client.getChangeApplication(applicationId);
+  assert.equal(application.status, 'succeeded');
+  assert.ok(application.result);
+  const canonicalApplicationRoot = await realpath(changeApplicationRoot);
+  assert.ok(
+    application.result.workspacePath.startsWith(
+      `${canonicalApplicationRoot}${sep}`,
+    ),
+  );
+  assert.equal(
+    await readFile(
+      join(application.result.workspacePath, 'VERA_DETERMINISTIC_CHANGE.md'),
+      'utf8',
+    ).then((value) => value.length > 0),
+    true,
+  );
+  assert.equal(
+    (
+      await executeFile(
+        'git',
+        ['status', '--porcelain', '--untracked-files=no'],
+        { cwd: changeProjectRoot },
+      )
+    ).stdout,
+    '',
+  );
+  const replayedApplication = await client.createChangeApplication({
+    artifactId: changeArtifactId,
+    idempotencyKey: 'persistent-verification-cli-application',
+  });
+  assert.equal(replayedApplication.id, application.id);
+  const applicationEvents = await client.getChangeApplicationEvents(
+    application.id,
+  );
+  assertOrderedEvents(applicationEvents.events);
+  assert.equal(
+    applicationEvents.events.filter(
+      (event) => event.type === 'change_application_succeeded',
+    ).length,
+    1,
+  );
 
   const chatResult = await executeFile(
     process.execPath,
@@ -271,6 +435,7 @@ async function verifyCliJourney(baseUrl, projectId) {
     const runId = match[1];
     if (runId !== undefined) runIds.add(runId);
   }
+  return application.id;
 }
 
 async function verifyScenarios(mongo, redis) {
@@ -287,6 +452,12 @@ async function verifyScenarios(mongo, redis) {
   };
   const project = await client.registerProject(projectInput);
   assert.equal((await client.registerProject(projectInput)).id, project.id);
+  const changeProjectRoot = await createGitFixture();
+  const changeProject = await client.registerProject({
+    displayName: 'Vera change-application verification',
+    rootPath: changeProjectRoot,
+    idempotencyKey: 'persistent-verification-change-project',
+  });
 
   const conversationInput = {
     title: 'Persistent verification',
@@ -540,8 +711,14 @@ async function verifyScenarios(mongo, redis) {
     2,
   );
 
-  await verifyCliJourney(started.baseUrl, project.id);
+  const applicationId = await verifyCliJourney(
+    started.baseUrl,
+    changeProject.id,
+    changeProjectRoot,
+    client,
+  );
   await verifyLeaseExclusion();
+  await verifyProjectMutationLeaseExclusion();
 
   const legacyConversation = await client.createConversation({
     title: 'Legacy reply upgrade',
@@ -661,8 +838,15 @@ async function verifyScenarios(mongo, redis) {
     .collection('artifacts')
     .find({})
     .toArray();
+  const applications = await mongo
+    .db(database)
+    .collection('change_applications')
+    .find({})
+    .toArray();
   assert.equal(aggregates.length, 12);
   assert.equal(artifacts.length, 5);
+  assert.equal(applications.length, 1);
+  assert.equal(applications[0]?.id, applicationId);
   assert.equal(
     new Set(artifacts.map((candidate) => candidate.invocationId)).size,
     artifacts.length,
@@ -672,6 +856,7 @@ async function verifyScenarios(mongo, redis) {
     durationMs: Date.now() - startedAt,
     taskCount: aggregates.length,
     artifactCount: artifacts.length,
+    changeApplicationCount: applications.length,
     eventCount: aggregates.reduce(
       (total, aggregate) => total + aggregate.events.length,
       0,
@@ -680,7 +865,9 @@ async function verifyScenarios(mongo, redis) {
     restartVerified: true,
     scratchpadRebuilt: true,
     leaseExclusionVerified: true,
+    projectMutationLeaseExclusionVerified: true,
     cliJourneyVerified: true,
+    managedChangeApplicationVerified: true,
     legacyConversationUpgradeVerified: true,
     roleScopedMessageIdempotencyVerified: true,
   };
@@ -728,6 +915,11 @@ async function cleanup() {
     .dropDatabase()
     .catch((error) => errors.push(error));
   await mongo.close().catch((error) => errors.push(error));
+  for (const directory of temporaryDirectories) {
+    await rm(directory, { recursive: true, force: true }).catch((error) =>
+      errors.push(error),
+    );
+  }
 
   if (errors.length > 0) {
     throw new AggregateError(errors, 'Persistent verification cleanup failed.');

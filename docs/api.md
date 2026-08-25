@@ -1,7 +1,7 @@
 # Vera HTTP API
 
 **Status:** Accepted for implemented V1 paths
-**Version:** 0.6
+**Version:** 0.7
 **Last updated:** 25 August 2026
 
 ## Purpose
@@ -37,6 +37,11 @@ an untrusted network.
 | `POST /v1/approvals/{approvalId}/decision` | Approve or reject the exact proposed invocation | `202` |
 | `POST /v1/runs/{runId}/cancellation` | Request a best-effort stop | `202` |
 | `GET /v1/artifacts/{artifactId}` | Retrieve a versioned capability artifact | `200` |
+| `POST /v1/artifacts/{artifactId}/applications` | Create an exactly scoped software-change application | `202` |
+| `GET /v1/change-applications/{applicationId}` | Retrieve application, approval, effect, and result state | `200` |
+| `GET /v1/change-applications/{applicationId}/events` | Retrieve immutable ordered application events | `200` |
+| `POST /v1/change-applications/{applicationId}/decision` | Approve or reject the disclosed managed-worktree effect | `202` |
+| `POST /v1/change-applications/{applicationId}/cancellation` | Request cancellation and reconciliation | `202` |
 | `POST /v1/model-decisions` | Exercise the lower-level model decision boundary | `200` |
 
 The model-decision path is useful for provider and proposal diagnostics. New
@@ -260,7 +265,7 @@ The list endpoint returns bounded summaries instead: identity, title, status,
 timestamps, `messageCount`, and the most recent message without its internal
 idempotency key.
 
-## Artifacts and cancellation
+## Artifacts, application, and cancellation
 
 A successful planning invocation stores one `implementation_plan` artifact. A
 successful `software_change@1` invocation stores one `software_change` artifact
@@ -273,6 +278,53 @@ recovery cannot create a second artifact for that invocation. The task output
 includes a typed artifact reference, and
 `GET /v1/artifacts/{artifactId}` returns the versioned content and provenance.
 
+A `software_change` artifact is still only a reviewable result. Creating an
+application requires a new principal-scoped `Idempotency-Key`:
+
+```http
+POST /v1/artifacts/artifact_.../applications
+Idempotency-Key: apply-vera-101-v1
+```
+
+The returned application is initially `awaiting_approval`. Its approval freezes
+the artifact and patch hashes, project, immutable base commit, deterministic
+branch, managed workspace path, exact file operations and hashes, and the fact
+that the change will be staged. Approval is addressed by application ID because
+the complete application is the effect-owning resource:
+
+```http
+POST /v1/change-applications/application_.../decision
+Content-Type: application/json
+
+{ "decision": "approved" }
+```
+
+The worker later applies and stages the patch in the disclosed managed Git
+worktree. It does not change the registered checkout, commit, push, or open a
+pull request. A successful response exposes the verified result and stable
+links to the application and its events.
+
+```mermaid
+stateDiagram-v2
+    [*] --> awaiting_approval: application created
+    awaiting_approval --> rejected: owner rejects
+    awaiting_approval --> cancelled: owner cancels
+    awaiting_approval --> approved: owner approves exact effect
+    approved --> applying: project lease acquired
+    applying --> succeeded: exact after-state and index verified
+    applying --> failed: stale source or clean conflict
+    applying --> review_required: partial or unexpected effect
+    applying --> cancellation_requested: owner requests cancellation
+    cancellation_requested --> cancelled: before-state removed
+    cancellation_requested --> succeeded: exact effect already exists
+    cancellation_requested --> review_required: ambiguous effect
+```
+
+The application is idempotent by principal and request key. Reuse with a
+different artifact returns a conflict. Persistent workers serialize effects per
+project, and restart reconciliation classifies the actual managed worktree as
+before, after, or mixed before recording an outcome.
+
 `POST /v1/runs/{runId}/cancellation` records a stop request. Before capability
 execution it terminally cancels the run and rejects a pending approval. During
 execution it asks the adapter to abort. Cancellation is best effort: a
@@ -282,6 +334,12 @@ The cancellation and approval handlers also return after their durable
 transition. The worker performs subsequent execution asynchronously, so clients
 poll the run resource for the resulting terminal state. No long-running work
 depends on one HTTP connection.
+
+`POST /v1/change-applications/{applicationId}/cancellation` is stricter about
+filesystem truth. Cancellation removes a still-unmodified managed worktree. If
+the exact approved patch is already staged, the application succeeds because
+the effect cannot truthfully be reported as reversed. Mixed state becomes
+`review_required` and is never overwritten automatically.
 
 ## Events
 
@@ -313,6 +371,12 @@ owned by that event type. Current event types are:
 - `conversation_context_assembled`, `conversation_reply_pending`,
   `conversation_reply_projected`.
 
+Change-application events use their own sequence and include creation, approval
+request/decision, start, success, failure, review-required, cancellation
+request, and cancellation. Their event stream is not mixed into the source
+task's run events because artifact production and repository mutation are
+separate effects.
+
 Events are evidence, not debug logs. Provider internals, credentials, and raw
 exceptions are excluded.
 
@@ -332,13 +396,13 @@ Error envelopes use:
 | Status | Codes | Meaning |
 |---:|---|---|
 | `400` | `invalid_request` | Missing, malformed, too large, or unknown request input. |
-| `404` | `task_not_found`, `run_not_found`, `approval_not_found`, `project_not_found`, `conversation_not_found`, `conversation_message_not_found`, `artifact_not_found` | The addressed resource does not exist. |
-| `409` | `idempotency_key_reused`, `approval_already_decided`, `concurrent_transition_failed`, `conversation_message_mismatch` | The request conflicts with durable state. |
-| `422` | `invalid_project_source` | A project path is not a canonical local Git root. |
+| `404` | `task_not_found`, `run_not_found`, `approval_not_found`, `project_not_found`, `conversation_not_found`, `conversation_message_not_found`, `artifact_not_found`, `change_application_not_found` | The addressed resource does not exist. |
+| `409` | `idempotency_key_reused`, `approval_already_decided`, `concurrent_transition_failed`, `conversation_message_mismatch`, `change_application_idempotency_key_reused`, `change_application_approval_already_decided`, `change_application_concurrent_transition_failed`, `change_application_not_cancellable`, `stale_source`, `application_conflict`, `review_required` | The request conflicts with durable or filesystem state. |
+| `422` | `invalid_project_source`, `software_change_artifact_required` | A project source is invalid, or the selected artifact cannot be used for a software-change application. |
 | `502` | `provider_request_rejected`, `provider_response_invalid` | Provider boundary failed while using the diagnostic endpoint. |
 | `503` | `model_not_found`, `provider_unavailable`, `operational_store_unavailable`, `scratchpad_unavailable`, `planning_capability_unavailable`, `software_change_capability_unavailable` | A required runtime dependency is unavailable. |
 | `504` | `provider_timeout` | The model provider exceeded its deadline. |
-| `500` | `internal_error` | An unexpected server failure; details remain in structured logs. |
+| `500` | `internal_error`, `application_failed` | An unexpected server or managed-effect failure; details remain in structured logs. |
 
 ## Current security boundary
 

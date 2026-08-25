@@ -1,6 +1,6 @@
-import { DeterministicSoftwareChangeCapability } from '../../src/capabilities/deterministic-software-change-capability.ts';
-import { sameCapabilityDestination } from '../../src/domain/capability-destination.ts';
-import type { SoftwareChangeCapabilityRegistry } from '../../src/ports/software-change-capability.ts';
+import { DeterministicSoftwareChangeCapability } from '../../src/adapters/outbound/capabilities/software-change/deterministic-software-change-capability.ts';
+import { sameCapabilityDestination } from '../../src/domain/capabilities/capability-destination.ts';
+import type { SoftwareChangeCapabilityRegistry } from '../../src/ports/capabilities/software-change-capability.ts';
 
 export function createDeterministicSoftwareChangeRegistry(): SoftwareChangeCapabilityRegistry {
   const capability = new DeterministicSoftwareChangeCapability();

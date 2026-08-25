@@ -245,6 +245,89 @@ export type RunEventsResource = {
   }[];
 };
 
+export type ChangeApplicationStatus =
+  | 'awaiting_approval'
+  | 'approved'
+  | 'applying'
+  | 'succeeded'
+  | 'rejected'
+  | 'failed'
+  | 'review_required'
+  | 'cancellation_requested'
+  | 'cancelled';
+
+export type ChangeApplicationResource = {
+  schemaVersion: 1;
+  version: number;
+  id: string;
+  status: ChangeApplicationStatus;
+  sourceArtifact: { id: string; sha256: string };
+  project: { id: string; displayName: string };
+  approval: {
+    id: string;
+    status: 'pending' | 'approved' | 'rejected';
+    reason: 'software_change_application';
+    sourceArtifact: { id: string; sha256: string };
+    project: { id: string; displayName: string };
+    effect: {
+      adapterId: 'local_git_worktree';
+      baseRevision: string;
+      branchName: string;
+      workspacePath: string;
+      patchSha256: string;
+      staged: true;
+      files: SoftwareChangeContent['files'];
+    };
+    requestedAt: string;
+    decidedAt?: string;
+    decidedBy?: string;
+  };
+  effect: {
+    id: string;
+    status:
+      | 'pending'
+      | 'executing'
+      | 'succeeded'
+      | 'failed'
+      | 'review_required'
+      | 'cancelled';
+    startedAt?: string;
+    completedAt?: string;
+  };
+  result?: {
+    adapterId: 'local_git_worktree';
+    baseRevision: string;
+    branchName: string;
+    workspacePath: string;
+    patchSha256: string;
+    staged: true;
+    files: SoftwareChangeContent['files'];
+    appliedAt: string;
+  };
+  failure?: { code: string; message: string };
+  createdAt: string;
+  updatedAt: string;
+  links: {
+    application: string;
+    events: string;
+    decision?: string;
+    cancellation?: string;
+  };
+};
+
+export type ChangeApplicationEventsResource = {
+  schemaVersion: 1;
+  applicationId: string;
+  events: {
+    schemaVersion: 1;
+    id: string;
+    sequence: number;
+    type: string;
+    occurredAt: string;
+    data: Record<string, unknown>;
+  }[];
+};
+
 export class VeraApiError extends Error {
   public constructor(
     message: string,
@@ -294,12 +377,41 @@ export type VeraApi = {
   ): Promise<TaskResource>;
   cancelRun(runId: string): Promise<TaskResource>;
   getArtifact(artifactId: string): Promise<ArtifactResource>;
+  createChangeApplication(input: {
+    artifactId: string;
+    idempotencyKey: string;
+  }): Promise<ChangeApplicationResource>;
+  getChangeApplication(
+    applicationId: string,
+  ): Promise<ChangeApplicationResource>;
+  getChangeApplicationEvents(
+    applicationId: string,
+  ): Promise<ChangeApplicationEventsResource>;
+  decideChangeApplication(input: {
+    applicationId: string;
+    decision: 'approved' | 'rejected';
+  }): Promise<ChangeApplicationResource>;
+  cancelChangeApplication(
+    applicationId: string,
+  ): Promise<ChangeApplicationResource>;
+  waitForChangeApplication(
+    applicationId: string,
+    options?: WaitForChangeApplicationOptions,
+  ): Promise<ChangeApplicationResource>;
   waitForRun(runId: string, options?: WaitForRunOptions): Promise<TaskResource>;
 };
 
 export type WaitForRunOptions = {
   until?: (task: TaskResource) => boolean;
   onUpdate?: (task: TaskResource) => void;
+  intervalMs?: number;
+  timeoutMs?: number;
+  signal?: AbortSignal;
+};
+
+export type WaitForChangeApplicationOptions = {
+  until?: (application: ChangeApplicationResource) => boolean;
+  onUpdate?: (application: ChangeApplicationResource) => void;
   intervalMs?: number;
   timeoutMs?: number;
   signal?: AbortSignal;
@@ -331,6 +443,32 @@ function assertTaskResource(value: unknown): asserts value is TaskResource {
     !runStatuses.includes(value.runStatus)
   ) {
     throw new Error('Vera returned an invalid task resource.');
+  }
+}
+
+function assertChangeApplicationResource(
+  value: unknown,
+): asserts value is ChangeApplicationResource {
+  const statuses: readonly string[] = [
+    'awaiting_approval',
+    'approved',
+    'applying',
+    'succeeded',
+    'rejected',
+    'failed',
+    'review_required',
+    'cancellation_requested',
+    'cancelled',
+  ];
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== 1 ||
+    typeof value.id !== 'string' ||
+    !value.id.startsWith('application_') ||
+    typeof value.status !== 'string' ||
+    !statuses.includes(value.status)
+  ) {
+    throw new Error('Vera returned an invalid change-application resource.');
   }
 }
 
@@ -497,6 +635,120 @@ export class VeraClient implements VeraApi {
     return this.request(`/v1/artifacts/${encodeURIComponent(artifactId)}`);
   }
 
+  public createChangeApplication(input: {
+    artifactId: string;
+    idempotencyKey: string;
+  }): Promise<ChangeApplicationResource> {
+    return this.changeApplicationRequest(
+      `/v1/artifacts/${encodeURIComponent(input.artifactId)}/applications`,
+      { method: 'POST', idempotencyKey: input.idempotencyKey },
+    );
+  }
+
+  public getChangeApplication(
+    applicationId: string,
+  ): Promise<ChangeApplicationResource> {
+    return this.changeApplicationRequest(
+      `/v1/change-applications/${encodeURIComponent(applicationId)}`,
+    );
+  }
+
+  public getChangeApplicationEvents(
+    applicationId: string,
+  ): Promise<ChangeApplicationEventsResource> {
+    return this.request(
+      `/v1/change-applications/${encodeURIComponent(applicationId)}/events`,
+    );
+  }
+
+  public decideChangeApplication(input: {
+    applicationId: string;
+    decision: 'approved' | 'rejected';
+  }): Promise<ChangeApplicationResource> {
+    return this.changeApplicationRequest(
+      `/v1/change-applications/${encodeURIComponent(input.applicationId)}/decision`,
+      { method: 'POST', body: { decision: input.decision } },
+    );
+  }
+
+  public cancelChangeApplication(
+    applicationId: string,
+  ): Promise<ChangeApplicationResource> {
+    return this.changeApplicationRequest(
+      `/v1/change-applications/${encodeURIComponent(applicationId)}/cancellation`,
+      { method: 'POST' },
+    );
+  }
+
+  public async waitForChangeApplication(
+    applicationId: string,
+    options?: WaitForChangeApplicationOptions,
+  ): Promise<ChangeApplicationResource> {
+    const startedAt = Date.now();
+    const timeoutMs = options?.timeoutMs ?? 600_000;
+    const intervalMs = options?.intervalMs ?? 250;
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      throw new Error(
+        'waitForChangeApplication timeoutMs must be a positive number.',
+      );
+    }
+    if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
+      throw new Error(
+        'waitForChangeApplication intervalMs must be a positive number.',
+      );
+    }
+    const terminal = new Set<ChangeApplicationStatus>([
+      'succeeded',
+      'rejected',
+      'failed',
+      'review_required',
+      'cancelled',
+    ]);
+    for (;;) {
+      const elapsedMs = Date.now() - startedAt;
+      if (elapsedMs >= timeoutMs) {
+        throw new Error(
+          `Timed out waiting for change application ${applicationId}.`,
+        );
+      }
+      const timeoutSignal = AbortSignal.timeout(
+        Math.max(1, timeoutMs - elapsedMs),
+      );
+      const signal =
+        options?.signal === undefined
+          ? timeoutSignal
+          : AbortSignal.any([options.signal, timeoutSignal]);
+      let application: ChangeApplicationResource;
+      try {
+        application = await this.changeApplicationRequest(
+          `/v1/change-applications/${encodeURIComponent(applicationId)}`,
+          { signal },
+        );
+      } catch (error) {
+        if (options?.signal?.aborted === true) throw error;
+        if (timeoutSignal.aborted) {
+          throw new Error(
+            `Timed out waiting for change application ${applicationId}.`,
+            { cause: error },
+          );
+        }
+        throw error;
+      }
+      options?.onUpdate?.(application);
+      if (
+        (options?.until ?? ((current) => terminal.has(current.status)))(
+          application,
+        )
+      ) {
+        return application;
+      }
+      await delay(
+        Math.min(intervalMs, Math.max(1, timeoutMs - (Date.now() - startedAt))),
+        options?.signal,
+      );
+    }
+  }
+
   public async waitForRun(
     runId: string,
     options?: WaitForRunOptions,
@@ -567,6 +819,15 @@ export class VeraClient implements VeraApi {
   ): Promise<TaskResource> {
     const value: unknown = await this.request(path, options);
     assertTaskResource(value);
+    return value;
+  }
+
+  private async changeApplicationRequest(
+    path: string,
+    options?: RequestOptions,
+  ): Promise<ChangeApplicationResource> {
+    const value: unknown = await this.request(path, options);
+    assertChangeApplicationResource(value);
     return value;
   }
 

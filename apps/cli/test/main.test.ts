@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import type {
   ArtifactResource,
+  ChangeApplicationResource,
   ConversationResource,
   TaskResource,
   VeraApi,
@@ -47,8 +48,51 @@ function fakeApi(overrides: Partial<VeraApi>): VeraApi {
     decideApproval: unavailable,
     cancelRun: unavailable,
     getArtifact: unavailable,
+    createChangeApplication: unavailable,
+    getChangeApplication: unavailable,
+    getChangeApplicationEvents: unavailable,
+    decideChangeApplication: unavailable,
+    cancelChangeApplication: unavailable,
+    waitForChangeApplication: unavailable,
     waitForRun: unavailable,
     ...overrides,
+  };
+}
+
+function changeApplication(
+  status: ChangeApplicationResource['status'],
+): ChangeApplicationResource {
+  return {
+    schemaVersion: 1,
+    version: 1,
+    id: 'application_test',
+    status,
+    sourceArtifact: { id: 'artifact_test', sha256: 'a'.repeat(64) },
+    project: { id: 'project_test', displayName: 'Vera' },
+    approval: {
+      id: 'approval_application',
+      status: status === 'awaiting_approval' ? 'pending' : 'approved',
+      reason: 'software_change_application',
+      sourceArtifact: { id: 'artifact_test', sha256: 'a'.repeat(64) },
+      project: { id: 'project_test', displayName: 'Vera' },
+      effect: {
+        adapterId: 'local_git_worktree',
+        baseRevision: 'b'.repeat(40),
+        branchName: 'vera/change-test',
+        workspacePath: '/managed/application_test',
+        patchSha256: 'c'.repeat(64),
+        staged: true,
+        files: [],
+      },
+      requestedAt: '2026-08-25T00:00:00.000Z',
+    },
+    effect: {
+      id: 'effect_test',
+      status: status === 'succeeded' ? 'succeeded' : 'pending',
+    },
+    createdAt: '2026-08-25T00:00:00.000Z',
+    updatedAt: '2026-08-25T00:00:00.000Z',
+    links: { application: '/application', events: '/events' },
   };
 }
 
@@ -244,6 +288,59 @@ void describe('Vera CLI', () => {
 
     assert.equal(exitCode, 0);
     assert.deepEqual(calls, ['approved']);
+  });
+
+  void it('discloses and applies an exact software-change artifact through the controlled effect flow', async () => {
+    const output: string[] = [];
+    const errors: string[] = [];
+    const calls: string[] = [];
+    const client = fakeApi({
+      createChangeApplication: (input) => {
+        calls.push(`create:${input.artifactId}`);
+        return Promise.resolve(changeApplication('awaiting_approval'));
+      },
+      decideChangeApplication: (input) => {
+        calls.push(`decide:${input.decision}`);
+        assert.match(output.join(''), /local_git_worktree/u);
+        assert.match(output.join(''), /\/managed\/application_test/u);
+        return Promise.resolve(changeApplication('approved'));
+      },
+      waitForChangeApplication: () => {
+        calls.push('wait');
+        return Promise.resolve(changeApplication('succeeded'));
+      },
+    });
+
+    const exitCode = await runCli(
+      ['change', 'apply', '--artifact', 'artifact_test', '--approve'],
+      {
+        client,
+        stdout: {
+          write: (value) => {
+            output.push(String(value));
+            return true;
+          },
+        },
+        stderr: {
+          write: (value) => {
+            errors.push(String(value));
+            return true;
+          },
+        },
+        createIdempotencyKey: () => 'application-test-key',
+      },
+    );
+
+    assert.equal(exitCode, 0);
+    assert.deepEqual(calls, [
+      'create:artifact_test',
+      'decide:approved',
+      'wait',
+    ]);
+    assert.match(
+      errors.join(''),
+      /Waiting for change application application_test/u,
+    );
   });
 
   void it('never auto-approves a capability that differs from the command', async () => {

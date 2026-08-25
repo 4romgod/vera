@@ -3,7 +3,7 @@
 **Status:** Accepted (logical architecture, component responsibilities,
 request lifecycle, architectural invariants, initial modular API shape, and V1
 operational storage); post-V1 progress transport and deployment topology remain open
-**Version:** 0.8
+**Version:** 0.9
 **Last updated:** 25 August 2026
 **Accepted:** 24 August 2026 (owner) — post-V1 progress transport and deployment
 topology are deferred; V1 uses HTTP polling. The initial Fastify/Zod modular API
@@ -11,6 +11,8 @@ is accepted by ADR-0009. MongoDB operational truth and the Redis scratchpad are
 accepted by ADR-0010. The V1 owner perimeter is accepted by ADR-0014 and the
 startup-selected model-provider registry by ADR-0015. Conversation context and
 reply projection are accepted by ADR-0016.
+Software-change artifacts, controlled application, and the enforced API module
+map are accepted by ADRs 0017–0019.
 
 ## Purpose
 
@@ -435,7 +437,8 @@ their adapters. Deterministic tests cover interrupted invocation, cancellation
 recovery, conversation-scope isolation, and reply-projection recovery; a
 compiled persistent-mode journey verifies artifact and complete dialogue
 survival across process restart plus Redis projection reconstruction. Remaining
-V1 evidence is owner acceptance of the exact real-cloud-Codex disclosure.
+The owner accepted the exact real-cloud-Codex disclosure and resulting artifact
+on 25 August 2026, completing the V1 evidence boundary.
 
 The same lifecycle now also implements `software_change@1`. Its Codex adapter
 uses a workspace-write sandbox over a disposable approved snapshot, while the
@@ -445,6 +448,30 @@ patch and file hashes from the snapshot and stores a review-only
 remain outside this capability. The deterministic adapter drives the compiled
 persistent journey without downloads or third-party calls. See
 [ADR-0017](decisions/0017-produce-software-changes-as-isolated-patch-artifacts.md).
+
+Artifact application is a separate durable lifecycle rather than hidden inside
+that capability. The owner approves an exact artifact hash, immutable base
+commit, patch hash, file manifest, deterministic branch, workspace path, and
+staged effect. A change-application worker holds a project-scoped MongoDB lease
+while the `local_git_worktree` adapter materializes and verifies the effect. The
+registered checkout remains untouched, and commit/publication authority remains
+absent. Recovery inspects before/after/mixed filesystem state; it never infers
+completion from an interrupted process claim. See
+[ADR-0018](decisions/0018-apply-approved-software-changes-in-managed-git-worktrees.md).
+
+```mermaid
+flowchart LR
+    ART["Durable software_change artifact"] --> CREATE["Create application"]
+    CREATE --> DISCLOSE["Exact effect disclosure"]
+    DISCLOSE --> APPROVE{"Owner decision"}
+    APPROVE -->|"reject"| REJECTED["Rejected"]
+    APPROVE -->|"approve"| LEASE["Project mutation lease"]
+    LEASE --> WT["Deterministic managed Git worktree"]
+    WT --> VERIFY{"Before / after / mixed verification"}
+    VERIFY -->|"exact after + index"| SUCCESS["Succeeded: staged"]
+    VERIFY -->|"exact before + cancellation"| CANCELLED["Cancelled and removed"]
+    VERIFY -->|"mixed or unexpected"| REVIEW["Review required"]
+```
 
 Approval freezes the complete specialist destination. Execution and recovery
 resolve that persisted descriptor rather than the currently selected adapter;
@@ -484,6 +511,11 @@ GET    /v1/runs/{run_id}/events
 POST   /v1/approvals/{approval_id}/decision
 POST   /v1/runs/{run_id}/cancellation
 GET    /v1/artifacts/{artifact_id}
+POST   /v1/artifacts/{artifact_id}/applications   # requires Idempotency-Key
+GET    /v1/change-applications/{application_id}
+GET    /v1/change-applications/{application_id}/events
+POST   /v1/change-applications/{application_id}/decision
+POST   /v1/change-applications/{application_id}/cancellation
 POST   /v1/model-decisions               # low-level decision diagnostic
 GET    /health
 GET    /ready
@@ -598,4 +630,6 @@ Open questions and required implementation evidence remain in the
 [Discovery Record](discovery-record.md). V1 uses HTTP polling; persistence,
 later streaming transport, deployment, and the remaining resource API shapes
 are not accepted by this document. Fastify, Zod, the modular API layout, and the
-model decision endpoint are accepted by ADR-0009.
+model decision endpoint are accepted by ADR-0009. The nested module map and
+enforced inward dependency direction are accepted by
+[ADR-0019](decisions/0019-organize-the-api-as-an-inward-dependent-modular-monolith.md).

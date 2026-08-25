@@ -1,11 +1,11 @@
 # Vera V1 Definition
 
-**Status:** Accepted
-**Version:** 0.8
+**Status:** Accepted and demonstrated
+**Version:** 0.9
 **Last updated:** 25 August 2026
 **Accepted:** 24 August 2026 (owner); V1 perimeter and provider-profile
-decisions accepted 25 August 2026 — completion still requires the evidence in
-this document
+decisions accepted 25 August 2026; complete journey demonstrated and accepted
+25 August 2026
 
 ## Scope change, 24 August 2026
 
@@ -404,7 +404,7 @@ and repository contents are not part of the orchestration-decision request.
 ADR-0014 separately fixes V1's owner perimeter to the authenticated host/SSH
 session and makes non-loopback bind configuration invalid.
 
-This is not yet V1 product completion. Deterministic tests now cover interrupted
+V1's accepted product slice is complete. Deterministic tests cover interrupted
 invocation and cancellation recovery. A compiled persistent-mode journey has
 also verified the real CLI boundary, registered context, direct response,
 approval idempotency, rejection, cancellation, concurrent isolation, MongoDB
@@ -414,9 +414,13 @@ forces one process termination
 after the approval boundary is durable, then verifies another graceful restart
 after completion. Required CI runs it with ephemeral real MongoDB and Redis and
 deterministic owner-controlled adapters, without downloading model weights or
-contacting a third party. The remaining acceptance boundary is an
-owner-approved real-cloud-Codex disclosure and evaluation of the resulting
-plan; Gatherle may be one acceptance project but is not production architecture.
+contacting a third party. On 25 August 2026 the owner also reviewed the exact
+third-party `codex_cli` destination and context disclosure, approved it, and
+accepted the resulting real specialist artifact through the CLI journey.
+Gatherle was acceptance data, not production architecture. Subsequent
+`software_change@1` and controlled change-application work extends the product
+beyond this minimum proof without retroactively broadening the V1 capability's
+authority.
 
 ## Decisions to validate during V1
 

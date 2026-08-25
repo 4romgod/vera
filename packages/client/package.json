@@ -13,7 +13,7 @@
   "scripts": {
     "build": "npm run clean && tsc -p tsconfig.build.json",
     "clean": "node --input-type=module --eval \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true })\"",
-    "test": "tsx --test test/**/*.test.ts",
+    "test": "tsx --test 'test/**/*.test.ts'",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   }
 }

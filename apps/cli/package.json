@@ -12,7 +12,7 @@
     "predev": "npm run build --workspace @vera/client",
     "dev": "tsx src/bin.ts",
     "pretest": "npm run build --workspace @vera/client",
-    "test": "tsx --test test/**/*.test.ts",
+    "test": "tsx --test 'test/**/*.test.ts'",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
