@@ -1,7 +1,7 @@
 # Vera HTTP API
 
 **Status:** Accepted for implemented V1 paths
-**Version:** 0.1
+**Version:** 0.2
 **Last updated:** 24 August 2026
 
 ## Purpose
@@ -20,12 +20,21 @@ authentication is implemented.
 | Method and path | Purpose | Success |
 |---|---|---:|
 | `GET /health` | Process liveness only | `200` |
-| `GET /ready` | Model, operational store, scratchpad, and recovery readiness | `200` or `503` |
+| `GET /ready` | Model, stores, recovery, and planning-specialist readiness | `200` or `503` |
+| `POST /v1/projects` | Register an owner-controlled project source | `201` |
+| `GET /v1/projects` | List registered projects | `200` |
+| `GET /v1/projects/{projectId}` | Retrieve a registered project | `200` |
+| `POST /v1/conversations` | Create a conversation | `201` |
+| `GET /v1/conversations` | List conversations | `200` |
+| `GET /v1/conversations/{conversationId}` | Retrieve messages and task links | `200` |
+| `POST /v1/conversations/{conversationId}/messages` | Add owner intent and create its task | `202` |
 | `POST /v1/tasks` | Submit owner intent as a durable task and first run | `202` |
 | `GET /v1/tasks/{taskId}` | Retrieve the current task/run projection | `200` |
 | `GET /v1/runs/{runId}` | Retrieve the current task/run projection by run | `200` |
 | `GET /v1/runs/{runId}/events` | Retrieve immutable ordered run events | `200` |
 | `POST /v1/approvals/{approvalId}/decision` | Approve or reject the exact proposed invocation | `202` |
+| `POST /v1/runs/{runId}/cancellation` | Request a best-effort stop | `202` |
+| `GET /v1/artifacts/{artifactId}` | Retrieve a versioned plan artifact | `200` |
 | `POST /v1/model-decisions` | Exercise the lower-level model decision boundary | `200` |
 
 The model-decision path is useful for provider and proposal diagnostics. New
@@ -42,7 +51,11 @@ stateDiagram-v2
     deciding --> failed: model or internal failure
     deciding --> awaiting_approval: capability proposed
     awaiting_approval --> rejected: owner rejects
+    awaiting_approval --> cancelled: owner cancels
     awaiting_approval --> executing: owner approves and execution claim succeeds
+    executing --> cancellation_requested: owner requests cancellation
+    cancellation_requested --> cancelled: capability stops
+    cancellation_requested --> succeeded: capability finishes first
     executing --> succeeded: validated result recorded
     executing --> failed: capability fails
 ```
@@ -51,10 +64,11 @@ Task status is a coarser projection:
 
 | Run status | Task status |
 |---|---|
-| `deciding`, `awaiting_approval`, `executing` | `active` |
+| `deciding`, `awaiting_approval`, `executing`, `cancellation_requested` | `active` |
 | `succeeded` | `completed` |
 | `rejected` | `rejected` |
 | `failed` | `failed` |
+| `cancelled` | `cancelled` |
 
 Terminal runs are not reopened. Retry as a new run is not implemented yet.
 
@@ -66,14 +80,16 @@ Content-Type: application/json
 Idempotency-Key: 4a43628a-e1df-42f7-98bb-b2e59b62745d
 
 {
-  "message": "For project Vera, create an implementation plan for VERA-202."
+  "message": "Create an implementation plan for VERA-202.",
+  "projectId": "project_..."
 }
 ```
 
 `Idempotency-Key` is required, case-insensitive as an HTTP header, and must be
 8–200 characters. The key is scoped to the implicit V1 principal. Repeating the
-same key with the same message returns the original task. Reusing it for a
-different message returns `409 idempotency_key_reused`.
+same key with the same complete task input returns the original task. Reusing
+it for different input returns `409 idempotency_key_reused`. Different
+principals may independently use the same key.
 
 Vera persists the task before asking a model. A provider failure therefore
 produces an inspectable terminal task instead of losing the accepted request.
@@ -89,11 +105,12 @@ Example waiting response, abbreviated:
   "runId": "run_...",
   "taskStatus": "active",
   "runStatus": "awaiting_approval",
-  "message": "For project Vera, create an implementation plan for VERA-202.",
+  "message": "Create an implementation plan for VERA-202.",
+  "projectId": "project_...",
   "approval": {
     "id": "approval_...",
     "status": "pending",
-    "reason": "external_capability_invocation",
+    "reason": "specialist_capability_invocation",
     "capability": {
       "name": "development_planning",
       "version": 1
@@ -108,6 +125,34 @@ Example waiting response, abbreviated:
         "name": "Vera"
       }
     },
+    "project": {
+      "id": "project_...",
+      "displayName": "Vera"
+    },
+    "contextManifest": {
+      "schemaVersion": 1,
+      "projectId": "project_...",
+      "sourceKind": "local_git",
+      "revision": "<git-commit>+working-tree",
+      "entries": [
+        {
+          "relativePath": "apps/api/src/server.ts",
+          "sha256": "...",
+          "bytes": 1234,
+          "selectionReason": "Repository evidence for the requested work.",
+          "classification": "source_code"
+        }
+      ],
+      "totalFiles": 1,
+      "totalBytes": 1234
+    },
+    "destination": {
+      "schemaVersion": 1,
+      "adapterId": "codex_cli",
+      "provider": "openai",
+      "transport": "local_process",
+      "dataBoundary": "third_party"
+    },
     "requestedAt": "2026-08-24T18:00:00.000Z"
   },
   "links": {
@@ -119,8 +164,19 @@ Example waiting response, abbreviated:
 }
 ```
 
-`proposedArguments` is the exact schema-validated input that execution will
-receive if approved.
+`proposedArguments` is the model-proposed routing input. `project`,
+`contextManifest`, destination, invocation identity, and limits are
+authoritative fields added by Vera code. Approval covers this complete
+disclosure. The corresponding hash-verified contents are frozen durably but are
+not echoed in ordinary API responses.
+
+The destination is provider-neutral but not anonymous. A future
+`claude_code_cli` adapter would appear as that `adapterId` with provider
+`anthropic`; it would not require a different task or artifact contract.
+The claimed invocation and resulting artifact copy this descriptor. Execution
+resolves the persisted approved descriptor, not whichever adapter happens to be
+selected when an approval or restart is processed. If the adapter is absent or
+its provider/boundary configuration changed, the run fails closed.
 
 In a completed development plan, `project`, `ticket`, and `objective` are copied
 into the result by Vera code from these approved arguments. They are deliberately
@@ -146,6 +202,58 @@ Repeating the same decision is idempotent. Sending the opposite decision after
 one has been recorded returns `409 approval_already_decided`. A model, caller
 request property, or capability cannot create or broaden an approval.
 
+## Register projects and use conversations
+
+Project registration is explicit and idempotent:
+
+```http
+POST /v1/projects
+Content-Type: application/json
+Idempotency-Key: register-vera-local
+
+{
+  "displayName": "Vera",
+  "source": {
+    "kind": "local_git",
+    "rootPath": "/absolute/path/to/vera"
+  }
+}
+```
+
+The path must be the canonical root of a Git repository. Models never provide
+or alter it. A conversation is created with `POST /v1/conversations`, then an
+owner message creates a linked task:
+
+```http
+POST /v1/conversations/conversation_.../messages
+Content-Type: application/json
+Idempotency-Key: plan-vera-202
+
+{
+  "content": "Prepare the implementation plan for VERA-202.",
+  "projectId": "project_..."
+}
+```
+
+Repeating the message key returns the same message and task. A single
+conversation response exposes immutable messages and their `taskId` links.
+The list endpoint returns bounded summaries instead: identity, title, status,
+timestamps, `messageCount`, and the most recent message without its internal
+idempotency key.
+
+## Artifacts and cancellation
+
+A successful planning invocation stores one `implementation_plan` artifact.
+Its stable identity is derived from the invocation ID; retry or recovery cannot
+create a second artifact for that invocation. The task output includes an
+artifact reference, and `GET /v1/artifacts/{artifactId}` returns the versioned
+content and provenance.
+
+`POST /v1/runs/{runId}/cancellation` records a stop request. Before capability
+execution it terminally cancels the run and rejects a pending approval. During
+execution it asks the adapter to abort. Cancellation is best effort: a
+capability that finishes before the abort is observed may still succeed.
+
 The current handler may complete model-backed planning before returning its
 `202` response, but clients must still poll the run resource: recovery and later
 long-running capabilities cannot depend on one HTTP connection.
@@ -168,10 +276,14 @@ aggregate, a stable type, an ISO-8601 occurrence time, and a versioned payload
 owned by that event type. Current event types are:
 
 - `task_created`, `run_started`;
+- `budget_assigned`, `budget_consumed`, `budget_exhausted`;
 - `model_decision_recorded`;
+- `context_assembled`;
 - `approval_requested`, `approval_approved`, `approval_rejected`;
 - `capability_invocation_started`, `capability_invocation_succeeded`,
   `capability_invocation_failed`;
+- `artifact_created`;
+- `cancellation_requested`, `run_cancelled`;
 - `run_succeeded`, `run_rejected`, `run_failed`.
 
 Events are evidence, not debug logs. Provider internals, credentials, and raw
@@ -193,8 +305,9 @@ Error envelopes use:
 | Status | Codes | Meaning |
 |---:|---|---|
 | `400` | `invalid_request` | Missing, malformed, too large, or unknown request input. |
-| `404` | `task_not_found`, `run_not_found`, `approval_not_found` | The addressed resource does not exist. |
+| `404` | `task_not_found`, `run_not_found`, `approval_not_found`, `project_not_found`, `conversation_not_found`, `artifact_not_found` | The addressed resource does not exist. |
 | `409` | `idempotency_key_reused`, `approval_already_decided`, `concurrent_transition_failed` | The request conflicts with durable state. |
+| `422` | `invalid_project_source` | A project path is not a canonical local Git root. |
 | `502` | `provider_request_rejected`, `provider_response_invalid` | Provider boundary failed while using the diagnostic endpoint. |
 | `503` | `model_not_found`, `provider_unavailable`, `operational_store_unavailable`, `scratchpad_unavailable` | A required runtime dependency is unavailable. |
 | `504` | `provider_timeout` | The model provider exceeded its deadline. |

@@ -8,6 +8,7 @@ import type {
 export class FakeModelProvider implements ModelProvider {
   public readonly name = 'fake';
   public readonly model = 'fake-v1';
+  public readonly dataBoundary = 'owner_controlled';
   public readonly inputs: GenerateStructuredInput[] = [];
 
   public constructor(

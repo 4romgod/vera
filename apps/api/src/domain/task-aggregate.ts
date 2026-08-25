@@ -1,14 +1,22 @@
 import { z } from 'zod';
 
+import { ArtifactReferenceSchema } from './artifact.ts';
+import { CapabilityDestinationSchema } from './capability-destination.ts';
 import { DevelopmentPlanningProposalArgumentsSchema } from './capability-registry.ts';
 import { DevelopmentPlanSchema } from './development-plan.ts';
 import { DecisionResultSchema } from './execution-decision.ts';
+import {
+  ProjectContextBundleSchema,
+  ProjectContextManifestSchema,
+} from './project-context.ts';
+import { RunBudgetSchema } from './run-budget.ts';
 
 export const TaskStatusSchema = z.enum([
   'active',
   'completed',
   'rejected',
   'failed',
+  'cancelled',
 ]);
 
 export const RunStatusSchema = z.enum([
@@ -18,13 +26,15 @@ export const RunStatusSchema = z.enum([
   'succeeded',
   'rejected',
   'failed',
+  'cancellation_requested',
+  'cancelled',
 ]);
 
 export const ApprovalSchema = z
   .object({
     id: z.string().startsWith('approval_'),
     status: z.enum(['pending', 'approved', 'rejected']),
-    reason: z.literal('external_capability_invocation'),
+    reason: z.literal('specialist_capability_invocation'),
     capability: z
       .object({
         name: z.literal('development_planning'),
@@ -32,6 +42,15 @@ export const ApprovalSchema = z
       })
       .strict(),
     proposedArguments: DevelopmentPlanningProposalArgumentsSchema,
+    project: z
+      .object({
+        id: z.string().startsWith('project_'),
+        displayName: z.string().min(1).max(200),
+      })
+      .strict()
+      .optional(),
+    contextManifest: ProjectContextManifestSchema.optional(),
+    destination: CapabilityDestinationSchema.optional(),
     requestedAt: z.iso.datetime(),
     decidedAt: z.iso.datetime().optional(),
     decidedBy: z.string().optional(),
@@ -49,6 +68,15 @@ export const CapabilityInvocationSchema = z
       })
       .strict(),
     arguments: DevelopmentPlanningProposalArgumentsSchema,
+    project: z
+      .object({
+        id: z.string().startsWith('project_'),
+        displayName: z.string().min(1).max(200),
+      })
+      .strict()
+      .optional(),
+    contextManifest: ProjectContextManifestSchema.optional(),
+    destination: CapabilityDestinationSchema.optional(),
     startedAt: z.iso.datetime(),
     completedAt: z.iso.datetime().optional(),
     model: z
@@ -80,6 +108,7 @@ export const TaskOutputSchema = z.discriminatedUnion('kind', [
     .object({
       kind: z.literal('development_plan'),
       plan: DevelopmentPlanSchema,
+      artifact: ArtifactReferenceSchema.optional(),
     })
     .strict(),
 ]);
@@ -90,6 +119,11 @@ export const TaskFailureSchema = z
       'model_provider_failure',
       'capability_execution_failure',
       'internal_failure',
+      'project_required',
+      'project_not_found',
+      'project_context_failure',
+      'budget_exhausted',
+      'cancelled',
     ]),
     message: z.string(),
   })
@@ -108,6 +142,13 @@ export const TaskEventTypeSchema = z.enum([
   'run_succeeded',
   'run_rejected',
   'run_failed',
+  'context_assembled',
+  'budget_assigned',
+  'budget_consumed',
+  'budget_exhausted',
+  'artifact_created',
+  'cancellation_requested',
+  'run_cancelled',
 ]);
 
 export const TaskEventSchema = z
@@ -130,6 +171,9 @@ export const TaskAggregateSchema = z
         id: z.string().startsWith('task_'),
         requestKey: z.string().min(1),
         principalId: z.string().min(1),
+        conversationId: z.string().startsWith('conversation_').optional(),
+        messageId: z.string().startsWith('message_').optional(),
+        projectId: z.string().startsWith('project_').optional(),
         message: z.string().min(1),
         status: TaskStatusSchema,
         createdAt: z.iso.datetime(),
@@ -147,6 +191,8 @@ export const TaskAggregateSchema = z
         invocation: CapabilityInvocationSchema.optional(),
         output: TaskOutputSchema.optional(),
         failure: TaskFailureSchema.optional(),
+        budget: RunBudgetSchema.optional(),
+        context: ProjectContextBundleSchema.optional(),
       })
       .strict(),
     events: z.array(TaskEventSchema),

@@ -293,7 +293,8 @@ run.
 ## V1 capability requirement
 
 V1 needs one real capability, not a catalog of hypothetical integrations. The
-selected capability is `development_planning@1`, initially backed by Codex. It
+selected capability is the provider-neutral `development_planning@1`, with
+`codex_cli` as its initial default adapter. It
 accepts a ticket and an explicitly selected, read-only project context and
 returns one versioned implementation-plan artifact.
 
@@ -305,11 +306,19 @@ For V1:
 - invocation state, progress, errors, and artifacts are exposed through Vera's
   polled resources;
 - cancellation is best-effort and its observed outcome is recorded;
-- sending scoped context to cloud Codex requires explicit approval; and
+- sending scoped context across any third-party data boundary requires explicit
+  approval naming the adapter and provider; and
 - success means one schema-valid plan artifact is durably associated with the
   invocation, using that invocation ID as the idempotency identity.
 
-The implemented adapter invokes the configured structured-output model behind a
-capability port and records its validated result and provider metadata. The
-final Codex transport and bounded project-context handoff remain to be
-implemented. See the [V1 Definition](v1-definition.md#required-first-journey).
+The default production adapter reconstructs the exact approved, hash-verified
+context in an ephemeral directory and invokes Codex with an output schema and
+read-only sandbox. A model-backed implementation remains available as an
+explicit local and conformance adapter behind the same capability port. Vera
+resolves the persisted approved destination at execution and recovery time,
+validates the result, creates one artifact keyed by invocation ID, and removes
+the snapshot. A configuration change may select a different adapter for new
+work but cannot redirect an already approved invocation.
+See [ADR-0011](decisions/0011-use-generic-project-sources-and-bounded-context-snapshots.md)
+and [ADR-0012](decisions/0012-late-bind-specialist-platforms-behind-capability-adapters.md)
+and the [V1 Definition](v1-definition.md#required-first-journey).

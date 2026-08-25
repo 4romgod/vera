@@ -5,8 +5,8 @@ import {
 } from '../domain/development-plan.ts';
 import type { ModelProvider } from '../model/model-provider.ts';
 import type {
-  DevelopmentPlanningArguments,
   DevelopmentPlanningCapability,
+  DevelopmentPlanningInvocation,
 } from '../ports/development-planning-capability.ts';
 
 function buildPlanningPrompt(): string {
@@ -15,25 +15,53 @@ function buildPlanningPrompt(): string {
     'Produce an implementation plan only; do not claim to execute work.',
     'The plan must be concrete, ordered, testable, and scoped to the supplied project and ticket.',
     'Project, ticket, and objective are authoritative input and are added by Vera code; do not echo them in output.',
-    'No repository files, architecture description, dependency inventory, or runtime topology have been supplied to this capability. Treat that absence as a hard evidence boundary.',
-    'Do not claim or imply that a framework, service, middleware layer, logging system, deployment topology, protocol convention, provider, library, or repository path exists unless the approved input explicitly says so.',
-    'Do not select or recommend a named technology before repository inspection. Record missing facts and technology choices in unresolvedQuestions, and make evidence gathering plus any resulting decision an explicit plan step.',
-    'affectedProjectAreas must be empty because no repository evidence was supplied; never guess paths or components.',
+    'Repository evidence is supplied as an exact approved context bundle. Treat it as the complete evidence boundary.',
+    'Do not claim or imply that a framework, service, path, or dependency exists unless the approved context establishes it.',
+    'affectedProjectAreas may name only paths or components supported by the approved context manifest.',
     'assumptions may contain only constraints stated by the approved input. Unknown infrastructure belongs in unresolvedQuestions, not assumptions.',
-    'Begin with inspection when implementation depends on repository facts. Keep later steps conditional on what that inspection establishes.',
+    'Call out important missing evidence in unresolvedQuestions instead of inventing it.',
     'State only material risks. Avoid generic filler and speculative architecture.',
     `Required output schema:\n${JSON.stringify(DevelopmentPlanContentJsonSchema)}`,
   ].join('\n\n');
 }
 
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted === true) {
+    throw new DOMException(
+      'The planning invocation was aborted.',
+      'AbortError',
+    );
+  }
+}
+
 export class ModelDevelopmentPlanningCapability
   implements DevelopmentPlanningCapability
 {
-  public constructor(private readonly provider: ModelProvider) {}
+  public readonly destination: {
+    schemaVersion: 1;
+    adapterId: string;
+    provider: string;
+    transport: string;
+    dataBoundary: 'owner_controlled' | 'third_party';
+  };
+
+  public constructor(private readonly provider: ModelProvider) {
+    this.destination = {
+      schemaVersion: 1,
+      adapterId: 'structured_model',
+      provider: provider.name,
+      transport: 'in_process',
+      dataBoundary: provider.dataBoundary,
+    };
+  }
+
+  public async checkReadiness(): Promise<void> {
+    await this.provider.checkReadiness();
+  }
 
   public async execute(
-    arguments_: DevelopmentPlanningArguments,
-    invocationId: string,
+    invocation: DevelopmentPlanningInvocation,
+    options?: { signal?: AbortSignal },
   ): Promise<{
     plan: DevelopmentPlan;
     model: {
@@ -43,32 +71,48 @@ export class ModelDevelopmentPlanningCapability
       usage?: { inputTokens: number; outputTokens: number };
     };
   }> {
+    throwIfAborted(options?.signal);
     const generation = await this.provider.generateStructured({
       purpose: 'development_plan',
       systemPrompt: buildPlanningPrompt(),
       message: JSON.stringify({
-        invocationId,
-        project: arguments_.project,
-        ticket: arguments_.ticket,
-        objective: arguments_.objective,
+        invocationId: invocation.invocationId,
+        project: invocation.project,
+        ticket: invocation.arguments.ticket,
+        objective: invocation.arguments.objective,
+        context: invocation.context,
       }),
       outputSchema: DevelopmentPlanContentJsonSchema,
     });
+    throwIfAborted(options?.signal);
     const parsed = DevelopmentPlanContentSchema.safeParse(generation.candidate);
     if (!parsed.success) {
       throw new Error('Development planning output failed schema validation.');
     }
-    if (parsed.data.affectedProjectAreas.length !== 0) {
+    const approvedPaths = new Set(
+      invocation.context.manifest.entries.map((entry) => entry.relativePath),
+    );
+    const unsupportedArea = parsed.data.affectedProjectAreas.find(
+      (area) =>
+        ![...approvedPaths].some(
+          (path) => path === area.area || path.startsWith(`${area.area}/`),
+        ),
+    );
+    if (unsupportedArea !== undefined) {
       throw new Error(
-        'Development planning output claimed project areas without repository evidence.',
+        `Development planning output claimed unapproved project area ${unsupportedArea.area}.`,
       );
     }
     return {
       plan: {
         ...parsed.data,
-        project: arguments_.project,
-        ticket: arguments_.ticket,
-        objective: arguments_.objective,
+        project: {
+          name: invocation.project.displayName,
+          id: invocation.project.id,
+          revision: invocation.context.manifest.revision,
+        },
+        ticket: invocation.arguments.ticket,
+        objective: invocation.arguments.objective,
       },
       model: {
         provider: generation.provider,

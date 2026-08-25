@@ -10,6 +10,13 @@ import {
   TaskStatusSchema,
 } from '../domain/task-aggregate.ts';
 import { DecisionResultSchema } from '../domain/execution-decision.ts';
+import { ArtifactSchema } from '../domain/artifact.ts';
+import {
+  ConversationSchema,
+  ConversationSummarySchema,
+} from '../domain/conversation.ts';
+import { ProjectSchema } from '../domain/project.ts';
+import { RunBudgetSchema } from '../domain/run-budget.ts';
 
 export const EvaluateRequestSchema = z
   .object({
@@ -22,10 +29,48 @@ export type EvaluateRequest = z.infer<typeof EvaluateRequestSchema>;
 export const SubmitTaskRequestSchema = z
   .object({
     message: z.string().trim().min(1).max(20_000),
+    projectId: z.string().startsWith('project_').optional(),
   })
   .strict();
 
 export type SubmitTaskRequest = z.infer<typeof SubmitTaskRequestSchema>;
+
+export const RegisterProjectRequestSchema = z
+  .object({
+    displayName: z.string().trim().min(1).max(200),
+    source: z
+      .object({
+        kind: z.literal('local_git'),
+        rootPath: z.string().min(1).max(4_000),
+      })
+      .strict(),
+  })
+  .strict();
+
+export type RegisterProjectRequest = z.infer<
+  typeof RegisterProjectRequestSchema
+>;
+
+export const CreateConversationRequestSchema = z
+  .object({
+    title: z.string().trim().min(1).max(200).optional(),
+  })
+  .strict();
+
+export type CreateConversationRequest = z.infer<
+  typeof CreateConversationRequestSchema
+>;
+
+export const CreateConversationMessageRequestSchema = z
+  .object({
+    content: z.string().trim().min(1).max(20_000),
+    projectId: z.string().startsWith('project_').optional(),
+  })
+  .strict();
+
+export type CreateConversationMessageRequest = z.infer<
+  typeof CreateConversationMessageRequestSchema
+>;
 
 export const IdempotencyHeadersSchema = z.looseObject({
   'idempotency-key': z.string().trim().min(8).max(200),
@@ -59,6 +104,9 @@ export const TaskLifecycleResponseSchema = z
     taskStatus: TaskStatusSchema,
     runStatus: RunStatusSchema,
     message: z.string(),
+    projectId: z.string().startsWith('project_').optional(),
+    conversationId: z.string().startsWith('conversation_').optional(),
+    messageId: z.string().startsWith('message_').optional(),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
     decision: DecisionResultSchema.optional(),
@@ -66,6 +114,7 @@ export const TaskLifecycleResponseSchema = z
     invocation: CapabilityInvocationSchema.optional(),
     output: TaskOutputSchema.optional(),
     failure: TaskFailureSchema.optional(),
+    budget: RunBudgetSchema.optional(),
     links: z
       .object({
         task: z.string(),
@@ -86,12 +135,59 @@ export const TaskEventsResponseSchema = z
   })
   .strict();
 
+export const ProjectResponseSchema = ProjectSchema.omit({
+  principalId: true,
+  registrationKey: true,
+});
+
+export const ProjectsResponseSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    projects: z.array(ProjectResponseSchema),
+  })
+  .strict();
+
+export const ConversationResponseSchema = ConversationSchema.omit({
+  principalId: true,
+  creationKey: true,
+}).extend({
+  messages: z.array(
+    ConversationSchema.shape.messages.element.omit({ requestKey: true }),
+  ),
+});
+
+export const ConversationsResponseSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    conversations: z.array(ConversationSummarySchema),
+  })
+  .strict();
+
+export const ArtifactResponseSchema = ArtifactSchema.omit({
+  principalId: true,
+});
+
 export const EvaluateRequestJsonSchema = z.toJSONSchema(EvaluateRequestSchema, {
   target: 'draft-7',
 });
 
 export const SubmitTaskRequestJsonSchema = z.toJSONSchema(
   SubmitTaskRequestSchema,
+  { target: 'draft-7' },
+);
+
+export const RegisterProjectRequestJsonSchema = z.toJSONSchema(
+  RegisterProjectRequestSchema,
+  { target: 'draft-7' },
+);
+
+export const CreateConversationRequestJsonSchema = z.toJSONSchema(
+  CreateConversationRequestSchema,
+  { target: 'draft-7' },
+);
+
+export const CreateConversationMessageRequestJsonSchema = z.toJSONSchema(
+  CreateConversationMessageRequestSchema,
   { target: 'draft-7' },
 );
 
@@ -117,6 +213,30 @@ export const TaskLifecycleResponseJsonSchema = z.toJSONSchema(
 
 export const TaskEventsResponseJsonSchema = z.toJSONSchema(
   TaskEventsResponseSchema,
+  { target: 'draft-7' },
+);
+
+export const ProjectResponseJsonSchema = z.toJSONSchema(ProjectResponseSchema, {
+  target: 'draft-7',
+});
+
+export const ProjectsResponseJsonSchema = z.toJSONSchema(
+  ProjectsResponseSchema,
+  { target: 'draft-7' },
+);
+
+export const ConversationResponseJsonSchema = z.toJSONSchema(
+  ConversationResponseSchema,
+  { target: 'draft-7' },
+);
+
+export const ConversationsResponseJsonSchema = z.toJSONSchema(
+  ConversationsResponseSchema,
+  { target: 'draft-7' },
+);
+
+export const ArtifactResponseJsonSchema = z.toJSONSchema(
+  ArtifactResponseSchema,
   { target: 'draft-7' },
 );
 
@@ -156,6 +276,7 @@ export const NotReadyResponseSchema = z
         code: z.enum([
           'operational_store_unavailable',
           'scratchpad_unavailable',
+          'planning_capability_unavailable',
           'model_not_found',
           'provider_request_rejected',
           'provider_response_invalid',

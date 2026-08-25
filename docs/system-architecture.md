@@ -334,23 +334,28 @@ sequenceDiagram
     participant Redis as "Redis scratchpad"
     participant Model as "Provider port / Ollama"
     participant Policy as "Schema, registry, and approval policy"
+    participant Source as "Registered project source"
     participant Capability as "development_planning@1"
+    participant Artifact as "Plan artifact store"
 
-    Owner->>API: POST /v1/tasks + idempotency key
+    Owner->>API: Register project and create conversation
+    Owner->>API: POST conversation message + projectId
     API->>Life: Validated owner request
     Life->>Mongo: Create versioned task/run aggregate
     Life->>Redis: Project rebuildable working state
     Life->>Model: Message + exact proposal schema
     Model-->>Life: Provider-neutral candidate + usage
     Life->>Policy: Validate proposal and capability arguments
+    Life->>Source: Select bounded tracked context
+    Source-->>Life: Hash-verified manifest and contents
     Life->>Mongo: Record decision, event, and exact approval request
     Life->>Redis: Project awaiting-approval state
     Life-->>Owner: 202 + task, run, approval, and links
     Owner->>API: Approve exact action
     Life->>Mongo: Persist approval and invocation identity
-    Life->>Capability: Execute with persisted ID and arguments
-    Capability->>Model: Request schema-valid implementation plan
-    Model-->>Capability: Structured plan + usage
+    Life->>Capability: Ephemeral read-only approved snapshot
+    Capability-->>Life: Structured plan + provider metadata
+    Life->>Artifact: Idempotent create by invocation ID
     Life->>Mongo: Record result and terminal events
     Life->>Redis: Project terminal state
     Life-->>Owner: 202 + completed run
@@ -373,17 +378,25 @@ worker. Replacing this with an untracked in-process promise would weaken crash
 recovery. Returning before model work begins requires a later, explicit durable
 dispatch/worker boundary rather than a fire-and-forget callback.
 
-This is still not the entire V1 journey. Conversation resources, selected
-read-only repository context, the final Codex-backed specialist adapter,
-artifact identity, resource ceilings, and cancellation remain. The current
-model-backed planner is a real schema-bound
-capability implementation, not permission to claim those later boundaries are
-finished.
+This slice now includes generic project and conversation resources, selected
+read-only Git context, exact disclosure approval, a provider-neutral specialist
+port with a late-bound adapter registry, the default Codex adapter, artifact
+identity, flat resource ceilings, and best-effort
+cancellation. The model-backed planner remains as an explicit local/testing
+adapter. Deterministic tests cover interrupted invocation and cancellation
+recovery; a compiled persistent-mode journey verifies artifact and conversation
+survival across process restart plus Redis projection reconstruction. Remaining
+V1 evidence is owner acceptance of the exact real-cloud-Codex disclosure.
+
+Approval freezes the complete specialist destination. Execution and recovery
+resolve that persisted descriptor rather than the currently selected adapter;
+missing or changed adapter configuration fails closed instead of redirecting
+approved context.
 
 The app binds to loopback by default because authentication is not yet
 implemented. Health is process liveness. Readiness verifies provider
-connectivity, configured-model availability, MongoDB, Redis, and lifecycle
-recovery without running inference.
+connectivity, configured-model availability, MongoDB, Redis, lifecycle
+recovery, and planning-specialist availability without running inference.
 
 ## Proposed API resource shape
 
@@ -395,29 +408,32 @@ The implemented V1 lifecycle paths are:
 
 ```text
 POST   /v1/tasks                         # requires Idempotency-Key
+POST   /v1/projects                      # requires Idempotency-Key
+GET    /v1/projects
+GET    /v1/projects/{project_id}
+POST   /v1/conversations                 # requires Idempotency-Key
+GET    /v1/conversations
+GET    /v1/conversations/{conversation_id}
+POST   /v1/conversations/{conversation_id}/messages
 GET    /v1/tasks/{task_id}
 GET    /v1/runs/{run_id}
 GET    /v1/runs/{run_id}/events
 POST   /v1/approvals/{approval_id}/decision
+POST   /v1/runs/{run_id}/cancellation
+GET    /v1/artifacts/{artifact_id}
 POST   /v1/model-decisions               # low-level decision diagnostic
 GET    /health
 GET    /ready
 ```
 
-The broader target shape remains illustrative:
+The broader post-V1 target shape remains illustrative:
 
 ```text
-POST   /v1/conversations
-GET    /v1/conversations
-GET    /v1/conversations/{conversation_id}
-POST   /v1/conversations/{conversation_id}/messages
-
 GET    /v1/tasks
 GET    /v1/tasks/{task_id}
 
 GET    /v1/runs/{run_id}
 GET    /v1/runs/{run_id}/events
-POST   /v1/runs/{run_id}/cancel
 POST   /v1/tasks/{task_id}/retry
 
 GET    /v1/approvals

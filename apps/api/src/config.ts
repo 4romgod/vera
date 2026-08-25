@@ -14,6 +14,12 @@ const EnvironmentSchema = z.object({
   REDIS_URL: z.url().default('redis://127.0.0.1:6379'),
   SCRATCHPAD_TTL_SECONDS: z.coerce.number().int().min(60).default(86_400),
   DEPENDENCY_TIMEOUT_MS: z.coerce.number().int().min(250).default(3_000),
+  VERA_PLANNING_ADAPTER: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9._-]*$/)
+    .default('codex_cli'),
+  CODEX_COMMAND: z.string().min(1).default('codex'),
+  CODEX_MODEL: z.string().min(1).optional(),
 });
 
 export type AppConfig = {
@@ -33,6 +39,15 @@ export type AppConfig = {
     redisUrl: string;
     scratchpadTtlSeconds: number;
     dependencyTimeoutMs: number;
+  };
+  planning: {
+    adapterId: string;
+    adapters: {
+      codexCli: {
+        command: string;
+        model?: string;
+      };
+    };
   };
 };
 
@@ -58,6 +73,17 @@ export function loadConfig(
       redisUrl: parsed.REDIS_URL,
       scratchpadTtlSeconds: parsed.SCRATCHPAD_TTL_SECONDS,
       dependencyTimeoutMs: parsed.DEPENDENCY_TIMEOUT_MS,
+    },
+    planning: {
+      adapterId: parsed.VERA_PLANNING_ADAPTER,
+      adapters: {
+        codexCli: {
+          command: parsed.CODEX_COMMAND,
+          ...(parsed.CODEX_MODEL === undefined
+            ? {}
+            : { model: parsed.CODEX_MODEL }),
+        },
+      },
     },
   };
 }

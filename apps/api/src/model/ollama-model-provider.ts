@@ -86,6 +86,7 @@ function toOllamaGrammarSchema(value: unknown): unknown {
 
 export class OllamaModelProvider implements ModelProvider {
   public readonly name = 'ollama';
+  public readonly dataBoundary = 'owner_controlled';
   public readonly model: string;
 
   private readonly baseUrl: string;

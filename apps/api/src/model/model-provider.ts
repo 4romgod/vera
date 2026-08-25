@@ -37,6 +37,7 @@ export type ModelProviderReadiness = {
 export type ModelProvider = {
   readonly name: string;
   readonly model: string;
+  readonly dataBoundary: 'owner_controlled' | 'third_party';
   checkReadiness(): Promise<ModelProviderReadiness>;
   generateStructured(input: GenerateStructuredInput): Promise<ModelGeneration>;
 };

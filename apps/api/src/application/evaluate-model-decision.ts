@@ -15,6 +15,9 @@ import type { ModelProvider } from '../model/model-provider.ts';
 
 export type EvaluateModelDecision = (
   message: string,
+  context?: {
+    selectedProject: { id: string; displayName: string };
+  },
 ) => Promise<DecisionResult>;
 
 function decide(proposal: ModelProposal): ExecutionDecision {
@@ -49,7 +52,7 @@ function decide(proposal: ModelProposal): ExecutionDecision {
 
   return {
     kind: 'approval_required',
-    reason: 'external_capability_invocation',
+    reason: 'specialist_capability_invocation',
     capability: proposal.capability,
     proposedArguments: proposal.arguments,
   };
@@ -59,11 +62,17 @@ export function createEvaluateModelDecision(
   provider: ModelProvider,
   createId: () => string = () => `decision_${randomUUID()}`,
 ): EvaluateModelDecision {
-  return async (message) => {
+  return async (message, context) => {
     const generation = await provider.generateStructured({
       purpose: 'orchestration_decision',
       systemPrompt: buildModelSystemPrompt(),
-      message,
+      message:
+        context === undefined
+          ? message
+          : JSON.stringify({
+              ownerMessage: message,
+              selectedProject: context.selectedProject,
+            }),
       outputSchema: ModelProposalJsonSchema,
     });
     const validatedProposal = ModelProposalSchema.safeParse(

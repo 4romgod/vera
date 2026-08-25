@@ -141,8 +141,9 @@ accepted facts:
 
 The first request is: "Prepare an implementation plan for this Gatherle ticket
 using the selected local repository as read-only project context." Vera will
-delegate to the Codex-backed `development_planning@1` capability, ask for
-approval before the shown context is sent to the cloud, and persist one
+delegate to the provider-neutral `development_planning@1` capability through
+the configured specialist adapter, ask for approval before the shown context
+crosses that adapter's declared data boundary, and persist one
 versioned plan artifact idempotently.
 
 This tests whether Vera is better than opening the specialist directly because
@@ -216,14 +217,17 @@ restarted Vera, resumed the same invocation, and recorded exactly one start and
 one success. Deleting Redis state rebuilt version 5 from MongoDB, and an attempted
 version-4 projection could not overwrite it.
 
-### Capability boundary — partially implemented
+### Capability boundary — implemented; owner acceptance remains
 
-After explicit approval, the registered `development_planning@1` executor
-receives only schema-validated proposed arguments plus a code-created invocation
-identity. It returns a schema-valid plan with provider usage metadata; success
-or failure is durable. The final V1 boundary still needs selected read-only
-project context, the Codex-backed adapter, artifact identity, timeout, progress,
-and cancellation.
+After explicit approval, the selected adapter for the registered,
+provider-neutral `development_planning@1` capability receives only
+schema-validated proposed arguments, the exact approved read-only context, and
+a code-created invocation identity. It returns a schema-valid plan with
+provider metadata; success or failure is durable. The implementation now
+includes the late-bound adapter registry, default Codex adapter, generic
+destination disclosure, artifact identity, wall-clock and byte ceilings,
+recovery, and cancellation. Owner acceptance of one exact third-party
+disclosure remains product evidence rather than missing architecture.
 
 ### Local-model boundary — completed
 

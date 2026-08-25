@@ -83,13 +83,18 @@ Anything not required to prove this slice is presumptively outside V1.
 
 ## Required first journey
 
-The accepted V1 request is:
+The accepted V1 request shape is:
 
-> Vera, prepare an implementation plan for this Gatherle ticket: [ticket
-> details]. Use the local Gatherle repository as read-only project context.
+> Vera, prepare an implementation plan for this ticket: [ticket details]. Use
+> the registered project as read-only context.
 
-The single real specialist is `development_planning@1`, a versioned capability
-backed initially by Codex. It may analyze only the supplied ticket and an
+Gatherle is the first real manual acceptance project, not part of the contract.
+The same journey must work for another registered repository without production
+code changes. Automated evidence uses multiple synthetic repositories to
+prevent a project-specific implementation from passing accidentally.
+
+The single real specialist contract is `development_planning@1`, a versioned,
+provider-neutral capability using Codex as its initial default adapter. It may analyze only the supplied ticket and an
 explicitly selected, read-only project context. It may not edit the project,
 run arbitrary commands, create a branch, or open a pull request in V1.
 
@@ -103,8 +108,9 @@ The journey exercises this complete shape:
 5. Vera validates the proposal and applies policy.
 6. Vera proposes the `development_planning@1` capability and the exact context
    that would be disclosed.
-7. Before any selected project or ticket context is sent to the cloud-backed
-   capability, Vera pauses for explicit owner approval.
+7. Before any selected project or ticket context crosses the selected adapter's
+   declared data boundary, Vera pauses for explicit owner approval naming the
+   adapter and provider.
 8. On approval, Vera invokes the capability once with bounded input and
    authority. On denial, it records the decision and sends nothing.
 9. Vera records progress, decisions, invocations, errors, and artifacts as
@@ -141,8 +147,9 @@ The `development_planning@1` input contains:
 - the invocation identity and enforced limits.
 
 Vera's local context assembler selects read-only project sources before the
-approval request. The approval view must make the manifest and cloud destination
-inspectable; the capability cannot discover additional local files itself.
+approval request. The approval view must make the manifest, selected adapter,
+provider, transport, and data boundary inspectable; the capability cannot
+discover additional local files itself.
 
 The successful artifact contains at least:
 
@@ -155,10 +162,10 @@ The successful artifact contains at least:
 
 The versioned proposal and initial capability proposal-argument schemas are
 accepted by ADR-0009. They do not replace the enriched invocation contract
-below, whose authoritative fields are created by code. The maximum approved
-context size remains to be set when the context
-assembler and capability invocation are implemented. The semantic fields above
-are V1 requirements.
+below, whose authoritative fields are created by code. The implemented V1
+defaults select at most 40 files, 200,000 total bytes, and 40,000 bytes per
+file. These are deterministic policy values rather than capability advice and
+may be revised with evidence without changing the manifest contract.
 
 ## V1 functional scope
 
@@ -350,7 +357,7 @@ The scope decisions required before implementation are resolved:
 
 1. ~~the Product Charter is accepted~~ — done, 24 August 2026.
 2. ~~the first specialist capability is selected~~ — done:
-   `development_planning@1`, initially backed by Codex.
+   `development_planning@1`, initially using the `codex_cli` adapter.
 3. ~~steering and cancellation semantics are defined sufficiently for V1~~ —
    done: steering is deferred to V1.1, cancellation is best-effort only.
 4. the initial deployment assumption is confirmed — **resolved by working
@@ -358,7 +365,7 @@ The scope decisions required before implementation are resolved:
    durable recovery or safe classification after restart (see the
    [Discovery Record](discovery-record.md)).
 5. ~~the required approval boundary is chosen~~ — done: explicit approval
-   before selected project or ticket context is sent to cloud Codex.
+   before selected project or ticket context crosses a third-party boundary.
 6. ~~the minimum capability contract is approved~~ — done via the
    [Capability Model](capability-model.md).
 7. the technology decisions affecting the first slice are accepted — language,
@@ -377,11 +384,18 @@ Redis scratchpad projection, idempotent task submission, persisted approval and
 invocation identity, ordered events, restart inspection, and schema-bound
 planning execution after approval.
 
-This is not V1 completion. The current planning executor uses the configured
-structured-output model; the accepted journey still requires selected
-read-only project context, the final specialist adapter, a versioned artifact,
-finite resource ceilings, cancellation, and conversations. Forced-process
-recovery, scratchpad loss, and persistent idempotency have real local evidence.
+The production spine now also includes registered generic projects,
+conversations and task-linked messages, bounded Git context assembly, exact
+context disclosure, a read-only ephemeral Codex adapter, one idempotent
+versioned plan artifact, flat run ceilings, and best-effort cancellation.
+
+This is not yet V1 product completion. Deterministic tests now cover interrupted
+invocation and cancellation recovery. A compiled persistent-mode journey has
+also verified registered context, artifact identity, process restart,
+conversation retrieval, and Redis projection reconstruction. The remaining
+acceptance boundary is an owner-approved real-cloud-Codex disclosure and
+evaluation of the resulting plan; Gatherle may be one acceptance project but is
+not production architecture.
 
 ## Decisions to validate during V1
 

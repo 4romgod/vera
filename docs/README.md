@@ -1,7 +1,7 @@
 # Vera Documentation Guide
 
 **Status:** Active index
-**Last updated:** 24 August 2026
+**Last updated:** 25 August 2026
 
 ## Purpose
 
@@ -23,10 +23,17 @@ The durable-state/execution-scratchpad/model-context separation and the V1
 journey are also accepted. Broader personal-memory and retention design remains
 open on purpose. ADR-0010 selects MongoDB for durable operational authority and
 Redis for a rebuildable execution scratchpad.
+ADR-0011 makes projects generic and constrains specialist disclosure to a
+bounded, approved, hash-verified context snapshot.
+ADR-0012 keeps specialist platforms late-bound behind provider-neutral
+capabilities while preserving their exact identity in approvals.
 
 Implementation began on the same date. ADR-0009 accepts the first production
 source layout and model decision boundary. ADR-0010 accepts the durable
 task/run/approval lifecycle and operational storage topology.
+ADR-0011 accepts the generic project-source, context-manifest, snapshot, and
+idempotent plan-artifact boundaries. ADR-0012 records Codex as the default
+adapter rather than a permanent domain dependency.
 
 ## Recommended reading order
 
@@ -150,7 +157,9 @@ Consequential decisions are recorded when they are made, while each production
 increment must finish with executable evidence. The structured model proposal,
 local-model boundary, state machine, approval claim, and schema-bound planning
 execution now have deterministic evidence. Real MongoDB/Redis forced-restart,
-projection-loss, and idempotency evidence also passes. Bounded project context,
-final specialist integration, artifacts, ceilings, and cancellation remain;
-see the
+projection-loss, and idempotency evidence also passes. The generic-project
+increment adds bounded hash-verified context, adapter-specific disclosure,
+specialist execution, versioned artifacts, ceilings, cancellation, and
+deterministic recovery evidence. The remaining acceptance step is an
+owner-approved real-cloud-Codex invocation; see the
 [Discovery Record](discovery-record.md#implementation-evidence-and-next-increments).

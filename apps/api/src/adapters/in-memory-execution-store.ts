@@ -9,9 +9,11 @@ export class InMemoryExecutionStore implements ExecutionStore {
   private readonly taskIdByRequestKey = new Map<string, string>();
 
   public create(aggregate: TaskAggregate): Promise<CreateAggregateResult> {
-    const existingTaskId = this.taskIdByRequestKey.get(
+    const requestIdentity = this.requestIdentity(
+      aggregate.task.principalId,
       aggregate.task.requestKey,
     );
+    const existingTaskId = this.taskIdByRequestKey.get(requestIdentity);
     if (existingTaskId !== undefined) {
       const existing = this.byTaskId.get(existingTaskId);
       if (existing === undefined) {
@@ -23,7 +25,7 @@ export class InMemoryExecutionStore implements ExecutionStore {
       });
     }
 
-    this.taskIdByRequestKey.set(aggregate.task.requestKey, aggregate.task.id);
+    this.taskIdByRequestKey.set(requestIdentity, aggregate.task.id);
     this.byTaskId.set(aggregate.task.id, structuredClone(aggregate));
     return Promise.resolve({
       created: true,
@@ -31,24 +33,46 @@ export class InMemoryExecutionStore implements ExecutionStore {
     });
   }
 
-  public findByRequestKey(requestKey: string): Promise<TaskAggregate | null> {
-    const taskId = this.taskIdByRequestKey.get(requestKey);
+  public findByRequestKey(
+    principalId: string,
+    requestKey: string,
+  ): Promise<TaskAggregate | null> {
+    const taskId = this.taskIdByRequestKey.get(
+      this.requestIdentity(principalId, requestKey),
+    );
     return Promise.resolve(taskId === undefined ? null : this.clone(taskId));
   }
 
-  public findByTaskId(taskId: string): Promise<TaskAggregate | null> {
-    return Promise.resolve(this.clone(taskId));
+  public findByTaskId(
+    principalId: string,
+    taskId: string,
+  ): Promise<TaskAggregate | null> {
+    return Promise.resolve(this.cloneOwned(principalId, taskId));
   }
 
-  public findByRunId(runId: string): Promise<TaskAggregate | null> {
+  public findByRunId(
+    principalId: string,
+    runId: string,
+  ): Promise<TaskAggregate | null> {
     return Promise.resolve(
-      this.find((aggregate) => aggregate.run.id === runId),
+      this.find(
+        (aggregate) =>
+          aggregate.task.principalId === principalId &&
+          aggregate.run.id === runId,
+      ),
     );
   }
 
-  public findByApprovalId(approvalId: string): Promise<TaskAggregate | null> {
+  public findByApprovalId(
+    principalId: string,
+    approvalId: string,
+  ): Promise<TaskAggregate | null> {
     return Promise.resolve(
-      this.find((aggregate) => aggregate.run.approval?.id === approvalId),
+      this.find(
+        (aggregate) =>
+          aggregate.task.principalId === principalId &&
+          aggregate.run.approval?.id === approvalId,
+      ),
     );
   }
 
@@ -71,7 +95,8 @@ export class InMemoryExecutionStore implements ExecutionStore {
           (aggregate) =>
             aggregate.run.status === 'deciding' ||
             aggregate.run.status === 'executing' ||
-            aggregate.run.status === 'awaiting_approval',
+            aggregate.run.status === 'awaiting_approval' ||
+            aggregate.run.status === 'cancellation_requested',
         )
         .map((aggregate) => structuredClone(aggregate)),
     );
@@ -88,6 +113,18 @@ export class InMemoryExecutionStore implements ExecutionStore {
   private clone(taskId: string): TaskAggregate | null {
     const aggregate = this.byTaskId.get(taskId);
     return aggregate === undefined ? null : structuredClone(aggregate);
+  }
+
+  private cloneOwned(
+    principalId: string,
+    taskId: string,
+  ): TaskAggregate | null {
+    const aggregate = this.clone(taskId);
+    return aggregate?.task.principalId === principalId ? aggregate : null;
+  }
+
+  private requestIdentity(principalId: string, requestKey: string): string {
+    return `${principalId}\u0000${requestKey}`;
   }
 
   private find(

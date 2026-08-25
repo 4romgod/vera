@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
 
 import { InMemoryExecutionStore } from '../src/adapters/in-memory-execution-store.ts';
+import { InMemoryResourceStore } from '../src/adapters/in-memory-resource-store.ts';
 import { InMemoryScratchpad } from '../src/adapters/in-memory-scratchpad.ts';
 import { createEvaluateModelDecision } from '../src/application/evaluate-model-decision.ts';
 import { createTaskLifecycle } from '../src/application/task-lifecycle.ts';
@@ -13,6 +14,19 @@ import { FakeModelProvider } from './support/fake-model-provider.ts';
 const apps: ReturnType<typeof buildApp>[] = [];
 
 function createHarness() {
+  const resources = new InMemoryResourceStore();
+  void resources.createProject({
+    schemaVersion: 1,
+    id: 'project_test',
+    principalId: 'owner_v1',
+    registrationKey: 'project-test',
+    displayName: 'Vera',
+    normalizedName: 'vera',
+    source: { kind: 'local_git', rootPath: '/test/vera' },
+    status: 'active',
+    createdAt: '2026-08-24T18:00:00.000Z',
+    updatedAt: '2026-08-24T18:00:00.000Z',
+  });
   const provider = new FakeModelProvider({
     schemaVersion: 1,
     kind: 'invoke_capability',
@@ -26,7 +40,11 @@ function createHarness() {
   });
   const plan: DevelopmentPlan = {
     schemaVersion: 1,
-    project: { name: 'Vera' },
+    project: {
+      name: 'Vera',
+      id: 'project_test',
+      revision: 'test-revision',
+    },
     ticket: { reference: 'VERA-202', details: 'Trace API requests.' },
     objective: 'Add request tracing.',
     title: 'Request tracing plan',
@@ -47,6 +65,14 @@ function createHarness() {
     risks: [],
   };
   const capability: DevelopmentPlanningCapability = {
+    destination: {
+      schemaVersion: 1,
+      adapterId: 'test_planner',
+      provider: 'fake',
+      transport: 'in_process',
+      dataBoundary: 'owner_controlled',
+    },
+    checkReadiness: () => Promise.resolve(),
     execute: () =>
       Promise.resolve({
         plan,
@@ -57,7 +83,29 @@ function createHarness() {
     store: new InMemoryExecutionStore(),
     scratchpad: new InMemoryScratchpad(),
     evaluateModelDecision: createEvaluateModelDecision(provider),
-    developmentPlanning: capability,
+    developmentPlanning: {
+      selected: () => capability,
+      resolve: () => capability,
+    },
+    resources,
+    contextAssembler: {
+      assemble: (input) =>
+        Promise.resolve({
+          manifest: {
+            schemaVersion: 1,
+            projectId: input.project.id,
+            sourceKind: 'local_git',
+            revision: 'test-revision',
+            generatedAt: '2026-08-24T18:00:00.000Z',
+            entries: [],
+            totalFiles: 0,
+            totalBytes: 0,
+            limits: input.limits,
+            exclusions: ['Synthetic HTTP test context.'],
+          },
+          documents: [],
+        }),
+    },
   });
   const app = buildApp({
     provider,
@@ -77,7 +125,7 @@ void describe('task lifecycle HTTP API', () => {
     const response = await createHarness().inject({
       method: 'POST',
       url: '/v1/tasks',
-      payload: { message: 'Plan request tracing.' },
+      payload: { message: 'Plan request tracing.', projectId: 'project_test' },
     });
 
     assert.equal(response.statusCode, 400);
@@ -92,7 +140,11 @@ void describe('task lifecycle HTTP API', () => {
       method: 'POST',
       url: '/v1/tasks',
       headers: { 'idempotency-key': 'task-http-extra' },
-      payload: { message: 'Plan request tracing.', authorized: true },
+      payload: {
+        message: 'Plan request tracing.',
+        projectId: 'project_test',
+        authorized: true,
+      },
     });
 
     assert.equal(response.statusCode, 400);
@@ -104,7 +156,7 @@ void describe('task lifecycle HTTP API', () => {
       method: 'POST',
       url: '/v1/tasks',
       headers: { 'idempotency-key': 'task-http-e2e' },
-      payload: { message: 'Plan request tracing.' },
+      payload: { message: 'Plan request tracing.', projectId: 'project_test' },
     });
 
     assert.equal(submitted.statusCode, 202);
@@ -148,10 +200,15 @@ void describe('task lifecycle HTTP API', () => {
       [
         'task_created',
         'run_started',
+        'budget_assigned',
+        'budget_consumed',
         'model_decision_recorded',
+        'context_assembled',
         'approval_requested',
         'approval_approved',
+        'budget_consumed',
         'capability_invocation_started',
+        'artifact_created',
         'capability_invocation_succeeded',
         'run_succeeded',
       ],

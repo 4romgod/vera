@@ -35,6 +35,8 @@ export const DevelopmentPlanSchema = DevelopmentPlanContentSchema.extend({
   project: z
     .object({
       name: z.string().trim().min(1).max(200),
+      id: z.string().startsWith('project_').optional(),
+      revision: z.string().min(1).max(200).optional(),
     })
     .strict(),
   ticket: z

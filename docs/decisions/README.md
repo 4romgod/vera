@@ -1,7 +1,7 @@
 # Vera Architecture Decision Records
 
 **Status:** Active index
-**Last updated:** 24 August 2026
+**Last updated:** 25 August 2026
 
 ## Purpose
 
@@ -32,6 +32,8 @@ erasing why a choice was made.
 | [0008](0008-trim-v1-scope-and-ratify-foundation.md) | Accepted | Ratify the foundation review and trim V1 scope to a solo-buildable slice. |
 | [0009](0009-implement-the-model-decision-boundary.md) | Accepted | Implement the first production decision boundary as a Fastify/Zod modular TypeScript API with Ollama and deterministic adapters. |
 | [0010](0010-use-mongodb-for-operational-truth-and-redis-for-scratchpads.md) | Accepted | Use MongoDB for authoritative V1 task aggregates and Redis for rebuildable, expiring run scratchpads. |
+| [0011](0011-use-generic-project-sources-and-bounded-context-snapshots.md) | Accepted | Represent projects generically and disclose only bounded, approved, hash-verified context snapshots to specialists. |
+| [0012](0012-late-bind-specialist-platforms-behind-capability-adapters.md) | Accepted | Keep capability semantics provider-neutral and late-bind explicit, auditable specialist adapters. |
 
 ADRs 0001–0008 were accepted 24 August 2026 following the owner's review of
 the foundation documentation. ADR-0007 accepted a semantic boundary without
@@ -40,6 +42,10 @@ implementation and the first executable vertical slice. ADR-0010 resolves the
 storage decision: MongoDB is authoritative and Redis is a rebuildable
 projection. ADR-0010 records the required real-process recovery evidence; that
 behavior remains a regression criterion, not an undecided product choice.
+ADR-0011 ensures the first real project remains acceptance data rather than a
+hard-coded architectural dependency.
+ADR-0012 makes Codex the first registered planning adapter rather than a
+permanent capability or domain dependency.
 
 ## ADR rules
 

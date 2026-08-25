@@ -1,6 +1,7 @@
 import { loadConfig } from './config.ts';
 import { loadEnvironmentFile } from './environment.ts';
 import { createApp } from './wiring.ts';
+import { canonicalPlanningAdapterId } from './capabilities/development-planning-adapter-registry.ts';
 
 const environmentFile = loadEnvironmentFile();
 const config = loadConfig();
@@ -13,6 +14,19 @@ app.log.info(
       host: config.host,
       port: config.port,
       modelProvider: config.modelProvider,
+      planning: {
+        configuredAdapterId: config.planning.adapterId,
+        resolvedAdapterId: canonicalPlanningAdapterId(
+          config.planning.adapterId,
+        ),
+        ...(canonicalPlanningAdapterId(config.planning.adapterId) ===
+        'codex_cli'
+          ? {
+              model:
+                config.planning.adapters.codexCli.model ?? 'configured-default',
+            }
+          : {}),
+      },
       ...(config.modelProvider === 'ollama'
         ? {
             ollama: {

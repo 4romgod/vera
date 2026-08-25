@@ -4,10 +4,17 @@ import {
   type TaskLifecycle,
 } from './application/task-lifecycle.ts';
 import { InMemoryExecutionStore } from './adapters/in-memory-execution-store.ts';
+import { InMemoryResourceStore } from './adapters/in-memory-resource-store.ts';
 import { InMemoryScratchpad } from './adapters/in-memory-scratchpad.ts';
+import {
+  LocalGitProjectContextAssembler,
+  resolveLocalGitRoot,
+} from './adapters/local-git-project-context-assembler.ts';
 import { MongoDbExecutionStore } from './adapters/mongodb-execution-store.ts';
+import { MongoDbResourceStore } from './adapters/mongodb-resource-store.ts';
 import { RedisScratchpad } from './adapters/redis-scratchpad.ts';
-import { ModelDevelopmentPlanningCapability } from './capabilities/model-development-planning-capability.ts';
+import { createDevelopmentPlanningCapabilityRegistry } from './capabilities/development-planning-adapter-registry.ts';
+import { createResourceService } from './application/resource-service.ts';
 import type { AppConfig } from './config.ts';
 import { buildApp } from './http/build-app.ts';
 import { DeterministicModelProvider } from './model/deterministic-model-provider.ts';
@@ -15,6 +22,7 @@ import type { ModelProvider } from './model/model-provider.ts';
 import { OllamaModelProvider } from './model/ollama-model-provider.ts';
 import type { ExecutionStore } from './ports/execution-store.ts';
 import type { Scratchpad } from './ports/scratchpad.ts';
+import type { ResourceStore } from './ports/resource-store.ts';
 
 function createModelProvider(config: AppConfig): ModelProvider {
   if (config.modelProvider === 'deterministic') {
@@ -43,13 +51,32 @@ export function createApp(config: AppConfig) {
           ttlSeconds: config.storage.scratchpadTtlSeconds,
           timeoutMs: config.storage.dependencyTimeoutMs,
         });
+  const resources: ResourceStore =
+    config.storage.mode === 'memory'
+      ? new InMemoryResourceStore()
+      : new MongoDbResourceStore({
+          uri: config.storage.mongodbUri,
+          database: config.storage.mongodbDatabase,
+          timeoutMs: config.storage.dependencyTimeoutMs,
+        });
+  const resourceService = createResourceService({
+    store: resources,
+    resolveLocalGitRoot,
+  });
+  const contextAssembler = new LocalGitProjectContextAssembler();
+  const developmentPlanning = createDevelopmentPlanningCapabilityRegistry({
+    config,
+    provider,
+  });
 
   const appReference: { current?: ReturnType<typeof buildApp> } = {};
   const lifecycle = createTaskLifecycle({
     store,
     scratchpad,
     evaluateModelDecision,
-    developmentPlanning: new ModelDevelopmentPlanningCapability(provider),
+    developmentPlanning,
+    resources,
+    contextAssembler,
     observer: {
       warning(error, context) {
         appReference.current?.log.warn(
@@ -73,11 +100,15 @@ export function createApp(config: AppConfig) {
       await ensureRecovered();
       return lifecycle.submit(input);
     },
-    getTask: (taskId) => lifecycle.getTask(taskId),
-    getRun: (runId) => lifecycle.getRun(runId),
+    getTask: (principalId, taskId) => lifecycle.getTask(principalId, taskId),
+    getRun: (principalId, runId) => lifecycle.getRun(principalId, runId),
     async decideApproval(input) {
       await ensureRecovered();
       return lifecycle.decideApproval(input);
+    },
+    async cancelRun(input) {
+      await ensureRecovered();
+      return lifecycle.cancelRun(input);
     },
     recoverInterrupted: ensureRecovered,
   };
@@ -86,16 +117,25 @@ export function createApp(config: AppConfig) {
     evaluateModelDecision,
     provider,
     taskLifecycle: guardedLifecycle,
+    resources: resourceService,
     readinessChecks: [
       {
         name: 'mongodb_operational_store',
         check: () => store.checkReadiness(),
       },
       { name: 'redis_scratchpad', check: () => scratchpad.checkReadiness() },
+      {
+        name: 'mongodb_resource_store',
+        check: () => resources.checkReadiness(),
+      },
+      {
+        name: 'development_planning_capability',
+        check: () => developmentPlanning.selected().checkReadiness(),
+      },
       { name: 'lifecycle_recovery', check: ensureRecovered },
     ],
     close: async () => {
-      await Promise.all([store.close(), scratchpad.close()]);
+      await Promise.all([store.close(), scratchpad.close(), resources.close()]);
     },
     logger: true,
   });

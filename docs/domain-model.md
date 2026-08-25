@@ -30,6 +30,8 @@ This is a semantic model, not a database schema or class hierarchy.
 ```mermaid
 erDiagram
     PRINCIPAL ||--o{ CONVERSATION : participates_in
+    PRINCIPAL ||--o{ PROJECT : owns
+    PROJECT ||--o{ TASK : provides_context_for
     CONVERSATION ||--o{ MESSAGE : contains
     MESSAGE o|--o{ TASK : requests_or_steers
     PRINCIPAL ||--o{ TASK : owns
@@ -81,6 +83,25 @@ Key invariants:
 - a client may create a new conversation to isolate unrelated context;
 - conversation context is selected deliberately rather than passed wholesale
   to every model call.
+
+### Project
+
+An owner-registered identity for a body of work and its available context
+sources. A project is not a filesystem path or a particular Git provider. Its
+stable `projectId` lets tasks refer to it while source adapters translate local
+Git repositories or future remote workspaces into bounded context.
+
+Key invariants:
+
+- every project belongs to a principal;
+- registration, source location, and policy are authoritative code-controlled
+  data, never model-generated authority;
+- a task refers to a project by identity rather than embedding an arbitrary
+  path;
+- adding another source kind does not change task, approval, capability, or
+  artifact identity; and
+- a specific acceptance project is configuration and test data, not routing
+  logic.
 
 ### Message
 
