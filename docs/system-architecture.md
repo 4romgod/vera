@@ -3,12 +3,13 @@
 **Status:** Accepted (logical architecture, component responsibilities,
 request lifecycle, architectural invariants, initial modular API shape, and V1
 operational storage); post-V1 progress transport and deployment topology remain open
-**Version:** 0.5
+**Version:** 0.6
 **Last updated:** 25 August 2026
 **Accepted:** 24 August 2026 (owner) — post-V1 progress transport and deployment
 topology are deferred; V1 uses HTTP polling. The initial Fastify/Zod modular API
 is accepted by ADR-0009. MongoDB operational truth and the Redis scratchpad are
-accepted by ADR-0010.
+accepted by ADR-0010. The V1 owner perimeter is accepted by ADR-0014 and the
+startup-selected model-provider registry by ADR-0015.
 
 ## Purpose
 
@@ -210,7 +211,9 @@ preserving internal boundaries.
   generation;
 - translate provider-specific request and response shapes;
 - validate outputs and expose usage, latency, and failure metadata;
-- support local providers such as Ollama and cloud providers;
+- select Ollama, OpenAI, Gemini, or deterministic implementations through an
+  explicit startup registry and profile;
+- prohibit silent fallback across owner-controlled and third-party boundaries;
 - make provider capabilities explicit rather than pretending all models are
   identical.
 
@@ -334,7 +337,7 @@ sequenceDiagram
     participant Mongo as "MongoDB authority"
     participant Lease as "MongoDB run leases"
     participant Redis as "Redis scratchpad"
-    participant Model as "Provider port / Ollama"
+    participant Model as "Model-provider registry"
     participant Policy as "Schema, registry, and approval policy"
     participant Source as "Registered project source"
     participant Capability as "development_planning@1"
@@ -406,8 +409,10 @@ generic project and conversation resources, selected
 read-only Git context, exact disclosure approval, a provider-neutral specialist
 port with a late-bound adapter registry, the default Codex adapter, artifact
 identity, flat resource ceilings, and best-effort
-cancellation. The model-backed planner remains as an explicit local/testing
-adapter. Deterministic tests cover interrupted invocation and cancellation
+cancellation. The model-backed planner remains an explicit provider-neutral
+adapter. Ollama, OpenAI, and Gemini implement the same structured-generation
+port; provider-specific schemas, credentials, readiness, and errors stay behind
+their adapters. Deterministic tests cover interrupted invocation and cancellation
 recovery; a compiled persistent-mode journey verifies artifact and conversation
 survival across process restart plus Redis projection reconstruction. Remaining
 V1 evidence is owner acceptance of the exact real-cloud-Codex disclosure.
@@ -417,8 +422,11 @@ resolve that persisted descriptor rather than the currently selected adapter;
 missing or changed adapter configuration fails closed instead of redirecting
 approved context.
 
-The app binds to loopback by default because authentication is intentionally
-deferred pending an explicit identity design. Health is process liveness.
+The app rejects non-loopback bind configuration. V1 trusts the authenticated
+Mac Mini account and SSH session as its owner perimeter, maps admitted requests
+to `owner_v1`, and requires application authentication before broader exposure
+under [ADR-0014](decisions/0014-use-the-host-session-as-the-v1-owner-boundary.md).
+Health is process liveness.
 Readiness verifies provider connectivity, configured-model availability,
 MongoDB, Redis, worker lease access, lifecycle recovery, and
 planning-specialist availability without running inference.

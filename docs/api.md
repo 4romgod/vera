@@ -1,7 +1,7 @@
 # Vera HTTP API
 
 **Status:** Accepted for implemented V1 paths
-**Version:** 0.3
+**Version:** 0.4
 **Last updated:** 25 August 2026
 
 ## Purpose
@@ -12,8 +12,10 @@ defines how an HTTP client observes them.
 
 All paths are versioned except process health. JSON request objects are closed:
 unknown properties are rejected rather than silently removed. The service
-binds to loopback by default and uses the implicit `owner_v1` principal until
-authentication is implemented.
+rejects non-loopback bind configuration and uses the implicit `owner_v1`
+principal inside the trusted Mac Mini account/SSH perimeter. This topology does
+not provide application-layer caller authentication and must not be exposed to
+an untrusted network.
 
 ## Implemented paths
 
@@ -322,8 +324,9 @@ Error envelopes use:
 
 ## Current security boundary
 
-The API has no authentication yet; identity design is explicitly deferred, not
-implicitly solved. Loopback binding is mandatory for this increment. SSH
-forwarding may expose loopback ports to the owner's MacBook, but Vera must not
-bind to a LAN or public interface until identity, authentication, and transport
-policy are implemented.
+The API has no application-layer caller authentication. ADR-0014 explicitly
+sets the V1 owner perimeter at the trusted Mac Mini account and authenticated
+SSH session, and configuration rejects non-loopback listeners. SSH forwarding
+may expose the loopback service to the owner's MacBook. Vera must not bind to a
+LAN or public interface until application identity, authentication, and
+transport policy are implemented.

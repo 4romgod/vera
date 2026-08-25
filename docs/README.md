@@ -29,6 +29,9 @@ ADR-0012 keeps specialist platforms late-bound behind provider-neutral
 capabilities while preserving their exact identity in approvals.
 ADR-0013 derives asynchronous work from durable MongoDB state and coordinates
 workers with expiring per-run leases; Redis remains a disposable scratchpad.
+ADR-0014 defines the authenticated host/SSH session and enforced loopback
+listener as V1's single-owner perimeter. ADR-0015 registers Ollama, OpenAI, and
+Gemini behind explicit startup profiles without silent provider fallback.
 
 Implementation began on the same date. ADR-0009 accepts the first production
 source layout and model decision boundary. ADR-0010 accepts the durable
@@ -37,6 +40,9 @@ ADR-0011 accepts the generic project-source, context-manifest, snapshot, and
 idempotent plan-artifact boundaries. ADR-0012 records Codex as the default
 adapter rather than a permanent domain dependency.
 ADR-0013 accepts durable dispatch and the initial in-process worker topology.
+ADR-0014 resolves the earlier authentication wording without claiming
+application-layer caller identity. ADR-0015 accepts the provider registry,
+profile precedence, cloud disclosure boundary, and credential handling.
 
 ## Recommended reading order
 
@@ -104,7 +110,7 @@ and normative wording have one owner.
 | Vera's identity, North Star, and product principles | [Product Charter](product-charter.md) |
 | Domain terms and distinctions | [Domain Model](domain-model.md) |
 | Component responsibilities and request lifecycle | [System Architecture](system-architecture.md) |
-| Model-provider and capability semantics, including Ollama's role | [Capability Model](capability-model.md) |
+| Model-provider and capability semantics, including local/cloud boundaries | [Capability Model](capability-model.md) |
 | Memory, context, and operational-state semantics | [Memory and Context](memory-and-context.md) |
 | Authorization, approval, credential, and budget rules | [Security and Trust](security-and-trust.md) |
 | V1 scope and acceptance | [V1 Definition](v1-definition.md) |
@@ -154,6 +160,9 @@ TypeScript client used by the CLI and available to future user interfaces. See
 [ADR-0009](decisions/0009-implement-the-model-decision-boundary.md),
 [ADR-0010](decisions/0010-use-mongodb-for-operational-truth-and-redis-for-scratchpads.md),
 and [ADR-0013](decisions/0013-dispatch-durable-work-with-mongodb-leases.md).
+The model gateway now supplies Ollama, OpenAI, Gemini, and deterministic
+adapters through startup-selected profiles; see
+[ADR-0015](decisions/0015-select-model-providers-through-explicit-profiles.md).
 
 ## Documentation and implementation cadence
 
@@ -167,8 +176,12 @@ increment adds bounded hash-verified context, adapter-specific disclosure,
 specialist execution, versioned artifacts, ceilings, cancellation, and
 deterministic recovery evidence. Durable asynchronous pickup, cross-worker
 leases, polling-client behavior, and the owner CLI also have executable
-evidence. Required CI now runs the compiled CLI-to-artifact journey with real
+evidence. Provider conformance tests now cover Ollama, OpenAI, and Gemini
+request, response, readiness, usage, timeout, and secret-handling boundaries.
+Required CI now runs the compiled CLI-to-artifact journey with real
 ephemeral MongoDB and Redis plus deterministic owner-controlled adapters; it
 does not download models or call a third party. The only remaining acceptance
-step is owner approval of a real-cloud-Codex invocation; see the
+step for the V1 product path is owner approval of a real-cloud-Codex invocation.
+Real OpenAI or Gemini calls require owner-supplied keys and remain explicit
+operator conformance rather than required CI; see the
 [Discovery Record](discovery-record.md#implementation-evidence-and-next-increments).

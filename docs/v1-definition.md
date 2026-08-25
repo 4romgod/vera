@@ -1,10 +1,11 @@
 # Vera V1 Definition
 
 **Status:** Accepted
-**Version:** 0.6
-**Last updated:** 24 August 2026
-**Accepted:** 24 August 2026 (owner) — completion still requires the evidence
-in this document
+**Version:** 0.7
+**Last updated:** 25 August 2026
+**Accepted:** 24 August 2026 (owner); V1 perimeter and provider-profile
+decisions accepted 25 August 2026 — completion still requires the evidence in
+this document
 
 ## Scope change, 24 August 2026
 
@@ -393,6 +394,14 @@ durable-state worker with expiring MongoDB run leases. A shared TypeScript
 client and owner CLI exercise submission, polling, event inspection, approval,
 cancellation, and artifact retrieval without moving orchestration logic into a
 client.
+
+The model gateway now registers Ollama, OpenAI, Gemini, and deterministic
+adapters behind one structured-generation port. A selected `.env.<profile>`
+overrides shared `.env` values without permitting automatic provider fallback.
+Cloud brains are third-party boundaries; their API keys remain transport-only,
+and repository contents are not part of the orchestration-decision request.
+ADR-0014 separately fixes V1's owner perimeter to the authenticated host/SSH
+session and makes non-loopback bind configuration invalid.
 
 This is not yet V1 product completion. Deterministic tests now cover interrupted
 invocation and cancellation recovery. A compiled persistent-mode journey has

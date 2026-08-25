@@ -36,6 +36,7 @@ export type OllamaModelProviderOptions = {
   model: string;
   timeoutMs: number;
   readinessTimeoutMs: number;
+  maxOutputTokens?: number;
   fetch?: typeof globalThis.fetch;
 };
 
@@ -92,6 +93,7 @@ export class OllamaModelProvider implements ModelProvider {
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
   private readonly readinessTimeoutMs: number;
+  private readonly maxOutputTokens: number | undefined;
   private readonly fetchImplementation: typeof globalThis.fetch;
 
   public constructor(options: OllamaModelProviderOptions) {
@@ -99,6 +101,7 @@ export class OllamaModelProvider implements ModelProvider {
     this.model = options.model;
     this.timeoutMs = options.timeoutMs;
     this.readinessTimeoutMs = options.readinessTimeoutMs;
+    this.maxOutputTokens = options.maxOutputTokens;
     this.fetchImplementation = options.fetch ?? globalThis.fetch;
   }
 
@@ -178,7 +181,12 @@ export class OllamaModelProvider implements ModelProvider {
           format: toOllamaGrammarSchema(input.outputSchema),
           stream: false,
           think: false,
-          options: { temperature: 0 },
+          options: {
+            temperature: 0,
+            ...(this.maxOutputTokens === undefined
+              ? {}
+              : { num_predict: this.maxOutputTokens }),
+          },
         }),
       },
       this.timeoutMs,

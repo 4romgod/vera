@@ -21,21 +21,11 @@ import { createTaskWorker } from './application/task-worker.ts';
 import type { AppConfig } from './config.ts';
 import { DefaultRunBudget } from './domain/run-budget.ts';
 import { buildApp } from './http/build-app.ts';
-import { DeterministicModelProvider } from './model/deterministic-model-provider.ts';
-import type { ModelProvider } from './model/model-provider.ts';
-import { OllamaModelProvider } from './model/ollama-model-provider.ts';
+import { createModelProvider } from './model/model-provider-registry.ts';
 import type { ExecutionStore } from './ports/execution-store.ts';
 import type { Scratchpad } from './ports/scratchpad.ts';
 import type { ResourceStore } from './ports/resource-store.ts';
 import type { WorkLeaseStore } from './ports/work-lease-store.ts';
-
-function createModelProvider(config: AppConfig): ModelProvider {
-  if (config.modelProvider === 'deterministic') {
-    return new DeterministicModelProvider();
-  }
-
-  return new OllamaModelProvider(config.ollama);
-}
 
 export function createApp(config: AppConfig) {
   if (config.worker.leaseMs <= DefaultRunBudget.limits.maxDurationMs) {
@@ -43,7 +33,7 @@ export function createApp(config: AppConfig) {
       'WORKER_LEASE_MS must exceed the maximum configured run duration.',
     );
   }
-  const provider = createModelProvider(config);
+  const provider = createModelProvider(config.model);
   const evaluateModelDecision = createEvaluateModelDecision(provider);
   const store: ExecutionStore =
     config.storage.mode === 'memory'
@@ -83,7 +73,7 @@ export function createApp(config: AppConfig) {
   });
   const contextAssembler = new LocalGitProjectContextAssembler();
   const developmentPlanning = createDevelopmentPlanningCapabilityRegistry({
-    config,
+    config: { planning: config.planning, storage: config.storage },
     provider,
   });
 

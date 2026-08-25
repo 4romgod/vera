@@ -16,13 +16,7 @@ function config(): AppConfig {
   return {
     host: '127.0.0.1',
     port: 4310,
-    modelProvider: 'deterministic',
-    ollama: {
-      baseUrl: 'http://127.0.0.1:11434',
-      model: 'deterministic-v1',
-      timeoutMs: 1_000,
-      readinessTimeoutMs: 250,
-    },
+    model: { provider: 'deterministic', model: 'deterministic-v1' },
     storage: {
       mode: 'memory',
       mongodbUri: 'mongodb://127.0.0.1:27017',
