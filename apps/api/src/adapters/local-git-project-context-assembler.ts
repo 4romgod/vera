@@ -8,6 +8,7 @@ import {
   ProjectContextBundleSchema,
   type ProjectContextBundle,
 } from '../domain/project-context.ts';
+import { containsControlCharacter } from '../domain/text-safety.ts';
 import type { ProjectContextAssembler } from '../ports/project-context-assembler.ts';
 
 const executeFile = promisify(execFile);
@@ -100,6 +101,7 @@ function extension(path: string): string {
 }
 
 function isEligiblePath(path: string): boolean {
+  if (containsControlCharacter(path)) return false;
   const lowerPath = path.toLowerCase();
   const segments = path.split('/');
   if (segments.some((segment) => blockedSegments.has(segment))) {

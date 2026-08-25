@@ -10,6 +10,7 @@ import type { ConversationMessage } from '../src/domain/conversation.ts';
 import type { DecisionResult } from '../src/domain/execution-decision.ts';
 import type { DevelopmentPlan } from '../src/domain/development-plan.ts';
 import type { RunBudget } from '../src/domain/run-budget.ts';
+import { CapabilityInvocationSchema } from '../src/domain/task-aggregate.ts';
 import { sameCapabilityDestination } from '../src/domain/capability-destination.ts';
 import { ModelProviderError } from '../src/model/model-provider.ts';
 import type {
@@ -18,6 +19,7 @@ import type {
   DevelopmentPlanningInvocation,
 } from '../src/ports/development-planning-capability.ts';
 import type { ProjectContextAssembler } from '../src/ports/project-context-assembler.ts';
+import { createDeterministicSoftwareChangeRegistry } from './support/deterministic-software-change-registry.ts';
 
 const plan: DevelopmentPlan = {
   schemaVersion: 1,
@@ -81,6 +83,31 @@ function planningDecision(): DecisionResult {
       kind: 'approval_required',
       reason: 'specialist_capability_invocation',
       capability: { name: 'development_planning', version: 1 },
+      proposedArguments,
+    },
+    model: { provider: 'fake', model: 'fake-v1', durationMs: 1 },
+  };
+}
+
+function softwareChangeDecision(): DecisionResult {
+  const proposedArguments = {
+    objective: 'Implement request tracing.',
+    ticket: { reference: 'VERA-203', details: 'Trace every API request.' },
+    project: { name: 'Vera' },
+  };
+  return {
+    decisionId: 'decision_change_test',
+    proposal: {
+      schemaVersion: 1,
+      kind: 'invoke_capability',
+      decisionSummary: 'An isolated software change is appropriate.',
+      capability: { name: 'software_change', version: 1 },
+      arguments: proposedArguments,
+    },
+    decision: {
+      kind: 'approval_required',
+      reason: 'specialist_capability_invocation',
+      capability: { name: 'software_change', version: 1 },
       proposedArguments,
     },
     model: { provider: 'fake', model: 'fake-v1', durationMs: 1 },
@@ -208,6 +235,7 @@ function harness(options?: {
         : options.evaluate(message, context);
     },
     developmentPlanning: options?.registry ?? registryFor(capability),
+    softwareChange: createDeterministicSoftwareChangeRegistry(),
     resources,
     contextAssembler,
     ...(options?.executionMode === undefined
@@ -669,6 +697,44 @@ void describe('task lifecycle', () => {
     );
   });
 
+  void it('persists an approved software change as a review-only artifact', async () => {
+    const test = harness({ decision: softwareChangeDecision() });
+    const pending = await test.lifecycle.submit({
+      message: 'implement request tracing',
+      requestKey: 'request-change-1',
+      principalId: 'owner_v1',
+    });
+
+    assert.equal(pending.run.status, 'awaiting_approval');
+    const approval = pending.run.approval;
+    assert.ok(approval);
+    assert.equal(approval.capability.name, 'software_change');
+    assert.equal(approval.destination?.adapterId, 'deterministic_change');
+
+    const completed = await test.lifecycle.decideApproval({
+      approvalId: approval.id,
+      decision: 'approved',
+      principalId: 'owner_v1',
+    });
+
+    assert.equal(completed.run.status, 'succeeded');
+    if (completed.run.output?.kind !== 'software_change') {
+      assert.fail('Expected a software-change output.');
+    }
+    assert.equal(completed.run.output.change.project.id, 'project_test');
+    assert.equal(completed.run.output.change.project.revision, 'test-revision');
+    assert.equal(completed.run.output.change.files.length, 1);
+    assert.match(completed.run.output.change.patch, /new file mode 100644/u);
+    assert.equal(completed.run.output.artifact?.type, 'software_change');
+    const artifactId = completed.run.output.artifact.id;
+    const artifact = await test.resources.findArtifactById(
+      'owner_v1',
+      artifactId,
+    );
+    assert.equal(artifact?.type, 'software_change');
+    assert.equal(artifact.content.objective, 'Implement request tracing.');
+  });
+
   void it('records the configured specialist destination in the approval', async () => {
     const capability = new FakePlanningCapability(undefined, {
       schemaVersion: 1,
@@ -1089,7 +1155,7 @@ void describe('task lifecycle', () => {
     approval.status = 'approved';
     approval.decidedAt = '2026-08-24T18:00:00.000Z';
     approval.decidedBy = 'owner_v1';
-    interrupted.run.invocation = {
+    interrupted.run.invocation = CapabilityInvocationSchema.parse({
       id: 'invocation_recovery_test',
       status: 'executing',
       capability: approval.capability,
@@ -1097,7 +1163,7 @@ void describe('task lifecycle', () => {
       project: approval.project,
       contextManifest: context.manifest,
       startedAt: '2026-08-24T18:00:00.000Z',
-    };
+    });
     assert.ok(interrupted.run.budget);
     interrupted.run.budget.consumed.capabilityInvocations = 1;
     assert.equal(await test.store.replace(interrupted, pending.version), true);
@@ -1131,7 +1197,7 @@ void describe('task lifecycle', () => {
     approval.status = 'approved';
     approval.decidedAt = '2026-08-24T18:00:00.000Z';
     approval.decidedBy = 'owner_v1';
-    interrupted.run.invocation = {
+    interrupted.run.invocation = CapabilityInvocationSchema.parse({
       id: 'invocation_cancel_recovery_test',
       status: 'executing',
       capability: approval.capability,
@@ -1139,7 +1205,7 @@ void describe('task lifecycle', () => {
       project: approval.project,
       contextManifest: context.manifest,
       startedAt: '2026-08-24T18:00:00.000Z',
-    };
+    });
     assert.equal(await test.store.replace(interrupted, pending.version), true);
 
     await test.lifecycle.recoverInterrupted();

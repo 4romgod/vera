@@ -71,13 +71,59 @@ export type Approval = {
   decidedBy?: string;
 };
 
-export type ArtifactReference = {
+type ArtifactReferenceIdentity = {
   id: string;
-  version: number;
-  type: string;
-  mediaType: string;
+  version: 1;
   sha256: string;
   byteLength: number;
+};
+
+export type ArtifactReference = ArtifactReferenceIdentity &
+  (
+    | {
+        type: 'implementation_plan';
+        mediaType: 'application/vnd.vera.implementation-plan+json';
+      }
+    | {
+        type: 'software_change';
+        mediaType: 'application/vnd.vera.software-change+json';
+      }
+  );
+
+export type SoftwareChangeContent = {
+  schemaVersion: 1;
+  project: { id: string; name: string; revision: string };
+  ticket: { reference: string; details: string };
+  objective: string;
+  summary: string;
+  files: (
+    | {
+        relativePath: string;
+        operation: 'create';
+        afterSha256: string;
+        bytes: number;
+      }
+    | {
+        relativePath: string;
+        operation: 'update';
+        beforeSha256: string;
+        afterSha256: string;
+        bytes: number;
+      }
+    | {
+        relativePath: string;
+        operation: 'delete';
+        beforeSha256: string;
+        bytes: 0;
+      }
+  )[];
+  patch: string;
+  verification: {
+    command: string;
+    status: 'passed' | 'failed' | 'not_run';
+    details: string;
+  }[];
+  risks: string[];
 };
 
 export type TaskResource = {
@@ -98,11 +144,18 @@ export type TaskResource = {
     string,
     unknown
   >;
-  output?: {
-    kind: string;
-    artifact?: ArtifactReference;
-    [key: string]: unknown;
-  };
+  output?:
+    | { kind: 'response'; message?: string }
+    | {
+        kind: 'development_plan';
+        plan?: unknown;
+        artifact?: Extract<ArtifactReference, { type: 'implementation_plan' }>;
+      }
+    | {
+        kind: 'software_change';
+        change?: SoftwareChangeContent;
+        artifact?: Extract<ArtifactReference, { type: 'software_change' }>;
+      };
   failure?: { code: string; message: string };
   budget?: unknown;
   conversationContextManifest?: ConversationContextManifest;
@@ -150,22 +203,33 @@ export type ConversationMessageResource = {
   createdAt: string;
 };
 
-export type ArtifactResource = {
+type ArtifactResourceIdentity = {
   schemaVersion: 1;
   id: string;
-  version: number;
+  version: 1;
   taskId: string;
   runId: string;
   invocationId: string;
   projectId: string;
-  type: string;
-  mediaType: string;
   sha256: string;
   byteLength: number;
   producer: { destination?: CapabilityDestination } & Record<string, unknown>;
-  content: unknown;
   createdAt: string;
 };
+
+export type ArtifactResource = ArtifactResourceIdentity &
+  (
+    | {
+        type: 'implementation_plan';
+        mediaType: 'application/vnd.vera.implementation-plan+json';
+        content: unknown;
+      }
+    | {
+        type: 'software_change';
+        mediaType: 'application/vnd.vera.software-change+json';
+        content: SoftwareChangeContent;
+      }
+  );
 
 export type RunEventsResource = {
   schemaVersion: 1;

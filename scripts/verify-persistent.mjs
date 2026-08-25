@@ -57,6 +57,7 @@ async function startServer(port) {
       VERA_STORAGE_MODE: 'persistent',
       VERA_MODEL_PROVIDER: 'deterministic',
       VERA_PLANNING_ADAPTER: 'structured_model',
+      VERA_CHANGE_ADAPTER: 'deterministic_change',
       WORKER_CONCURRENCY: '2',
       WORKER_POLL_INTERVAL_MS: '25',
     },
@@ -214,6 +215,33 @@ async function verifyCliJourney(baseUrl, projectId) {
   assert.match(planResult.stdout, /"runStatus": "succeeded"/u);
   assert.match(planResult.stdout, /"type": "implementation_plan"/u);
 
+  const changeResult = await executeFile(
+    process.execPath,
+    [
+      'apps/cli/dist/bin.js',
+      'change',
+      '--url',
+      baseUrl,
+      '--project',
+      projectId,
+      '--message',
+      'Implement a deterministic CLI verification marker.',
+      '--key',
+      'persistent-verification-cli-change',
+      '--approve',
+    ],
+    {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: operationTimeoutMs,
+      maxBuffer: 2 * 1024 * 1024,
+    },
+  );
+  assert.match(changeResult.stdout, /"runStatus": "succeeded"/u);
+  assert.match(changeResult.stdout, /"type": "software_change"/u);
+  assert.match(changeResult.stdout, /VERA_DETERMINISTIC_CHANGE\.md/u);
+  assert.match(changeResult.stdout, /new file mode 100644/u);
+
   const chatResult = await executeFile(
     process.execPath,
     [
@@ -237,7 +265,7 @@ async function verifyCliJourney(baseUrl, projectId) {
   assert.match(chatResult.stdout, /"role": "vera"/u);
   assert.match(chatResult.stdout, /"conversationId": "conversation_/u);
 
-  for (const match of `${planResult.stdout}\n${chatResult.stdout}`.matchAll(
+  for (const match of `${planResult.stdout}\n${changeResult.stdout}\n${chatResult.stdout}`.matchAll(
     /"runId": "([^"]+)"/gu,
   )) {
     const runId = match[1];
@@ -633,8 +661,8 @@ async function verifyScenarios(mongo, redis) {
     .collection('artifacts')
     .find({})
     .toArray();
-  assert.equal(aggregates.length, 11);
-  assert.equal(artifacts.length, 4);
+  assert.equal(aggregates.length, 12);
+  assert.equal(artifacts.length, 5);
   assert.equal(
     new Set(artifacts.map((candidate) => candidate.invocationId)).size,
     artifacts.length,
@@ -739,6 +767,7 @@ process.stdout.write(
       database,
       inference: 'deterministic',
       planningAdapter: 'structured_model',
+      changeAdapter: 'deterministic_change',
       externalModelDownloads: false,
       ...evidence,
     },

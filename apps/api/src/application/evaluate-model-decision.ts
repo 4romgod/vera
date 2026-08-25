@@ -52,6 +52,15 @@ function decide(proposal: ModelProposal): ExecutionDecision {
     };
   }
 
+  if (proposal.capability.name === 'development_planning') {
+    return {
+      kind: 'approval_required',
+      reason: 'specialist_capability_invocation',
+      capability: proposal.capability,
+      proposedArguments: proposal.arguments,
+    };
+  }
+
   return {
     kind: 'approval_required',
     reason: 'specialist_capability_invocation',

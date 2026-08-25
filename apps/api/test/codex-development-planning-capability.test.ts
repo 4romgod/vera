@@ -56,7 +56,7 @@ process.exit(20);
 import { readFile, writeFile } from 'node:fs/promises';
 const args = process.argv.slice(2);
 const valueAfter = (flag) => args[args.indexOf(flag) + 1];
-if (!args.includes('--ephemeral') || valueAfter('--sandbox') !== 'read-only') process.exit(20);
+if (!args.includes('--ephemeral') || valueAfter('--sandbox') !== 'read-only' || valueAfter('--ask-for-approval') !== 'never') process.exit(20);
 const workspace = valueAfter('--cd');
 const source = await readFile(workspace + '/src/feature.ts', 'utf8');
 if (!source.includes('approved-only')) process.exit(21);

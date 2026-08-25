@@ -80,7 +80,7 @@ void describe('Vera CLI', () => {
           id: 'artifact_test',
           version: 1,
           type: 'implementation_plan',
-          mediaType: 'application/json',
+          mediaType: 'application/vnd.vera.implementation-plan+json',
           sha256: 'a'.repeat(64),
           byteLength: 10,
         },
@@ -174,6 +174,108 @@ void describe('Vera CLI', () => {
 
     assert.equal(exitCode, 2);
     assert.equal(decision, 'rejected');
+  });
+
+  void it('approves only a software-change proposal from the change command', async () => {
+    const calls: string[] = [];
+    const pending = task('awaiting_approval', {
+      approval: {
+        id: 'approval_change',
+        status: 'pending',
+        reason: 'specialist_capability_invocation',
+        capability: { name: 'software_change', version: 1 },
+        proposedArguments: { objective: 'implement it' },
+        requestedAt: '2026-08-25T00:00:00.000Z',
+      },
+    });
+    const completed = task('succeeded', {
+      output: {
+        kind: 'software_change',
+        artifact: {
+          id: 'artifact_change',
+          version: 1,
+          type: 'software_change',
+          mediaType: 'application/vnd.vera.software-change+json',
+          sha256: 'b'.repeat(64),
+          byteLength: 20,
+        },
+      },
+    });
+    let waits = 0;
+    const client = fakeApi({
+      submitTask: () => Promise.resolve(task('deciding')),
+      waitForRun: () => {
+        waits += 1;
+        return Promise.resolve(waits === 1 ? pending : completed);
+      },
+      decideApproval: (_approvalId, decision) => {
+        calls.push(decision);
+        return Promise.resolve(task('awaiting_approval'));
+      },
+      getArtifact: () =>
+        Promise.resolve({ id: 'artifact_change' } as ArtifactResource),
+    });
+
+    const exitCode = await runCli(
+      [
+        'change',
+        '--project',
+        'project_test',
+        '--message',
+        'implement it',
+        '--approve',
+      ],
+      {
+        client,
+        stdout: { write: () => true },
+        stderr: { write: () => true },
+      },
+    );
+
+    assert.equal(exitCode, 0);
+    assert.deepEqual(calls, ['approved']);
+  });
+
+  void it('never auto-approves a capability that differs from the command', async () => {
+    const pending = task('awaiting_approval', {
+      approval: {
+        id: 'approval_wrong',
+        status: 'pending',
+        reason: 'specialist_capability_invocation',
+        capability: { name: 'software_change', version: 1 },
+        proposedArguments: { objective: 'unexpected change' },
+        requestedAt: '2026-08-25T00:00:00.000Z',
+      },
+    });
+    let decisions = 0;
+    const client = fakeApi({
+      submitTask: () => Promise.resolve(task('deciding')),
+      waitForRun: () => Promise.resolve(pending),
+      decideApproval: () => {
+        decisions += 1;
+        return Promise.resolve(task('succeeded'));
+      },
+    });
+
+    await assert.rejects(
+      runCli(
+        [
+          'plan',
+          '--project',
+          'project_test',
+          '--message',
+          'plan it',
+          '--approve',
+        ],
+        {
+          client,
+          stdout: { write: () => true },
+          stderr: { write: () => true },
+        },
+      ),
+      /plan command only permits development_planning/u,
+    );
+    assert.equal(decisions, 0);
   });
 
   void it('appends a conversation message through the shared client', async () => {

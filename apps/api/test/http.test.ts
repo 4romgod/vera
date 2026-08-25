@@ -139,6 +139,34 @@ void describe('HTTP API', () => {
     });
   });
 
+  void it('reports an unavailable software-change specialist as not ready', async () => {
+    const provider = new FakeModelProvider({});
+    const app = buildApp({
+      evaluateModelDecision: createEvaluateModelDecision(provider),
+      provider,
+      readinessChecks: [
+        {
+          name: 'software_change_capability',
+          check: () => Promise.reject(new Error('Codex is not authenticated')),
+        },
+      ],
+    });
+    apps.push(app);
+    const response = await app.inject({ method: 'GET', url: '/ready' });
+
+    assert.equal(response.statusCode, 503);
+    assert.deepEqual(response.json(), {
+      status: 'not_ready',
+      service: 'vera-api',
+      model: { name: 'fake', model: 'fake-v1' },
+      error: {
+        code: 'software_change_capability_unavailable',
+        message: 'The software_change_capability dependency is unavailable.',
+        dependency: 'software_change_capability',
+      },
+    });
+  });
+
   void it('evaluates a request end to end through the HTTP boundary', async () => {
     const app = appFor({
       schemaVersion: 1,

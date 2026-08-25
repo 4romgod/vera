@@ -16,6 +16,7 @@ import { MongoDbResourceStore } from './adapters/mongodb-resource-store.ts';
 import { MongoDbWorkLeaseStore } from './adapters/mongodb-work-lease-store.ts';
 import { RedisScratchpad } from './adapters/redis-scratchpad.ts';
 import { createDevelopmentPlanningCapabilityRegistry } from './capabilities/development-planning-adapter-registry.ts';
+import { createSoftwareChangeCapabilityRegistry } from './capabilities/software-change-adapter-registry.ts';
 import { createResourceService } from './application/resource-service.ts';
 import { createTaskWorker } from './application/task-worker.ts';
 import type { AppConfig } from './config.ts';
@@ -76,6 +77,10 @@ export function createApp(config: AppConfig) {
     config: { planning: config.planning, storage: config.storage },
     provider,
   });
+  const softwareChange = createSoftwareChangeCapabilityRegistry({
+    change: config.change,
+    storage: config.storage,
+  });
 
   const appReference: { current?: ReturnType<typeof buildApp> } = {};
   const lifecycleObserver = {
@@ -91,6 +96,7 @@ export function createApp(config: AppConfig) {
     scratchpad,
     evaluateModelDecision,
     developmentPlanning,
+    softwareChange,
     resources,
     contextAssembler,
     conversationContextLimits: config.conversationContext,
@@ -150,6 +156,10 @@ export function createApp(config: AppConfig) {
       {
         name: 'development_planning_capability',
         check: () => developmentPlanning.selected().checkReadiness(),
+      },
+      {
+        name: 'software_change_capability',
+        check: () => softwareChange.selected().checkReadiness(),
       },
       { name: 'task_worker', check: () => worker.checkReadiness() },
     ],

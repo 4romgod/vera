@@ -10,7 +10,10 @@ import {
   TaskStatusSchema,
 } from '../domain/task-aggregate.ts';
 import { DecisionResultSchema } from '../domain/execution-decision.ts';
-import { ArtifactSchema } from '../domain/artifact.ts';
+import {
+  ImplementationPlanArtifactSchema,
+  SoftwareChangeArtifactSchema,
+} from '../domain/artifact.ts';
 import {
   ConversationSchema,
   ConversationSummarySchema,
@@ -174,9 +177,10 @@ export const ConversationsResponseSchema = z
   })
   .strict();
 
-export const ArtifactResponseSchema = ArtifactSchema.omit({
-  principalId: true,
-});
+export const ArtifactResponseSchema = z.discriminatedUnion('type', [
+  ImplementationPlanArtifactSchema.omit({ principalId: true }),
+  SoftwareChangeArtifactSchema.omit({ principalId: true }),
+]);
 
 export const EvaluateRequestJsonSchema = z.toJSONSchema(EvaluateRequestSchema, {
   target: 'draft-7',
@@ -288,6 +292,7 @@ export const NotReadyResponseSchema = z
           'operational_store_unavailable',
           'scratchpad_unavailable',
           'planning_capability_unavailable',
+          'software_change_capability_unavailable',
           'model_not_found',
           'provider_request_rejected',
           'provider_response_invalid',

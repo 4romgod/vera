@@ -28,6 +28,10 @@ function config(adapterId: string): AppConfig {
         codexCli: { command: 'codex' },
       },
     },
+    change: {
+      adapterId: 'deterministic_change',
+      adapters: { codexCli: { command: 'codex' } },
+    },
     worker: { concurrency: 2, pollIntervalMs: 250, leaseMs: 900_000 },
   };
 }

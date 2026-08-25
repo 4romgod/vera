@@ -18,6 +18,28 @@ void describe('application configuration', () => {
       maxMessages: 20,
       maxCharacters: 40_000,
     });
+    assert.deepEqual(config.change, {
+      adapterId: 'codex_cli',
+      adapters: { codexCli: { command: 'codex' } },
+    });
+  });
+
+  void it('supports an independent software-change adapter and Codex override', () => {
+    assert.deepEqual(
+      loadConfig({
+        VERA_CHANGE_ADAPTER: 'deterministic_change',
+        CODEX_COMMAND: 'shared-codex',
+        CODEX_MODEL: 'shared-model',
+        CHANGE_CODEX_COMMAND: 'change-codex',
+        CHANGE_CODEX_MODEL: 'change-model',
+      }).change,
+      {
+        adapterId: 'deterministic_change',
+        adapters: {
+          codexCli: { command: 'change-codex', model: 'change-model' },
+        },
+      },
+    );
   });
 
   void it('rejects a non-loopback listener while application authentication is absent', () => {

@@ -192,7 +192,7 @@ Budget rules:
 The implemented flat V1 envelope allows one initial model decision, one
 capability invocation, one recovery retry, ten minutes of run duration, 40
 context files, 200,000 total context bytes, 40,000 bytes per context file, and
-a 100,000-byte plan artifact. Context, output, call, invocation, retry, and
+a 100,000-byte capability artifact. Context, output, call, invocation, retry, and
 duration limits are enforced in code. Model adapters additionally send a
 configured maximum output-token request and record provider token usage when it
 is returned. Because V1 permits only one decision call and one capability
@@ -283,6 +283,25 @@ provider boundaries. See
 [ADR-0015](decisions/0015-select-model-providers-through-explicit-profiles.md)
 and
 [ADR-0016](decisions/0016-freeze-bounded-conversation-context-and-durably-project-replies.md).
+
+### Isolated software-change boundary
+
+Approval of `software_change@1` grants write authority only inside a newly
+created disposable snapshot containing the exact approved context. It does not
+grant write authority over the registered repository. The production adapter
+must run ephemerally, must not load repository agent-instruction files, and must
+not use credentials or network effects. Vera rejects credential-like paths,
+agent instruction files, symlinks, binaries, path escapes, generated dependency
+trees, and changes beyond the run's file and artifact ceilings.
+The subprocess receives an allowlisted runtime environment; Vera's model API
+keys, MongoDB and Redis configuration, selected profiles, and unrelated server
+variables are not inherited.
+
+The specialist supplies a human-readable report, but Vera derives the patch,
+file operations, sizes, and before/after hashes from the resulting filesystem.
+Applying that patch, committing it, pushing it, or creating a pull request are
+separate effects requiring separate policy and approval. This boundary is
+accepted in [ADR-0017](decisions/0017-produce-software-changes-as-isolated-patch-artifacts.md).
 
 ## Audit and observability
 

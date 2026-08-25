@@ -34,6 +34,9 @@ listener as V1's single-owner perimeter. ADR-0015 registers Ollama, OpenAI, and
 Gemini behind explicit startup profiles without silent provider fallback.
 ADR-0016 freezes bounded prior complete conversation turns by exact project
 scope and durably projects every terminal Vera reply.
+ADR-0017 adds provider-neutral software implementation as a review-only patch
+artifact produced in an isolated workspace, without repository mutation or
+publication authority.
 
 Implementation began on the same date. ADR-0009 accepts the first production
 source layout and model decision boundary. ADR-0010 accepts the durable
@@ -167,6 +170,8 @@ adapters through startup-selected profiles; see
 [ADR-0015](decisions/0015-select-model-providers-through-explicit-profiles.md).
 Conversation-aware orchestration and reply recovery are accepted in
 [ADR-0016](decisions/0016-freeze-bounded-conversation-context-and-durably-project-replies.md).
+Isolated software-change artifacts are accepted in
+[ADR-0017](decisions/0017-produce-software-changes-as-isolated-patch-artifacts.md).
 
 ## Documentation and implementation cadence
 
@@ -185,6 +190,8 @@ request, response, readiness, usage, timeout, and secret-handling boundaries.
 Conversation tests cover exact-scope isolation, complete-turn selection,
 hash-auditable limits, idempotent replies, and recovery after reply projection
 failure. The owner CLI exposes the same path through `vera chat`.
+The `vera change` path now has deterministic compiled persistence evidence and
+Codex-adapter isolation, path-safety, and Vera-derived patch tests.
 Required CI now runs the compiled CLI-to-artifact journey with real
 ephemeral MongoDB and Redis plus deterministic owner-controlled adapters; it
 does not download models or call a third party. The only remaining acceptance

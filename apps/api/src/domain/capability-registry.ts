@@ -17,9 +17,27 @@ export const DevelopmentPlanningProposalArgumentsSchema = z
   })
   .strict();
 
+export const SoftwareChangeProposalArgumentsSchema = z
+  .object({
+    objective: z.string().trim().min(1).max(10_000),
+    ticket: z
+      .object({
+        reference: z.string().trim().min(1).max(200),
+        details: z.string().trim().min(1).max(20_000),
+      })
+      .strict(),
+    project: z
+      .object({
+        name: z.string().trim().min(1).max(200),
+      })
+      .strict(),
+  })
+  .strict();
+
 type CapabilityDefinition = {
   name: string;
   version: number;
+  description: string;
   proposalArgumentsSchema: z.ZodType<Record<string, unknown>>;
   effect: 'external';
 };
@@ -28,7 +46,17 @@ const capabilities = [
   {
     name: 'development_planning',
     version: 1,
+    description:
+      'Prepare a software implementation plan from a ticket and project identity.',
     proposalArgumentsSchema: DevelopmentPlanningProposalArgumentsSchema,
+    effect: 'external',
+  },
+  {
+    name: 'software_change',
+    version: 1,
+    description:
+      'Produce a reviewable software patch artifact in an isolated workspace without mutating the registered project.',
+    proposalArgumentsSchema: SoftwareChangeProposalArgumentsSchema,
     effect: 'external',
   },
 ] satisfies CapabilityDefinition[];
@@ -45,8 +73,7 @@ export function findCapability(
 export const ModelVisibleCapabilities = capabilities.map((capability) => ({
   name: capability.name,
   version: capability.version,
-  description:
-    'Prepare a software implementation plan from a ticket and project identity.',
+  description: capability.description,
   proposalArgumentsSchema: z.toJSONSchema(capability.proposalArgumentsSchema, {
     target: 'draft-7',
   }),

@@ -231,6 +231,25 @@ destination disclosure, artifact identity, wall-clock and byte ceilings,
 recovery, and cancellation. Owner acceptance of one exact third-party
 disclosure remains product evidence rather than missing architecture.
 
+### Isolated software implementation — implemented
+
+The provider-neutral `software_change@1` capability now turns explicitly
+approved project context and implementation intent into a durable review-only
+patch artifact. The default `codex_cli` adapter writes inside a disposable,
+workspace-sandboxed copy of the approved snapshot. Vera inspects that
+filesystem and computes the Git patch, file operations, sizes, and hashes; it
+does not trust model-authored effect metadata. Forbidden paths, credentials,
+instruction files, binaries, symlinks, escapes, empty changes, and budget
+violations fail closed.
+
+The registered repository is never mutated. Applying, committing, pushing, and
+opening a pull request remain separate future effects rather than hidden scope
+inside the change approval. The owner CLI exposes the complete path as
+`vera change` and constrains automatic approval to this exact capability. A
+deterministic adapter proves orchestration and persistence without model cost;
+Codex adapter tests prove isolated writes and Vera-derived patch evidence. See
+[ADR-0017](decisions/0017-produce-software-changes-as-isolated-patch-artifacts.md).
+
 ### Local-model boundary — completed
 
 The API calls Ollama through a narrow provider port and normalizes proposal,
@@ -290,15 +309,17 @@ measured client needs may justify a different progress transport later.
 
 Required CI now attaches ephemeral MongoDB 8.2 and Redis 8 service containers
 to the existing Linux quality job and runs the already-compiled persistent
-journey. The gate uses deterministic inference and the owner-controlled
-`structured_model` planning adapter; it does not install Ollama, download model
+journey. The gate uses deterministic inference, the owner-controlled
+`structured_model` planning adapter, and the owner-controlled
+`deterministic_change` adapter; it does not install Ollama, download model
 weights, or contact Codex.
 
 The journey covers the real CLI, HTTP server, worker, MongoDB, Redis, shared
 client, and artifact path. It proves idempotent project, conversation, message,
 and approval handling; direct response, approval, rejection, and cancellation
 outcomes; concurrent task isolation; MongoDB lease exclusion; ordered events;
-one artifact per invocation; Redis read repair; survival of a forced process
+one typed plan or software-change artifact per invocation; Redis read repair;
+survival of a forced process
 termination at the approval boundary; and retrieval after a later graceful
 restart. The isolated database and scratchpad keys are removed afterward.
 

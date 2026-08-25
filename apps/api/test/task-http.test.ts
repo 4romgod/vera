@@ -10,6 +10,7 @@ import type { DevelopmentPlan } from '../src/domain/development-plan.ts';
 import { buildApp } from '../src/http/build-app.ts';
 import type { DevelopmentPlanningCapability } from '../src/ports/development-planning-capability.ts';
 import { FakeModelProvider } from './support/fake-model-provider.ts';
+import { createDeterministicSoftwareChangeRegistry } from './support/deterministic-software-change-registry.ts';
 
 const apps: ReturnType<typeof buildApp>[] = [];
 
@@ -87,6 +88,7 @@ function createHarness() {
       selected: () => capability,
       resolve: () => capability,
     },
+    softwareChange: createDeterministicSoftwareChangeRegistry(),
     resources,
     contextAssembler: {
       assemble: (input) =>

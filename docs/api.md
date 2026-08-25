@@ -1,7 +1,7 @@
 # Vera HTTP API
 
 **Status:** Accepted for implemented V1 paths
-**Version:** 0.5
+**Version:** 0.6
 **Last updated:** 25 August 2026
 
 ## Purpose
@@ -22,7 +22,7 @@ an untrusted network.
 | Method and path | Purpose | Success |
 |---|---|---:|
 | `GET /health` | Process liveness only | `200` |
-| `GET /ready` | Model, stores, recovery, and planning-specialist readiness | `200` or `503` |
+| `GET /ready` | Model, stores, recovery, planning, and software-change readiness | `200` or `503` |
 | `POST /v1/projects` | Register an owner-controlled project source | `201` |
 | `GET /v1/projects` | List registered projects | `200` |
 | `GET /v1/projects/{projectId}` | Retrieve a registered project | `200` |
@@ -36,7 +36,7 @@ an untrusted network.
 | `GET /v1/runs/{runId}/events` | Retrieve immutable ordered run events | `200` |
 | `POST /v1/approvals/{approvalId}/decision` | Approve or reject the exact proposed invocation | `202` |
 | `POST /v1/runs/{runId}/cancellation` | Request a best-effort stop | `202` |
-| `GET /v1/artifacts/{artifactId}` | Retrieve a versioned plan artifact | `200` |
+| `GET /v1/artifacts/{artifactId}` | Retrieve a versioned capability artifact | `200` |
 | `POST /v1/model-decisions` | Exercise the lower-level model decision boundary | `200` |
 
 The model-decision path is useful for provider and proposal diagnostics. New
@@ -186,7 +186,7 @@ resolves the persisted approved descriptor, not whichever adapter happens to be
 selected when an approval or restart is processed. If the adapter is absent or
 its provider/boundary configuration changed, the run fails closed.
 
-In a completed development plan, `project`, `ticket`, and `objective` are copied
+In a completed development plan or software change, `project`, `ticket`, and `objective` are copied
 into the result by Vera code from these approved arguments. They are deliberately
 excluded from model-generated plan content, so a model cannot rewrite task
 identity while producing the plan.
@@ -262,11 +262,16 @@ idempotency key.
 
 ## Artifacts and cancellation
 
-A successful planning invocation stores one `implementation_plan` artifact.
-Its stable identity is derived from the invocation ID; retry or recovery cannot
-create a second artifact for that invocation. The task output includes an
-artifact reference, and `GET /v1/artifacts/{artifactId}` returns the versioned
-content and provenance.
+A successful planning invocation stores one `implementation_plan` artifact. A
+successful `software_change@1` invocation stores one `software_change` artifact
+with a reviewable Git patch, file operations, sizes, hashes, verification
+report, and risks. The change is produced in an isolated snapshot and does not
+modify, commit, push, or publish the registered project.
+
+The stable artifact identity is derived from the invocation ID; retry or
+recovery cannot create a second artifact for that invocation. The task output
+includes a typed artifact reference, and
+`GET /v1/artifacts/{artifactId}` returns the versioned content and provenance.
 
 `POST /v1/runs/{runId}/cancellation` records a stop request. Before capability
 execution it terminally cancels the run and rejects a pending approval. During
@@ -331,7 +336,7 @@ Error envelopes use:
 | `409` | `idempotency_key_reused`, `approval_already_decided`, `concurrent_transition_failed`, `conversation_message_mismatch` | The request conflicts with durable state. |
 | `422` | `invalid_project_source` | A project path is not a canonical local Git root. |
 | `502` | `provider_request_rejected`, `provider_response_invalid` | Provider boundary failed while using the diagnostic endpoint. |
-| `503` | `model_not_found`, `provider_unavailable`, `operational_store_unavailable`, `scratchpad_unavailable`, `planning_capability_unavailable` | A required runtime dependency is unavailable. |
+| `503` | `model_not_found`, `provider_unavailable`, `operational_store_unavailable`, `scratchpad_unavailable`, `planning_capability_unavailable`, `software_change_capability_unavailable` | A required runtime dependency is unavailable. |
 | `504` | `provider_timeout` | The model provider exceeded its deadline. |
 | `500` | `internal_error` | An unexpected server failure; details remain in structured logs. |
 

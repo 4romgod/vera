@@ -5,12 +5,13 @@ import {
   ProjectContextBundleSchema,
   type ProjectContextBundle,
 } from '../domain/project-context.ts';
+import { containsControlCharacter } from '../domain/text-safety.ts';
 
 function isSafeRelativePath(path: string): boolean {
   return (
     path.length > 0 &&
     !path.includes('\\') &&
-    !path.includes('\u0000') &&
+    !containsControlCharacter(path) &&
     !isAbsolute(path) &&
     posix.normalize(path) === path &&
     path !== '..' &&

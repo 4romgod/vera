@@ -279,7 +279,9 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
               ? 'scratchpad_unavailable'
               : error.dependency === 'development_planning_capability'
                 ? 'planning_capability_unavailable'
-                : 'operational_store_unavailable';
+                : error.dependency === 'software_change_capability'
+                  ? 'software_change_capability_unavailable'
+                  : 'operational_store_unavailable';
           request.log.error(
             { err: error, errorCode: code, dependency: error.dependency },
             'Runtime dependency readiness check failed',

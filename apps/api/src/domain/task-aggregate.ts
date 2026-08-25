@@ -1,9 +1,15 @@
 import { z } from 'zod';
 
-import { ArtifactReferenceSchema } from './artifact.ts';
+import {
+  ImplementationPlanArtifactReferenceSchema,
+  SoftwareChangeArtifactReferenceSchema,
+} from './artifact.ts';
 import { CapabilityDestinationSchema } from './capability-destination.ts';
 import { ConversationContextBundleSchema } from './conversation-context.ts';
-import { DevelopmentPlanningProposalArgumentsSchema } from './capability-registry.ts';
+import {
+  DevelopmentPlanningProposalArgumentsSchema,
+  SoftwareChangeProposalArgumentsSchema,
+} from './capability-registry.ts';
 import { DevelopmentPlanSchema } from './development-plan.ts';
 import { DecisionResultSchema } from './execution-decision.ts';
 import {
@@ -11,6 +17,7 @@ import {
   ProjectContextManifestSchema,
 } from './project-context.ts';
 import { RunBudgetSchema } from './run-budget.ts';
+import { SoftwareChangeSchema } from './software-change.ts';
 
 export const TaskStatusSchema = z.enum([
   'active',
@@ -31,18 +38,11 @@ export const RunStatusSchema = z.enum([
   'cancelled',
 ]);
 
-export const ApprovalSchema = z
+const ApprovalIdentitySchema = z
   .object({
     id: z.string().startsWith('approval_'),
     status: z.enum(['pending', 'approved', 'rejected']),
     reason: z.literal('specialist_capability_invocation'),
-    capability: z
-      .object({
-        name: z.literal('development_planning'),
-        version: z.literal(1),
-      })
-      .strict(),
-    proposedArguments: DevelopmentPlanningProposalArgumentsSchema,
     project: z
       .object({
         id: z.string().startsWith('project_'),
@@ -58,17 +58,31 @@ export const ApprovalSchema = z
   })
   .strict();
 
-export const CapabilityInvocationSchema = z
-  .object({
-    id: z.string().startsWith('invocation_'),
-    status: z.enum(['executing', 'succeeded', 'failed']),
+export const ApprovalSchema = z.union([
+  ApprovalIdentitySchema.extend({
     capability: z
       .object({
         name: z.literal('development_planning'),
         version: z.literal(1),
       })
       .strict(),
-    arguments: DevelopmentPlanningProposalArgumentsSchema,
+    proposedArguments: DevelopmentPlanningProposalArgumentsSchema,
+  }).strict(),
+  ApprovalIdentitySchema.extend({
+    capability: z
+      .object({
+        name: z.literal('software_change'),
+        version: z.literal(1),
+      })
+      .strict(),
+    proposedArguments: SoftwareChangeProposalArgumentsSchema,
+  }).strict(),
+]);
+
+const CapabilityInvocationIdentitySchema = z
+  .object({
+    id: z.string().startsWith('invocation_'),
+    status: z.enum(['executing', 'succeeded', 'failed']),
     project: z
       .object({
         id: z.string().startsWith('project_'),
@@ -98,6 +112,27 @@ export const CapabilityInvocationSchema = z
   })
   .strict();
 
+export const CapabilityInvocationSchema = z.union([
+  CapabilityInvocationIdentitySchema.extend({
+    capability: z
+      .object({
+        name: z.literal('development_planning'),
+        version: z.literal(1),
+      })
+      .strict(),
+    arguments: DevelopmentPlanningProposalArgumentsSchema,
+  }).strict(),
+  CapabilityInvocationIdentitySchema.extend({
+    capability: z
+      .object({
+        name: z.literal('software_change'),
+        version: z.literal(1),
+      })
+      .strict(),
+    arguments: SoftwareChangeProposalArgumentsSchema,
+  }).strict(),
+]);
+
 export const TaskOutputSchema = z.discriminatedUnion('kind', [
   z
     .object({
@@ -109,7 +144,14 @@ export const TaskOutputSchema = z.discriminatedUnion('kind', [
     .object({
       kind: z.literal('development_plan'),
       plan: DevelopmentPlanSchema,
-      artifact: ArtifactReferenceSchema.optional(),
+      artifact: ImplementationPlanArtifactReferenceSchema.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('software_change'),
+      change: SoftwareChangeSchema,
+      artifact: SoftwareChangeArtifactReferenceSchema.optional(),
     })
     .strict(),
 ]);

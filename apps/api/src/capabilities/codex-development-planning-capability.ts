@@ -16,6 +16,7 @@ import type {
   DevelopmentPlanningCapability,
   DevelopmentPlanningInvocation,
 } from '../ports/development-planning-capability.ts';
+import { codexProcessEnvironment } from './codex-process-environment.ts';
 
 const executeFile = promisify(execFile);
 
@@ -84,6 +85,7 @@ export class CodexDevelopmentPlanningCapability
       encoding: 'utf8' as const,
       maxBuffer: 256 * 1024,
       timeout: this.options.readinessTimeoutMs ?? 3_000,
+      env: codexProcessEnvironment(),
     };
     await executeFile(this.options.command, ['--version'], commandOptions);
     await executeFile(
@@ -176,6 +178,8 @@ export class CodexDevelopmentPlanningCapability
         '--ignore-rules',
         '--sandbox',
         'read-only',
+        '--ask-for-approval',
+        'never',
         '--skip-git-repo-check',
         '--color',
         'never',
@@ -195,6 +199,7 @@ export class CodexDevelopmentPlanningCapability
         maxBuffer: 2 * 1024 * 1024,
         timeout: invocation.limits.maxDurationMs,
         signal: options?.signal,
+        env: codexProcessEnvironment(),
       });
       const output = await readFile(outputPath, 'utf8');
       if (Buffer.byteLength(output) > invocation.limits.maxArtifactBytes) {
