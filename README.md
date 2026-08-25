@@ -28,8 +28,11 @@ The owner-facing journey registers a generic project, creates a conversation,
 and posts project-linked messages. Vera freezes bounded prior complete turns
 from the same project scope, persists that model context in the versioned task
 aggregate, and sends it with the current message. It then selects bounded
-Git-tracked context and shows its exact
-manifest and the configured specialist destination for approval, then executes
+Git-tracked context using exact request anchors, token-boundary path matches,
+and local full-text evidence. Source, tests, and configuration outrank
+documentation; non-documentation requests reserve most of both the file and
+byte budgets for implementation evidence. Vera shows the exact manifest and
+configured specialist destination for approval, then executes
 the provider-neutral `development_planning@1` contract through a registered
 adapter. The default `codex_cli` planning adapter uses an ephemeral read-only
 snapshot. The `software_change@1` path instead permits bounded writes inside an
@@ -396,14 +399,28 @@ npm run cli -- artifact show artifact_...
 `/health` reports only that the Vera process is alive. `/ready` checks the
 configured provider and model, MongoDB, Redis, lifecycle recovery, and the
 configured planning and software-change specialists. For Codex this verifies
-both the CLI and login status. The model readiness check does not run inference
-or spend inference tokens.
+the CLI, non-interactive execution grammar, and login status. The readiness
+checks do not run inference or spend inference tokens.
 
 The initial submission normally returns in `deciding`; the worker later moves
 it to `awaiting_approval`. Inspect
 `approval.contextManifest` and `approval.destination` before approving: those
 are the only project files disclosed to the named adapter and provider. The
-Codex planning adapter copies them into an ephemeral read-only snapshot.
+manifest's selection reasons distinguish exact request anchors, path-token
+matches, content matches, nearby implementation evidence, and repository-root
+evidence. Once an exact route or path anchor resolves, it becomes the primary
+evidence set instead of allowing broad prose tokens to pull unrelated areas
+into the bundle. Selection searches locally and does not disclose unselected
+files. If no request evidence matches, selection falls back to repository-root
+evidence instead of arbitrary source files. For implementation work,
+documentation remains limited to one fifth of either context limit even when
+documenting the implementation is part of the request. Small repository-root
+formatting contracts accompany the selected implementation evidence so
+specialist verification uses the project's actual style rules. The Codex
+planning adapter copies the selected files into an ephemeral read-only snapshot
+and closes subprocess stdin explicitly so non-interactive Codex cannot wait for
+terminal input. After approval, the CLI prints the run it is waiting for while
+the specialist executes.
 Approval records model metadata, persists one typed artifact, and ends in
 `succeeded`. The Codex software-change adapter uses a separate isolated
 workspace-write snapshot and produces a review-only patch artifact; it still

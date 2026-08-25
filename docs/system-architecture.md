@@ -391,6 +391,18 @@ sequenceDiagram
     end
 ```
 
+The local source adapter performs context selection without a model or network
+call. Exact request anchors, token-boundary path matches, and fixed-string
+content matches establish relevance. A resolved exact anchor suppresses broad
+prose-token expansion; an unmatched request receives only repository-root
+evidence rather than arbitrary source files. Implementation and verification
+evidence outrank documentation, and implementation requests retain separate
+documentation file and byte ceilings even when documentation is one requested
+deliverable. Tracked repository-root formatter configuration is included as
+verification evidence. Only the selected, hashed files cross the later
+approval boundary; local discovery results and unselected repository contents
+do not.
+
 The MongoDB document is the atomic V1 task aggregate: current task/run state and
 the event proving each transition are replaced together under optimistic
 version control. Redis receives only a schema-versioned, expiring projection;

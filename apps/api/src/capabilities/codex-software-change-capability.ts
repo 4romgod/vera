@@ -25,7 +25,12 @@ import type {
   SoftwareChangeCapability,
   SoftwareChangeInvocation,
 } from '../ports/software-change-capability.ts';
+import {
+  codexExecArguments,
+  codexExecReadinessArguments,
+} from './codex-exec-arguments.ts';
 import { codexProcessEnvironment } from './codex-process-environment.ts';
+import { executeCodexSubprocess } from './codex-subprocess.ts';
 
 const executeFile = promisify(execFile);
 const forbiddenPath =
@@ -203,13 +208,21 @@ export class CodexSoftwareChangeCapability implements SoftwareChangeCapability {
 
   public async checkReadiness(): Promise<void> {
     const commandOptions = {
-      encoding: 'utf8' as const,
       maxBuffer: 256 * 1024,
       timeout: this.options.readinessTimeoutMs ?? 3_000,
       env: codexProcessEnvironment(),
     };
-    await executeFile(this.options.command, ['--version'], commandOptions);
-    await executeFile(
+    await executeCodexSubprocess(
+      this.options.command,
+      ['--version'],
+      commandOptions,
+    );
+    await executeCodexSubprocess(
+      this.options.command,
+      codexExecReadinessArguments(),
+      commandOptions,
+    );
+    await executeCodexSubprocess(
       this.options.command,
       ['login', 'status'],
       commandOptions,
@@ -254,33 +267,20 @@ export class CodexSoftwareChangeCapability implements SoftwareChangeCapability {
         'approved snapshot',
       ]);
 
-      const args = [
-        'exec',
-        '--ephemeral',
-        '--ignore-user-config',
-        '--ignore-rules',
-        '--sandbox',
-        'workspace-write',
-        '--ask-for-approval',
-        'never',
-        '--color',
-        'never',
-        '--cd',
+      const args = codexExecArguments({
+        sandbox: 'workspace-write',
         workspace,
-        '--output-schema',
         schemaPath,
-        '--output-last-message',
         outputPath,
-      ];
-      if (this.options.model !== undefined) {
-        args.push('--model', this.options.model);
-      }
-      args.push(buildPrompt(invocation));
-      await executeFile(this.options.command, args, {
-        encoding: 'utf8',
+        prompt: buildPrompt(invocation),
+        ...(this.options.model === undefined
+          ? {}
+          : { model: this.options.model }),
+      });
+      await executeCodexSubprocess(this.options.command, args, {
         maxBuffer: 2 * 1024 * 1024,
         timeout: invocation.limits.maxDurationMs,
-        signal: options?.signal,
+        ...(options?.signal === undefined ? {} : { signal: options.signal }),
         env: codexProcessEnvironment(),
       });
       const outputInfo = await lstat(outputPath);

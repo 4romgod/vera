@@ -113,6 +113,7 @@ async function resolveApproval(input: {
   autoApprove: boolean;
   confirm: (question: string) => Promise<boolean>;
   stdout: Pick<NodeJS.WriteStream, 'write'>;
+  stderr: Pick<NodeJS.WriteStream, 'write'>;
 }): Promise<TaskResource> {
   if (
     input.task.runStatus !== 'awaiting_approval' ||
@@ -128,7 +129,11 @@ async function resolveApproval(input: {
     input.task.approval.id,
     approved ? 'approved' : 'rejected',
   );
-  return isTerminal(decided) ? decided : input.client.waitForRun(decided.runId);
+  if (isTerminal(decided)) return decided;
+  input.stderr.write(
+    `Approval recorded. Waiting for run ${decided.runId} to finish...\n`,
+  );
+  return input.client.waitForRun(decided.runId);
 }
 
 async function interactiveConfirm(question: string): Promise<boolean> {
@@ -254,6 +259,7 @@ export async function runCli(
       autoApprove: args.includes('--approve'),
       confirm,
       stdout,
+      stderr,
     });
     const finalTask = isConversationTerminal(completed)
       ? completed
@@ -369,6 +375,7 @@ export async function runCli(
       autoApprove: args.includes('--approve'),
       confirm,
       stdout,
+      stderr,
     });
     print(stdout, completed);
     if (completed.output !== undefined && 'artifact' in completed.output) {

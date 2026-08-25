@@ -55,6 +55,7 @@ function fakeApi(overrides: Partial<VeraApi>): VeraApi {
 void describe('Vera CLI', () => {
   void it('shows exact disclosure before explicit plan approval', async () => {
     const output: string[] = [];
+    const errors: string[] = [];
     const calls: string[] = [];
     const pending = task('awaiting_approval', {
       approval: {
@@ -126,7 +127,12 @@ void describe('Vera CLI', () => {
             return true;
           },
         },
-        stderr: { write: () => true },
+        stderr: {
+          write: (value) => {
+            errors.push(String(value));
+            return true;
+          },
+        },
         createIdempotencyKey: () => 'cli-test-key',
       },
     );
@@ -139,6 +145,10 @@ void describe('Vera CLI', () => {
       'wait',
       'artifact',
     ]);
+    assert.match(
+      errors.join(''),
+      /Approval recorded\. Waiting for run run_test to finish/u,
+    );
   });
 
   void it('rejects an interactive plan when confirmation is denied', async () => {
