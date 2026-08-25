@@ -1,7 +1,7 @@
 # Vera V1 Definition
 
 **Status:** Accepted
-**Version:** 0.7
+**Version:** 0.8
 **Last updated:** 25 August 2026
 **Accepted:** 24 August 2026 (owner); V1 perimeter and provider-profile
 decisions accepted 25 August 2026 — completion still requires the evidence in
@@ -387,7 +387,8 @@ planning execution after approval.
 
 The production spine now also includes registered generic projects,
 conversations and task-linked messages, bounded Git context assembly, exact
-context disclosure, a read-only ephemeral Codex adapter, one idempotent
+context disclosure, bounded same-project completed conversation turns, durable
+Vera replies, a read-only ephemeral Codex adapter, one idempotent
 versioned plan artifact, flat run ceilings, and best-effort cancellation.
 Task acceptance is now detached from model and capability latency through a
 durable-state worker with expiring MongoDB run leases. A shared TypeScript
@@ -408,7 +409,8 @@ invocation and cancellation recovery. A compiled persistent-mode journey has
 also verified the real CLI boundary, registered context, direct response,
 approval idempotency, rejection, cancellation, concurrent isolation, MongoDB
 lease exclusion, artifact identity, process restart, conversation retrieval,
-and Redis projection reconstruction. The journey forces one process termination
+complete owner/Vera dialogue, and Redis projection reconstruction. The journey
+forces one process termination
 after the approval boundary is durable, then verifies another graceful restart
 after completion. Required CI runs it with ephemeral real MongoDB and Redis and
 deterministic owner-controlled adapters, without downloading model weights or
@@ -418,9 +420,10 @@ plan; Gatherle may be one acceptance project but is not production architecture.
 
 ## Decisions to validate during V1
 
-- Cloud disclosure is allowed only for the exact project/ticket context shown
-  in an approval request; credentials and unrelated personal context are never
-  included.
+- Cloud orchestration disclosure includes the current message, minimal project
+  identity, and bounded prior completed turns from that same scope. Specialist
+  project/ticket context still crosses only after its exact approval request;
+  credentials, other conversation scopes, and long-term memory are excluded.
 - `202 Accepted` plus polling is implemented by the first durable-task client.
   Later measured client needs may justify server-sent events or another
   transport.

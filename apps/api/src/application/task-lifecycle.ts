@@ -1,10 +1,17 @@
 import { createHash, randomUUID } from 'node:crypto';
 
+import { assembleConversationContext } from './assemble-conversation-context.ts';
 import type { EvaluateModelDecision } from './evaluate-model-decision.ts';
+import { assertConversationContextIntegrity } from './validate-conversation-context.ts';
 import { assertProjectContextIntegrity } from './validate-project-context.ts';
 import type { DecisionResult } from '../domain/execution-decision.ts';
 import { ArtifactSchema, type Artifact } from '../domain/artifact.ts';
 import { sameCapabilityDestination } from '../domain/capability-destination.ts';
+import type {
+  ConversationContextBundle,
+  ConversationContextLimits,
+} from '../domain/conversation-context.ts';
+import { ConversationMessageSchema } from '../domain/conversation.ts';
 import type { Project } from '../domain/project.ts';
 import type { ProjectContextBundle } from '../domain/project-context.ts';
 import { DefaultRunBudget, type RunBudget } from '../domain/run-budget.ts';
@@ -28,6 +35,9 @@ export type LifecycleErrorCode =
   | 'idempotency_key_reused'
   | 'project_required'
   | 'project_not_found'
+  | 'conversation_not_found'
+  | 'conversation_message_not_found'
+  | 'conversation_message_mismatch'
   | 'concurrent_transition_failed';
 
 export class LifecycleError extends Error {
@@ -99,6 +109,7 @@ export function createTaskLifecycle(options: {
   developmentPlanning: DevelopmentPlanningCapabilityRegistry;
   resources: ResourceStore;
   contextAssembler: ProjectContextAssembler;
+  conversationContextLimits?: ConversationContextLimits;
   budget?: RunBudget;
   executionMode?: 'inline' | 'worker';
   observer?: LifecycleObserver;
@@ -111,7 +122,78 @@ export function createTaskLifecycle(options: {
     options.createId ?? ((prefix: string) => `${prefix}_${randomUUID()}`);
   const budget = options.budget ?? DefaultRunBudget;
   const executionMode = options.executionMode ?? 'inline';
+  const conversationContextLimits = options.conversationContextLimits ?? {
+    maxMessages: 20,
+    maxCharacters: 40_000,
+  };
   const activeInvocations = new Map<string, AbortController>();
+
+  function conversationReplyContent(aggregate: TaskAggregate): string {
+    if (aggregate.run.output?.kind === 'response') {
+      return aggregate.run.output.message;
+    }
+    if (aggregate.run.output?.kind === 'development_plan') {
+      const artifactId = aggregate.run.output.artifact?.id;
+      return [
+        `I created the implementation plan "${aggregate.run.output.plan.title}".`,
+        aggregate.run.output.plan.summary,
+        ...(artifactId === undefined ? [] : [`Artifact: ${artifactId}`]),
+      ].join('\n\n');
+    }
+    if (aggregate.run.failure !== undefined) {
+      return aggregate.run.failure.message;
+    }
+    if (
+      aggregate.run.status === 'rejected' &&
+      aggregate.run.decision?.decision.kind === 'rejected'
+    ) {
+      return aggregate.run.decision.decision.message;
+    }
+    if (aggregate.run.status === 'rejected') {
+      return 'The requested specialist invocation was not approved.';
+    }
+    return 'The request reached a terminal state without a response.';
+  }
+
+  function requiresConversationReplyProjection(
+    aggregate: TaskAggregate,
+  ): boolean {
+    return (
+      aggregate.task.conversationId !== undefined &&
+      aggregate.task.messageId !== undefined &&
+      aggregate.run.conversationReply === undefined &&
+      ['succeeded', 'rejected', 'failed', 'cancelled'].includes(
+        aggregate.run.status,
+      )
+    );
+  }
+
+  function addConversationReplyProjection(
+    aggregate: TaskAggregate,
+    eventAt: string,
+  ): void {
+    const suffix = aggregate.task.id.slice('task_'.length);
+    aggregate.run.conversationReply = {
+      status: 'pending',
+      messageId: `message_reply_${suffix}`,
+      requestKey: `vera-reply:${aggregate.task.id}`,
+      content: conversationReplyContent(aggregate),
+      createdAt: aggregate.run.updatedAt,
+    };
+    appendEvent(
+      aggregate,
+      'conversation_reply_pending',
+      eventAt,
+      { messageId: aggregate.run.conversationReply.messageId },
+      createId,
+    );
+  }
+
+  function ensureConversationReplyProjection(aggregate: TaskAggregate): void {
+    if (requiresConversationReplyProjection(aggregate)) {
+      addConversationReplyProjection(aggregate, aggregate.run.updatedAt);
+    }
+  }
 
   async function project(aggregate: TaskAggregate): Promise<void> {
     try {
@@ -144,6 +226,7 @@ export function createTaskLifecycle(options: {
       if (!transition(next)) {
         return { aggregate: current, changed: false };
       }
+      ensureConversationReplyProjection(next);
       next.version = current.version + 1;
       const validated = TaskAggregateSchema.parse(next);
       if (await options.store.replace(validated, current.version)) {
@@ -156,6 +239,149 @@ export function createTaskLifecycle(options: {
       `Task ${taskId} changed too frequently to apply the transition.`,
       'concurrent_transition_failed',
     );
+  }
+
+  async function prepareConversationContext(input: {
+    principalId: string;
+    message: string;
+    projectId?: string;
+    conversationId?: string;
+    messageId?: string;
+  }): Promise<ConversationContextBundle | undefined> {
+    if (input.conversationId === undefined && input.messageId === undefined) {
+      return undefined;
+    }
+    if (input.conversationId === undefined || input.messageId === undefined) {
+      throw new LifecycleError(
+        'A conversation task requires both conversationId and messageId.',
+        'conversation_message_mismatch',
+      );
+    }
+    const conversation = await options.resources.findConversationById(
+      input.principalId,
+      input.conversationId,
+    );
+    if (conversation === null) {
+      throw new LifecycleError(
+        `Conversation ${input.conversationId} was not found.`,
+        'conversation_not_found',
+      );
+    }
+    const currentMessage = conversation.messages.find(
+      (message) => message.id === input.messageId,
+    );
+    if (currentMessage === undefined) {
+      throw new LifecycleError(
+        `Message ${input.messageId} was not found in conversation ${input.conversationId}.`,
+        'conversation_message_not_found',
+      );
+    }
+    if (
+      currentMessage.role !== 'owner' ||
+      currentMessage.content !== input.message ||
+      currentMessage.projectId !== input.projectId
+    ) {
+      throw new LifecycleError(
+        'The conversation message does not match the submitted task input.',
+        'conversation_message_mismatch',
+      );
+    }
+    return assembleConversationContext({
+      conversation,
+      throughMessageId: currentMessage.id,
+      ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
+      limits: conversationContextLimits,
+    });
+  }
+
+  function assertMatchingTaskInput(
+    aggregate: TaskAggregate,
+    input: Parameters<TaskLifecycle['submit']>[0],
+  ): void {
+    if (
+      aggregate.task.message !== input.message ||
+      aggregate.task.principalId !== input.principalId ||
+      aggregate.task.projectId !== input.projectId ||
+      aggregate.task.conversationId !== input.conversationId ||
+      aggregate.task.messageId !== input.messageId
+    ) {
+      throw new LifecycleError(
+        `Idempotency key ${input.requestKey} is already associated with different task input.`,
+        'idempotency_key_reused',
+      );
+    }
+  }
+
+  async function projectConversationReply(
+    aggregate: TaskAggregate,
+  ): Promise<TaskAggregate> {
+    const projection = aggregate.run.conversationReply;
+    const conversationId = aggregate.task.conversationId;
+    if (projection?.status !== 'pending' || conversationId === undefined) {
+      return aggregate;
+    }
+    const message = ConversationMessageSchema.parse({
+      id: projection.messageId,
+      requestKey: projection.requestKey,
+      role: 'vera',
+      content: projection.content,
+      ...(aggregate.task.projectId === undefined
+        ? {}
+        : { projectId: aggregate.task.projectId }),
+      taskId: aggregate.task.id,
+      createdAt: projection.createdAt,
+    });
+    const appended = await options.resources.appendMessage(
+      aggregate.task.principalId,
+      conversationId,
+      message,
+    );
+    if (
+      appended.message.id !== message.id ||
+      appended.message.role !== message.role ||
+      appended.message.content !== message.content ||
+      appended.message.projectId !== message.projectId ||
+      appended.message.taskId !== message.taskId ||
+      appended.message.createdAt !== message.createdAt
+    ) {
+      throw new Error(
+        'The idempotent conversation reply belongs to different task output.',
+      );
+    }
+    const projectedAt = clock();
+    const projected = await update(
+      aggregate.task.principalId,
+      aggregate.task.id,
+      (candidate) => {
+        if (
+          candidate.run.conversationReply?.status !== 'pending' ||
+          candidate.run.conversationReply.messageId !== message.id
+        ) {
+          return false;
+        }
+        candidate.run.conversationReply.status = 'projected';
+        candidate.run.conversationReply.projectedAt = projectedAt;
+        candidate.run.updatedAt = projectedAt;
+        candidate.task.updatedAt = projectedAt;
+        appendEvent(
+          candidate,
+          'conversation_reply_projected',
+          projectedAt,
+          { conversationId, messageId: message.id },
+          createId,
+        );
+        return true;
+      },
+    );
+    return projected.aggregate;
+  }
+
+  async function finalizeConversationReply(
+    aggregate: TaskAggregate,
+  ): Promise<TaskAggregate> {
+    return aggregate.run.conversationReply?.status === 'pending'
+      ? projectConversationReply(aggregate)
+      : aggregate;
   }
 
   async function recordDecision(
@@ -265,6 +491,7 @@ export function createTaskLifecycle(options: {
       | 'project_required'
       | 'project_not_found'
       | 'project_context_failure'
+      | 'conversation_context_failure'
       | 'budget_exhausted'
       | 'cancelled',
     publicMessage: string,
@@ -375,15 +602,68 @@ export function createTaskLifecycle(options: {
           'run_failed',
         );
       }
+      const conversationContext = budgetClaim.aggregate.run.conversationContext;
+      if (conversationContext !== undefined) {
+        try {
+          const conversationId = budgetClaim.aggregate.task.conversationId;
+          const messageId = budgetClaim.aggregate.task.messageId;
+          if (conversationId === undefined || messageId === undefined) {
+            throw new Error(
+              'Conversation context is attached to a non-conversation task.',
+            );
+          }
+          const conversation = await options.resources.findConversationById(
+            budgetClaim.aggregate.task.principalId,
+            conversationId,
+          );
+          if (conversation === null) {
+            throw new Error(
+              'Conversation context references a missing conversation.',
+            );
+          }
+          assertConversationContextIntegrity(conversationContext, {
+            conversationId,
+            throughMessageId: messageId,
+            conversation,
+            ...(budgetClaim.aggregate.task.projectId === undefined
+              ? {}
+              : { projectId: budgetClaim.aggregate.task.projectId }),
+          });
+        } catch (error) {
+          observer.warning(error, {
+            operation: 'conversation_context_validation',
+            taskId: budgetClaim.aggregate.task.id,
+            runId: budgetClaim.aggregate.run.id,
+          });
+          return await recordFailure(
+            budgetClaim.aggregate.task.principalId,
+            budgetClaim.aggregate.task.id,
+            'conversation_context_failure',
+            'Vera could not validate the frozen conversation context.',
+            'run_failed',
+          );
+        }
+      }
       const decision = await options.evaluateModelDecision(
         budgetClaim.aggregate.task.message,
-        selectedProject === undefined || selectedProject === null
+        selectedProject === undefined &&
+          budgetClaim.aggregate.run.conversationContext === undefined
           ? undefined
           : {
-              selectedProject: {
-                id: selectedProject.id,
-                displayName: selectedProject.displayName,
-              },
+              ...(selectedProject === undefined || selectedProject === null
+                ? {}
+                : {
+                    selectedProject: {
+                      id: selectedProject.id,
+                      displayName: selectedProject.displayName,
+                    },
+                  }),
+              ...(budgetClaim.aggregate.run.conversationContext === undefined
+                ? {}
+                : {
+                    conversationContext:
+                      budgetClaim.aggregate.run.conversationContext,
+                  }),
             },
       );
       if (decision.decision.kind !== 'approval_required') {
@@ -962,29 +1242,98 @@ export function createTaskLifecycle(options: {
 
   async function progress(aggregate: TaskAggregate): Promise<TaskAggregate> {
     await project(aggregate);
+    if (requiresConversationReplyProjection(aggregate)) {
+      const recoveredAt = clock();
+      const recovered = await update(
+        aggregate.task.principalId,
+        aggregate.task.id,
+        (candidate) => {
+          if (!requiresConversationReplyProjection(candidate)) return false;
+          addConversationReplyProjection(candidate, recoveredAt);
+          return true;
+        },
+      );
+      return finalizeConversationReply(recovered.aggregate);
+    }
+    if (aggregate.run.conversationReply?.status === 'pending') {
+      return projectConversationReply(aggregate);
+    }
     if (aggregate.run.status === 'deciding') {
-      return evaluate(aggregate);
+      return finalizeConversationReply(await evaluate(aggregate));
     }
     if (aggregate.run.status === 'cancellation_requested') {
-      return finalizeInterruptedCancellation(aggregate);
+      return finalizeConversationReply(
+        await finalizeInterruptedCancellation(aggregate),
+      );
     }
     if (
       aggregate.run.status === 'awaiting_approval' &&
       aggregate.run.approval?.status === 'approved'
     ) {
-      return executeApproved(aggregate, false);
+      return finalizeConversationReply(await executeApproved(aggregate, false));
     }
     if (aggregate.run.status === 'executing') {
-      return executeApproved(aggregate, true);
+      return finalizeConversationReply(await executeApproved(aggregate, true));
     }
     return aggregate;
   }
 
   return {
     async submit(input) {
+      const existing = await options.store.findByRequestKey(
+        input.principalId,
+        input.requestKey,
+      );
+      if (existing !== null) {
+        assertMatchingTaskInput(existing, input);
+        await project(existing);
+        return finalizeConversationReply(existing);
+      }
       const now = clock();
       const taskId = createId('task');
       const runId = createId('run');
+      const conversationContext = await prepareConversationContext(input);
+      const initialEvents: TaskAggregate['events'] = [
+        {
+          schemaVersion: 1,
+          id: createId('event'),
+          sequence: 1,
+          type: 'task_created',
+          occurredAt: now,
+          data: {},
+        },
+        {
+          schemaVersion: 1,
+          id: createId('event'),
+          sequence: 2,
+          type: 'run_started',
+          occurredAt: now,
+          data: { runId },
+        },
+        {
+          schemaVersion: 1,
+          id: createId('event'),
+          sequence: 3,
+          type: 'budget_assigned',
+          occurredAt: now,
+          data: { limits: budget.limits },
+        },
+      ];
+      if (conversationContext !== undefined) {
+        initialEvents.push({
+          schemaVersion: 1,
+          id: createId('event'),
+          sequence: initialEvents.length + 1,
+          type: 'conversation_context_assembled',
+          occurredAt: now,
+          data: {
+            conversationId: conversationContext.manifest.conversationId,
+            totalMessages: conversationContext.manifest.totalMessages,
+            totalCharacters: conversationContext.manifest.totalCharacters,
+            exclusions: conversationContext.manifest.exclusions,
+          },
+        });
+      }
       const aggregate: TaskAggregate = {
         schemaVersion: 1,
         version: 1,
@@ -1012,55 +1361,30 @@ export function createTaskLifecycle(options: {
           createdAt: now,
           updatedAt: now,
           budget: structuredClone(budget),
+          ...(conversationContext === undefined ? {} : { conversationContext }),
         },
-        events: [
-          {
-            schemaVersion: 1,
-            id: createId('event'),
-            sequence: 1,
-            type: 'task_created',
-            occurredAt: now,
-            data: {},
-          },
-          {
-            schemaVersion: 1,
-            id: createId('event'),
-            sequence: 2,
-            type: 'run_started',
-            occurredAt: now,
-            data: { runId },
-          },
-          {
-            schemaVersion: 1,
-            id: createId('event'),
-            sequence: 3,
-            type: 'budget_assigned',
-            occurredAt: now,
-            data: { limits: budget.limits },
-          },
-        ],
+        events: initialEvents,
       };
       const creation = await options.store.create(
         TaskAggregateSchema.parse(aggregate),
       );
       await project(creation.aggregate);
-      if (
-        !creation.created &&
-        (creation.aggregate.task.message !== input.message ||
-          creation.aggregate.task.principalId !== input.principalId ||
-          creation.aggregate.task.projectId !== input.projectId ||
-          creation.aggregate.task.conversationId !== input.conversationId ||
-          creation.aggregate.task.messageId !== input.messageId)
-      ) {
-        throw new LifecycleError(
-          `Idempotency key ${input.requestKey} is already associated with different task input.`,
-          'idempotency_key_reused',
-        );
+      if (!creation.created) {
+        assertMatchingTaskInput(creation.aggregate, input);
+        if (
+          JSON.stringify(creation.aggregate.run.conversationContext) !==
+          JSON.stringify(conversationContext)
+        ) {
+          throw new LifecycleError(
+            `Idempotency key ${input.requestKey} is already associated with different conversation context.`,
+            'idempotency_key_reused',
+          );
+        }
       }
       if (!creation.created || executionMode === 'worker') {
         return creation.aggregate;
       }
-      return evaluate(creation.aggregate);
+      return finalizeConversationReply(await evaluate(creation.aggregate));
     },
 
     async getTask(principalId, taskId) {
@@ -1111,9 +1435,11 @@ export function createTaskLifecycle(options: {
             'approval_already_decided',
           );
         }
-        return currentStatus === 'approved' && executionMode === 'inline'
-          ? executeApproved(existing, false)
-          : existing;
+        const progressed =
+          currentStatus === 'approved' && executionMode === 'inline'
+            ? await executeApproved(existing, false)
+            : existing;
+        return finalizeConversationReply(progressed);
       }
 
       const decidedAt = clock();
@@ -1158,9 +1484,11 @@ export function createTaskLifecycle(options: {
           'approval_already_decided',
         );
       }
-      return input.decision === 'approved' && executionMode === 'inline'
-        ? executeApproved(decision.aggregate, false)
-        : decision.aggregate;
+      const progressed =
+        input.decision === 'approved' && executionMode === 'inline'
+          ? await executeApproved(decision.aggregate, false)
+          : decision.aggregate;
+      return finalizeConversationReply(progressed);
     },
 
     async cancelRun(input) {
@@ -1179,7 +1507,7 @@ export function createTaskLifecycle(options: {
           existing.run.status,
         )
       ) {
-        return existing;
+        return finalizeConversationReply(existing);
       }
       const requestedAt = clock();
       const cancellation = await update(
@@ -1236,7 +1564,7 @@ export function createTaskLifecycle(options: {
       if (invocationId !== undefined) {
         activeInvocations.get(invocationId)?.abort();
       }
-      return cancellation.aggregate;
+      return finalizeConversationReply(cancellation.aggregate);
     },
 
     async progressTask(principalId, taskId) {

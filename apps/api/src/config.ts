@@ -24,6 +24,19 @@ const EnvironmentSchema = z.object({
     .min(256)
     .max(131_072)
     .default(8_192),
+  CONVERSATION_CONTEXT_MAX_MESSAGES: z.coerce
+    .number()
+    .int()
+    .min(2)
+    .max(100)
+    .multipleOf(2)
+    .default(20),
+  CONVERSATION_CONTEXT_MAX_CHARACTERS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .max(1_000_000)
+    .default(40_000),
   VERA_STORAGE_MODE: z.enum(['persistent', 'memory']).default('persistent'),
   MONGODB_URI: z.url().default('mongodb://127.0.0.1:27017'),
   MONGODB_DATABASE: z.string().min(1).default('vera'),
@@ -61,6 +74,10 @@ export type AppConfig = {
   host: string;
   port: number;
   model: ModelConfig;
+  conversationContext: {
+    maxMessages: number;
+    maxCharacters: number;
+  };
   storage: {
     mode: 'persistent' | 'memory';
     mongodbUri: string;
@@ -169,6 +186,10 @@ export function loadConfig(
     host: parsed.HOST,
     port: parsed.PORT,
     model: createModelConfig(parsed),
+    conversationContext: {
+      maxMessages: parsed.CONVERSATION_CONTEXT_MAX_MESSAGES,
+      maxCharacters: parsed.CONVERSATION_CONTEXT_MAX_CHARACTERS,
+    },
     storage: {
       mode: parsed.VERA_STORAGE_MODE,
       mongodbUri: parsed.MONGODB_URI,

@@ -105,6 +105,26 @@ function taskResponse(aggregate: TaskAggregate) {
     ...(aggregate.run.budget === undefined
       ? {}
       : { budget: aggregate.run.budget }),
+    ...(aggregate.run.conversationContext === undefined
+      ? {}
+      : {
+          conversationContextManifest:
+            aggregate.run.conversationContext.manifest,
+        }),
+    ...(aggregate.run.conversationReply === undefined
+      ? {}
+      : {
+          conversationReply: {
+            status: aggregate.run.conversationReply.status,
+            messageId: aggregate.run.conversationReply.messageId,
+            createdAt: aggregate.run.conversationReply.createdAt,
+            ...(aggregate.run.conversationReply.projectedAt === undefined
+              ? {}
+              : {
+                  projectedAt: aggregate.run.conversationReply.projectedAt,
+                }),
+          },
+        }),
     links: {
       task: `/v1/tasks/${aggregate.task.id}`,
       run: `/v1/runs/${aggregate.run.id}`,
@@ -617,7 +637,8 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       const statusCode =
         error.code === 'approval_already_decided' ||
         error.code === 'idempotency_key_reused' ||
-        error.code === 'concurrent_transition_failed'
+        error.code === 'concurrent_transition_failed' ||
+        error.code === 'conversation_message_mismatch'
           ? 409
           : 404;
       void reply.status(statusCode).send({

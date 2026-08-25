@@ -96,7 +96,9 @@ export class InMemoryExecutionStore implements ExecutionStore {
             aggregate.run.status === 'deciding' ||
             aggregate.run.status === 'executing' ||
             aggregate.run.status === 'awaiting_approval' ||
-            aggregate.run.status === 'cancellation_requested',
+            aggregate.run.status === 'cancellation_requested' ||
+            aggregate.run.conversationReply?.status === 'pending' ||
+            this.requiresLegacyConversationReply(aggregate),
         )
         .map((aggregate) => structuredClone(aggregate)),
     );
@@ -106,6 +108,10 @@ export class InMemoryExecutionStore implements ExecutionStore {
     return Promise.resolve(
       [...this.byTaskId.values()]
         .filter((aggregate) => {
+          if (aggregate.run.conversationReply?.status === 'pending') {
+            return true;
+          }
+          if (this.requiresLegacyConversationReply(aggregate)) return true;
           if (
             aggregate.run.status === 'deciding' ||
             aggregate.run.status === 'executing' ||
@@ -137,6 +143,17 @@ export class InMemoryExecutionStore implements ExecutionStore {
   private clone(taskId: string): TaskAggregate | null {
     const aggregate = this.byTaskId.get(taskId);
     return aggregate === undefined ? null : structuredClone(aggregate);
+  }
+
+  private requiresLegacyConversationReply(aggregate: TaskAggregate): boolean {
+    return (
+      aggregate.task.conversationId !== undefined &&
+      aggregate.task.messageId !== undefined &&
+      aggregate.run.conversationReply === undefined &&
+      ['succeeded', 'rejected', 'failed', 'cancelled'].includes(
+        aggregate.run.status,
+      )
+    );
   }
 
   private cloneOwned(

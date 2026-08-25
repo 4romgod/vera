@@ -180,7 +180,14 @@ export class MongoDbResourceStore implements ResourceStore {
       {
         principalId,
         id: conversationId,
-        messages: { $not: { $elemMatch: { requestKey: message.requestKey } } },
+        messages: {
+          $not: {
+            $elemMatch: {
+              role: message.role,
+              requestKey: message.requestKey,
+            },
+          },
+        },
       },
       {
         $push: { messages: validatedMessage },
@@ -196,7 +203,9 @@ export class MongoDbResourceStore implements ResourceStore {
     }
     const conversation = this.parseConversation(document);
     const storedMessage = conversation.messages.find(
-      (candidate) => candidate.requestKey === message.requestKey,
+      (candidate) =>
+        candidate.role === message.role &&
+        candidate.requestKey === message.requestKey,
     );
     if (storedMessage === undefined) {
       throw new Error('MongoDB message append did not return the message.');

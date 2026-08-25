@@ -257,11 +257,23 @@ cloud data boundaries. OpenAI and Gemini API keys are server-only transport
 configuration. Real provider calls remain owner-run evidence because CI must
 not use secrets or incur model cost.
 
-Selecting a cloud brain authorizes the owner message and minimal selected-
-project identity to that provider. It does not disclose repository files. If
-the same cloud model is selected as the `structured_model` specialist, the
+Selecting a cloud brain authorizes the current owner message, minimal selected-
+project identity, and bounded prior complete turns from the exact same project
+scope to that provider. It does not disclose repository files, other
+conversation scopes, or long-term memory. If the same cloud model is selected
+as the `structured_model` specialist, the
 existing exact context approval remains mandatory before project contents
 cross the boundary.
+
+### Conversation-aware orchestration — implemented
+
+Conversation tasks freeze a hash-auditable bundle of prior complete owner/Vera
+turn pairs in the same project scope, bounded by message and character limits.
+Every terminal task records a pending Vera reply in its authoritative aggregate
+before the worker idempotently appends that reply to conversation history. This
+supports genuine follow-ups and crash recovery without treating history as
+long-term memory. The shared client and `vera chat` CLI wait for projection
+completion. ADR-0016 records the accepted semantics and disclosure change.
 
 ### Durable dispatch and client event consumption — implemented
 

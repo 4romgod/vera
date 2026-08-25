@@ -1,7 +1,7 @@
 # Vera HTTP API
 
 **Status:** Accepted for implemented V1 paths
-**Version:** 0.4
+**Version:** 0.5
 **Last updated:** 25 August 2026
 
 ## Purpose
@@ -244,7 +244,18 @@ Idempotency-Key: plan-vera-202
 ```
 
 Repeating the message key returns the same message and task. A single
-conversation response exposes immutable messages and their `taskId` links.
+conversation response exposes immutable owner and Vera messages and their
+`taskId` links. Before the model call, the task freezes bounded prior complete
+turns from the exact same `projectId` scope; unscoped messages form their own
+scope. The task response exposes `conversationContextManifest` with hashes,
+limits, totals, and exclusion counts, without duplicating message content.
+
+Every terminal conversation task has a `conversationReply` projection with a
+stable message ID and `pending` or `projected` status. The worker recovers a
+pending projection idempotently. A polling client should treat a conversation
+task as settled only after this status is `projected`, even if the run has
+already reached a terminal status.
+
 The list endpoint returns bounded summaries instead: identity, title, status,
 timestamps, `messageCount`, and the most recent message without its internal
 idempotency key.
@@ -293,7 +304,9 @@ owned by that event type. Current event types are:
   `capability_invocation_failed`;
 - `artifact_created`;
 - `cancellation_requested`, `run_cancelled`;
-- `run_succeeded`, `run_rejected`, `run_failed`.
+- `run_succeeded`, `run_rejected`, `run_failed`;
+- `conversation_context_assembled`, `conversation_reply_pending`,
+  `conversation_reply_projected`.
 
 Events are evidence, not debug logs. Provider internals, credentials, and raw
 exceptions are excluded.
@@ -314,8 +327,8 @@ Error envelopes use:
 | Status | Codes | Meaning |
 |---:|---|---|
 | `400` | `invalid_request` | Missing, malformed, too large, or unknown request input. |
-| `404` | `task_not_found`, `run_not_found`, `approval_not_found`, `project_not_found`, `conversation_not_found`, `artifact_not_found` | The addressed resource does not exist. |
-| `409` | `idempotency_key_reused`, `approval_already_decided`, `concurrent_transition_failed` | The request conflicts with durable state. |
+| `404` | `task_not_found`, `run_not_found`, `approval_not_found`, `project_not_found`, `conversation_not_found`, `conversation_message_not_found`, `artifact_not_found` | The addressed resource does not exist. |
+| `409` | `idempotency_key_reused`, `approval_already_decided`, `concurrent_transition_failed`, `conversation_message_mismatch` | The request conflicts with durable state. |
 | `422` | `invalid_project_source` | A project path is not a canonical local Git root. |
 | `502` | `provider_request_rejected`, `provider_response_invalid` | Provider boundary failed while using the diagnostic endpoint. |
 | `503` | `model_not_found`, `provider_unavailable`, `operational_store_unavailable`, `scratchpad_unavailable`, `planning_capability_unavailable` | A required runtime dependency is unavailable. |

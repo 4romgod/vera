@@ -37,6 +37,7 @@ erasing why a choice was made.
 | [0013](0013-dispatch-durable-work-with-mongodb-leases.md) | Accepted | Derive asynchronous work from MongoDB state and coordinate workers with expiring per-run MongoDB leases. |
 | [0014](0014-use-the-host-session-as-the-v1-owner-boundary.md) | Accepted | Use the authenticated host/SSH session and a code-enforced loopback listener as V1's single-owner perimeter. |
 | [0015](0015-select-model-providers-through-explicit-profiles.md) | Accepted | Select Ollama, OpenAI, or Gemini through explicit startup profiles without silent cross-boundary fallback. |
+| [0016](0016-freeze-bounded-conversation-context-and-durably-project-replies.md) | Accepted | Freeze bounded prior same-scope complete turns and recover every terminal Vera reply through a durable projection. |
 
 ADRs 0001–0008 were accepted 24 August 2026 following the owner's review of
 the foundation documentation. ADR-0007 accepted a semantic boundary without
@@ -54,7 +55,9 @@ an in-process promise into execution authority.
 ADR-0014 resolves V1's owner-boundary contradiction without claiming that
 loopback itself authenticates HTTP callers. ADR-0015 makes the model gateway
 operationally interchangeable while preserving provider-specific privacy,
-credentials, readiness, and failure behavior.
+credentials, readiness, and failure behavior. ADR-0016 turns conversations into
+bounded multi-turn model context and complete durable dialogue without treating
+history as authority or long-term memory.
 
 ## ADR rules
 

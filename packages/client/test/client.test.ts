@@ -122,6 +122,45 @@ void describe('Vera HTTP client', () => {
     assert.equal(calls, 2);
   });
 
+  void it('waits for a terminal conversation reply to be projected', async () => {
+    let calls = 0;
+    const client = new VeraClient({
+      fetch: () => {
+        calls += 1;
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              schemaVersion: 1,
+              taskId: 'task_test',
+              runId: 'run_test',
+              taskStatus: 'completed',
+              runStatus: 'succeeded',
+              conversationId: 'conversation_test',
+              conversationReply: {
+                status: calls === 1 ? 'pending' : 'projected',
+                messageId: 'message_reply_test',
+                createdAt: '2026-08-25T00:00:00.000Z',
+                ...(calls === 1
+                  ? {}
+                  : { projectedAt: '2026-08-25T00:00:01.000Z' }),
+              },
+              message: 'hello',
+              createdAt: '2026-08-25T00:00:00.000Z',
+              updatedAt: '2026-08-25T00:00:00.000Z',
+              links: { task: '/task', run: '/run', events: '/events' },
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+        );
+      },
+    });
+
+    const completed = await client.waitForRun('run_test', { intervalMs: 1 });
+
+    assert.equal(completed.conversationReply?.status, 'projected');
+    assert.equal(calls, 2);
+  });
+
   void it('applies the polling timeout to an in-flight HTTP request', async () => {
     const client = new VeraClient({
       fetch: (_input, init) =>

@@ -5,7 +5,8 @@ import { loadConfig } from '../src/config.ts';
 
 void describe('application configuration', () => {
   void it('defaults to the owner-controlled Ollama provider', () => {
-    assert.deepEqual(loadConfig({}).model, {
+    const config = loadConfig({});
+    assert.deepEqual(config.model, {
       provider: 'ollama',
       baseUrl: 'http://127.0.0.1:11434',
       model: 'gemma4-12b-64k:latest',
@@ -13,10 +14,21 @@ void describe('application configuration', () => {
       readinessTimeoutMs: 3_000,
       maxOutputTokens: 8_192,
     });
+    assert.deepEqual(config.conversationContext, {
+      maxMessages: 20,
+      maxCharacters: 40_000,
+    });
   });
 
   void it('rejects a non-loopback listener while application authentication is absent', () => {
     assert.throws(() => loadConfig({ HOST: '0.0.0.0' }), /HOST/u);
+  });
+
+  void it('requires conversation history limits to preserve whole turns', () => {
+    assert.throws(
+      () => loadConfig({ CONVERSATION_CONTEXT_MAX_MESSAGES: '3' }),
+      /CONVERSATION_CONTEXT_MAX_MESSAGES/u,
+    );
   });
 
   void it('creates an OpenAI provider configuration only with a key', () => {

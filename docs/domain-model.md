@@ -2,8 +2,8 @@
 
 **Status:** Accepted (core vocabulary and critical distinctions); the open
 questions below are explicitly excluded from this acceptance
-**Version:** 0.2
-**Last updated:** 24 August 2026
+**Version:** 0.3
+**Last updated:** 25 August 2026
 **Accepted:** 24 August 2026 (owner) — accepts the Core concepts and
 Critical distinctions sections as Vera's shared language.
 
@@ -82,7 +82,11 @@ Key invariants:
 - adding a message does not silently mutate completed execution history;
 - a client may create a new conversation to isolate unrelated context;
 - conversation context is selected deliberately rather than passed wholesale
-  to every model call.
+  to every model call;
+- V1 context contains only bounded prior complete owner/Vera turns from the
+  exact same project scope (or the unscoped scope); and
+- each terminal conversation task durably contributes one Vera reply linked to
+  that task.
 
 ### Project
 
@@ -261,8 +265,8 @@ The bounded, disposable information assembled for one model invocation.
 
 Model context may be derived from messages, task state, events, capability
 descriptions, memory, and policy. It is a projection optimized for a particular
-decision. It is not authoritative state and should not be persisted as though
-everything in it were true.
+decision. Its selection manifest may be persisted for reproducibility without
+making its untrusted contents authoritative facts.
 
 ### Proposal
 

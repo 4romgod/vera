@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { ArtifactReferenceSchema } from './artifact.ts';
 import { CapabilityDestinationSchema } from './capability-destination.ts';
+import { ConversationContextBundleSchema } from './conversation-context.ts';
 import { DevelopmentPlanningProposalArgumentsSchema } from './capability-registry.ts';
 import { DevelopmentPlanSchema } from './development-plan.ts';
 import { DecisionResultSchema } from './execution-decision.ts';
@@ -122,10 +123,22 @@ export const TaskFailureSchema = z
       'project_required',
       'project_not_found',
       'project_context_failure',
+      'conversation_context_failure',
       'budget_exhausted',
       'cancelled',
     ]),
     message: z.string(),
+  })
+  .strict();
+
+export const ConversationReplyProjectionSchema = z
+  .object({
+    status: z.enum(['pending', 'projected']),
+    messageId: z.string().startsWith('message_'),
+    requestKey: z.string().min(1),
+    content: z.string().min(1).max(20_000),
+    createdAt: z.iso.datetime(),
+    projectedAt: z.iso.datetime().optional(),
   })
   .strict();
 
@@ -149,6 +162,9 @@ export const TaskEventTypeSchema = z.enum([
   'artifact_created',
   'cancellation_requested',
   'run_cancelled',
+  'conversation_context_assembled',
+  'conversation_reply_pending',
+  'conversation_reply_projected',
 ]);
 
 export const TaskEventSchema = z
@@ -193,6 +209,8 @@ export const TaskAggregateSchema = z
         failure: TaskFailureSchema.optional(),
         budget: RunBudgetSchema.optional(),
         context: ProjectContextBundleSchema.optional(),
+        conversationContext: ConversationContextBundleSchema.optional(),
+        conversationReply: ConversationReplyProjectionSchema.optional(),
       })
       .strict(),
     events: z.array(TaskEventSchema),
