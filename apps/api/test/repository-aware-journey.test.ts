@@ -75,6 +75,78 @@ async function createRepository(input: {
   return root;
 }
 
+async function createEndpointRepository(): Promise<string> {
+  const endpointName = ['hea', 'lth'].join('');
+  const route = `/${endpointName}`;
+  const root = await mkdtemp(join(tmpdir(), 'vera-endpoint-context-'));
+  temporaryDirectories.push(root);
+  await Promise.all([
+    mkdir(join(root, 'apps', 'api', 'src', 'http'), { recursive: true }),
+    mkdir(join(root, 'apps', 'api', 'src', 'domain'), { recursive: true }),
+    mkdir(join(root, 'apps', 'api', 'test'), { recursive: true }),
+    mkdir(join(root, 'docs', 'decisions'), { recursive: true }),
+  ]);
+  await Promise.all([
+    writeFile(join(root, '.prettierignore'), 'docs\n'),
+    writeFile(
+      join(root, '.prettierrc.json'),
+      '{"singleQuote":true,"trailingComma":"all"}\n',
+    ),
+    writeFile(join(root, 'README.md'), '# Synthetic API\n'),
+    writeFile(
+      join(root, 'package.json'),
+      '{"name":"synthetic-endpoint-api","private":true}\n',
+    ),
+    writeFile(
+      join(root, 'apps', 'api', 'package.json'),
+      '{"name":"@synthetic/api","private":true}\n',
+    ),
+    writeFile(
+      join(root, 'apps', 'api', 'src', 'http', 'build-app.ts'),
+      `app.get('${route}', () => ({ status: 'ok', service: 'api' }));\n`,
+    ),
+    writeFile(
+      join(root, 'apps', 'api', 'src', 'http', 'schemas.ts'),
+      `export const ${endpointName}Response = { status: 'ok', service: 'api' };\n`,
+    ),
+    writeFile(
+      join(root, 'apps', 'api', 'test', 'http.test.ts'),
+      `test('GET ${route} preserves the endpoint response', () => {});\n`,
+    ),
+    writeFile(
+      join(root, 'apps', 'api', 'src', 'domain', 'run-budget.ts'),
+      'export const runBudget = 1;\n',
+    ),
+    writeFile(
+      join(root, 'docs', 'security-and-trust.md'),
+      '# Security and trust\n\nUnrelated historical material.\n',
+    ),
+    ...Array.from({ length: 12 }, (_, index) =>
+      writeFile(
+        join(root, 'docs', 'decisions', `00${String(index)}-history.md`),
+        `# Historical ${route} architecture ${String(index)}\n\n${`Historical ${route} response discussion. `.repeat(80)}\n`,
+      ),
+    ),
+  ]);
+  await executeFile('git', ['init', '--quiet'], { cwd: root });
+  await executeFile('git', ['add', '-A'], { cwd: root });
+  await executeFile(
+    'git',
+    [
+      '-c',
+      'user.name=Vera Test',
+      '-c',
+      'user.email=vera-test@example.invalid',
+      'commit',
+      '--quiet',
+      '-m',
+      'endpoint context fixture',
+    ],
+    { cwd: root },
+  );
+  return root;
+}
+
 afterEach(async () => {
   await Promise.all(apps.splice(0).map(async (app) => app.close()));
   await Promise.all(
@@ -87,6 +159,86 @@ afterEach(async () => {
 });
 
 void describe('generic repository-aware planning journey', () => {
+  void it('selects endpoint implementation evidence without documentation saturation or substring false positives', async () => {
+    const endpointName = ['hea', 'lth'].join('');
+    const route = `/${endpointName}`;
+    const rootPath = await createEndpointRepository();
+    const bundle = await new LocalGitProjectContextAssembler().assemble({
+      project: {
+        schemaVersion: 1,
+        id: 'project_endpoint_context',
+        principalId: 'owner_v1',
+        registrationKey: 'endpoint-context',
+        displayName: 'Endpoint API',
+        normalizedName: 'endpoint api',
+        source: { kind: 'local_git', rootPath },
+        status: 'active',
+        createdAt: '2026-08-25T00:00:00.000Z',
+        updatedAt: '2026-08-25T00:00:00.000Z',
+      },
+      objective: `Implement an uptime field in seconds for GET \`${route}\` using process.uptime(), preserve all existing response fields, update the relevant HTTP tests, and document the field.`,
+      ticket: {
+        reference: 'VERA-MANUAL-4',
+        details: `Implement an uptime field in seconds for GET \`${route}\` using process.uptime(), preserve all existing response fields, update the relevant HTTP tests, and document the field.`,
+      },
+      limits: { maxFiles: 10, maxBytes: 20_000, maxFileBytes: 5_000 },
+    });
+
+    const paths = bundle.manifest.entries.map((entry) => entry.relativePath);
+    assert.ok(paths.includes('apps/api/src/http/build-app.ts'));
+    assert.ok(paths.includes('apps/api/src/http/schemas.ts'));
+    assert.ok(paths.includes('apps/api/test/http.test.ts'));
+    assert.ok(paths.includes('.prettierignore'));
+    assert.ok(paths.includes('.prettierrc.json'));
+    assert.ok(!paths.includes('apps/api/src/domain/run-budget.ts'));
+    assert.ok(!paths.includes('docs/security-and-trust.md'));
+    assert.ok(
+      bundle.manifest.entries.filter(
+        (entry) => entry.classification === 'documentation',
+      ).length <= 2,
+    );
+    const handlerEntry = bundle.manifest.entries.find(
+      (entry) => entry.relativePath === 'apps/api/src/http/build-app.ts',
+    );
+    assert.ok(
+      handlerEntry?.selectionReason.includes(
+        `File content matches exact request anchors: ${route}`,
+      ),
+    );
+  });
+
+  void it('falls back to repository-root evidence when no request term matches', async () => {
+    const rootPath = await createEndpointRepository();
+    const bundle = await new LocalGitProjectContextAssembler().assemble({
+      project: {
+        schemaVersion: 1,
+        id: 'project_unmatched_context',
+        principalId: 'owner_v1',
+        registrationKey: 'unmatched-context',
+        displayName: 'Unmatched API',
+        normalizedName: 'unmatched api',
+        source: { kind: 'local_git', rootPath },
+        status: 'active',
+        createdAt: '2026-08-25T00:00:00.000Z',
+        updatedAt: '2026-08-25T00:00:00.000Z',
+      },
+      objective: 'Investigate quokka telemetry.',
+      ticket: {
+        reference: 'UNMATCHED-1',
+        details: 'Investigate quokka telemetry.',
+      },
+      limits: { maxFiles: 10, maxBytes: 20_000, maxFileBytes: 5_000 },
+    });
+
+    const paths = bundle.manifest.entries.map((entry) => entry.relativePath);
+    assert.deepEqual(paths.sort(), [
+      '.prettierignore',
+      '.prettierrc.json',
+      'README.md',
+      'package.json',
+    ]);
+  });
+
   void it('assembles isolated bounded context for unrelated repositories', async () => {
     const [atlasRoot, novaRoot] = await Promise.all([
       createRepository({ name: 'atlas', sourceMarker: 'atlas-only' }),

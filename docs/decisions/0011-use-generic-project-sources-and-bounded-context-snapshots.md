@@ -35,6 +35,23 @@ Before approval, Vera's local source adapter creates a bounded context bundle:
   build directories, agent instruction files, binaries, symlinks, or paths
   escaping the registered Git root.
 
+Selection is deterministic and local. Exact request anchors such as an API
+route take precedence. When one resolves, broad prose tokens cannot admit
+unrelated paths or distort ordering within the anchored evidence set. Without
+an anchor, token-boundary path matches and fixed-string content matches
+establish relevance. Source code, relevant tests, and configuration rank above
+documentation. Nearby evidence is limited to non-documentation files in the
+same directory as directly matched implementation evidence; broad ancestor or
+test-directory expansion is not allowed. If nothing matches, only
+repository-root evidence is selected; Vera does not fill the remaining budget
+with arbitrary source. Unless documentation is the request's primary intent,
+it may consume at most one fifth of both the file-count and byte budgets. A
+request to implement and then document a change remains implementation work.
+Small, tracked repository-root formatter configurations are included as
+verification evidence. Full-text discovery does not cross a provider boundary:
+only the final manifest and hash-verified selected contents can be approved for
+disclosure.
+
 The approval discloses the manifest and exact selected specialist destination.
 For the default `codex_cli` adapter, approval is followed by reconstruction of
 only those hash-verified documents in an ephemeral snapshot and invocation of
@@ -73,6 +90,9 @@ known multi-user migration trap without prematurely implementing SaaS tenancy.
 - Planning requests must identify the project by `projectId`.
 - Local context selection is deterministic, bounded, and more conservative
   than unrestricted repository search; missing evidence must be reported.
+- Exact request anchors and token boundaries prevent generic substrings from
+  admitting unrelated files, while separate documentation limits prevent
+  historical prose from crowding implementation evidence out of the snapshot.
 - Approved context is stored with the task aggregate so recovery can reproduce
   the invocation exactly.
 - MongoDB maintains separate project, conversation, and artifact resources in

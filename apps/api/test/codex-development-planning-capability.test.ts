@@ -28,6 +28,7 @@ void describe('Codex development planning adapter', () => {
       `#!/usr/bin/env node
 const args = process.argv.slice(2);
 if (args.length === 1 && args[0] === '--version') process.exit(0);
+if (args.length === 4 && args[0] === '--ask-for-approval' && args[1] === 'never' && args[2] === 'exec' && args[3] === '--help') process.exit(0);
 if (args.length === 2 && args[0] === 'login' && args[1] === 'status') process.exit(0);
 process.exit(20);
 `,
@@ -56,10 +57,16 @@ process.exit(20);
 import { readFile, writeFile } from 'node:fs/promises';
 const args = process.argv.slice(2);
 const valueAfter = (flag) => args[args.indexOf(flag) + 1];
-if (!args.includes('--ephemeral') || valueAfter('--sandbox') !== 'read-only' || valueAfter('--ask-for-approval') !== 'never') process.exit(20);
+const stdinTimeout = setTimeout(() => process.exit(19), 1000);
+let stdin = '';
+for await (const chunk of process.stdin) stdin += chunk;
+clearTimeout(stdinTimeout);
+if (stdin !== '') process.exit(19);
+if (args[0] !== '--ask-for-approval' || args[1] !== 'never' || args[2] !== 'exec') process.exit(20);
+if (!args.includes('--ephemeral') || valueAfter('--sandbox') !== 'read-only' || args.slice(3).includes('--ask-for-approval')) process.exit(21);
 const workspace = valueAfter('--cd');
 const source = await readFile(workspace + '/src/feature.ts', 'utf8');
-if (!source.includes('approved-only')) process.exit(21);
+if (!source.includes('approved-only')) process.exit(22);
 const output = {
   schemaVersion: 1,
   title: 'Approved snapshot plan',

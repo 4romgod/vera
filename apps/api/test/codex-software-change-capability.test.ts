@@ -76,11 +76,17 @@ void describe('Codex software-change adapter', () => {
 import { readFile, writeFile } from 'node:fs/promises';
 const args = process.argv.slice(2);
 const valueAfter = (flag) => args[args.indexOf(flag) + 1];
-if (!args.includes('--ephemeral') || !args.includes('--ignore-user-config') || !args.includes('--ignore-rules')) process.exit(20);
-if (valueAfter('--sandbox') !== 'workspace-write' || valueAfter('--ask-for-approval') !== 'never') process.exit(21);
+const stdinTimeout = setTimeout(() => process.exit(19), 1000);
+let stdin = '';
+for await (const chunk of process.stdin) stdin += chunk;
+clearTimeout(stdinTimeout);
+if (stdin !== '') process.exit(19);
+if (args[0] !== '--ask-for-approval' || args[1] !== 'never' || args[2] !== 'exec') process.exit(20);
+if (!args.includes('--ephemeral') || !args.includes('--ignore-user-config') || !args.includes('--ignore-rules')) process.exit(21);
+if (valueAfter('--sandbox') !== 'workspace-write' || args.slice(3).includes('--ask-for-approval')) process.exit(22);
 const workspace = valueAfter('--cd');
 const source = await readFile(workspace + '/src/feature.ts', 'utf8');
-if (!source.includes('approved-only')) process.exit(22);
+if (!source.includes('approved-only')) process.exit(23);
 await writeFile(workspace + '/src/feature.ts', "export const marker = 'implemented';\\n");
 await writeFile(valueAfter('--output-last-message'), JSON.stringify({
   schemaVersion: 1,

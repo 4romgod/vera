@@ -1,10 +1,8 @@
-import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { performance } from 'node:perf_hooks';
-import { promisify } from 'node:util';
 import { z } from 'zod';
 
 import {
@@ -16,9 +14,12 @@ import type {
   DevelopmentPlanningCapability,
   DevelopmentPlanningInvocation,
 } from '../ports/development-planning-capability.ts';
+import {
+  codexExecArguments,
+  codexExecReadinessArguments,
+} from './codex-exec-arguments.ts';
 import { codexProcessEnvironment } from './codex-process-environment.ts';
-
-const executeFile = promisify(execFile);
+import { executeCodexSubprocess } from './codex-subprocess.ts';
 
 export type CodexDevelopmentPlanningCapabilityOptions = {
   command: string;
@@ -82,13 +83,21 @@ export class CodexDevelopmentPlanningCapability
 
   public async checkReadiness(): Promise<void> {
     const commandOptions = {
-      encoding: 'utf8' as const,
       maxBuffer: 256 * 1024,
       timeout: this.options.readinessTimeoutMs ?? 3_000,
       env: codexProcessEnvironment(),
     };
-    await executeFile(this.options.command, ['--version'], commandOptions);
-    await executeFile(
+    await executeCodexSubprocess(
+      this.options.command,
+      ['--version'],
+      commandOptions,
+    );
+    await executeCodexSubprocess(
+      this.options.command,
+      codexExecReadinessArguments(),
+      commandOptions,
+    );
+    await executeCodexSubprocess(
       this.options.command,
       ['login', 'status'],
       commandOptions,
@@ -171,34 +180,21 @@ export class CodexDevelopmentPlanningCapability
         ),
       ]);
 
-      const args = [
-        'exec',
-        '--ephemeral',
-        '--ignore-user-config',
-        '--ignore-rules',
-        '--sandbox',
-        'read-only',
-        '--ask-for-approval',
-        'never',
-        '--skip-git-repo-check',
-        '--color',
-        'never',
-        '--cd',
+      const args = codexExecArguments({
+        sandbox: 'read-only',
         workspace,
-        '--output-schema',
         schemaPath,
-        '--output-last-message',
         outputPath,
-      ];
-      if (this.options.model !== undefined) {
-        args.push('--model', this.options.model);
-      }
-      args.push(buildPrompt(invocation));
-      await executeFile(this.options.command, args, {
-        encoding: 'utf8',
+        prompt: buildPrompt(invocation),
+        skipGitRepositoryCheck: true,
+        ...(this.options.model === undefined
+          ? {}
+          : { model: this.options.model }),
+      });
+      await executeCodexSubprocess(this.options.command, args, {
         maxBuffer: 2 * 1024 * 1024,
         timeout: invocation.limits.maxDurationMs,
-        signal: options?.signal,
+        ...(options?.signal === undefined ? {} : { signal: options.signal }),
         env: codexProcessEnvironment(),
       });
       const output = await readFile(outputPath, 'utf8');
