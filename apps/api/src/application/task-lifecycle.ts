@@ -7,6 +7,10 @@ import { assertProjectContextIntegrity } from './validate-project-context.ts';
 import type { DecisionResult } from '../domain/execution-decision.ts';
 import { ArtifactSchema, type Artifact } from '../domain/artifact.ts';
 import { sameCapabilityDestination } from '../domain/capability-destination.ts';
+import {
+  DevelopmentPlanningProposalArgumentsSchema,
+  SoftwareChangeProposalArgumentsSchema,
+} from '../domain/capability-registry.ts';
 import type {
   ConversationContextBundle,
   ConversationContextLimits,
@@ -16,6 +20,8 @@ import type { Project } from '../domain/project.ts';
 import type { ProjectContextBundle } from '../domain/project-context.ts';
 import { DefaultRunBudget, type RunBudget } from '../domain/run-budget.ts';
 import {
+  ApprovalSchema,
+  CapabilityInvocationSchema,
   TaskAggregateSchema,
   type TaskAggregate,
   type TaskEventType,
@@ -25,6 +31,7 @@ import type { DevelopmentPlanningCapabilityRegistry } from '../ports/development
 import type { ExecutionStore } from '../ports/execution-store.ts';
 import type { ProjectContextAssembler } from '../ports/project-context-assembler.ts';
 import type { ResourceStore } from '../ports/resource-store.ts';
+import type { SoftwareChangeCapabilityRegistry } from '../ports/software-change-capability.ts';
 import { projectAggregate, type Scratchpad } from '../ports/scratchpad.ts';
 
 export type LifecycleErrorCode =
@@ -107,6 +114,7 @@ export function createTaskLifecycle(options: {
   scratchpad: Scratchpad;
   evaluateModelDecision: EvaluateModelDecision;
   developmentPlanning: DevelopmentPlanningCapabilityRegistry;
+  softwareChange: SoftwareChangeCapabilityRegistry;
   resources: ResourceStore;
   contextAssembler: ProjectContextAssembler;
   conversationContextLimits?: ConversationContextLimits;
@@ -137,6 +145,14 @@ export function createTaskLifecycle(options: {
       return [
         `I created the implementation plan "${aggregate.run.output.plan.title}".`,
         aggregate.run.output.plan.summary,
+        ...(artifactId === undefined ? [] : [`Artifact: ${artifactId}`]),
+      ].join('\n\n');
+    }
+    if (aggregate.run.output?.kind === 'software_change') {
+      const artifactId = aggregate.run.output.artifact?.id;
+      return [
+        `I created a reviewable software change affecting ${String(aggregate.run.output.change.files.length)} file(s).`,
+        aggregate.run.output.change.summary,
         ...(artifactId === undefined ? [] : [`Artifact: ${artifactId}`]),
       ].join('\n\n');
     }
@@ -439,7 +455,7 @@ export function createTaskLifecycle(options: {
         }
         candidate.run.status = 'awaiting_approval';
         candidate.run.context = approvedContext.context;
-        candidate.run.approval = {
+        candidate.run.approval = ApprovalSchema.parse({
           id: approvalId,
           status: 'pending',
           reason: decision.decision.reason,
@@ -450,9 +466,12 @@ export function createTaskLifecycle(options: {
             displayName: approvedContext.project.displayName,
           },
           contextManifest: approvedContext.context.manifest,
-          destination: options.developmentPlanning.selected().destination,
+          destination:
+            decision.decision.capability.name === 'development_planning'
+              ? options.developmentPlanning.selected().destination
+              : options.softwareChange.selected().destination,
           requestedAt: now,
-        };
+        });
         appendEvent(
           candidate,
           'context_assembled',
@@ -674,7 +693,7 @@ export function createTaskLifecycle(options: {
           budgetClaim.aggregate.task.principalId,
           budgetClaim.aggregate.task.id,
           'project_required',
-          'A registered projectId is required for development planning.',
+          'A registered projectId is required for specialist project work.',
           'run_failed',
         );
       }
@@ -790,7 +809,7 @@ export function createTaskLifecycle(options: {
         candidate.run.status = 'executing';
         candidate.run.updatedAt = now;
         candidate.task.updatedAt = now;
-        candidate.run.invocation = {
+        candidate.run.invocation = CapabilityInvocationSchema.parse({
           id: invocationId,
           status: 'executing',
           capability: candidate.run.approval.capability,
@@ -805,7 +824,7 @@ export function createTaskLifecycle(options: {
             ? {}
             : { destination: candidate.run.approval.destination }),
           startedAt: now,
-        };
+        });
         appendEvent(
           candidate,
           'budget_consumed',
@@ -874,18 +893,32 @@ export function createTaskLifecycle(options: {
             artifact.producer;
           void ignoredDestination;
           candidate.run.invocation.model = producerModel;
-          candidate.run.output = {
-            kind: 'development_plan',
-            plan: artifact.content,
-            artifact: {
-              id: artifact.id,
-              version: artifact.version,
-              type: artifact.type,
-              mediaType: artifact.mediaType,
-              sha256: artifact.sha256,
-              byteLength: artifact.byteLength,
-            },
-          };
+          candidate.run.output =
+            artifact.type === 'implementation_plan'
+              ? {
+                  kind: 'development_plan',
+                  plan: artifact.content,
+                  artifact: {
+                    id: artifact.id,
+                    version: artifact.version,
+                    type: artifact.type,
+                    mediaType: artifact.mediaType,
+                    sha256: artifact.sha256,
+                    byteLength: artifact.byteLength,
+                  },
+                }
+              : {
+                  kind: 'software_change',
+                  change: artifact.content,
+                  artifact: {
+                    id: artifact.id,
+                    version: artifact.version,
+                    type: artifact.type,
+                    mediaType: artifact.mediaType,
+                    sha256: artifact.sha256,
+                    byteLength: artifact.byteLength,
+                  },
+                };
           appendEvent(
             candidate,
             'artifact_created',
@@ -1023,13 +1056,6 @@ export function createTaskLifecycle(options: {
           'The claimed invocation destination differs from the approved destination.',
         );
       }
-      const developmentPlanning =
-        options.developmentPlanning.resolve(approvedDestination);
-      if (developmentPlanning === null) {
-        throw new Error(
-          `The approved planning adapter ${approvedDestination.adapterId} is unavailable or its destination configuration changed.`,
-        );
-      }
       assertProjectContextIntegrity(context, projectReference.id);
       const elapsedBeforeInvocation =
         Date.parse(clock()) - Date.parse(executionAggregate.run.createdAt);
@@ -1085,35 +1111,105 @@ export function createTaskLifecycle(options: {
       if (latestBeforeInvocation?.run.status === 'cancellation_requested') {
         controller.abort();
       }
-      const result = await developmentPlanning.execute(
-        {
-          schemaVersion: 1,
-          invocationId: claimedInvocation.id,
-          arguments: claimedInvocation.arguments,
-          project: projectReference,
-          context,
-          limits: {
-            maxDurationMs: remainingDurationMs,
-            maxArtifactBytes: runBudget.limits.maxArtifactBytes,
+      let artifactType: 'implementation_plan' | 'software_change';
+      let mediaType:
+        | 'application/vnd.vera.implementation-plan+json'
+        | 'application/vnd.vera.software-change+json';
+      let content: unknown;
+      let producerModel: {
+        provider: string;
+        model: string;
+        durationMs: number;
+        usage?: { inputTokens: number; outputTokens: number };
+      };
+      if (claimedInvocation.capability.name === 'development_planning') {
+        const developmentPlanning =
+          options.developmentPlanning.resolve(approvedDestination);
+        if (developmentPlanning === null) {
+          throw new Error(
+            `The approved planning adapter ${approvedDestination.adapterId} is unavailable or its destination configuration changed.`,
+          );
+        }
+        const invocationArguments =
+          DevelopmentPlanningProposalArgumentsSchema.parse(
+            claimedInvocation.arguments,
+          );
+        const result = await developmentPlanning.execute(
+          {
+            schemaVersion: 1,
+            invocationId: claimedInvocation.id,
+            arguments: invocationArguments,
+            project: projectReference,
+            context,
+            limits: {
+              maxDurationMs: remainingDurationMs,
+              maxArtifactBytes: runBudget.limits.maxArtifactBytes,
+            },
           },
-        },
-        { signal: controller.signal },
-      );
-      if (
-        result.plan.project.id !== projectReference.id ||
-        result.plan.project.name !== projectReference.displayName ||
-        result.plan.project.revision !== context.manifest.revision ||
-        result.plan.objective !== claimedInvocation.arguments.objective ||
-        result.plan.ticket.reference !==
-          claimedInvocation.arguments.ticket.reference ||
-        result.plan.ticket.details !==
-          claimedInvocation.arguments.ticket.details
-      ) {
-        throw new Error(
-          'The capability result did not preserve authoritative invocation identity.',
+          { signal: controller.signal },
         );
+        if (
+          result.plan.project.id !== projectReference.id ||
+          result.plan.project.name !== projectReference.displayName ||
+          result.plan.project.revision !== context.manifest.revision ||
+          result.plan.objective !== invocationArguments.objective ||
+          result.plan.ticket.reference !==
+            invocationArguments.ticket.reference ||
+          result.plan.ticket.details !== invocationArguments.ticket.details
+        ) {
+          throw new Error(
+            'The planning result did not preserve authoritative invocation identity.',
+          );
+        }
+        artifactType = 'implementation_plan';
+        mediaType = 'application/vnd.vera.implementation-plan+json';
+        content = result.plan;
+        producerModel = result.model;
+      } else {
+        const softwareChange =
+          options.softwareChange.resolve(approvedDestination);
+        if (softwareChange === null) {
+          throw new Error(
+            `The approved software-change adapter ${approvedDestination.adapterId} is unavailable or its destination configuration changed.`,
+          );
+        }
+        const invocationArguments = SoftwareChangeProposalArgumentsSchema.parse(
+          claimedInvocation.arguments,
+        );
+        const result = await softwareChange.execute(
+          {
+            schemaVersion: 1,
+            invocationId: claimedInvocation.id,
+            arguments: invocationArguments,
+            project: projectReference,
+            context,
+            limits: {
+              maxDurationMs: remainingDurationMs,
+              maxArtifactBytes: runBudget.limits.maxArtifactBytes,
+              maxChangedFiles: runBudget.limits.maxContextFiles,
+            },
+          },
+          { signal: controller.signal },
+        );
+        if (
+          result.change.project.id !== projectReference.id ||
+          result.change.project.name !== projectReference.displayName ||
+          result.change.project.revision !== context.manifest.revision ||
+          result.change.objective !== invocationArguments.objective ||
+          result.change.ticket.reference !==
+            invocationArguments.ticket.reference ||
+          result.change.ticket.details !== invocationArguments.ticket.details
+        ) {
+          throw new Error(
+            'The software-change result did not preserve authoritative invocation identity.',
+          );
+        }
+        artifactType = 'software_change';
+        mediaType = 'application/vnd.vera.software-change+json';
+        content = result.change;
+        producerModel = result.model;
       }
-      const contentJson = JSON.stringify(result.plan);
+      const contentJson = JSON.stringify(content);
       const artifact = ArtifactSchema.parse({
         schemaVersion: 1,
         id: `artifact_${claimedInvocation.id.slice('invocation_'.length)}`,
@@ -1123,27 +1219,35 @@ export function createTaskLifecycle(options: {
         runId: claim.aggregate.run.id,
         invocationId: claimedInvocation.id,
         projectId: projectReference.id,
-        type: 'implementation_plan',
-        mediaType: 'application/vnd.vera.implementation-plan+json',
+        type: artifactType,
+        mediaType,
         sha256: createHash('sha256').update(contentJson).digest('hex'),
         byteLength: Buffer.byteLength(contentJson),
         producer: {
           destination: approvedDestination,
-          ...result.model,
+          ...producerModel,
         },
-        content: result.plan,
+        content,
         createdAt: clock(),
       });
       if (artifact.byteLength > runBudget.limits.maxArtifactBytes) {
         throw new Error(
-          'The development plan exceeded the artifact byte limit.',
+          'The capability artifact exceeded the artifact byte limit.',
         );
       }
       const storedArtifact = await options.resources.createArtifact(artifact);
       if (
         storedArtifact.artifact.taskId !== claim.aggregate.task.id ||
         storedArtifact.artifact.runId !== claim.aggregate.run.id ||
-        storedArtifact.artifact.projectId !== projectReference.id
+        storedArtifact.artifact.invocationId !== claimedInvocation.id ||
+        storedArtifact.artifact.projectId !== projectReference.id ||
+        storedArtifact.artifact.type !== artifactType ||
+        storedArtifact.artifact.mediaType !== mediaType ||
+        storedArtifact.artifact.producer.destination === undefined ||
+        !sameCapabilityDestination(
+          storedArtifact.artifact.producer.destination,
+          approvedDestination,
+        )
       ) {
         throw new Error(
           'The stored artifact belongs to a different invocation context.',
@@ -1196,7 +1300,9 @@ export function createTaskLifecycle(options: {
         claim.aggregate.task.principalId,
         claim.aggregate.task.id,
         'capability_execution_failure',
-        'The development planning capability could not complete the task.',
+        claimedInvocation.capability.name === 'development_planning'
+          ? 'The development planning capability could not complete the task.'
+          : 'The software change capability could not complete the task.',
         'capability_invocation_failed',
       );
     } finally {

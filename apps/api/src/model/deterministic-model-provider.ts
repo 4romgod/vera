@@ -81,9 +81,13 @@ export class DeterministicModelProvider implements ModelProvider {
       // A plain owner message is the normal input when no project is selected.
     }
 
-    const shouldDelegate = ownerMessage.toLowerCase().includes('plan');
+    const normalizedMessage = ownerMessage.toLowerCase();
+    const shouldChange = /\b(implement|fix|modify|edit|write)\b/u.test(
+      normalizedMessage,
+    );
+    const shouldPlan = normalizedMessage.includes('plan');
 
-    const candidate = shouldDelegate
+    const candidate = shouldPlan
       ? {
           schemaVersion: 1,
           kind: 'invoke_capability',
@@ -95,12 +99,25 @@ export class DeterministicModelProvider implements ModelProvider {
             project: { name: projectName },
           },
         }
-      : {
-          schemaVersion: 1,
-          kind: 'respond',
-          decisionSummary: 'The request can be answered directly.',
-          message: `Vera received: ${ownerMessage}`,
-        };
+      : shouldChange
+        ? {
+            schemaVersion: 1,
+            kind: 'invoke_capability',
+            decisionSummary:
+              'The request asks for an isolated specialist software change.',
+            capability: { name: 'software_change', version: 1 },
+            arguments: {
+              objective: ownerMessage,
+              ticket: { reference: 'untracked', details: ownerMessage },
+              project: { name: projectName },
+            },
+          }
+        : {
+            schemaVersion: 1,
+            kind: 'respond',
+            decisionSummary: 'The request can be answered directly.',
+            message: `Vera received: ${ownerMessage}`,
+          };
 
     return Promise.resolve({
       candidate,

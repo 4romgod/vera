@@ -19,6 +19,7 @@ import { createTaskLifecycle } from '../src/application/task-lifecycle.ts';
 import { buildApp } from '../src/http/build-app.ts';
 import type { DevelopmentPlanningCapability } from '../src/ports/development-planning-capability.ts';
 import { FakeModelProvider } from './support/fake-model-provider.ts';
+import { createDeterministicSoftwareChangeRegistry } from './support/deterministic-software-change-registry.ts';
 
 const executeFile = promisify(execFile);
 const temporaryDirectories: string[] = [];
@@ -273,6 +274,7 @@ void describe('generic repository-aware planning journey', () => {
         selected: () => capability,
         resolve: () => capability,
       },
+      softwareChange: createDeterministicSoftwareChangeRegistry(),
       resources,
       contextAssembler: new LocalGitProjectContextAssembler(),
     });

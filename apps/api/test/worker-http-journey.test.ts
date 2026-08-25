@@ -30,6 +30,10 @@ function config(): AppConfig {
       adapterId: 'structured_model',
       adapters: { codexCli: { command: 'codex' } },
     },
+    change: {
+      adapterId: 'deterministic_change',
+      adapters: { codexCli: { command: 'codex' } },
+    },
     worker: { concurrency: 2, pollIntervalMs: 25, leaseMs: 900_000 },
   };
 }

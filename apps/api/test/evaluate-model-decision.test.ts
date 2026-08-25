@@ -151,6 +151,31 @@ void describe('model decision boundary', () => {
     assert.equal(result.decision.kind, 'approval_required');
   });
 
+  void it('requires approval for a valid software-change invocation', async () => {
+    const result = await evaluator({
+      schemaVersion: 1,
+      kind: 'invoke_capability',
+      decisionSummary: 'An isolated software change is required.',
+      capability: { name: 'software_change', version: 1 },
+      arguments: {
+        objective: 'Implement the health endpoint.',
+        ticket: { reference: 'VERA-102', details: 'Add health monitoring.' },
+        project: { name: 'vera' },
+      },
+    })('implement this');
+
+    assert.deepEqual(result.decision, {
+      kind: 'approval_required',
+      reason: 'specialist_capability_invocation',
+      capability: { name: 'software_change', version: 1 },
+      proposedArguments: {
+        objective: 'Implement the health endpoint.',
+        ticket: { reference: 'VERA-102', details: 'Add health monitoring.' },
+        project: { name: 'vera' },
+      },
+    });
+  });
+
   void it('rejects capabilities outside the model-visible contract', async () => {
     const result = await evaluator({
       schemaVersion: 1,

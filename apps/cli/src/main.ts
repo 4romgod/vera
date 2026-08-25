@@ -35,6 +35,7 @@ const usage = `Usage:
   vera approval decide <approval-id> <approved|rejected>
   vera artifact show <artifact-id>
   vera plan --project <project-id> --message <message> [--key <key>] [--approve]
+  vera change --project <project-id> --message <message> [--key <key>] [--approve]
 
 Global options:
   --url <base-url>   Defaults to VERA_API_URL or http://127.0.0.1:4310
@@ -338,7 +339,9 @@ export async function runCli(
     return 0;
   }
 
-  if (resource === 'plan') {
+  if (resource === 'plan' || resource === 'change') {
+    const expectedCapability =
+      resource === 'plan' ? 'development_planning' : 'software_change';
     const submitted = await client.submitTask({
       message: requiredOption(args, '--message'),
       projectId: requiredOption(args, '--project'),
@@ -355,6 +358,11 @@ export async function runCli(
       print(stdout, review);
       return review.runStatus === 'succeeded' ? 0 : 2;
     }
+    if (review.approval.capability.name !== expectedCapability) {
+      throw new Error(
+        `Vera proposed ${review.approval.capability.name}, but the ${resource} command only permits ${expectedCapability}.`,
+      );
+    }
     const completed = await resolveApproval({
       task: review,
       client,
@@ -363,7 +371,7 @@ export async function runCli(
       stdout,
     });
     print(stdout, completed);
-    if (completed.output?.artifact !== undefined) {
+    if (completed.output !== undefined && 'artifact' in completed.output) {
       print(stdout, await client.getArtifact(completed.output.artifact.id));
     }
     return completed.runStatus === 'succeeded' ? 0 : 2;

@@ -3,7 +3,7 @@
 **Status:** Accepted (logical architecture, component responsibilities,
 request lifecycle, architectural invariants, initial modular API shape, and V1
 operational storage); post-V1 progress transport and deployment topology remain open
-**Version:** 0.7
+**Version:** 0.8
 **Last updated:** 25 August 2026
 **Accepted:** 24 August 2026 (owner) — post-V1 progress transport and deployment
 topology are deferred; V1 uses HTTP polling. The initial Fastify/Zod modular API
@@ -342,8 +342,8 @@ sequenceDiagram
     participant Model as "Model-provider registry"
     participant Policy as "Schema, registry, and approval policy"
     participant Source as "Registered project source"
-    participant Capability as "development_planning@1"
-    participant Artifact as "Plan artifact store"
+    participant Capability as "Selected capability adapter"
+    participant Artifact as "Versioned artifact store"
 
     Owner->>API: Register project and create conversation
     Owner->>API: POST conversation message + projectId
@@ -376,8 +376,8 @@ sequenceDiagram
     Worker->>Lease: Claim run with expiring token
     Worker->>Life: Progress claimed task
     Life->>Mongo: Persist invocation identity
-    Life->>Capability: Ephemeral read-only approved snapshot
-    Capability-->>Life: Structured plan + provider metadata
+    Life->>Capability: Ephemeral approved snapshot + bounded authority
+    Capability-->>Life: Plan or isolated change + provider metadata
     Life->>Artifact: Idempotent create by invocation ID
     Life->>Mongo: Record result + terminal events + pending Vera reply
     Life->>History: Idempotently append Vera reply by task
@@ -425,6 +425,15 @@ compiled persistent-mode journey verifies artifact and complete dialogue
 survival across process restart plus Redis projection reconstruction. Remaining
 V1 evidence is owner acceptance of the exact real-cloud-Codex disclosure.
 
+The same lifecycle now also implements `software_change@1`. Its Codex adapter
+uses a workspace-write sandbox over a disposable approved snapshot, while the
+registered repository remains untouched. Vera derives an authoritative Git
+patch and file hashes from the snapshot and stores a review-only
+`software_change` artifact. Application, commit, push, and pull-request effects
+remain outside this capability. The deterministic adapter drives the compiled
+persistent journey without downloads or third-party calls. See
+[ADR-0017](decisions/0017-produce-software-changes-as-isolated-patch-artifacts.md).
+
 Approval freezes the complete specialist destination. Execution and recovery
 resolve that persisted descriptor rather than the currently selected adapter;
 missing or changed adapter configuration fails closed instead of redirecting
@@ -437,7 +446,8 @@ under [ADR-0014](decisions/0014-use-the-host-session-as-the-v1-owner-boundary.md
 Health is process liveness.
 Readiness verifies provider connectivity, configured-model availability,
 MongoDB, Redis, worker lease access, lifecycle recovery, and
-planning-specialist availability without running inference.
+planning- and software-change-specialist availability without running
+inference.
 
 ## Proposed API resource shape
 
@@ -493,6 +503,8 @@ orchestration semantics. The owner CLI uses that client and renders the exact
 approval disclosure before interactive or explicitly requested approval. Its
 `chat` path creates or continues a conversation, waits for any approval and the
 durable Vera reply, and returns the reply with its task identity.
+The `plan` and `change` commands constrain auto-approval to their exact
+capability, then retrieve the resulting artifact.
 
 For V1, accepting a task-producing message returns `202 Accepted` with the
 conversation, task, and run identifiers. Clients poll run, event, approval, and

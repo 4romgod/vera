@@ -2,7 +2,7 @@
 
 **Status:** Accepted (capability declaration shape, invocation lifecycle,
 selection checks, and resource/delegation budget model)
-**Version:** 0.3
+**Version:** 0.4
 **Last updated:** 25 August 2026
 **Accepted:** 24 August 2026 (owner) — V1 capability selected during
 ratification; future registry design remains open
@@ -330,3 +330,34 @@ work but cannot redirect an already approved invocation.
 See [ADR-0011](decisions/0011-use-generic-project-sources-and-bounded-context-snapshots.md)
 and [ADR-0012](decisions/0012-late-bind-specialist-platforms-behind-capability-adapters.md)
 and the [V1 Definition](v1-definition.md#required-first-journey).
+
+## Implemented software-change capability
+
+`software_change@1` is the first implementation capability beyond the V1
+planning proof. It uses the same model-visible routing argument shape, but has a
+different outcome and authority boundary: it produces a reviewable patch in a
+disposable workspace and returns one versioned `software_change` artifact.
+
+```mermaid
+flowchart LR
+    I["Owner implementation intent"] --> P["software_change@1 proposal"]
+    P --> A["Approval: arguments + project manifest + destination"]
+    A --> S["Hash-verified isolated snapshot"]
+    S --> W["Selected adapter writes only inside snapshot"]
+    W --> V["Vera inspects Git effect and computes hashes + patch"]
+    V --> R["Review-only software_change artifact"]
+    R -. "separate future authority" .-> X["Apply / commit / push / PR"]
+```
+
+The initial adapters are `codex_cli` for production and
+`deterministic_change` for repeatable conformance. The orchestration model,
+planning adapter, and change adapter are configured independently. The Codex
+adapter receives only approved repository evidence, and Vera—not the
+specialist—computes the authoritative patch and file metadata from the isolated
+filesystem.
+
+Approval authorizes the exact context disclosure and bounded write inside the
+disposable workspace. It does not authorize mutation of the registered project,
+a commit, a push, a pull request, credential access, or another network effect.
+Those require distinct future capabilities. See
+[ADR-0017](decisions/0017-produce-software-changes-as-isolated-patch-artifacts.md).

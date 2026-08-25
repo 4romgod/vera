@@ -1,6 +1,9 @@
 import { z } from 'zod';
 
-import { DevelopmentPlanningProposalArgumentsSchema } from './capability-registry.ts';
+import {
+  DevelopmentPlanningProposalArgumentsSchema,
+  SoftwareChangeProposalArgumentsSchema,
+} from './capability-registry.ts';
 
 const DecisionSummarySchema = z.string().trim().min(1).max(500);
 
@@ -20,7 +23,7 @@ const RespondProposalSchema = z
   })
   .strict();
 
-const InvokeCapabilityProposalSchema = z
+const DevelopmentPlanningProposalSchema = z
   .object({
     schemaVersion: z.literal(1),
     kind: z.literal('invoke_capability'),
@@ -33,9 +36,23 @@ const InvokeCapabilityProposalSchema = z
   })
   .strict();
 
-export const ModelProposalSchema = z.discriminatedUnion('kind', [
+const SoftwareChangeProposalSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    kind: z.literal('invoke_capability'),
+    decisionSummary: DecisionSummarySchema,
+    capability: CapabilityReferenceSchema.extend({
+      name: z.literal('software_change'),
+      version: z.literal(1),
+    }),
+    arguments: SoftwareChangeProposalArgumentsSchema,
+  })
+  .strict();
+
+export const ModelProposalSchema = z.union([
   RespondProposalSchema,
-  InvokeCapabilityProposalSchema,
+  DevelopmentPlanningProposalSchema,
+  SoftwareChangeProposalSchema,
 ]);
 
 export type ModelProposal = z.infer<typeof ModelProposalSchema>;

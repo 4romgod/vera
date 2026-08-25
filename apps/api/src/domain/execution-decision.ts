@@ -1,6 +1,9 @@
 import { z } from 'zod';
 
-import { DevelopmentPlanningProposalArgumentsSchema } from './capability-registry.ts';
+import {
+  DevelopmentPlanningProposalArgumentsSchema,
+  SoftwareChangeProposalArgumentsSchema,
+} from './capability-registry.ts';
 import { ModelProposalSchema } from './model-proposal.ts';
 
 const ResponseDecisionSchema = z
@@ -10,7 +13,7 @@ const ResponseDecisionSchema = z
   })
   .strict();
 
-const ApprovalRequiredDecisionSchema = z
+const DevelopmentPlanningApprovalDecisionSchema = z
   .object({
     kind: z.literal('approval_required'),
     reason: z.literal('specialist_capability_invocation'),
@@ -21,6 +24,20 @@ const ApprovalRequiredDecisionSchema = z
       })
       .strict(),
     proposedArguments: DevelopmentPlanningProposalArgumentsSchema,
+  })
+  .strict();
+
+const SoftwareChangeApprovalDecisionSchema = z
+  .object({
+    kind: z.literal('approval_required'),
+    reason: z.literal('specialist_capability_invocation'),
+    capability: z
+      .object({
+        name: z.literal('software_change'),
+        version: z.literal(1),
+      })
+      .strict(),
+    proposedArguments: SoftwareChangeProposalArgumentsSchema,
   })
   .strict();
 
@@ -36,9 +53,10 @@ const RejectedProposalDecisionSchema = z
   })
   .strict();
 
-export const ExecutionDecisionSchema = z.discriminatedUnion('kind', [
+export const ExecutionDecisionSchema = z.union([
   ResponseDecisionSchema,
-  ApprovalRequiredDecisionSchema,
+  DevelopmentPlanningApprovalDecisionSchema,
+  SoftwareChangeApprovalDecisionSchema,
   RejectedProposalDecisionSchema,
 ]);
 

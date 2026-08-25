@@ -19,10 +19,10 @@ repeatable test boundary. Provider-native payloads, credentials, and schema
 dialects stay behind adapters and do not enter Vera's domain contracts.
 
 `POST /v1/model-decisions` accepts a natural-language message. A model may
-propose a direct response or `development_planning@1`; Vera's code validates the
-closed, versioned proposal and routing arguments, then returns a direct response,
-an approval requirement, or a rejection. It never treats model output as
-authorization.
+propose a direct response, `development_planning@1`, or `software_change@1`;
+Vera's code validates the closed, versioned proposal and routing arguments,
+then returns a direct response, an approval requirement, or a rejection. It
+never treats model output as authorization.
 
 The owner-facing journey registers a generic project, creates a conversation,
 and posts project-linked messages. Vera freezes bounded prior complete turns
@@ -31,9 +31,12 @@ aggregate, and sends it with the current message. It then selects bounded
 Git-tracked context and shows its exact
 manifest and the configured specialist destination for approval, then executes
 the provider-neutral `development_planning@1` contract through a registered
-adapter. The default `codex_cli` adapter uses an ephemeral read-only snapshot.
-The resulting plan
-is stored as one versioned artifact keyed by invocation identity. Task,
+adapter. The default `codex_cli` planning adapter uses an ephemeral read-only
+snapshot. The `software_change@1` path instead permits bounded writes inside an
+isolated snapshot, then Vera computes and stores a review-only Git patch and
+file hashes. It never mutates, commits, pushes, or opens a pull request against
+the registered project. Both results are stored as versioned artifacts keyed by
+invocation identity. Task,
 conversation, project, and artifact idempotency are principal-scoped.
 Every terminal task also records a recoverable pending Vera reply before that
 reply is appended to the conversation, so a crash cannot silently remove one
@@ -110,9 +113,9 @@ Requirements:
 - Node.js 22 or newer;
 - npm 10 or newer;
 - one configured model provider: Ollama locally, or an OpenAI or Gemini API key;
-- Codex CLI authenticated on the Vera host for the default `codex_cli` planning adapter.
-  Override `CODEX_COMMAND` or select the explicit `model` adapter for local
-  conformance work.
+- Codex CLI authenticated on the Vera host for the default `codex_cli` planning
+  and software-change adapters. Override `CODEX_COMMAND`, or configure the two
+  adapter selections independently for conformance work.
 - MongoDB on `127.0.0.1:27017` and Redis on `127.0.0.1:6379` for persistent
   operation. Docker Compose configuration is included.
 
@@ -345,6 +348,22 @@ After approval it polls to a terminal state and prints the stored artifact. Do
 not add `--approve` for a real third-party adapter unless you have already
 reviewed and intend to approve that exact invocation.
 
+Run the isolated implementation journey with the same approval discipline:
+
+```bash
+npm run cli -- change \
+  --project project_... \
+  --message "Implement VERA-101: add health monitoring to the API."
+```
+
+On approval, the selected specialist writes only to a disposable snapshot.
+Vera prints the persisted `software_change` artifact containing its own
+computed patch, file operations, hashes, verification report, and risks. The
+registered repository is unchanged; applying, committing, pushing, or opening
+a pull request remains a separate owner action. The `plan` and `change`
+commands refuse to auto-approve a capability other than the one named by the
+command.
+
 For a multi-turn conversation, use `chat`. The first command creates a
 conversation and returns its ID with Vera's durable reply:
 
@@ -376,16 +395,19 @@ npm run cli -- artifact show artifact_...
 
 `/health` reports only that the Vera process is alive. `/ready` checks the
 configured provider and model, MongoDB, Redis, lifecycle recovery, and the
-configured planning specialist. For Codex this verifies both the CLI and login
-status. The model readiness check does not run inference or spend inference
-tokens.
+configured planning and software-change specialists. For Codex this verifies
+both the CLI and login status. The model readiness check does not run inference
+or spend inference tokens.
 
 The initial submission normally returns in `deciding`; the worker later moves
 it to `awaiting_approval`. Inspect
 `approval.contextManifest` and `approval.destination` before approving: those
 are the only project files disclosed to the named adapter and provider. The
-default Codex adapter copies them into an ephemeral read-only snapshot. Approval records model
-metadata, persists one plan artifact, and ends in `succeeded`. Repeating the
+Codex planning adapter copies them into an ephemeral read-only snapshot.
+Approval records model metadata, persists one typed artifact, and ends in
+`succeeded`. The Codex software-change adapter uses a separate isolated
+workspace-write snapshot and produces a review-only patch artifact; it still
+cannot touch the registered project or publish anything. Repeating the
 same approval neither invokes the capability again nor creates another
 artifact; sending the opposite decision returns a conflict.
 
@@ -401,6 +423,7 @@ Provider failures are intentionally distinguishable:
 | `operational_store_unavailable` | 503 | MongoDB or lifecycle recovery is unavailable. |
 | `scratchpad_unavailable` | 503 | Redis is unavailable. |
 | `planning_capability_unavailable` | 503 | The configured planning specialist is unavailable or not authenticated. |
+| `software_change_capability_unavailable` | 503 | The configured software-change specialist is unavailable or not authenticated. |
 
 Client errors are sanitized. The server log records the internal classified
 cause and upstream status without returning provider details to the client.
@@ -410,7 +433,7 @@ the deterministic and in-memory adapters:
 
 ```bash
 VERA_MODEL_PROVIDER=deterministic VERA_PLANNING_ADAPTER=structured_model \
-  VERA_STORAGE_MODE=memory npm start
+  VERA_CHANGE_ADAPTER=deterministic_change VERA_STORAGE_MODE=memory npm start
 ```
 
 Memory mode is not a persistence fallback and loses all work when the process
