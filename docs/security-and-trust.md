@@ -1,10 +1,11 @@
 # Vera Security and Trust Model
 
 **Status:** Accepted
-**Version:** 0.2
+**Version:** 0.3
 **Last updated:** 25 August 2026
 **Accepted:** 24 August 2026 (owner); V1 perimeter clarified by ADR-0014 and
-cloud-provider policy clarified by ADR-0015 on 25 August 2026
+cloud-provider policy clarified by ADR-0015 and bounded conversation disclosure
+accepted by ADR-0016 on 25 August 2026
 
 ## Purpose
 
@@ -269,12 +270,19 @@ boundaries. Redaction does not replace authorization.
 
 Ollama and deterministic model providers are owner-controlled. Selecting an
 OpenAI or Gemini startup profile explicitly permits the owner message and
-minimal selected-project identity to cross that third-party model boundary.
-Repository contents, credentials, unrelated memory, and capability authority
-are excluded. Exact project context sent through a cloud-backed capability
+minimal selected-project identity, plus bounded prior complete turns from the
+exact same project scope, to cross that third-party model boundary. The frozen
+manifest makes this history inspectable and excludes incomplete or other-scope
+turns, but remains local: only ordered role/content pairs are disclosed, not
+internal task/message IDs, hashes, limits, or exclusion counts. Repository
+contents, credentials, unrelated conversations, long-term
+memory, and capability authority are excluded. Exact project context sent
+through a cloud-backed capability
 remains separately approval-gated. Vera never falls back automatically across
 provider boundaries. See
-[ADR-0015](decisions/0015-select-model-providers-through-explicit-profiles.md).
+[ADR-0015](decisions/0015-select-model-providers-through-explicit-profiles.md)
+and
+[ADR-0016](decisions/0016-freeze-bounded-conversation-context-and-durably-project-replies.md).
 
 ## Audit and observability
 
@@ -328,7 +336,8 @@ them.
   before Vera is exposed beyond the V1 host/SSH perimeter?
 - Where are credentials stored and how are short-lived credentials obtained?
 - Which additional data classes, if any, may future cloud-model policies
-  authorize beyond owner messages and minimal selected-project identity?
+  authorize beyond current messages, minimal selected-project identity, and
+  bounded same-scope conversation turns?
 - What sandbox is required for local command and coding capabilities?
 - How are capability packages verified and updated?
 - Which approval decisions may be remembered, and for how long?

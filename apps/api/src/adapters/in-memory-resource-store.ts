@@ -144,7 +144,9 @@ export class InMemoryResourceStore implements ResourceStore {
   }> {
     const conversation = this.requireConversation(principalId, conversationId);
     const existing = conversation.messages.find(
-      (candidate) => candidate.requestKey === message.requestKey,
+      (candidate) =>
+        candidate.role === message.role &&
+        candidate.requestKey === message.requestKey,
     );
     if (existing !== undefined) {
       return Promise.resolve({

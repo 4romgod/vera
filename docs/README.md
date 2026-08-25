@@ -32,6 +32,8 @@ workers with expiring per-run leases; Redis remains a disposable scratchpad.
 ADR-0014 defines the authenticated host/SSH session and enforced loopback
 listener as V1's single-owner perimeter. ADR-0015 registers Ollama, OpenAI, and
 Gemini behind explicit startup profiles without silent provider fallback.
+ADR-0016 freezes bounded prior complete conversation turns by exact project
+scope and durably projects every terminal Vera reply.
 
 Implementation began on the same date. ADR-0009 accepts the first production
 source layout and model decision boundary. ADR-0010 accepts the durable
@@ -163,6 +165,8 @@ and [ADR-0013](decisions/0013-dispatch-durable-work-with-mongodb-leases.md).
 The model gateway now supplies Ollama, OpenAI, Gemini, and deterministic
 adapters through startup-selected profiles; see
 [ADR-0015](decisions/0015-select-model-providers-through-explicit-profiles.md).
+Conversation-aware orchestration and reply recovery are accepted in
+[ADR-0016](decisions/0016-freeze-bounded-conversation-context-and-durably-project-replies.md).
 
 ## Documentation and implementation cadence
 
@@ -178,6 +182,9 @@ deterministic recovery evidence. Durable asynchronous pickup, cross-worker
 leases, polling-client behavior, and the owner CLI also have executable
 evidence. Provider conformance tests now cover Ollama, OpenAI, and Gemini
 request, response, readiness, usage, timeout, and secret-handling boundaries.
+Conversation tests cover exact-scope isolation, complete-turn selection,
+hash-auditable limits, idempotent replies, and recovery after reply projection
+failure. The owner CLI exposes the same path through `vera chat`.
 Required CI now runs the compiled CLI-to-artifact journey with real
 ephemeral MongoDB and Redis plus deterministic owner-controlled adapters; it
 does not download models or call a third party. The only remaining acceptance

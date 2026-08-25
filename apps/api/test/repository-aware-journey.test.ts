@@ -382,8 +382,13 @@ void describe('generic repository-aware planning journey', () => {
     assert.equal(approved.statusCode, 202, approved.body);
     const completed = approved.json<{
       output: { artifact: { id: string }; plan: { project: { id: string } } };
+      conversationContextManifest: { totalMessages: number };
+      conversationReply: { status: string; messageId: string };
     }>();
     assert.equal(completed.output.plan.project.id, projectId);
+    assert.equal(completed.conversationContextManifest.totalMessages, 0);
+    assert.equal(completed.conversationReply.status, 'projected');
+    assert.match(completed.conversationReply.messageId, /^message_reply_/u);
     assert.equal(invocations.length, 1);
     assert.equal(invocations[0]?.context.manifest.projectId, projectId);
     assert.doesNotMatch(
@@ -430,6 +435,15 @@ void describe('generic repository-aware planning journey', () => {
         ?.taskId,
       pending.taskId,
     );
+    assert.deepEqual(
+      conversation
+        .json<{ messages: { role: string; taskId: string }[] }>()
+        .messages.map(({ role, taskId }) => ({ role, taskId })),
+      [
+        { role: 'owner', taskId: pending.taskId },
+        { role: 'vera', taskId: pending.taskId },
+      ],
+    );
 
     const conversations = await app.inject({
       method: 'GET',
@@ -446,7 +460,7 @@ void describe('generic repository-aware planning journey', () => {
     }>().conversations[0];
     assert.ok(summary);
     assert.equal(summary.id, conversationId);
-    assert.equal(summary.messageCount, 1);
+    assert.equal(summary.messageCount, 2);
     assert.equal(summary.messages, undefined);
     assert.equal(summary.lastMessage?.taskId, pending.taskId);
   });

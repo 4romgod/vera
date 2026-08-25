@@ -93,6 +93,7 @@ export function createApp(config: AppConfig) {
     developmentPlanning,
     resources,
     contextAssembler,
+    conversationContextLimits: config.conversationContext,
     executionMode: 'worker',
     observer: lifecycleObserver,
   });

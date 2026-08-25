@@ -3,13 +3,14 @@
 **Status:** Accepted (logical architecture, component responsibilities,
 request lifecycle, architectural invariants, initial modular API shape, and V1
 operational storage); post-V1 progress transport and deployment topology remain open
-**Version:** 0.6
+**Version:** 0.7
 **Last updated:** 25 August 2026
 **Accepted:** 24 August 2026 (owner) — post-V1 progress transport and deployment
 topology are deferred; V1 uses HTTP polling. The initial Fastify/Zod modular API
 is accepted by ADR-0009. MongoDB operational truth and the Redis scratchpad are
 accepted by ADR-0010. The V1 owner perimeter is accepted by ADR-0014 and the
-startup-selected model-provider registry by ADR-0015.
+startup-selected model-provider registry by ADR-0015. Conversation context and
+reply projection are accepted by ADR-0016.
 
 ## Purpose
 
@@ -334,6 +335,7 @@ sequenceDiagram
     participant API as "Fastify API"
     participant Life as "Task lifecycle"
     participant Worker as "Durable task worker"
+    participant History as "Conversation history"
     participant Mongo as "MongoDB authority"
     participant Lease as "MongoDB run leases"
     participant Redis as "Redis scratchpad"
@@ -346,7 +348,9 @@ sequenceDiagram
     Owner->>API: Register project and create conversation
     Owner->>API: POST conversation message + projectId
     API->>Life: Validated owner request
-    Life->>Mongo: Create versioned task/run aggregate
+    Life->>History: Select prior complete same-scope turns
+    History-->>Life: Bounded messages + hash manifest
+    Life->>Mongo: Create task/run + frozen conversation context
     Life->>Redis: Project rebuildable working state
     Life-->>API: Durable task in deciding state
     API-->>Owner: 202 + task/run identifiers
@@ -354,7 +358,7 @@ sequenceDiagram
     Worker->>Mongo: Find dispatchable runs
     Worker->>Lease: Claim run with expiring token
     Worker->>Life: Progress claimed task
-    Life->>Model: Message + exact proposal schema
+    Life->>Model: Current message + bounded history + proposal schema
     Model-->>Life: Provider-neutral candidate + usage
     Life->>Policy: Validate proposal and capability arguments
     Life->>Source: Select bounded tracked context
@@ -375,7 +379,9 @@ sequenceDiagram
     Life->>Capability: Ephemeral read-only approved snapshot
     Capability-->>Life: Structured plan + provider metadata
     Life->>Artifact: Idempotent create by invocation ID
-    Life->>Mongo: Record result and terminal events
+    Life->>Mongo: Record result + terminal events + pending Vera reply
+    Life->>History: Idempotently append Vera reply by task
+    Life->>Mongo: Mark reply projection complete
     Life->>Redis: Project terminal state
     Worker->>Lease: Release claim
     Owner->>API: Poll run and retrieve artifact
@@ -406,14 +412,16 @@ idempotent invocation/artifact identities provide recovery safety.
 
 This slice now includes a browser-neutral TypeScript client and owner CLI,
 generic project and conversation resources, selected
-read-only Git context, exact disclosure approval, a provider-neutral specialist
+read-only Git context, bounded same-scope multi-turn context, recoverable Vera
+reply projection, exact disclosure approval, a provider-neutral specialist
 port with a late-bound adapter registry, the default Codex adapter, artifact
 identity, flat resource ceilings, and best-effort
 cancellation. The model-backed planner remains an explicit provider-neutral
 adapter. Ollama, OpenAI, and Gemini implement the same structured-generation
 port; provider-specific schemas, credentials, readiness, and errors stay behind
-their adapters. Deterministic tests cover interrupted invocation and cancellation
-recovery; a compiled persistent-mode journey verifies artifact and conversation
+their adapters. Deterministic tests cover interrupted invocation, cancellation
+recovery, conversation-scope isolation, and reply-projection recovery; a
+compiled persistent-mode journey verifies artifact and complete dialogue
 survival across process restart plus Redis projection reconstruction. Remaining
 V1 evidence is owner acceptance of the exact real-cloud-Codex disclosure.
 
@@ -482,7 +490,9 @@ owner should not have to speak or type IDs.
 
 The shared TypeScript client wraps these resources without owning
 orchestration semantics. The owner CLI uses that client and renders the exact
-approval disclosure before interactive or explicitly requested approval.
+approval disclosure before interactive or explicitly requested approval. Its
+`chat` path creates or continues a conversation, waits for any approval and the
+durable Vera reply, and returns the reply with its task identity.
 
 For V1, accepting a task-producing message returns `202 Accepted` with the
 conversation, task, and run identifiers. Clients poll run, event, approval, and

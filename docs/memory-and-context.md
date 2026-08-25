@@ -2,10 +2,11 @@
 
 **Status:** Proposed for broader memory and retention policy; the separation of
 durable state, rebuildable execution scratchpad, and disposable model context
-is Accepted through ADR-0007, and MongoDB/Redis operational storage is Accepted
-through ADR-0010
-**Version:** 0.3
-**Last updated:** 24 August 2026
+is Accepted through ADR-0007, MongoDB/Redis operational storage is Accepted
+through ADR-0010, and bounded conversation context with durable reply
+projection is Accepted through ADR-0016
+**Version:** 0.4
+**Last updated:** 25 August 2026
 
 ## Purpose
 
@@ -57,6 +58,32 @@ immutable execution facts. Together they answer what was said and what happened.
 They are durable evidence, not automatically the context for every future
 model call. Passing an entire history increases cost, reduces relevance, and may
 cross privacy or provider boundaries.
+
+### Implemented V1 conversation projection
+
+For one conversation task, Vera freezes only prior complete owner/Vera turn
+pairs from the exact same scope. Project-scoped messages match the same
+`projectId`; unscoped messages match only unscoped history. Incomplete turns and
+other scopes are counted as exclusions. Vera then keeps the most recent whole
+turns within 20-message and 40,000-character defaults, configurable through
+`CONVERSATION_CONTEXT_MAX_MESSAGES` and
+`CONVERSATION_CONTEXT_MAX_CHARACTERS`.
+
+The task aggregate stores both the selected messages and a manifest containing
+their message/task identities, roles, SHA-256 hashes, sizes, limits, and
+exclusion counts. Vera validates that frozen bundle before every provider call.
+Only the ordered role/content pairs—not internal IDs, hashes, limits, or
+exclusion counts—cross the provider boundary. History is labelled untrusted
+and cannot grant authority.
+
+When a conversation task becomes terminal, the same authoritative transition
+records a pending Vera reply. The worker idempotently appends it to conversation
+history and marks the projection complete. This makes owner and Vera messages
+durable dialogue while preserving recovery across the two document writes. It
+also backfills terminal conversation runs that predate the projection field;
+owner and Vera idempotency are independently namespaced by role. It does not
+promote either message into long-term memory. See
+[ADR-0016](decisions/0016-freeze-bounded-conversation-context-and-durably-project-replies.md).
 
 Examples:
 

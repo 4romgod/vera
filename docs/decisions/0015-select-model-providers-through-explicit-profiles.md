@@ -52,6 +52,10 @@ credentials, unrelated memory, or capability execution. A cloud-backed
 `structured_model` capability still requires the exact existing disclosure
 approval before its hash-bound project context is sent.
 
+ADR-0016 later extends the orchestration disclosure to bounded prior complete
+turns from the exact same scope; it does not change this decision's no-fallback,
+credential, repository-content, or capability-approval boundaries.
+
 There is no automatic provider fallback. A failed or unavailable configured
 provider produces a classified failure. Switching providers on restart does
 not redirect an already approved capability invocation to a different

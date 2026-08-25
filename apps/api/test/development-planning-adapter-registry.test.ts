@@ -13,6 +13,7 @@ function config(adapterId: string): AppConfig {
     host: '127.0.0.1',
     port: 4310,
     model: { provider: 'deterministic', model: 'deterministic-v1' },
+    conversationContext: { maxMessages: 20, maxCharacters: 40_000 },
     storage: {
       mode: 'memory',
       mongodbUri: 'mongodb://127.0.0.1:27017',

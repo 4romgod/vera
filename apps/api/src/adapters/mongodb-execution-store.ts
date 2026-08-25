@@ -177,6 +177,8 @@ export class MongoDbExecutionStore implements ExecutionStore {
           { 'run.status': 'executing' },
           { 'run.status': 'awaiting_approval' },
           { 'run.status': 'cancellation_requested' },
+          { 'run.conversationReply.status': 'pending' },
+          this.legacyConversationReplyFilter(),
         ],
       })
       .toArray();
@@ -188,6 +190,8 @@ export class MongoDbExecutionStore implements ExecutionStore {
     const documents = await this.collection
       .find({
         $or: [
+          { 'run.conversationReply.status': 'pending' },
+          this.legacyConversationReplyFilter(),
           { 'run.status': 'deciding' },
           { 'run.status': 'executing' },
           { 'run.status': 'cancellation_requested' },
@@ -216,6 +220,17 @@ export class MongoDbExecutionStore implements ExecutionStore {
     await this.ensureConnected();
     const document = await this.collection.findOne(filter);
     return document === null ? null : this.parse(document);
+  }
+
+  private legacyConversationReplyFilter(): Document {
+    return {
+      'task.conversationId': { $exists: true },
+      'task.messageId': { $exists: true },
+      'run.status': {
+        $in: ['succeeded', 'rejected', 'failed', 'cancelled'],
+      },
+      'run.conversationReply': { $exists: false },
+    };
   }
 
   private parse(document: Document): TaskAggregate {

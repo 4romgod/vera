@@ -25,6 +25,7 @@ const usage = `Usage:
   vera conversation list
   vera conversation show <conversation-id>
   vera conversation message <conversation-id> --content <content> [--project <project-id>] [--key <key>]
+  vera chat --message <message> [--conversation <conversation-id>] [--title <title>] [--project <project-id>] [--key <key>] [--approve]
   vera task submit --message <message> [--project <project-id>] [--key <key>]
   vera task show <task-id>
   vera run show <run-id>
@@ -99,6 +100,34 @@ function isTerminal(task: TaskResource): boolean {
   return ['succeeded', 'rejected', 'failed', 'cancelled'].includes(
     task.runStatus,
   );
+}
+
+function isConversationTerminal(task: TaskResource): boolean {
+  return isTerminal(task) && task.conversationReply?.status === 'projected';
+}
+
+async function resolveApproval(input: {
+  task: TaskResource;
+  client: VeraApi;
+  autoApprove: boolean;
+  confirm: (question: string) => Promise<boolean>;
+  stdout: Pick<NodeJS.WriteStream, 'write'>;
+}): Promise<TaskResource> {
+  if (
+    input.task.runStatus !== 'awaiting_approval' ||
+    input.task.approval === undefined
+  ) {
+    return input.task;
+  }
+  print(input.stdout, { approval: approvalDisclosure(input.task.approval) });
+  const approved =
+    input.autoApprove ||
+    (await input.confirm('Approve this exact specialist invocation?'));
+  const decided = await input.client.decideApproval(
+    input.task.approval.id,
+    approved ? 'approved' : 'rejected',
+  );
+  return isTerminal(decided) ? decided : input.client.waitForRun(decided.runId);
 }
 
 async function interactiveConfirm(question: string): Promise<boolean> {
@@ -194,6 +223,63 @@ export async function runCli(
     return 0;
   }
 
+  if (resource === 'chat') {
+    const message = requiredOption(args, '--message').trim();
+    if (message.length === 0) {
+      throw new Error('--message must contain non-whitespace text.');
+    }
+    const projectId = option(args, '--project');
+    const requestedConversationId = option(args, '--conversation');
+    const conversation =
+      requestedConversationId === undefined
+        ? await client.createConversation({
+            idempotencyKey: createKey(),
+            title: option(args, '--title') ?? message.slice(0, 200),
+          })
+        : await client.getConversation(requestedConversationId);
+    const submitted = await client.appendMessage({
+      conversationId: conversation.id,
+      content: message,
+      idempotencyKey: option(args, '--key') ?? createKey(),
+      ...(projectId === undefined ? {} : { projectId }),
+    });
+    const review = await client.waitForRun(submitted.runId, {
+      until: (task) =>
+        task.runStatus === 'awaiting_approval' || isConversationTerminal(task),
+    });
+    const completed = await resolveApproval({
+      task: review,
+      client,
+      autoApprove: args.includes('--approve'),
+      confirm,
+      stdout,
+    });
+    const finalTask = isConversationTerminal(completed)
+      ? completed
+      : await client.waitForRun(completed.runId);
+    const refreshed = await client.getConversation(conversation.id);
+    const reply = refreshed.messages.find(
+      (candidate) =>
+        candidate.role === 'vera' && candidate.taskId === finalTask.taskId,
+    );
+    if (reply === undefined) {
+      throw new Error(
+        `Vera completed task ${finalTask.taskId} without projecting its conversation reply.`,
+      );
+    }
+    print(stdout, {
+      conversationId: conversation.id,
+      taskId: finalTask.taskId,
+      runId: finalTask.runId,
+      runStatus: finalTask.runStatus,
+      reply,
+      ...(finalTask.conversationContextManifest === undefined
+        ? {}
+        : { conversationContext: finalTask.conversationContextManifest }),
+    });
+    return finalTask.runStatus === 'succeeded' ? 0 : 2;
+  }
+
   if (resource === 'task' && action === 'submit') {
     const projectId = option(args, '--project');
     const task = await client.submitTask({
@@ -269,22 +355,13 @@ export async function runCli(
       print(stdout, review);
       return review.runStatus === 'succeeded' ? 0 : 2;
     }
-    print(stdout, { approval: approvalDisclosure(review.approval) });
-    const approved =
-      args.includes('--approve') ||
-      (await confirm('Approve this exact specialist invocation?'));
-    if (!approved) {
-      print(
-        stdout,
-        await client.decideApproval(review.approval.id, 'rejected'),
-      );
-      return 2;
-    }
-    const accepted = await client.decideApproval(
-      review.approval.id,
-      'approved',
-    );
-    const completed = await client.waitForRun(accepted.runId);
+    const completed = await resolveApproval({
+      task: review,
+      client,
+      autoApprove: args.includes('--approve'),
+      confirm,
+      stdout,
+    });
     print(stdout, completed);
     if (completed.output?.artifact !== undefined) {
       print(stdout, await client.getArtifact(completed.output.artifact.id));

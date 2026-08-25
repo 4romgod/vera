@@ -5,6 +5,8 @@ import { InMemoryExecutionStore } from '../src/adapters/in-memory-execution-stor
 import { InMemoryResourceStore } from '../src/adapters/in-memory-resource-store.ts';
 import { InMemoryScratchpad } from '../src/adapters/in-memory-scratchpad.ts';
 import { createTaskLifecycle } from '../src/application/task-lifecycle.ts';
+import type { EvaluateModelDecision } from '../src/application/evaluate-model-decision.ts';
+import type { ConversationMessage } from '../src/domain/conversation.ts';
 import type { DecisionResult } from '../src/domain/execution-decision.ts';
 import type { DevelopmentPlan } from '../src/domain/development-plan.ts';
 import type { RunBudget } from '../src/domain/run-budget.ts';
@@ -121,6 +123,20 @@ class FakePlanningCapability implements DevelopmentPlanningCapability {
   }
 }
 
+class FailOnceReplyResourceStore extends InMemoryResourceStore {
+  private shouldFail = true;
+
+  public override appendMessage(
+    ...args: Parameters<InMemoryResourceStore['appendMessage']>
+  ): ReturnType<InMemoryResourceStore['appendMessage']> {
+    if (args[2].role === 'vera' && this.shouldFail) {
+      this.shouldFail = false;
+      return Promise.reject(new Error('Synthetic reply projection failure.'));
+    }
+    return super.appendMessage(...args);
+  }
+}
+
 function registryFor(
   selected: DevelopmentPlanningCapability,
   capabilities: DevelopmentPlanningCapability[] = [selected],
@@ -136,16 +152,17 @@ function registryFor(
 
 function harness(options?: {
   decision?: DecisionResult;
-  evaluate?: () => Promise<DecisionResult>;
+  evaluate?: EvaluateModelDecision;
   capability?: FakePlanningCapability;
   registry?: DevelopmentPlanningCapabilityRegistry;
   budget?: RunBudget;
   clock?: () => string;
   contextAssembler?: ProjectContextAssembler;
   executionMode?: 'inline' | 'worker';
+  resources?: InMemoryResourceStore;
 }) {
   const store = new InMemoryExecutionStore();
-  const resources = new InMemoryResourceStore();
+  const resources = options?.resources ?? new InMemoryResourceStore();
   void resources.createProject({
     schemaVersion: 1,
     id: 'project_test',
@@ -184,11 +201,11 @@ function harness(options?: {
   const actualLifecycle = createTaskLifecycle({
     store,
     scratchpad,
-    evaluateModelDecision: async () => {
+    evaluateModelDecision: async (message, context) => {
       evaluations += 1;
       return options?.evaluate === undefined
         ? (options?.decision ?? responseDecision())
-        : options.evaluate();
+        : options.evaluate(message, context);
     },
     developmentPlanning: options?.registry ?? registryFor(capability),
     resources,
@@ -216,6 +233,334 @@ function harness(options?: {
 }
 
 void describe('task lifecycle', () => {
+  void it('freezes completed same-scope turns and projects one durable Vera reply', async () => {
+    const evaluations: Parameters<EvaluateModelDecision>[1][] = [];
+    let evaluation = 0;
+    const test = harness({
+      evaluate: (_message, context) => {
+        evaluations.push(context);
+        evaluation += 1;
+        return Promise.resolve(responseDecision(`Reply ${String(evaluation)}`));
+      },
+    });
+    await test.resources.createConversation({
+      schemaVersion: 1,
+      id: 'conversation_test',
+      principalId: 'owner_v1',
+      creationKey: 'conversation-test',
+      title: 'Test conversation',
+      status: 'active',
+      messages: [],
+      createdAt: '2026-08-24T18:00:00.000Z',
+      updatedAt: '2026-08-24T18:00:00.000Z',
+    });
+
+    const submitTurn = async (turn: number) => {
+      const ownerMessage: ConversationMessage = {
+        id: `message_owner_${String(turn)}`,
+        requestKey: `owner-${String(turn)}`,
+        role: 'owner',
+        content: `Message ${String(turn)}`,
+        projectId: 'project_test',
+        createdAt: '2026-08-24T18:00:00.000Z',
+      };
+      await test.resources.appendMessage(
+        'owner_v1',
+        'conversation_test',
+        ownerMessage,
+      );
+      const aggregate = await test.lifecycle.submit({
+        message: ownerMessage.content,
+        requestKey: ownerMessage.id,
+        principalId: 'owner_v1',
+        conversationId: 'conversation_test',
+        messageId: ownerMessage.id,
+      });
+      await test.resources.attachTaskToMessage(
+        'owner_v1',
+        'conversation_test',
+        ownerMessage.id,
+        aggregate.task.id,
+      );
+      return aggregate;
+    };
+
+    const first = await submitTurn(1);
+    assert.equal(first.run.conversationReply?.status, 'projected');
+    const second = await submitTurn(2);
+
+    const secondContext = second.run.conversationContext;
+    assert.ok(secondContext);
+    assert.equal(secondContext.manifest.totalMessages, 2);
+    assert.deepEqual(
+      secondContext.messages.map(({ role, content }) => ({
+        role,
+        content,
+      })),
+      [
+        { role: 'owner', content: 'Message 1' },
+        { role: 'vera', content: 'Reply 1' },
+      ],
+    );
+    assert.deepEqual(evaluations[1]?.conversationContext, secondContext);
+    assert.deepEqual(
+      second.events.slice(-2).map((event) => event.type),
+      ['conversation_reply_pending', 'conversation_reply_projected'],
+    );
+    const storedConversation = await test.resources.findConversationById(
+      'owner_v1',
+      'conversation_test',
+    );
+    assert.ok(storedConversation);
+    assert.equal(storedConversation.messages.length, 4);
+    assert.deepEqual(
+      storedConversation.messages.map(({ role, content }) => ({
+        role,
+        content,
+      })),
+      [
+        { role: 'owner', content: 'Message 1' },
+        { role: 'vera', content: 'Reply 1' },
+        { role: 'owner', content: 'Message 2' },
+        { role: 'vera', content: 'Reply 2' },
+      ],
+    );
+
+    const repeated = await test.lifecycle.submit({
+      message: 'Message 2',
+      requestKey: 'message_owner_2',
+      principalId: 'owner_v1',
+      conversationId: 'conversation_test',
+      messageId: 'message_owner_2',
+    });
+    assert.equal(repeated.task.id, second.task.id);
+    assert.equal(test.evaluations(), 2);
+    assert.equal(
+      (
+        await test.resources.findConversationById(
+          'owner_v1',
+          'conversation_test',
+        )
+      )?.messages.length,
+      4,
+    );
+  });
+
+  void it('recovers a durable pending reply after conversation projection fails', async () => {
+    const resources = new FailOnceReplyResourceStore();
+    const test = harness({
+      decision: responseDecision('Recovered reply.'),
+      resources,
+    });
+    await resources.createConversation({
+      schemaVersion: 1,
+      id: 'conversation_recovery',
+      principalId: 'owner_v1',
+      creationKey: 'conversation-recovery',
+      title: 'Recovery',
+      status: 'active',
+      messages: [
+        {
+          id: 'message_recovery_owner',
+          requestKey: 'recovery-owner',
+          role: 'owner',
+          content: 'Recover this reply.',
+          projectId: 'project_test',
+          createdAt: '2026-08-24T18:00:00.000Z',
+        },
+      ],
+      createdAt: '2026-08-24T18:00:00.000Z',
+      updatedAt: '2026-08-24T18:00:00.000Z',
+    });
+
+    await assert.rejects(
+      test.lifecycle.submit({
+        message: 'Recover this reply.',
+        requestKey: 'message_recovery_owner',
+        principalId: 'owner_v1',
+        conversationId: 'conversation_recovery',
+        messageId: 'message_recovery_owner',
+      }),
+      /Synthetic reply projection failure/u,
+    );
+    const dispatchable = await test.store.findDispatchable(10);
+    assert.equal(dispatchable.length, 1);
+    const pendingReply = dispatchable[0];
+    assert.ok(pendingReply);
+    assert.equal(pendingReply.run.status, 'succeeded');
+    assert.equal(pendingReply.run.conversationReply?.status, 'pending');
+
+    const recovered = await test.lifecycle.progressTask(
+      'owner_v1',
+      pendingReply.task.id,
+    );
+    assert.equal(recovered.run.conversationReply?.status, 'projected');
+    const conversation = await resources.findConversationById(
+      'owner_v1',
+      'conversation_recovery',
+    );
+    assert.deepEqual(
+      conversation?.messages.map(({ role, content }) => ({ role, content })),
+      [
+        { role: 'owner', content: 'Recover this reply.' },
+        { role: 'vera', content: 'Recovered reply.' },
+      ],
+    );
+  });
+
+  void it('upgrades a legacy terminal conversation run using a role-scoped reply key', async () => {
+    const test = harness({ executionMode: 'worker' });
+    await test.resources.createConversation({
+      schemaVersion: 1,
+      id: 'conversation_legacy',
+      principalId: 'owner_v1',
+      creationKey: 'conversation-legacy',
+      title: 'Legacy conversation',
+      status: 'active',
+      messages: [
+        {
+          id: 'message_legacy_owner',
+          requestKey: 'vera-reply:task_legacy',
+          role: 'owner',
+          content: 'Legacy request.',
+          projectId: 'project_test',
+          taskId: 'task_legacy',
+          createdAt: '2026-08-24T18:00:00.000Z',
+        },
+      ],
+      createdAt: '2026-08-24T18:00:00.000Z',
+      updatedAt: '2026-08-24T18:00:00.000Z',
+    });
+    await test.store.create({
+      schemaVersion: 1,
+      version: 1,
+      task: {
+        id: 'task_legacy',
+        requestKey: 'legacy-task',
+        principalId: 'owner_v1',
+        conversationId: 'conversation_legacy',
+        messageId: 'message_legacy_owner',
+        projectId: 'project_test',
+        message: 'Legacy request.',
+        status: 'completed',
+        createdAt: '2026-08-24T18:00:00.000Z',
+        updatedAt: '2026-08-24T18:00:01.000Z',
+      },
+      run: {
+        id: 'run_legacy',
+        status: 'succeeded',
+        createdAt: '2026-08-24T18:00:00.000Z',
+        updatedAt: '2026-08-24T18:00:01.000Z',
+        output: { kind: 'response', message: 'Legacy reply.' },
+      },
+      events: [
+        {
+          schemaVersion: 1,
+          id: 'event_legacy',
+          sequence: 1,
+          type: 'run_succeeded',
+          occurredAt: '2026-08-24T18:00:01.000Z',
+          data: {},
+        },
+      ],
+    });
+
+    assert.equal((await test.store.findDispatchable(10)).length, 1);
+    await test.lifecycle.recoverInterrupted();
+
+    const upgraded = await test.lifecycle.getRun('owner_v1', 'run_legacy');
+    assert.equal(upgraded.run.conversationReply?.status, 'projected');
+    assert.deepEqual(
+      upgraded.events.slice(-2).map((event) => event.type),
+      ['conversation_reply_pending', 'conversation_reply_projected'],
+    );
+    const conversation = await test.resources.findConversationById(
+      'owner_v1',
+      'conversation_legacy',
+    );
+    assert.deepEqual(
+      conversation?.messages.map(({ role, requestKey, content }) => ({
+        role,
+        requestKey,
+        content,
+      })),
+      [
+        {
+          role: 'owner',
+          requestKey: 'vera-reply:task_legacy',
+          content: 'Legacy request.',
+        },
+        {
+          role: 'vera',
+          requestKey: 'vera-reply:task_legacy',
+          content: 'Legacy reply.',
+        },
+      ],
+    );
+  });
+
+  void it('fails closed before model invocation when frozen conversation context is tampered', async () => {
+    const test = harness({ executionMode: 'worker' });
+    await test.resources.createConversation({
+      schemaVersion: 1,
+      id: 'conversation_tampered',
+      principalId: 'owner_v1',
+      creationKey: 'conversation-tampered',
+      title: 'Tampered context',
+      status: 'active',
+      messages: [
+        {
+          id: 'message_prior_owner',
+          requestKey: 'prior-owner',
+          role: 'owner',
+          content: 'Prior request.',
+          projectId: 'project_test',
+          taskId: 'task_prior',
+          createdAt: '2026-08-24T18:00:00.000Z',
+        },
+        {
+          id: 'message_prior_vera',
+          requestKey: 'prior-vera',
+          role: 'vera',
+          content: 'Prior reply.',
+          projectId: 'project_test',
+          taskId: 'task_prior',
+          createdAt: '2026-08-24T18:00:01.000Z',
+        },
+        {
+          id: 'message_current_owner',
+          requestKey: 'current-owner',
+          role: 'owner',
+          content: 'Current request.',
+          projectId: 'project_test',
+          createdAt: '2026-08-24T18:00:02.000Z',
+        },
+      ],
+      createdAt: '2026-08-24T18:00:00.000Z',
+      updatedAt: '2026-08-24T18:00:02.000Z',
+    });
+    const submitted = await test.lifecycle.submit({
+      message: 'Current request.',
+      requestKey: 'tampered-task',
+      principalId: 'owner_v1',
+      conversationId: 'conversation_tampered',
+      messageId: 'message_current_owner',
+    });
+    const tampered = structuredClone(submitted);
+    assert.ok(tampered.run.conversationContext?.messages[0]);
+    tampered.run.conversationContext.messages[0].content = 'Altered request.';
+    tampered.version += 1;
+    assert.equal(await test.store.replace(tampered, submitted.version), true);
+
+    const failed = await test.lifecycle.progressTask(
+      'owner_v1',
+      submitted.task.id,
+    );
+    assert.equal(failed.run.status, 'failed');
+    assert.equal(failed.run.failure?.code, 'conversation_context_failure');
+    assert.equal(test.evaluations(), 0);
+  });
+
   void it('persists commands immediately and progresses them only when a worker runs', async () => {
     const test = harness({
       decision: planningDecision(),

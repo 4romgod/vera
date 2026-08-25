@@ -25,14 +25,19 @@ an approval requirement, or a rejection. It never treats model output as
 authorization.
 
 The owner-facing journey registers a generic project, creates a conversation,
-and posts a project-linked message. Vera persists a versioned task aggregate in
-MongoDB before model work, selects bounded Git-tracked context, shows its exact
+and posts project-linked messages. Vera freezes bounded prior complete turns
+from the same project scope, persists that model context in the versioned task
+aggregate, and sends it with the current message. It then selects bounded
+Git-tracked context and shows its exact
 manifest and the configured specialist destination for approval, then executes
 the provider-neutral `development_planning@1` contract through a registered
 adapter. The default `codex_cli` adapter uses an ephemeral read-only snapshot.
 The resulting plan
 is stored as one versioned artifact keyed by invocation identity. Task,
 conversation, project, and artifact idempotency are principal-scoped.
+Every terminal task also records a recoverable pending Vera reply before that
+reply is appended to the conversation, so a crash cannot silently remove one
+side of the dialogue.
 
 MongoDB is selected as V1's authoritative operational store and Redis as the
 rebuildable, expiring scratchpad through
@@ -131,9 +136,9 @@ owner-controlled adapters, a real HTTP listener, the shared client, and the
 compiled CLI. It verifies asynchronous acceptance, duplicate approval and
 request idempotency, rejection, cancellation, concurrent task isolation,
 MongoDB lease exclusion, Redis scratchpad reconstruction, artifact and event
-persistence, survival of a forced process termination at the approval boundary,
-and retrieval after a later graceful restart. It then removes its own database
-and Redis scratchpads.
+persistence, durable owner/Vera dialogue, survival of a forced process
+termination at the approval boundary, and retrieval after a later graceful
+restart. It then removes its own database and Redis scratchpads.
 
 Required CI runs the same compiled journey against ephemeral MongoDB 8.2 and
 Redis 8 service containers in the existing Linux job. CI builds once and calls
@@ -256,9 +261,12 @@ and model without running inference.
 Vera never falls back automatically between providers. An Ollama failure will
 not silently send the request to a cloud service, and a failed cloud request
 will not be retried through a different disclosure or cost boundary. Selecting
-an OpenAI or Gemini profile authorizes the owner message and minimal selected-
-project identity to cross that provider boundary for orchestration; it does not
-authorize repository files or capability execution.
+an OpenAI or Gemini profile authorizes the owner message, minimal selected-
+project identity, and bounded prior complete turns from the exact same project
+scope to cross that provider boundary for orchestration. It does not authorize
+repository files, credentials, unrelated conversations, long-term memory, or
+capability execution. See
+[ADR-0016](docs/decisions/0016-freeze-bounded-conversation-context-and-durably-project-replies.md).
 
 Only declared non-secret configuration is logged. API keys are sent only in
 provider transport headers and are not logged, persisted, placed in model
@@ -267,6 +275,10 @@ and cannot contain embedded credentials, query parameters, or fragments.
 
 `WORKER_CONCURRENCY` controls simultaneous run progression and
 `WORKER_POLL_INTERVAL_MS` controls idle discovery latency.
+`CONVERSATION_CONTEXT_MAX_MESSAGES` and
+`CONVERSATION_CONTEXT_MAX_CHARACTERS` bound prior dialogue supplied to one
+orchestration call. Vera selects only whole, completed owner/Vera turn pairs;
+the defaults are 20 messages and 40,000 characters.
 `WORKER_LEASE_MS` defaults to 15 minutes and must remain longer than the
 10-minute V1 run budget. Graceful shutdown releases a lease immediately; after
 a forced process loss, another worker may reclaim the run when the lease
@@ -332,6 +344,26 @@ context manifest and destination, and asks for confirmation before disclosure.
 After approval it polls to a terminal state and prints the stored artifact. Do
 not add `--approve` for a real third-party adapter unless you have already
 reviewed and intend to approve that exact invocation.
+
+For a multi-turn conversation, use `chat`. The first command creates a
+conversation and returns its ID with Vera's durable reply:
+
+```bash
+npm run cli -- chat \
+  --project project_... \
+  --message "What should we improve first in this project?"
+
+npm run cli -- chat \
+  --conversation conversation_... \
+  --project project_... \
+  --message "Turn that into a concrete implementation plan."
+```
+
+Keep the same `--project` value on follow-ups that should share context.
+Unscoped chat and each distinct project ID form separate context scopes even
+inside one conversation. The CLI waits until Vera's reply is durably projected,
+prints exact approval disclosure when needed, and never auto-approves unless
+`--approve` is supplied.
 
 Individual resources remain inspectable:
 

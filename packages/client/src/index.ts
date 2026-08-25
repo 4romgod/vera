@@ -35,6 +35,28 @@ export type ContextManifest = {
   exclusions: string[];
 };
 
+export type ConversationContextManifest = {
+  schemaVersion: 1;
+  conversationId: string;
+  throughMessageId: string;
+  scope: { kind: 'unscoped' } | { kind: 'project'; projectId: string };
+  entries: {
+    messageId: string;
+    taskId: string;
+    role: 'owner' | 'vera';
+    sha256: string;
+    characters: number;
+  }[];
+  totalMessages: number;
+  totalCharacters: number;
+  limits: { maxMessages: number; maxCharacters: number };
+  exclusions: {
+    differentScope: number;
+    incompleteTurns: number;
+    limits: number;
+  };
+};
+
 export type Approval = {
   id: string;
   status: 'pending' | 'approved' | 'rejected';
@@ -83,6 +105,13 @@ export type TaskResource = {
   };
   failure?: { code: string; message: string };
   budget?: unknown;
+  conversationContextManifest?: ConversationContextManifest;
+  conversationReply?: {
+    status: 'pending' | 'projected';
+    messageId: string;
+    createdAt: string;
+    projectedAt?: string;
+  };
   links: {
     task: string;
     run: string;
@@ -107,9 +136,18 @@ export type ConversationResource = {
   id: string;
   title?: string;
   status: string;
-  messages: Record<string, unknown>[];
+  messages: ConversationMessageResource[];
   createdAt: string;
   updatedAt: string;
+};
+
+export type ConversationMessageResource = {
+  id: string;
+  role: 'owner' | 'vera';
+  content: string;
+  projectId?: string;
+  taskId?: string;
+  createdAt: string;
 };
 
 export type ArtifactResource = {
@@ -442,7 +480,13 @@ export class VeraClient implements VeraApi {
       }
       options?.onUpdate?.(task);
       if (
-        (options?.until ?? ((current) => terminal.has(current.runStatus)))(task)
+        (
+          options?.until ??
+          ((current) =>
+            terminal.has(current.runStatus) &&
+            (current.conversationId === undefined ||
+              current.conversationReply?.status === 'projected'))
+        )(task)
       ) {
         return task;
       }

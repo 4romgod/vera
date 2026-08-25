@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import type { ArtifactResource, TaskResource, VeraApi } from '@vera/client';
+import type {
+  ArtifactResource,
+  ConversationResource,
+  TaskResource,
+  VeraApi,
+} from '@vera/client';
 
 import { runCli } from '../src/main.ts';
 
@@ -205,6 +210,112 @@ void describe('Vera CLI', () => {
       projectId: 'project_test',
       idempotencyKey: 'message-test-key',
     });
+  });
+
+  void it('creates a conversation and prints its durable Vera reply', async () => {
+    const output: string[] = [];
+    const calls: string[] = [];
+    const emptyConversation: ConversationResource = {
+      schemaVersion: 1,
+      id: 'conversation_test',
+      title: 'Explain Vera',
+      status: 'active',
+      messages: [],
+      createdAt: '2026-08-25T00:00:00.000Z',
+      updatedAt: '2026-08-25T00:00:00.000Z',
+    };
+    const completed = task('succeeded', {
+      conversationId: 'conversation_test',
+      conversationReply: {
+        status: 'projected',
+        messageId: 'message_reply_test',
+        createdAt: '2026-08-25T00:00:00.000Z',
+        projectedAt: '2026-08-25T00:00:01.000Z',
+      },
+    });
+    const client = fakeApi({
+      createConversation: (input) => {
+        calls.push(`create:${input.title ?? ''}`);
+        return Promise.resolve(emptyConversation);
+      },
+      appendMessage: (input) => {
+        calls.push(`append:${input.content}`);
+        return Promise.resolve(
+          task('deciding', { conversationId: 'conversation_test' }),
+        );
+      },
+      waitForRun: (_runId, options) => {
+        calls.push('wait');
+        assert.equal(options?.until?.(completed), true);
+        return Promise.resolve(completed);
+      },
+      getConversation: () => {
+        calls.push('get');
+        return Promise.resolve({
+          ...emptyConversation,
+          messages: [
+            {
+              id: 'message_owner_test',
+              role: 'owner',
+              content: 'Explain Vera',
+              taskId: 'task_test',
+              createdAt: '2026-08-25T00:00:00.000Z',
+            },
+            {
+              id: 'message_reply_test',
+              role: 'vera',
+              content: 'Vera orchestrates work.',
+              taskId: 'task_test',
+              createdAt: '2026-08-25T00:00:01.000Z',
+            },
+          ],
+        });
+      },
+    });
+
+    const exitCode = await runCli(['chat', '--message', '   Explain Vera   '], {
+      client,
+      stdout: {
+        write: (value) => {
+          output.push(String(value));
+          return true;
+        },
+      },
+      stderr: { write: () => true },
+      createIdempotencyKey: (() => {
+        let sequence = 0;
+        return () => `chat-key-${String(++sequence)}`;
+      })(),
+    });
+
+    assert.equal(exitCode, 0);
+    assert.deepEqual(calls, [
+      'create:Explain Vera',
+      'append:Explain Vera',
+      'wait',
+      'get',
+    ]);
+    assert.match(output.join(''), /Vera orchestrates work\./u);
+  });
+
+  void it('rejects an all-whitespace chat message before calling the API', async () => {
+    let called = false;
+    const client = fakeApi({
+      createConversation: () => {
+        called = true;
+        return Promise.reject(new Error('must not be called'));
+      },
+    });
+
+    await assert.rejects(
+      runCli(['chat', '--message', '   '], {
+        client,
+        stdout: { write: () => true },
+        stderr: { write: () => true },
+      }),
+      /--message must contain non-whitespace text/u,
+    );
+    assert.equal(called, false);
   });
 
   void it('rejects invalid wait timeouts before calling the API', async () => {

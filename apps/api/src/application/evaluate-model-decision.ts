@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { findCapability } from '../domain/capability-registry.ts';
+import type { ConversationContextBundle } from '../domain/conversation-context.ts';
 import type {
   DecisionResult,
   ExecutionDecision,
@@ -16,7 +17,8 @@ import type { ModelProvider } from '../model/model-provider.ts';
 export type EvaluateModelDecision = (
   message: string,
   context?: {
-    selectedProject: { id: string; displayName: string };
+    selectedProject?: { id: string; displayName: string };
+    conversationContext?: ConversationContextBundle;
   },
 ) => Promise<DecisionResult>;
 
@@ -71,7 +73,18 @@ export function createEvaluateModelDecision(
           ? message
           : JSON.stringify({
               ownerMessage: message,
-              selectedProject: context.selectedProject,
+              ...(context.selectedProject === undefined
+                ? {}
+                : { selectedProject: context.selectedProject }),
+              ...(context.conversationContext === undefined
+                ? {}
+                : {
+                    conversationContext: {
+                      messages: context.conversationContext.messages.map(
+                        ({ role, content }) => ({ role, content }),
+                      ),
+                    },
+                  }),
             }),
       outputSchema: ModelProposalJsonSchema,
     });

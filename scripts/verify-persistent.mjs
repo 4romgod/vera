@@ -188,7 +188,7 @@ async function verifyLeaseExclusion() {
 }
 
 async function verifyCliJourney(baseUrl, projectId) {
-  const result = await executeFile(
+  const planResult = await executeFile(
     process.execPath,
     [
       'apps/cli/dist/bin.js',
@@ -210,10 +210,36 @@ async function verifyCliJourney(baseUrl, projectId) {
       maxBuffer: 2 * 1024 * 1024,
     },
   );
-  assert.match(result.stdout, /"contextManifest"/u);
-  assert.match(result.stdout, /"runStatus": "succeeded"/u);
-  assert.match(result.stdout, /"type": "implementation_plan"/u);
-  for (const match of result.stdout.matchAll(/"runId": "([^"]+)"/gu)) {
+  assert.match(planResult.stdout, /"contextManifest"/u);
+  assert.match(planResult.stdout, /"runStatus": "succeeded"/u);
+  assert.match(planResult.stdout, /"type": "implementation_plan"/u);
+
+  const chatResult = await executeFile(
+    process.execPath,
+    [
+      'apps/cli/dist/bin.js',
+      'chat',
+      '--url',
+      baseUrl,
+      '--message',
+      'Explain the deterministic CLI chat path.',
+      '--key',
+      'persistent-verification-cli-chat',
+    ],
+    {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: operationTimeoutMs,
+      maxBuffer: 2 * 1024 * 1024,
+    },
+  );
+  assert.match(chatResult.stdout, /"runStatus": "succeeded"/u);
+  assert.match(chatResult.stdout, /"role": "vera"/u);
+  assert.match(chatResult.stdout, /"conversationId": "conversation_/u);
+
+  for (const match of `${planResult.stdout}\n${chatResult.stdout}`.matchAll(
+    /"runId": "([^"]+)"/gu,
+  )) {
     const runId = match[1];
     if (runId !== undefined) runIds.add(runId);
   }
@@ -267,6 +293,24 @@ async function verifyScenarios(mongo, redis) {
   assert.ok(pending.approval?.contextManifest?.totalFiles > 0);
   assert.ok(pending.approval);
 
+  const collidingOwnerMessage = rememberRun(
+    await client.appendMessage({
+      conversationId: conversation.id,
+      content: 'Explain why idempotency namespaces matter.',
+      projectId: project.id,
+      idempotencyKey: `vera-reply:${submitted.taskId}`,
+    }),
+  );
+  const collidingOwnerCompleted = await client.waitForRun(
+    collidingOwnerMessage.runId,
+    {
+      timeoutMs: operationTimeoutMs,
+      intervalMs: 25,
+    },
+  );
+  assert.equal(collidingOwnerCompleted.runStatus, 'succeeded');
+  assert.equal(collidingOwnerCompleted.conversationReply?.status, 'projected');
+
   await waitForLeaseRelease(mongo, submitted.runId);
   await crashServer();
   started = await startServer(port);
@@ -312,6 +356,33 @@ async function verifyScenarios(mongo, redis) {
   assert.equal(replayed.taskId, completed.taskId);
   assert.equal(replayed.runId, completed.runId);
   assert.equal(replayed.output?.artifact?.id, artifact.id);
+
+  const followup = rememberRun(
+    await client.appendMessage({
+      conversationId: conversation.id,
+      content: 'What did Vera just produce?',
+      projectId: project.id,
+      idempotencyKey: 'persistent-verification-followup',
+    }),
+  );
+  const followupCompleted = await client.waitForRun(followup.runId, {
+    timeoutMs: operationTimeoutMs,
+    intervalMs: 25,
+  });
+  assert.equal(followupCompleted.runStatus, 'succeeded');
+  assert.equal(followupCompleted.conversationReply?.status, 'projected');
+  assert.equal(followupCompleted.conversationContextManifest?.totalMessages, 4);
+  assert.deepEqual(
+    followupCompleted.conversationContextManifest?.entries.map(
+      ({ role, taskId }) => ({ role, taskId }),
+    ),
+    [
+      { role: 'owner', taskId: submitted.taskId },
+      { role: 'vera', taskId: submitted.taskId },
+      { role: 'owner', taskId: collidingOwnerCompleted.taskId },
+      { role: 'vera', taskId: collidingOwnerCompleted.taskId },
+    ],
+  );
 
   assert.equal(await redis.del(scratchpadKey(submitted.runId)), 1);
   await client.getRun(submitted.runId);
@@ -444,7 +515,67 @@ async function verifyScenarios(mongo, redis) {
   await verifyCliJourney(started.baseUrl, project.id);
   await verifyLeaseExclusion();
 
+  const legacyConversation = await client.createConversation({
+    title: 'Legacy reply upgrade',
+    idempotencyKey: 'persistent-verification-legacy-conversation',
+  });
+  const legacy = rememberRun(
+    await client.appendMessage({
+      conversationId: legacyConversation.id,
+      content: 'Explain durable upgrades.',
+      idempotencyKey: 'persistent-verification-legacy-message',
+    }),
+  );
+  const legacyCompleted = await client.waitForRun(legacy.runId, {
+    timeoutMs: operationTimeoutMs,
+    intervalMs: 25,
+  });
+  assert.equal(legacyCompleted.conversationReply?.status, 'projected');
+  const legacyBeforeUpgrade = await client.getConversation(
+    legacyConversation.id,
+  );
+  const legacyOwner = legacyBeforeUpgrade.messages.find(
+    (message) => message.role === 'owner',
+  );
+  assert.ok(legacyOwner);
+
   await stopServer();
+  const legacyAggregateUpdate = await mongo
+    .db(database)
+    .collection('task_execution_aggregates')
+    .updateOne(
+      { 'run.id': legacy.runId },
+      {
+        $unset: { 'run.conversationReply': '' },
+        $pull: {
+          events: {
+            type: {
+              $in: [
+                'conversation_reply_pending',
+                'conversation_reply_projected',
+              ],
+            },
+          },
+        },
+        $set: {
+          'run.updatedAt': legacyCompleted.conversationReply.createdAt,
+          'task.updatedAt': legacyCompleted.conversationReply.createdAt,
+        },
+        $inc: { version: 1 },
+      },
+    );
+  assert.equal(legacyAggregateUpdate.modifiedCount, 1);
+  const legacyConversationUpdate = await mongo
+    .db(database)
+    .collection('conversations')
+    .updateOne(
+      { id: legacyConversation.id },
+      {
+        $pull: { messages: { role: 'vera', taskId: legacy.taskId } },
+        $set: { updatedAt: legacyOwner.createdAt },
+      },
+    );
+  assert.equal(legacyConversationUpdate.modifiedCount, 1);
   started = await startServer(port);
   child = started.processHandle;
   const recoveredClient = new VeraClient({ baseUrl: started.baseUrl });
@@ -455,10 +586,42 @@ async function verifyScenarios(mongo, redis) {
     (await recoveredClient.getArtifact(artifact.id)).sha256,
     artifact.sha256,
   );
+  const upgradedLegacy = await recoveredClient.waitForRun(legacy.runId, {
+    timeoutMs: operationTimeoutMs,
+    intervalMs: 25,
+  });
+  assert.equal(upgradedLegacy.conversationReply?.status, 'projected');
+  const upgradedLegacyConversation = await recoveredClient.getConversation(
+    legacyConversation.id,
+  );
+  assert.deepEqual(
+    upgradedLegacyConversation.messages.map(({ role, taskId }) => ({
+      role,
+      taskId,
+    })),
+    [
+      { role: 'owner', taskId: legacy.taskId },
+      { role: 'vera', taskId: legacy.taskId },
+    ],
+  );
   const recoveredConversation = await recoveredClient.getConversation(
     conversation.id,
   );
-  assert.equal(recoveredConversation.messages.length, 1);
+  assert.equal(recoveredConversation.messages.length, 6);
+  assert.deepEqual(
+    recoveredConversation.messages.map(({ role, taskId }) => ({
+      role,
+      taskId,
+    })),
+    [
+      { role: 'owner', taskId: submitted.taskId },
+      { role: 'owner', taskId: collidingOwnerCompleted.taskId },
+      { role: 'vera', taskId: collidingOwnerCompleted.taskId },
+      { role: 'vera', taskId: submitted.taskId },
+      { role: 'owner', taskId: followupCompleted.taskId },
+      { role: 'vera', taskId: followupCompleted.taskId },
+    ],
+  );
 
   const aggregates = await mongo
     .db(database)
@@ -470,7 +633,7 @@ async function verifyScenarios(mongo, redis) {
     .collection('artifacts')
     .find({})
     .toArray();
-  assert.equal(aggregates.length, 7);
+  assert.equal(aggregates.length, 11);
   assert.equal(artifacts.length, 4);
   assert.equal(
     new Set(artifacts.map((candidate) => candidate.invocationId)).size,
@@ -490,6 +653,8 @@ async function verifyScenarios(mongo, redis) {
     scratchpadRebuilt: true,
     leaseExclusionVerified: true,
     cliJourneyVerified: true,
+    legacyConversationUpgradeVerified: true,
+    roleScopedMessageIdempotencyVerified: true,
   };
 }
 

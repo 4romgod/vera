@@ -17,6 +17,7 @@ import {
 } from '../domain/conversation.ts';
 import { ProjectSchema } from '../domain/project.ts';
 import { RunBudgetSchema } from '../domain/run-budget.ts';
+import { ConversationContextManifestSchema } from '../domain/conversation-context.ts';
 
 export const EvaluateRequestSchema = z
   .object({
@@ -115,6 +116,16 @@ export const TaskLifecycleResponseSchema = z
     output: TaskOutputSchema.optional(),
     failure: TaskFailureSchema.optional(),
     budget: RunBudgetSchema.optional(),
+    conversationContextManifest: ConversationContextManifestSchema.optional(),
+    conversationReply: z
+      .object({
+        status: z.enum(['pending', 'projected']),
+        messageId: z.string().startsWith('message_'),
+        createdAt: z.iso.datetime(),
+        projectedAt: z.iso.datetime().optional(),
+      })
+      .strict()
+      .optional(),
     links: z
       .object({
         task: z.string(),
