@@ -64,6 +64,7 @@ export type TaskLifecycle = {
     runId: string;
     principalId: string;
   }): Promise<TaskAggregate>;
+  progressTask(principalId: string, taskId: string): Promise<TaskAggregate>;
   recoverInterrupted(): Promise<void>;
 };
 
@@ -99,6 +100,7 @@ export function createTaskLifecycle(options: {
   resources: ResourceStore;
   contextAssembler: ProjectContextAssembler;
   budget?: RunBudget;
+  executionMode?: 'inline' | 'worker';
   observer?: LifecycleObserver;
   clock?: Clock;
   createId?: IdFactory;
@@ -108,6 +110,7 @@ export function createTaskLifecycle(options: {
   const createId =
     options.createId ?? ((prefix: string) => `${prefix}_${randomUUID()}`);
   const budget = options.budget ?? DefaultRunBudget;
+  const executionMode = options.executionMode ?? 'inline';
   const activeInvocations = new Map<string, AbortController>();
 
   async function project(aggregate: TaskAggregate): Promise<void> {
@@ -921,6 +924,62 @@ export function createTaskLifecycle(options: {
     }
   }
 
+  async function finalizeInterruptedCancellation(
+    aggregate: TaskAggregate,
+  ): Promise<TaskAggregate> {
+    const cancelledAt = clock();
+    const cancellation = await update(
+      aggregate.task.principalId,
+      aggregate.task.id,
+      (candidate) => {
+        if (candidate.run.status !== 'cancellation_requested') {
+          return false;
+        }
+        candidate.run.status = 'cancelled';
+        candidate.task.status = 'cancelled';
+        candidate.run.updatedAt = cancelledAt;
+        candidate.task.updatedAt = cancelledAt;
+        if (candidate.run.invocation?.status === 'executing') {
+          candidate.run.invocation.status = 'failed';
+          candidate.run.invocation.completedAt = cancelledAt;
+        }
+        candidate.run.failure = {
+          code: 'cancelled',
+          message: 'The interrupted run was cancelled during recovery.',
+        };
+        appendEvent(
+          candidate,
+          'run_cancelled',
+          cancelledAt,
+          { reason: 'recovered_cancellation_request' },
+          createId,
+        );
+        return true;
+      },
+    );
+    return cancellation.aggregate;
+  }
+
+  async function progress(aggregate: TaskAggregate): Promise<TaskAggregate> {
+    await project(aggregate);
+    if (aggregate.run.status === 'deciding') {
+      return evaluate(aggregate);
+    }
+    if (aggregate.run.status === 'cancellation_requested') {
+      return finalizeInterruptedCancellation(aggregate);
+    }
+    if (
+      aggregate.run.status === 'awaiting_approval' &&
+      aggregate.run.approval?.status === 'approved'
+    ) {
+      return executeApproved(aggregate, false);
+    }
+    if (aggregate.run.status === 'executing') {
+      return executeApproved(aggregate, true);
+    }
+    return aggregate;
+  }
+
   return {
     async submit(input) {
       const now = clock();
@@ -998,7 +1057,7 @@ export function createTaskLifecycle(options: {
           'idempotency_key_reused',
         );
       }
-      if (!creation.created) {
+      if (!creation.created || executionMode === 'worker') {
         return creation.aggregate;
       }
       return evaluate(creation.aggregate);
@@ -1052,7 +1111,7 @@ export function createTaskLifecycle(options: {
             'approval_already_decided',
           );
         }
-        return currentStatus === 'approved'
+        return currentStatus === 'approved' && executionMode === 'inline'
           ? executeApproved(existing, false)
           : existing;
       }
@@ -1099,7 +1158,7 @@ export function createTaskLifecycle(options: {
           'approval_already_decided',
         );
       }
-      return input.decision === 'approved'
+      return input.decision === 'approved' && executionMode === 'inline'
         ? executeApproved(decision.aggregate, false)
         : decision.aggregate;
     },
@@ -1180,48 +1239,21 @@ export function createTaskLifecycle(options: {
       return cancellation.aggregate;
     },
 
+    async progressTask(principalId, taskId) {
+      const aggregate = await options.store.findByTaskId(principalId, taskId);
+      if (aggregate === null) {
+        throw new LifecycleError(
+          `Task ${taskId} was not found.`,
+          'task_not_found',
+        );
+      }
+      return progress(aggregate);
+    },
+
     async recoverInterrupted() {
       const aggregates = await options.store.findRecoverable();
       for (const aggregate of aggregates) {
-        await project(aggregate);
-        if (aggregate.run.status === 'cancellation_requested') {
-          const cancelledAt = clock();
-          await update(
-            aggregate.task.principalId,
-            aggregate.task.id,
-            (candidate) => {
-              if (candidate.run.status !== 'cancellation_requested') {
-                return false;
-              }
-              candidate.run.status = 'cancelled';
-              candidate.task.status = 'cancelled';
-              candidate.run.updatedAt = cancelledAt;
-              candidate.task.updatedAt = cancelledAt;
-              if (candidate.run.invocation?.status === 'executing') {
-                candidate.run.invocation.status = 'failed';
-                candidate.run.invocation.completedAt = cancelledAt;
-              }
-              candidate.run.failure = {
-                code: 'cancelled',
-                message: 'The interrupted run was cancelled during recovery.',
-              };
-              appendEvent(
-                candidate,
-                'run_cancelled',
-                cancelledAt,
-                { reason: 'recovered_cancellation_request' },
-                createId,
-              );
-              return true;
-            },
-          );
-          continue;
-        }
-        if (aggregate.run.status === 'deciding') {
-          await evaluate(aggregate);
-          continue;
-        }
-        await executeApproved(aggregate, aggregate.run.status === 'executing');
+        await progress(aggregate);
       }
     },
   };

@@ -37,6 +37,7 @@ export class MongoDbResourceStore implements ResourceStore {
       new MongoClient(options.uri, {
         connectTimeoutMS: options.timeoutMs,
         serverSelectionTimeoutMS: options.timeoutMs,
+        socketTimeoutMS: options.timeoutMs,
       });
     this.database = this.client.db(options.database);
     this.projects = this.database.collection(PROJECTS);

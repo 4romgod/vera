@@ -3,8 +3,8 @@
 **Status:** Accepted (logical architecture, component responsibilities,
 request lifecycle, architectural invariants, initial modular API shape, and V1
 operational storage); post-V1 progress transport and deployment topology remain open
-**Version:** 0.4
-**Last updated:** 24 August 2026
+**Version:** 0.5
+**Last updated:** 25 August 2026
 **Accepted:** 24 August 2026 (owner) — post-V1 progress transport and deployment
 topology are deferred; V1 uses HTTP polling. The initial Fastify/Zod modular API
 is accepted by ADR-0009. MongoDB operational truth and the Redis scratchpad are
@@ -330,7 +330,9 @@ sequenceDiagram
     actor Owner
     participant API as "Fastify API"
     participant Life as "Task lifecycle"
+    participant Worker as "Durable task worker"
     participant Mongo as "MongoDB authority"
+    participant Lease as "MongoDB run leases"
     participant Redis as "Redis scratchpad"
     participant Model as "Provider port / Ollama"
     participant Policy as "Schema, registry, and approval policy"
@@ -343,6 +345,12 @@ sequenceDiagram
     API->>Life: Validated owner request
     Life->>Mongo: Create versioned task/run aggregate
     Life->>Redis: Project rebuildable working state
+    Life-->>API: Durable task in deciding state
+    API-->>Owner: 202 + task/run identifiers
+    API->>Worker: Wake poller
+    Worker->>Mongo: Find dispatchable runs
+    Worker->>Lease: Claim run with expiring token
+    Worker->>Life: Progress claimed task
     Life->>Model: Message + exact proposal schema
     Model-->>Life: Provider-neutral candidate + usage
     Life->>Policy: Validate proposal and capability arguments
@@ -350,15 +358,24 @@ sequenceDiagram
     Source-->>Life: Hash-verified manifest and contents
     Life->>Mongo: Record decision, event, and exact approval request
     Life->>Redis: Project awaiting-approval state
-    Life-->>Owner: 202 + task, run, approval, and links
+    Worker->>Lease: Release claim
+    Owner->>API: Poll run and inspect exact approval
     Owner->>API: Approve exact action
-    Life->>Mongo: Persist approval and invocation identity
+    Life->>Mongo: Persist approval decision
+    Life-->>API: Durable approved state
+    API-->>Owner: 202 accepted
+    API->>Worker: Wake poller
+    Worker->>Mongo: Rediscover approved run
+    Worker->>Lease: Claim run with expiring token
+    Worker->>Life: Progress claimed task
+    Life->>Mongo: Persist invocation identity
     Life->>Capability: Ephemeral read-only approved snapshot
     Capability-->>Life: Structured plan + provider metadata
     Life->>Artifact: Idempotent create by invocation ID
     Life->>Mongo: Record result and terminal events
     Life->>Redis: Project terminal state
-    Life-->>Owner: 202 + completed run
+    Worker->>Lease: Release claim
+    Owner->>API: Poll run and retrieve artifact
     opt Redis state is missing
         Life->>Mongo: Read authoritative aggregate
         Life->>Redis: Rebuild newer projection
@@ -371,14 +388,21 @@ version control. Redis receives only a schema-versioned, expiring projection;
 projection failure cannot roll back or erase durable truth. Exact mechanics and
 rationale are in [ADR-0010](decisions/0010-use-mongodb-for-operational-truth-and-redis-for-scratchpads.md).
 
-The two current `POST` handlers deliberately await their model-backed boundary
-before returning. Their `202 Accepted` status establishes durable-resource and
-polling semantics; it does not claim that work was detached to a background
-worker. Replacing this with an untracked in-process promise would weaken crash
-recovery. Returning before model work begins requires a later, explicit durable
-dispatch/worker boundary rather than a fire-and-forget callback.
+Task-producing and approval `POST` handlers return after the requested
+transition is durable. An in-process worker polls dispatchable MongoDB state,
+claims an expiring per-run MongoDB lease, and advances the same lifecycle
+service used by deterministic tests. Work is therefore independent of the
+client connection and rediscoverable after restart. Redis is not a queue and an
+untracked promise is never the execution contract. See
+[ADR-0013](decisions/0013-dispatch-durable-work-with-mongodb-leases.md).
 
-This slice now includes generic project and conversation resources, selected
+The current worker shares the API process only as an initial deployment
+topology. Its port boundaries permit a separate worker process later. Leases
+provide cross-process exclusion; optimistic aggregate transitions and
+idempotent invocation/artifact identities provide recovery safety.
+
+This slice now includes a browser-neutral TypeScript client and owner CLI,
+generic project and conversation resources, selected
 read-only Git context, exact disclosure approval, a provider-neutral specialist
 port with a late-bound adapter registry, the default Codex adapter, artifact
 identity, flat resource ceilings, and best-effort
@@ -393,10 +417,11 @@ resolve that persisted descriptor rather than the currently selected adapter;
 missing or changed adapter configuration fails closed instead of redirecting
 approved context.
 
-The app binds to loopback by default because authentication is not yet
-implemented. Health is process liveness. Readiness verifies provider
-connectivity, configured-model availability, MongoDB, Redis, lifecycle
-recovery, and planning-specialist availability without running inference.
+The app binds to loopback by default because authentication is intentionally
+deferred pending an explicit identity design. Health is process liveness.
+Readiness verifies provider connectivity, configured-model availability,
+MongoDB, Redis, worker lease access, lifecycle recovery, and
+planning-specialist availability without running inference.
 
 ## Proposed API resource shape
 
@@ -447,12 +472,15 @@ Clients should create new conversations or continue existing ones through
 ordinary UI actions. They retain opaque identifiers in the background; the
 owner should not have to speak or type IDs.
 
+The shared TypeScript client wraps these resources without owning
+orchestration semantics. The owner CLI uses that client and renders the exact
+approval disclosure before interactive or explicitly requested approval.
+
 For V1, accepting a task-producing message returns `202 Accepted` with the
 conversation, task, and run identifiers. Clients poll run, event, approval, and
 artifact resources. Live steering is deferred; changed intent creates a new
-task after best-effort cancellation where necessary. Exact paths and schemas
-beyond the two implemented endpoints are decided as the durable lifecycle is
-implemented.
+task after best-effort cancellation where necessary. The implemented paths and
+schemas are owned by the [HTTP API](api.md).
 
 ## Initial deployment hypothesis
 

@@ -388,6 +388,11 @@ The production spine now also includes registered generic projects,
 conversations and task-linked messages, bounded Git context assembly, exact
 context disclosure, a read-only ephemeral Codex adapter, one idempotent
 versioned plan artifact, flat run ceilings, and best-effort cancellation.
+Task acceptance is now detached from model and capability latency through a
+durable-state worker with expiring MongoDB run leases. A shared TypeScript
+client and owner CLI exercise submission, polling, event inspection, approval,
+cancellation, and artifact retrieval without moving orchestration logic into a
+client.
 
 This is not yet V1 product completion. Deterministic tests now cover interrupted
 invocation and cancellation recovery. A compiled persistent-mode journey has
@@ -402,8 +407,9 @@ not production architecture.
 - Cloud disclosure is allowed only for the exact project/ticket context shown
   in an approval request; credentials and unrelated personal context are never
   included.
-- `202 Accepted` plus polling is sufficient for the first durable-task client.
-  Later client evidence may justify server-sent events or another transport.
+- `202 Accepted` plus polling is implemented by the first durable-task client.
+  Later measured client needs may justify server-sent events or another
+  transport.
 - The plan artifact is a useful, safely idempotent outcome for the first
   journey.
 - The selected MongoDB/Redis implementation satisfies forced-restart,

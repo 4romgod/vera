@@ -102,6 +102,30 @@ export class InMemoryExecutionStore implements ExecutionStore {
     );
   }
 
+  public findDispatchable(limit: number): Promise<TaskAggregate[]> {
+    return Promise.resolve(
+      [...this.byTaskId.values()]
+        .filter((aggregate) => {
+          if (
+            aggregate.run.status === 'deciding' ||
+            aggregate.run.status === 'executing' ||
+            aggregate.run.status === 'cancellation_requested'
+          ) {
+            return true;
+          }
+          return (
+            aggregate.run.status === 'awaiting_approval' &&
+            aggregate.run.approval?.status === 'approved'
+          );
+        })
+        .sort((left, right) =>
+          left.run.createdAt.localeCompare(right.run.createdAt),
+        )
+        .slice(0, limit)
+        .map((aggregate) => structuredClone(aggregate)),
+    );
+  }
+
   public checkReadiness(): Promise<void> {
     return Promise.resolve();
   }

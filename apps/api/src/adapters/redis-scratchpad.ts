@@ -25,6 +25,7 @@ export type RedisScratchpadOptions = {
 export class RedisScratchpad implements Scratchpad {
   private readonly client;
   private readonly ttlSeconds: number;
+  private readonly timeoutMs: number;
   private connection: Promise<void> | undefined;
 
   public constructor(options: RedisScratchpadOptions) {
@@ -40,23 +41,28 @@ export class RedisScratchpad implements Scratchpad {
       // Redis client EventEmitter from treating connection errors as fatal.
     });
     this.ttlSeconds = options.ttlSeconds;
+    this.timeoutMs = options.timeoutMs;
   }
 
   public async put(projection: ScratchpadProjection): Promise<void> {
     await this.ensureConnected();
-    await this.client.eval(PUT_IF_NEWER_SCRIPT, {
-      keys: [this.key(projection.runId)],
-      arguments: [
-        String(projection.aggregateVersion),
-        JSON.stringify(projection),
-        String(this.ttlSeconds),
-      ],
-    });
+    await this.withTimeout(
+      this.client.eval(PUT_IF_NEWER_SCRIPT, {
+        keys: [this.key(projection.runId)],
+        arguments: [
+          String(projection.aggregateVersion),
+          JSON.stringify(projection),
+          String(this.ttlSeconds),
+        ],
+      }),
+    );
   }
 
   public async get(runId: string): Promise<ScratchpadProjection | null> {
     await this.ensureConnected();
-    const payload = await this.client.hGet(this.key(runId), 'payload');
+    const payload = await this.withTimeout(
+      this.client.hGet(this.key(runId), 'payload'),
+    );
     return payload === null
       ? null
       : ScratchpadProjectionSchema.parse(JSON.parse(payload));
@@ -64,12 +70,12 @@ export class RedisScratchpad implements Scratchpad {
 
   public async delete(runId: string): Promise<void> {
     await this.ensureConnected();
-    await this.client.del(this.key(runId));
+    await this.withTimeout(this.client.del(this.key(runId)));
   }
 
   public async checkReadiness(): Promise<void> {
     await this.ensureConnected();
-    await this.client.ping();
+    await this.withTimeout(this.client.ping());
   }
 
   public async close(): Promise<void> {
@@ -80,6 +86,23 @@ export class RedisScratchpad implements Scratchpad {
 
   private key(runId: string): string {
     return `vera:v1:run:${runId}:scratchpad`;
+  }
+
+  private async withTimeout<T>(operation: Promise<T>): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        operation,
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(
+            () => reject(new Error('Redis command timed out.')),
+            this.timeoutMs,
+          );
+        }),
+      ]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
   }
 
   private ensureConnected(): Promise<void> {

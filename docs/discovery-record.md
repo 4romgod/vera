@@ -236,12 +236,16 @@ usage, latency, timeout, unavailable-provider, and invalid-response outcomes.
 Ollama response shapes do not enter Vera's domain contracts. Real conformance
 and built-HTTP tests passed on 24 August 2026.
 
-### Client event consumption — deferred
+### Durable dispatch and client event consumption — implemented
 
-Use a minimal HTTP client to create work and observe ordered execution events.
-V1 uses polling; this experiment should determine whether a later client needs
-server-sent events, WebSockets, notifications, or another transport. It is not
-required before V1 implementation begins and informs V1.1 client work.
+Task-producing handlers now return after durable acceptance. An in-process
+worker derives dispatchable work from MongoDB and uses expiring per-run MongoDB
+leases for cross-worker exclusion; Redis remains a rebuildable projection. A
+browser-neutral TypeScript client and owner CLI submit work, poll current run
+state, inspect ordered events and approvals, decide approvals, cancel runs, and
+retrieve artifacts. Deterministic HTTP evidence covers the asynchronous
+project-to-artifact journey and concurrent lease exclusion. V1 retains polling;
+measured client needs may justify a different progress transport later.
 
 ## Principal risks
 

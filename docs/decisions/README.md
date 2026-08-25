@@ -34,6 +34,7 @@ erasing why a choice was made.
 | [0010](0010-use-mongodb-for-operational-truth-and-redis-for-scratchpads.md) | Accepted | Use MongoDB for authoritative V1 task aggregates and Redis for rebuildable, expiring run scratchpads. |
 | [0011](0011-use-generic-project-sources-and-bounded-context-snapshots.md) | Accepted | Represent projects generically and disclose only bounded, approved, hash-verified context snapshots to specialists. |
 | [0012](0012-late-bind-specialist-platforms-behind-capability-adapters.md) | Accepted | Keep capability semantics provider-neutral and late-bind explicit, auditable specialist adapters. |
+| [0013](0013-dispatch-durable-work-with-mongodb-leases.md) | Accepted | Derive asynchronous work from MongoDB state and coordinate workers with expiring per-run MongoDB leases. |
 
 ADRs 0001–0008 were accepted 24 August 2026 following the owner's review of
 the foundation documentation. ADR-0007 accepted a semantic boundary without
@@ -46,6 +47,8 @@ ADR-0011 ensures the first real project remains acceptance data rather than a
 hard-coded architectural dependency.
 ADR-0012 makes Codex the first registered planning adapter rather than a
 permanent capability or domain dependency.
+ADR-0013 makes `202 Accepted` genuinely asynchronous without turning Redis or
+an in-process promise into execution authority.
 
 ## ADR rules
 

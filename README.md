@@ -8,8 +8,9 @@ the appropriate models, tools, workflows, machines, and services.
 
 Vera is now in production implementation. The executable control plane is a
 TypeScript/Node.js npm-workspaces modular monolith in `apps/api`, using Fastify
-for HTTP and Zod for runtime and JSON Schema contracts. It now implements a
-durable request-to-decision-to-approval-to-capability lifecycle.
+for HTTP and Zod for runtime and JSON Schema contracts. It implements a durable
+request-to-decision-to-approval-to-capability lifecycle, an asynchronous worker,
+a browser-neutral TypeScript client, and an owner CLI.
 
 `POST /v1/model-decisions` accepts a natural-language message. A model may
 propose a direct response or `development_planning@1`; Vera's code validates the
@@ -33,6 +34,11 @@ rebuildable, expiring scratchpad through
 The implemented increment has deterministic recovery coverage and compiled
 MongoDB/Redis evidence across project registration, conversation submission,
 approval, artifact persistence, process restart, and Redis projection loss.
+Task-producing HTTP requests now return after durable acceptance; an in-process
+worker rediscovers work from MongoDB and uses expiring per-run MongoDB leases to
+prevent concurrent execution. Redis remains a rebuildable scratchpad, not a
+queue. See
+[ADR-0013](docs/decisions/0013-dispatch-durable-work-with-mongodb-leases.md).
 The remaining V1 work is owner acceptance of an exact third-party specialist
 disclosure—initially through the default Codex adapter—and broader product
 evidence, not a Gatherle-specific module.
@@ -104,6 +110,19 @@ npm install
 npm run check
 npm run build
 ```
+
+With local MongoDB and Redis running, execute the repeatable compiled
+persistence journey:
+
+```bash
+npm run verify:persistent
+```
+
+It uses a uniquely named temporary MongoDB database, the deterministic
+owner-controlled adapters, a real HTTP listener, and the shared client. It
+verifies asynchronous acceptance, approval, worker execution, artifact and
+event persistence, and retrieval after process restart, then removes its own
+database and Redis scratchpad.
 
 Choose one loopback-only infrastructure option. To run MongoDB and Redis with
 Docker Compose:
@@ -177,6 +196,15 @@ startup. Existing shell environment variables take precedence. Only declared
 configuration is logged; Vera does not dump the complete environment because
 it may contain secrets.
 
+`WORKER_CONCURRENCY` controls simultaneous run progression and
+`WORKER_POLL_INTERVAL_MS` controls idle discovery latency.
+`WORKER_LEASE_MS` defaults to 15 minutes and must remain longer than the
+10-minute V1 run budget. Graceful shutdown releases a lease immediately; after
+a forced process loss, another worker may reclaim the run when the lease
+expires. MongoDB sockets, Redis commands, model calls, Git inspection, and
+specialist execution are all configured with finite deadlines so claimed work
+cannot wait forever.
+
 Run the real Ollama conformance cases:
 
 ```bash
@@ -200,55 +228,41 @@ npm run build
 npm start
 ```
 
-In another terminal, test the full HTTP path:
+In another terminal, use the owner CLI to test the complete path. First check
+the service and register this repository:
 
 ```bash
 curl http://127.0.0.1:4310/health
 curl http://127.0.0.1:4310/ready
 
-PROJECT=$(jq --null-input --arg root "$(pwd)" \
-  '{displayName:"Vera",source:{kind:"local_git",rootPath:$root}}' | \
-  curl --silent --request POST http://127.0.0.1:4310/v1/projects \
-  --header 'content-type: application/json' \
-  --header 'idempotency-key: register-vera-local' \
-  --data @-)
+npm run cli -- project add \
+  --name Vera \
+  --path "$(pwd)" \
+  --key register-vera-local
+npm run cli -- project list
+```
 
-PROJECT_ID=$(echo "$PROJECT" | jq --raw-output '.id')
+Copy the returned project ID, then run the complete planning journey:
 
-CONVERSATION=$(curl --silent --request POST \
-  http://127.0.0.1:4310/v1/conversations \
-  --header 'content-type: application/json' \
-  --header "idempotency-key: conversation-$(date +%s)" \
-  --data '{"title":"Vera planning test"}')
+```bash
+npm run cli -- plan \
+  --project project_... \
+  --message "Prepare an implementation plan for VERA-101: add health monitoring to the API."
+```
 
-CONVERSATION_ID=$(echo "$CONVERSATION" | jq --raw-output '.id')
+The CLI submits the task, polls while the worker decides, prints the exact
+context manifest and destination, and asks for confirmation before disclosure.
+After approval it polls to a terminal state and prints the stored artifact. Do
+not add `--approve` for a real third-party adapter unless you have already
+reviewed and intend to approve that exact invocation.
 
-TASK=$(jq --null-input --arg projectId "$PROJECT_ID" \
-  '{content:"Prepare an implementation plan for VERA-101: add health monitoring to the API.",projectId:$projectId}' | \
-  curl --silent --request POST \
-  "http://127.0.0.1:4310/v1/conversations/$CONVERSATION_ID/messages" \
-  --header 'content-type: application/json' \
-  --header "idempotency-key: message-$(date +%s)" \
-  --data @-)
+Individual resources remain inspectable:
 
-echo "$TASK" | jq
-
-RUN_ID=$(echo "$TASK" | jq --raw-output '.runId')
-APPROVAL_ID=$(echo "$TASK" | jq --raw-output '.approval.id')
-
-curl --silent "http://127.0.0.1:4310/v1/runs/$RUN_ID/events" | jq
-
-COMPLETED=$(curl --silent --request POST \
-  "http://127.0.0.1:4310/v1/approvals/$APPROVAL_ID/decision" \
-  --header 'content-type: application/json' \
-  --data '{"decision":"approved"}')
-
-echo "$COMPLETED" | jq
-
-ARTIFACT_ID=$(echo "$COMPLETED" | jq --raw-output '.output.artifact.id')
-curl --silent "http://127.0.0.1:4310/v1/artifacts/$ARTIFACT_ID" | jq
-
-curl --silent "http://127.0.0.1:4310/v1/runs/$RUN_ID" | jq
+```bash
+npm run cli -- task show task_...
+npm run cli -- run show run_...
+npm run cli -- run events run_...
+npm run cli -- artifact show artifact_...
 ```
 
 `/health` reports only that the Vera process is alive. `/ready` checks the
@@ -257,7 +271,8 @@ configured planning specialist. For Codex this verifies both the CLI and login
 status. The model readiness check does not run inference or spend inference
 tokens.
 
-The message submission should stop in `awaiting_approval`. Inspect
+The initial submission normally returns in `deciding`; the worker later moves
+it to `awaiting_approval`. Inspect
 `approval.contextManifest` and `approval.destination` before approving: those
 are the only project files disclosed to the named adapter and provider. The
 default Codex adapter copies them into an ephemeral read-only snapshot. Approval records model
@@ -292,5 +307,6 @@ VERA_MODEL_PROVIDER=deterministic VERA_PLANNING_ADAPTER=structured_model \
 Memory mode is not a persistence fallback and loses all work when the process
 stops. Persistent mode is the default.
 
-The service binds to loopback by default and has no authentication yet. Do not
-expose it to an untrusted network.
+Authentication is deliberately deferred until its identity and transport model
+are designed. The service therefore binds to loopback, uses the development
+principal `owner_v1`, and must not be exposed to an untrusted network.
