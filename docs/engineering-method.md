@@ -131,6 +131,35 @@ sections of one document, issue, or task rather than four mandatory files.
 Process should reduce ambiguity and risk, not create documents for their own
 sake.
 
+## Verification tiers and CI budget
+
+Required pull-request CI must be deterministic, bounded, and economical. Vera
+uses one Linux job so checkout, dependency installation, build work, and
+per-job billing granularity are not duplicated. Superseded runs are cancelled,
+and the job has a five-minute hard limit. The real-storage tier runs once for
+the pull request and is not repeated for the resulting `main` push; the static,
+unit, boundary, and build checks still protect both events. An explicit manual
+run remains available.
+
+That job has two evidence tiers:
+
+1. static checks, unit tests, boundary tests, and production compilation; and
+2. one compiled persistent journey using ephemeral real MongoDB and Redis
+   service containers with deterministic, owner-controlled model and capability
+   adapters.
+
+The second tier validates datastore, concurrency, recovery, API, client, CLI,
+and worker semantics without conflating those failures with inference quality
+or external-provider availability. It reuses the production output already
+built by CI rather than compiling a second time.
+
+Required CI must not download Ollama model weights or invoke a paid or
+third-party model or specialist. Real Ollama conformance, real specialist
+disclosure, and subjective output-quality evaluation are separate manual or
+explicitly triggered evidence classes. A future self-hosted model workflow must
+not become a required pull-request check until its trust boundary, availability,
+and runtime budget are deliberately accepted.
+
 ## Context rules for AI builders
 
 - Begin a bounded task with fresh context when practical.

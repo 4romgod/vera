@@ -247,6 +247,30 @@ retrieve artifacts. Deterministic HTTP evidence covers the asynchronous
 project-to-artifact journey and concurrent lease exclusion. V1 retains polling;
 measured client needs may justify a different progress transport later.
 
+### Automated persistent acceptance gate — implemented
+
+Required CI now attaches ephemeral MongoDB 8.2 and Redis 8 service containers
+to the existing Linux quality job and runs the already-compiled persistent
+journey. The gate uses deterministic inference and the owner-controlled
+`structured_model` planning adapter; it does not install Ollama, download model
+weights, or contact Codex.
+
+The journey covers the real CLI, HTTP server, worker, MongoDB, Redis, shared
+client, and artifact path. It proves idempotent project, conversation, message,
+and approval handling; direct response, approval, rejection, and cancellation
+outcomes; concurrent task isolation; MongoDB lease exclusion; ordered events;
+one artifact per invocation; Redis read repair; survival of a forced process
+termination at the approval boundary; and retrieval after a later graceful
+restart. The isolated database and scratchpad keys are removed afterward.
+
+The workflow remains one job, reuses one install and build, cancels superseded
+runs, and has a five-minute hard limit. The persistent tier runs on the pull
+request and is not repeated for its resulting `main` push, although it remains
+manually triggerable. Static, unit, boundary, and build checks still run for
+both events. This gate strengthens reproducible V1 evidence but does not replace
+the remaining owner acceptance of an exact third-party disclosure or evaluation
+of the resulting real specialist plan.
+
 ## Principal risks
 
 | Risk | Consequence | Early mitigation |

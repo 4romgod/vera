@@ -27,7 +27,8 @@
     "test": "npm run test --workspaces --if-present",
     "test:ollama": "npm run test:ollama --workspace @vera/api",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "verify:persistent": "npm run build && node scripts/verify-persistent.mjs"
+    "verify:persistent": "npm run build && npm run verify:persistent:compiled",
+    "verify:persistent:compiled": "node scripts/verify-persistent.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

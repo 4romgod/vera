@@ -119,10 +119,23 @@ npm run verify:persistent
 ```
 
 It uses a uniquely named temporary MongoDB database, the deterministic
-owner-controlled adapters, a real HTTP listener, and the shared client. It
-verifies asynchronous acceptance, approval, worker execution, artifact and
-event persistence, and retrieval after process restart, then removes its own
-database and Redis scratchpad.
+owner-controlled adapters, a real HTTP listener, the shared client, and the
+compiled CLI. It verifies asynchronous acceptance, duplicate approval and
+request idempotency, rejection, cancellation, concurrent task isolation,
+MongoDB lease exclusion, Redis scratchpad reconstruction, artifact and event
+persistence, survival of a forced process termination at the approval boundary,
+and retrieval after a later graceful restart. It then removes its own database
+and Redis scratchpads.
+
+Required CI runs the same compiled journey against ephemeral MongoDB 8.2 and
+Redis 8 service containers in the existing Linux job. CI builds once and calls
+`npm run verify:persistent:compiled`; it does not install Ollama, download model
+weights, or contact Codex or another third-party specialist. The job has a
+five-minute hard limit and superseded runs are cancelled. Real Ollama
+conformance and real specialist acceptance remain separate, deliberate checks.
+The persistent gate runs once on the pull request, not again for the resulting
+`main` push; it can also be started manually. The normal deterministic quality
+and build checks still run on both events.
 
 Choose one loopback-only infrastructure option. To run MongoDB and Redis with
 Docker Compose:

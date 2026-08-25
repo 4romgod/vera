@@ -396,11 +396,16 @@ client.
 
 This is not yet V1 product completion. Deterministic tests now cover interrupted
 invocation and cancellation recovery. A compiled persistent-mode journey has
-also verified registered context, artifact identity, process restart,
-conversation retrieval, and Redis projection reconstruction. The remaining
-acceptance boundary is an owner-approved real-cloud-Codex disclosure and
-evaluation of the resulting plan; Gatherle may be one acceptance project but is
-not production architecture.
+also verified the real CLI boundary, registered context, direct response,
+approval idempotency, rejection, cancellation, concurrent isolation, MongoDB
+lease exclusion, artifact identity, process restart, conversation retrieval,
+and Redis projection reconstruction. The journey forces one process termination
+after the approval boundary is durable, then verifies another graceful restart
+after completion. Required CI runs it with ephemeral real MongoDB and Redis and
+deterministic owner-controlled adapters, without downloading model weights or
+contacting a third party. The remaining acceptance boundary is an
+owner-approved real-cloud-Codex disclosure and evaluation of the resulting
+plan; Gatherle may be one acceptance project but is not production architecture.
 
 ## Decisions to validate during V1
 

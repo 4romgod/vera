@@ -1,20 +1,34 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { createServer } from 'node:net';
 import { once } from 'node:events';
+import { createServer } from 'node:net';
+import { promisify } from 'node:util';
 
 import { MongoClient } from 'mongodb';
 import { createClient } from 'redis';
 
+import { MongoDbWorkLeaseStore } from '../apps/api/dist/adapters/mongodb-work-lease-store.js';
 import { VeraClient } from '../packages/client/dist/index.js';
 
+const executeFile = promisify(execFile);
 const root = process.cwd();
 const mongodbUri = process.env.MONGODB_URI ?? 'mongodb://127.0.0.1:27017';
 const redisUrl = process.env.REDIS_URL ?? 'redis://127.0.0.1:6379';
 const database = `vera_verify_${randomUUID().replaceAll('-', '_')}`;
-let runId;
+const operationTimeoutMs = 10_000;
+const runIds = new Set();
 let child;
+let serverOutput = '';
+
+function scratchpadKey(runId) {
+  return `vera:v1:run:${runId}:scratchpad`;
+}
+
+function rememberRun(task) {
+  runIds.add(task.runId);
+  return task;
+}
 
 async function availablePort() {
   const server = createServer();
@@ -30,7 +44,7 @@ async function availablePort() {
 }
 
 async function startServer(port) {
-  let output = '';
+  serverOutput = '';
   const processHandle = spawn(process.execPath, ['apps/api/dist/server.js'], {
     cwd: root,
     env: {
@@ -43,135 +57,527 @@ async function startServer(port) {
       VERA_STORAGE_MODE: 'persistent',
       VERA_MODEL_PROVIDER: 'deterministic',
       VERA_PLANNING_ADAPTER: 'structured_model',
+      WORKER_CONCURRENCY: '2',
       WORKER_POLL_INTERVAL_MS: '25',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   const capture = (chunk) => {
-    output = `${output}${String(chunk)}`.slice(-20_000);
+    serverOutput = `${serverOutput}${String(chunk)}`.slice(-20_000);
   };
   processHandle.stdout.on('data', capture);
   processHandle.stderr.on('data', capture);
   const baseUrl = `http://127.0.0.1:${String(port)}`;
   for (let attempt = 0; attempt < 100; attempt += 1) {
     if (processHandle.exitCode !== null) {
-      throw new Error(`Vera exited during startup.\n${output}`);
+      throw new Error(`Vera exited during startup.\n${serverOutput}`);
     }
     try {
-      const response = await fetch(`${baseUrl}/health`);
+      const response = await fetch(`${baseUrl}/ready`, {
+        signal: AbortSignal.timeout(1_000),
+      });
       if (response.ok) return { processHandle, baseUrl };
     } catch {
-      // The listener is not ready yet.
+      // The listener or its dependencies are not ready yet.
     }
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
-  processHandle.kill('SIGTERM');
-  throw new Error(`Vera did not become healthy.\n${output}`);
+  processHandle.kill('SIGKILL');
+  throw new Error(`Vera did not become ready.\n${serverOutput}`);
 }
 
 async function stopServer() {
   if (child === undefined || child.exitCode !== null) return;
-  child.kill('SIGTERM');
+  const processHandle = child;
+  child = undefined;
   await new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
-      child?.kill('SIGKILL');
+      processHandle.kill('SIGKILL');
       reject(new Error('Vera did not stop cleanly.'));
-    }, 10_000);
-    child?.once('exit', () => {
+    }, operationTimeoutMs);
+    timer.unref();
+    processHandle.once('exit', () => {
       clearTimeout(timer);
       resolve();
     });
+    processHandle.kill('SIGTERM');
   });
+}
+
+async function crashServer() {
+  if (child === undefined || child.exitCode !== null) return;
+  const processHandle = child;
   child = undefined;
-}
-
-async function cleanup() {
-  const mongo = new MongoClient(mongodbUri, {
-    serverSelectionTimeoutMS: 3_000,
-  });
-  try {
-    await mongo.connect();
-    await mongo.db(database).dropDatabase();
-  } finally {
-    await mongo.close();
-  }
-  if (runId !== undefined) {
-    const redis = createClient({
-      url: redisUrl,
-      socket: { connectTimeout: 3_000, reconnectStrategy: false },
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error('Vera did not terminate after SIGKILL.')),
+      operationTimeoutMs,
+    );
+    timer.unref();
+    processHandle.once('exit', () => {
+      clearTimeout(timer);
+      resolve();
     });
-    redis.on('error', () => undefined);
-    try {
-      await redis.connect();
-      await redis.del(`vera:v1:run:${runId}:scratchpad`);
-    } finally {
-      if (redis.isOpen) await redis.quit();
-    }
+    processHandle.kill('SIGKILL');
+  });
+}
+
+async function waitForLeaseRelease(mongo, runId) {
+  const leases = mongo.db(database).collection('run_work_leases');
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if ((await leases.countDocuments({ _id: runId })) === 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`Worker lease for ${runId} was not released.`);
+}
+
+function assertOrderedEvents(events) {
+  assert.deepEqual(
+    events.map((event) => event.sequence),
+    events.map((_event, index) => index + 1),
+  );
+}
+
+async function verifyLeaseExclusion() {
+  const first = new MongoDbWorkLeaseStore({
+    uri: mongodbUri,
+    database,
+    timeoutMs: 3_000,
+  });
+  const second = new MongoDbWorkLeaseStore({
+    uri: mongodbUri,
+    database,
+    timeoutMs: 3_000,
+  });
+  const runId = `run_lease_${randomUUID()}`;
+  const acquiredAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 60_000).toISOString();
+  try {
+    const claims = await Promise.all([
+      first.claim(
+        {
+          schemaVersion: 1,
+          runId,
+          workerId: 'verification_worker_first',
+          token: 'verification_token_first',
+          acquiredAt,
+          expiresAt,
+        },
+        acquiredAt,
+      ),
+      second.claim(
+        {
+          schemaVersion: 1,
+          runId,
+          workerId: 'verification_worker_second',
+          token: 'verification_token_second',
+          acquiredAt,
+          expiresAt,
+        },
+        acquiredAt,
+      ),
+    ]);
+    assert.deepEqual(claims.toSorted(), [false, true]);
+  } finally {
+    await Promise.allSettled([
+      first.release(runId, 'verification_token_first'),
+      second.release(runId, 'verification_token_second'),
+    ]);
+    await Promise.allSettled([first.close(), second.close()]);
   }
 }
 
-try {
+async function verifyCliJourney(baseUrl, projectId) {
+  const result = await executeFile(
+    process.execPath,
+    [
+      'apps/cli/dist/bin.js',
+      'plan',
+      '--url',
+      baseUrl,
+      '--project',
+      projectId,
+      '--message',
+      'Plan a deterministic CLI verification change.',
+      '--key',
+      'persistent-verification-cli-plan',
+      '--approve',
+    ],
+    {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: operationTimeoutMs,
+      maxBuffer: 2 * 1024 * 1024,
+    },
+  );
+  assert.match(result.stdout, /"contextManifest"/u);
+  assert.match(result.stdout, /"runStatus": "succeeded"/u);
+  assert.match(result.stdout, /"type": "implementation_plan"/u);
+  for (const match of result.stdout.matchAll(/"runId": "([^"]+)"/gu)) {
+    const runId = match[1];
+    if (runId !== undefined) runIds.add(runId);
+  }
+}
+
+async function verifyScenarios(mongo, redis) {
+  const startedAt = Date.now();
   const port = await availablePort();
   let started = await startServer(port);
   child = started.processHandle;
   let client = new VeraClient({ baseUrl: started.baseUrl });
-  const project = await client.registerProject({
+
+  const projectInput = {
     displayName: 'Vera persistent verification',
     rootPath: root,
     idempotencyKey: 'persistent-verification-project',
-  });
-  const submitted = await client.submitTask({
-    message: 'Plan a documentation health-check command.',
+  };
+  const project = await client.registerProject(projectInput);
+  assert.equal((await client.registerProject(projectInput)).id, project.id);
+
+  const conversationInput = {
+    title: 'Persistent verification',
+    idempotencyKey: 'persistent-verification-conversation',
+  };
+  const conversation = await client.createConversation(conversationInput);
+  assert.equal(
+    (await client.createConversation(conversationInput)).id,
+    conversation.id,
+  );
+
+  const messageInput = {
+    conversationId: conversation.id,
+    content: 'Plan a documentation health-check command.',
     projectId: project.id,
-    idempotencyKey: 'persistent-verification-task',
-  });
+    idempotencyKey: 'persistent-verification-message',
+  };
+  const submitted = rememberRun(await client.appendMessage(messageInput));
   assert.equal(submitted.runStatus, 'deciding');
-  runId = submitted.runId;
-  const pending = await client.waitForRun(runId, {
+  assert.equal(submitted.conversationId, conversation.id);
+  let pending = await client.waitForRun(submitted.runId, {
     until: (task) => task.runStatus === 'awaiting_approval',
-    timeoutMs: 10_000,
+    timeoutMs: operationTimeoutMs,
+    intervalMs: 25,
   });
   assert.equal(pending.approval?.destination?.dataBoundary, 'owner_controlled');
+  assert.equal(pending.approval?.destination?.adapterId, 'structured_model');
   assert.equal(
     pending.approval?.proposedArguments.objective,
-    'Plan a documentation health-check command.',
+    messageInput.content,
   );
+  assert.ok(pending.approval?.contextManifest?.totalFiles > 0);
   assert.ok(pending.approval);
-  const accepted = await client.decideApproval(pending.approval.id, 'approved');
-  assert.equal(accepted.runStatus, 'awaiting_approval');
-  const completed = await client.waitForRun(runId, { timeoutMs: 10_000 });
+
+  await waitForLeaseRelease(mongo, submitted.runId);
+  await crashServer();
+  started = await startServer(port);
+  child = started.processHandle;
+  client = new VeraClient({ baseUrl: started.baseUrl });
+  const pendingAfterCrash = await client.getRun(submitted.runId);
+  assert.equal(pendingAfterCrash.runStatus, 'awaiting_approval');
+  assert.equal(pendingAfterCrash.approval?.id, pending.approval.id);
+  assert.deepEqual(
+    pendingAfterCrash.approval?.contextManifest,
+    pending.approval.contextManifest,
+  );
+  pending = pendingAfterCrash;
+
+  const duplicateApprovals = await Promise.all([
+    client.decideApproval(pending.approval.id, 'approved'),
+    client.decideApproval(pending.approval.id, 'approved'),
+  ]);
+  assert.ok(
+    duplicateApprovals.every((task) => task.approval?.status === 'approved'),
+  );
+  const completed = await client.waitForRun(submitted.runId, {
+    timeoutMs: operationTimeoutMs,
+    intervalMs: 25,
+  });
   assert.equal(completed.runStatus, 'succeeded');
   assert.ok(completed.output?.artifact);
-  const artifactId = completed.output.artifact.id;
-  const artifact = await client.getArtifact(artifactId);
-  const events = await client.getRunEvents(runId);
-  assert.ok(events.events.some((event) => event.type === 'run_succeeded'));
+  const artifact = await client.getArtifact(completed.output.artifact.id);
+  const events = await client.getRunEvents(submitted.runId);
+  assertOrderedEvents(events.events);
+  assert.equal(
+    events.events.filter((event) => event.type === 'artifact_created').length,
+    1,
+  );
+  assert.equal(
+    events.events.filter(
+      (event) => event.type === 'capability_invocation_started',
+    ).length,
+    1,
+  );
+
+  const replayed = await client.appendMessage(messageInput);
+  assert.equal(replayed.taskId, completed.taskId);
+  assert.equal(replayed.runId, completed.runId);
+  assert.equal(replayed.output?.artifact?.id, artifact.id);
+
+  assert.equal(await redis.del(scratchpadKey(submitted.runId)), 1);
+  await client.getRun(submitted.runId);
+  const repairedPayload = await redis.hGet(
+    scratchpadKey(submitted.runId),
+    'payload',
+  );
+  assert.ok(repairedPayload);
+  const repaired = JSON.parse(repairedPayload);
+  assert.equal(repaired.runId, submitted.runId);
+  assert.equal(repaired.status, 'succeeded');
+
+  const direct = rememberRun(
+    await client.submitTask({
+      message: 'Explain what Vera does.',
+      idempotencyKey: 'persistent-verification-direct',
+    }),
+  );
+  const directCompleted = await client.waitForRun(direct.runId, {
+    timeoutMs: operationTimeoutMs,
+    intervalMs: 25,
+  });
+  assert.equal(directCompleted.runStatus, 'succeeded');
+  assert.equal(directCompleted.output?.kind, 'response');
+  assert.equal(directCompleted.approval, undefined);
+
+  const rejected = rememberRun(
+    await client.submitTask({
+      message: 'Plan a rejected verification change.',
+      projectId: project.id,
+      idempotencyKey: 'persistent-verification-rejected',
+    }),
+  );
+  const rejectionPending = await client.waitForRun(rejected.runId, {
+    until: (task) => task.runStatus === 'awaiting_approval',
+    timeoutMs: operationTimeoutMs,
+    intervalMs: 25,
+  });
+  assert.ok(rejectionPending.approval);
+  const rejection = await client.decideApproval(
+    rejectionPending.approval.id,
+    'rejected',
+  );
+  assert.equal(rejection.runStatus, 'rejected');
+  assert.equal(
+    (await client.decideApproval(rejectionPending.approval.id, 'rejected'))
+      .runId,
+    rejected.runId,
+  );
+  const rejectionEvents = await client.getRunEvents(rejected.runId);
+  assert.equal(
+    rejectionEvents.events.filter((event) => event.type === 'approval_rejected')
+      .length,
+    1,
+  );
+  assert.ok(
+    rejectionEvents.events.every(
+      (event) => event.type !== 'capability_invocation_started',
+    ),
+  );
+
+  const cancelled = rememberRun(
+    await client.submitTask({
+      message: 'Plan a cancelled verification change.',
+      projectId: project.id,
+      idempotencyKey: 'persistent-verification-cancelled',
+    }),
+  );
+  await client.waitForRun(cancelled.runId, {
+    until: (task) => task.runStatus === 'awaiting_approval',
+    timeoutMs: operationTimeoutMs,
+    intervalMs: 25,
+  });
+  const cancellation = await client.cancelRun(cancelled.runId);
+  assert.equal(cancellation.runStatus, 'cancelled');
+  const cancellationEvents = await client.getRunEvents(cancelled.runId);
+  assert.ok(
+    cancellationEvents.events.some(
+      (event) => event.type === 'cancellation_requested',
+    ),
+  );
+  assert.ok(
+    cancellationEvents.events.every(
+      (event) => event.type !== 'capability_invocation_started',
+    ),
+  );
+
+  const concurrent = await Promise.all(
+    ['first', 'second'].map(async (label) =>
+      rememberRun(
+        await client.submitTask({
+          message: `Plan the ${label} isolated verification change.`,
+          projectId: project.id,
+          idempotencyKey: `persistent-verification-concurrent-${label}`,
+        }),
+      ),
+    ),
+  );
+  const concurrentPending = await Promise.all(
+    concurrent.map(async (task) =>
+      client.waitForRun(task.runId, {
+        until: (current) => current.runStatus === 'awaiting_approval',
+        timeoutMs: operationTimeoutMs,
+        intervalMs: 25,
+      }),
+    ),
+  );
+  await Promise.all(
+    concurrentPending.map(async (task) => {
+      assert.ok(task.approval);
+      return client.decideApproval(task.approval.id, 'approved');
+    }),
+  );
+  const concurrentCompleted = await Promise.all(
+    concurrent.map(async (task) =>
+      client.waitForRun(task.runId, {
+        timeoutMs: operationTimeoutMs,
+        intervalMs: 25,
+      }),
+    ),
+  );
+  assert.ok(
+    concurrentCompleted.every((task) => task.runStatus === 'succeeded'),
+  );
+  assert.equal(
+    new Set(concurrentCompleted.map((task) => task.output?.artifact?.id)).size,
+    2,
+  );
+
+  await verifyCliJourney(started.baseUrl, project.id);
+  await verifyLeaseExclusion();
 
   await stopServer();
   started = await startServer(port);
   child = started.processHandle;
-  client = new VeraClient({ baseUrl: started.baseUrl });
-  const recovered = await client.getRun(runId);
+  const recoveredClient = new VeraClient({ baseUrl: started.baseUrl });
+  const recovered = await recoveredClient.getRun(submitted.runId);
   assert.equal(recovered.runStatus, 'succeeded');
-  assert.equal(recovered.output?.artifact?.id, artifactId);
-  assert.equal((await client.getArtifact(artifactId)).sha256, artifact.sha256);
-
-  process.stdout.write(
-    `${JSON.stringify(
-      {
-        status: 'passed',
-        database,
-        taskId: recovered.taskId,
-        runId,
-        artifactId,
-        eventCount: events.events.length,
-        restartVerified: true,
-      },
-      null,
-      2,
-    )}\n`,
+  assert.equal(recovered.output?.artifact?.id, artifact.id);
+  assert.equal(
+    (await recoveredClient.getArtifact(artifact.id)).sha256,
+    artifact.sha256,
   );
-} finally {
-  await stopServer();
-  await cleanup();
+  const recoveredConversation = await recoveredClient.getConversation(
+    conversation.id,
+  );
+  assert.equal(recoveredConversation.messages.length, 1);
+
+  const aggregates = await mongo
+    .db(database)
+    .collection('task_execution_aggregates')
+    .find({})
+    .toArray();
+  const artifacts = await mongo
+    .db(database)
+    .collection('artifacts')
+    .find({})
+    .toArray();
+  assert.equal(aggregates.length, 7);
+  assert.equal(artifacts.length, 4);
+  assert.equal(
+    new Set(artifacts.map((candidate) => candidate.invocationId)).size,
+    artifacts.length,
+  );
+
+  return {
+    durationMs: Date.now() - startedAt,
+    taskCount: aggregates.length,
+    artifactCount: artifacts.length,
+    eventCount: aggregates.reduce(
+      (total, aggregate) => total + aggregate.events.length,
+      0,
+    ),
+    forcedRestartVerified: true,
+    restartVerified: true,
+    scratchpadRebuilt: true,
+    leaseExclusionVerified: true,
+    cliJourneyVerified: true,
+  };
 }
+
+const mongo = new MongoClient(mongodbUri, {
+  connectTimeoutMS: 3_000,
+  serverSelectionTimeoutMS: 3_000,
+  socketTimeoutMS: 3_000,
+});
+const redis = createClient({
+  url: redisUrl,
+  socket: { connectTimeout: 3_000, reconnectStrategy: false },
+});
+redis.on('error', () => undefined);
+
+async function cleanup() {
+  const errors = [];
+  await stopServer().catch((error) => errors.push(error));
+
+  try {
+    const aggregates = await mongo
+      .db(database)
+      .collection('task_execution_aggregates')
+      .find({}, { projection: { 'run.id': 1 } })
+      .toArray();
+    for (const aggregate of aggregates) {
+      const runId = aggregate.run?.id;
+      if (typeof runId === 'string') runIds.add(runId);
+    }
+  } catch (error) {
+    errors.push(error);
+  }
+
+  if (redis.isOpen && runIds.size > 0) {
+    await redis
+      .del([...runIds].map((runId) => scratchpadKey(runId)))
+      .catch((error) => errors.push(error));
+  }
+  if (redis.isOpen) {
+    await redis.quit().catch((error) => errors.push(error));
+  }
+  await mongo
+    .db(database)
+    .dropDatabase()
+    .catch((error) => errors.push(error));
+  await mongo.close().catch((error) => errors.push(error));
+
+  if (errors.length > 0) {
+    throw new AggregateError(errors, 'Persistent verification cleanup failed.');
+  }
+}
+
+let evidence;
+let verificationError;
+try {
+  await Promise.all([mongo.connect(), redis.connect()]);
+  evidence = await verifyScenarios(mongo, redis);
+} catch (error) {
+  verificationError = error;
+  if (serverOutput.length > 0) {
+    process.stderr.write(`Recent Vera output:\n${serverOutput}\n`);
+  }
+} finally {
+  try {
+    await cleanup();
+  } catch (error) {
+    if (verificationError === undefined) {
+      verificationError = error;
+    } else {
+      process.stderr.write(
+        `Cleanup also failed: ${error instanceof Error ? error.message : String(error)}\n`,
+      );
+    }
+  }
+}
+
+if (verificationError !== undefined) throw verificationError;
+assert.ok(evidence);
+process.stdout.write(
+  `${JSON.stringify(
+    {
+      status: 'passed',
+      database,
+      inference: 'deterministic',
+      planningAdapter: 'structured_model',
+      externalModelDownloads: false,
+      ...evidence,
+    },
+    null,
+    2,
+  )}\n`,
+);
