@@ -150,9 +150,11 @@ That job has two evidence tiers:
    adapters.
 
 The second tier validates datastore, concurrency, recovery, API, client, CLI,
-and worker semantics without conflating those failures with inference quality
-or external-provider availability. It reuses the production output already
-built by CI rather than compiling a second time.
+worker, and controlled Git application semantics without conflating those
+failures with inference quality or external-provider availability. It uses a
+temporary clean repository and managed-worktree root, then removes both. It
+reuses the production output already built by CI rather than compiling a second
+time.
 
 Required CI must not download Ollama model weights or invoke a paid or
 third-party model or specialist. Real Ollama, OpenAI, and Gemini conformance,

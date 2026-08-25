@@ -39,6 +39,8 @@ erasing why a choice was made.
 | [0015](0015-select-model-providers-through-explicit-profiles.md) | Accepted | Select Ollama, OpenAI, or Gemini through explicit startup profiles without silent cross-boundary fallback. |
 | [0016](0016-freeze-bounded-conversation-context-and-durably-project-replies.md) | Accepted | Freeze bounded prior same-scope complete turns and recover every terminal Vera reply through a durable projection. |
 | [0017](0017-produce-software-changes-as-isolated-patch-artifacts.md) | Accepted | Produce software changes as isolated, review-only patch artifacts without mutating or publishing the registered project. |
+| [0018](0018-apply-approved-software-changes-in-managed-git-worktrees.md) | Accepted | Apply exact approved patch artifacts into durable managed Git worktrees without commit or publication authority. |
+| [0019](0019-organize-the-api-as-an-inward-dependent-modular-monolith.md) | Accepted | Organize the growing API by architectural role and cohesive responsibility, enforced by dependency tests. |
 
 ADRs 0001–0008 were accepted 24 August 2026 following the owner's review of
 the foundation documentation. ADR-0007 accepted a semantic boundary without
@@ -61,6 +63,10 @@ bounded multi-turn model context and complete durable dialogue without treating
 history as authority or long-term memory.
 ADR-0017 adds the first implementation capability while separating disposable
 workspace writes from repository mutation, commits, pushes, and pull requests.
+ADR-0018 adds repository mutation as a separate, exactly approved and
+recoverable managed-worktree effect while continuing to exclude commits and
+publication. ADR-0019 makes the API's role-first nested module map explicit and
+executable without prematurely splitting the modular monolith.
 
 ## ADR rules
 

@@ -7,11 +7,11 @@
   "scripts": {
     "build": "npm run clean && tsc -p tsconfig.build.json",
     "clean": "node --input-type=module --eval \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true })\"",
-    "dev": "tsx watch --clear-screen=false --exclude 'dist/**' --exclude 'node_modules/**' --include '../../.env*' src/server.ts",
+    "dev": "NODE_ENV=development tsx watch --clear-screen=false --exclude 'dist/**' --exclude 'node_modules/**' --include '../../.env*' src/server.ts",
     "start": "node dist/server.js",
-    "test": "tsx --test test/**/*.test.ts",
-    "test:model": "tsx src/cli/test-model.ts",
-    "test:ollama": "VERA_MODEL_PROVIDER=ollama tsx src/cli/test-model.ts",
+    "test": "tsx --test 'test/**/*.test.ts'",
+    "test:model": "tsx src/bootstrap/diagnostics/test-model.ts",
+    "test:ollama": "VERA_MODEL_PROVIDER=ollama tsx src/bootstrap/diagnostics/test-model.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
@@ -19,5 +19,8 @@
     "mongodb": "^7.6.0",
     "redis": "^6.2.1",
     "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "pino-pretty": "13.1.3"
   }
 }

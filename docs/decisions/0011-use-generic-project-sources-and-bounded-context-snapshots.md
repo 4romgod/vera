@@ -131,5 +131,5 @@ contain unrelated or sensitive tracked material.
   keeping the manifest and security invariants stable.
 - Automate the existing deterministic interrupted-run recovery checks and
   compiled persistent restart smoke journey in a CI-capable integration harness.
-- Complete owner acceptance of an exact manifest before invoking real cloud
-  Codex; the application must never self-approve that disclosure.
+- Preserve the owner-reviewed exact-manifest approval proven with real Codex on
+  25 August 2026; the application must never self-approve that disclosure.

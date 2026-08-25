@@ -1,11 +1,12 @@
 # Vera Security and Trust Model
 
 **Status:** Accepted
-**Version:** 0.3
+**Version:** 0.4
 **Last updated:** 25 August 2026
 **Accepted:** 24 August 2026 (owner); V1 perimeter clarified by ADR-0014 and
 cloud-provider policy clarified by ADR-0015 and bounded conversation disclosure
 accepted by ADR-0016 on 25 August 2026
+and managed-worktree application accepted by ADR-0018
 
 ## Purpose
 
@@ -302,6 +303,22 @@ file operations, sizes, and before/after hashes from the resulting filesystem.
 Applying that patch, committing it, pushing it, or creating a pull request are
 separate effects requiring separate policy and approval. This boundary is
 accepted in [ADR-0017](decisions/0017-produce-software-changes-as-isolated-patch-artifacts.md).
+
+### Managed software-change application boundary
+
+The implemented application effect grants only the right to materialize the
+exact approved patch on the disclosed branch and stage it inside the disclosed
+managed Git worktree. Approval binds the artifact and patch hashes, immutable
+base commit, project, path, file manifest, and staged outcome. It grants no
+authority over the owner's active checkout, commits, remotes, credentials,
+pushes, or pull requests.
+
+Vera serializes mutation per registered project and verifies actual file hashes
+and Git index state after execution and recovery. Cancellation may remove an
+untouched managed worktree, but it cannot claim to reverse a patch already
+staged. Ambiguous or partial state is quarantined as `review_required` for owner
+inspection. See
+[ADR-0018](decisions/0018-apply-approved-software-changes-in-managed-git-worktrees.md).
 
 ## Audit and observability
 

@@ -38,8 +38,11 @@ adapter. The default `codex_cli` planning adapter uses an ephemeral read-only
 snapshot. The `software_change@1` path instead permits bounded writes inside an
 isolated snapshot, then Vera computes and stores a review-only Git patch and
 file hashes. It never mutates, commits, pushes, or opens a pull request against
-the registered project. Both results are stored as versioned artifacts keyed by
-invocation identity. Task,
+the registered project. A separate, exactly approved change-application
+resource can then stage that artifact on a deterministic branch in a durable
+managed Git worktree while leaving the owner's active checkout unchanged. It
+does not commit, push, or open a pull request. Both capability results are
+stored as versioned artifacts keyed by invocation identity. Task,
 conversation, project, and artifact idempotency are principal-scoped.
 Every terminal task also records a recoverable pending Vera reply before that
 reply is appended to the conversation, so a crash cannot silently remove one
@@ -51,15 +54,22 @@ rebuildable, expiring scratchpad through
 The implemented increment has deterministic recovery coverage and compiled
 MongoDB/Redis evidence across project registration, conversation submission,
 approval, artifact persistence, process restart, and Redis projection loss.
+The compiled gate also applies one deterministic software-change artifact to a
+temporary clean Git fixture, verifies its staged managed worktree, idempotent
+application identity, ordered application events, and project-mutation lease
+exclusion, then removes the fixture.
 Task-producing HTTP requests now return after durable acceptance; an in-process
 worker rediscovers work from MongoDB and uses expiring per-run MongoDB leases to
 prevent concurrent execution. Redis remains a rebuildable scratchpad, not a
 queue. See
 [ADR-0013](docs/decisions/0013-dispatch-durable-work-with-mongodb-leases.md).
-The remaining V1 work is owner acceptance of an exact third-party specialist
-disclosure—initially through the default Codex adapter—and real conformance for
-any cloud-brain profile the owner chooses to operate, not a module specific to
-one project. V1's authenticated perimeter is the trusted Mac Mini account and SSH
+Approved change applications use their own MongoDB aggregate, per-project
+mutation lease, ordered events, and recovery rules; see
+[ADR-0018](docs/decisions/0018-apply-approved-software-changes-in-managed-git-worktrees.md).
+The accepted V1 journey, including an exact owner-reviewed third-party Codex
+disclosure and real artifact, was demonstrated on 25 August 2026. Additional
+cloud-brain profiles remain optional conformance targets, not V1 blockers or
+modules specific to one project. V1's authenticated perimeter is the trusted Mac Mini account and SSH
 session around a code-enforced loopback listener; application authentication is
 required before broader exposure.
 
@@ -70,6 +80,9 @@ scope was trimmed to a solo-buildable slice and its first journey was selected �
 [ADR-0008](docs/decisions/0008-trim-v1-scope-and-ratify-foundation.md).
 The implementation boundary and first source layout are accepted in
 [ADR-0009](docs/decisions/0009-implement-the-model-decision-boundary.md).
+The growing API's nested role-first module map and enforced dependency direction
+are accepted in
+[ADR-0019](docs/decisions/0019-organize-the-api-as-an-inward-dependent-modular-monolith.md).
 Broader long-term-memory and retention policy remain open on purpose; the V1
 operational storage products do not.
 
@@ -142,9 +155,11 @@ owner-controlled adapters, a real HTTP listener, the shared client, and the
 compiled CLI. It verifies asynchronous acceptance, duplicate approval and
 request idempotency, rejection, cancellation, concurrent task isolation,
 MongoDB lease exclusion, Redis scratchpad reconstruction, artifact and event
-persistence, durable owner/Vera dialogue, survival of a forced process
+persistence, controlled managed-worktree application, project-mutation lease
+exclusion, durable owner/Vera dialogue, survival of a forced process
 termination at the approval boundary, and retrieval after a later graceful
-restart. It then removes its own database and Redis scratchpads.
+restart. It then removes its own database, Redis scratchpads, managed
+worktrees, and temporary Git fixture.
 
 Required CI runs the same compiled journey against ephemeral MongoDB 8.2 and
 Redis 8 service containers in the existing Linux job. CI builds once and calls
@@ -363,7 +378,24 @@ On approval, the selected specialist writes only to a disposable snapshot.
 Vera prints the persisted `software_change` artifact containing its own
 computed patch, file operations, hashes, verification report, and risks. The
 registered repository is unchanged; applying, committing, pushing, or opening
-a pull request remains a separate owner action. The `plan` and `change`
+a pull request remains a separate authority. To apply and stage the exact
+artifact in Vera's managed worktree, use its returned artifact ID:
+
+```bash
+npm run cli -- change apply --artifact artifact_...
+```
+
+The CLI discloses the immutable base commit, patch hash, exact file manifest,
+deterministic branch, managed workspace path, and staged effect before asking
+for a second approval. On success, inspect the returned workspace or run:
+
+```bash
+npm run cli -- application show application_...
+npm run cli -- application events application_...
+```
+
+The active registered checkout remains unchanged. Committing, pushing, or
+opening a pull request remains a separate owner action. The `plan` and `change`
 commands refuse to auto-approve a capability other than the one named by the
 command.
 
@@ -424,7 +456,10 @@ the specialist executes.
 Approval records model metadata, persists one typed artifact, and ends in
 `succeeded`. The Codex software-change adapter uses a separate isolated
 workspace-write snapshot and produces a review-only patch artifact; it still
-cannot touch the registered project or publish anything. Repeating the
+cannot touch the registered project or publish anything. A later
+change-application approval is independently durable and authorizes only the
+exact staged managed-worktree effect. Repeating either request is idempotent,
+and recovery verifies the actual Git state before recording success. Repeating the
 same approval neither invokes the capability again nor creates another
 artifact; sending the opposite decision returns a conflict.
 

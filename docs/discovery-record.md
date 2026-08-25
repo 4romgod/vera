@@ -3,7 +3,7 @@
 **Status:** Living discovery log — not subject to owner acceptance like a
 spec or decision record; see the
 [Documentation Guide](README.md#authority-model)
-**Version:** 0.3
+**Version:** 0.4
 **Last updated:** 25 August 2026
 
 ## Purpose
@@ -219,7 +219,7 @@ restarted Vera, resumed the same invocation, and recorded exactly one start and
 one success. Deleting Redis state rebuilt version 5 from MongoDB, and an attempted
 version-4 projection could not overwrite it.
 
-### Capability boundary — implemented; owner acceptance remains
+### Capability boundary — implemented and owner-accepted
 
 After explicit approval, the selected adapter for the registered,
 provider-neutral `development_planning@1` capability receives only
@@ -228,8 +228,9 @@ a code-created invocation identity. It returns a schema-valid plan with
 provider metadata; success or failure is durable. The implementation now
 includes the late-bound adapter registry, default Codex adapter, generic
 destination disclosure, artifact identity, wall-clock and byte ceilings,
-recovery, and cancellation. Owner acceptance of one exact third-party
-disclosure remains product evidence rather than missing architecture.
+recovery, and cancellation. On 25 August 2026 the owner reviewed and approved
+one exact third-party Codex disclosure and accepted the resulting artifact,
+completing the V1 evidence boundary.
 
 ### Isolated software implementation — implemented
 
@@ -242,13 +243,36 @@ does not trust model-authored effect metadata. Forbidden paths, credentials,
 instruction files, binaries, symlinks, escapes, empty changes, and budget
 violations fail closed.
 
-The registered repository is never mutated. Applying, committing, pushing, and
-opening a pull request remain separate future effects rather than hidden scope
-inside the change approval. The owner CLI exposes the complete path as
+The capability never mutates the registered repository. Applying, committing,
+pushing, and opening a pull request remain separate effects rather than hidden
+scope inside the change approval. The owner CLI exposes the artifact path as
 `vera change` and constrains automatic approval to this exact capability. A
 deterministic adapter proves orchestration and persistence without model cost;
 Codex adapter tests prove isolated writes and Vera-derived patch evidence. See
 [ADR-0017](decisions/0017-produce-software-changes-as-isolated-patch-artifacts.md).
+
+### Controlled software-change application — implemented
+
+An independently approved application resource now stages an exact
+`software_change` artifact in a deterministic durable Git worktree. The
+approval includes the immutable base commit, artifact and patch hashes, file
+manifest, branch, workspace path, and staged effect. MongoDB stores the
+application aggregate and project-scoped mutation lease; recovery inspects the
+actual before/after/mixed state and fails closed on ambiguity. The registered
+checkout, commits, pushes, and pull requests remain outside the effect. The
+shared client and CLI expose create, inspect, wait, events, decision, and
+cancellation paths. See
+[ADR-0018](decisions/0018-apply-approved-software-changes-in-managed-git-worktrees.md).
+
+### API source organization — implemented
+
+The growing modular monolith now uses role-first nested modules: domain, ports,
+application use cases, inbound/outbound adapters, and bootstrap composition.
+Persistence technologies are adapters, but so are cloud/local model providers,
+specialists, project-context readers, and controlled Git effects. Automated
+architecture tests enforce inward dependency direction. See
+[ADR-0019](decisions/0019-organize-the-api-as-an-inward-dependent-modular-monolith.md)
+and `apps/api/README.md`.
 
 ### Local-model boundary — completed
 
@@ -328,8 +352,8 @@ runs, and has a five-minute hard limit. The persistent tier runs on the pull
 request and is not repeated for its resulting `main` push, although it remains
 manually triggerable. Static, unit, boundary, and build checks still run for
 both events. This gate strengthens reproducible V1 evidence but does not replace
-the remaining owner acceptance of an exact third-party disclosure or evaluation
-of the resulting real specialist plan.
+manual real-provider and specialist conformance; the owner separately completed
+the required V1 Codex disclosure and artifact evaluation on 25 August 2026.
 
 ## Principal risks
 

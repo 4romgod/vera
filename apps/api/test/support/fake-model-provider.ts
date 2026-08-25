@@ -3,7 +3,7 @@ import type {
   ModelGeneration,
   ModelProvider,
   ModelProviderReadiness,
-} from '../../src/model/model-provider.ts';
+} from '../../src/ports/model/model-provider.ts';
 
 export class FakeModelProvider implements ModelProvider {
   public readonly name = 'fake';

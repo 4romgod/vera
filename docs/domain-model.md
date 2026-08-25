@@ -2,7 +2,7 @@
 
 **Status:** Accepted (core vocabulary and critical distinctions); the open
 questions below are explicitly excluded from this acceptance
-**Version:** 0.3
+**Version:** 0.4
 **Last updated:** 25 August 2026
 **Accepted:** 24 August 2026 (owner) — accepts the Core concepts and
 Critical distinctions sections as Vera's shared language.
@@ -235,6 +235,24 @@ large artifact content may live in an appropriate external or object store.
 
 Artifacts should record provenance, content type, integrity information,
 producer, task/run association, access policy, and retention information.
+
+### Software change application
+
+A durable, approval-gated attempt to materialize one exact `software_change`
+artifact as a controlled repository effect.
+
+It is not the source task, capability invocation, artifact, Git worktree, or
+commit. Its own identity is required because application has independent
+idempotency, approval, concurrency, cancellation, recovery, and event history.
+The current effect creates a deterministic managed Git worktree and stages the
+approved patch; it does not mutate the owner's active checkout or authorize a
+commit, push, or pull request.
+
+An application records the frozen artifact and project identity, exact approved
+effect, current status, effect identity, verified result or failure,
+optimistically controlled version, and ordered events. Recovery derives its
+outcome from the actual managed Git state. An ambiguous partial effect becomes
+`review_required` rather than being guessed successful or rolled back.
 
 ### Memory record
 
