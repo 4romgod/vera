@@ -66,6 +66,19 @@ export type Approval = {
   project?: { id: string; displayName: string };
   contextManifest?: ContextManifest;
   destination?: CapabilityDestination;
+  authority?: {
+    approval: 'always';
+    projectContext: 'required' | 'none';
+    networkAccess: 'none' | 'provider_api' | 'public_web_via_provider';
+    dataClasses: ('owner_request' | 'project_context' | 'public_web')[];
+    sideEffects: (
+      | 'third_party_disclosure'
+      | 'isolated_workspace_write'
+      | 'public_network_read'
+    )[];
+    credentials: 'none' | 'server_managed';
+    maxWebSearchCalls?: number;
+  };
   requestedAt: string;
   decidedAt?: string;
   decidedBy?: string;
@@ -87,6 +100,10 @@ export type ArtifactReference = ArtifactReferenceIdentity &
     | {
         type: 'software_change';
         mediaType: 'application/vnd.vera.software-change+json';
+      }
+    | {
+        type: 'research_report';
+        mediaType: 'application/vnd.vera.research-report+json';
       }
   );
 
@@ -126,6 +143,14 @@ export type SoftwareChangeContent = {
   risks: string[];
 };
 
+export type ResearchReportContent = {
+  schemaVersion: 1;
+  objective: string;
+  report: string;
+  sources: { title: string; url: string }[];
+  searchedAt: string;
+};
+
 export type TaskResource = {
   schemaVersion: 1;
   taskId: string;
@@ -155,6 +180,11 @@ export type TaskResource = {
         kind: 'software_change';
         change?: SoftwareChangeContent;
         artifact?: Extract<ArtifactReference, { type: 'software_change' }>;
+      }
+    | {
+        kind: 'research_report';
+        report?: ResearchReportContent;
+        artifact?: Extract<ArtifactReference, { type: 'research_report' }>;
       };
   failure?: { code: string; message: string };
   budget?: unknown;
@@ -210,7 +240,7 @@ type ArtifactResourceIdentity = {
   taskId: string;
   runId: string;
   invocationId: string;
-  projectId: string;
+  projectId?: string;
   sha256: string;
   byteLength: number;
   producer: { destination?: CapabilityDestination } & Record<string, unknown>;
@@ -229,7 +259,26 @@ export type ArtifactResource = ArtifactResourceIdentity &
         mediaType: 'application/vnd.vera.software-change+json';
         content: SoftwareChangeContent;
       }
+    | {
+        type: 'research_report';
+        mediaType: 'application/vnd.vera.research-report+json';
+        content: ResearchReportContent;
+      }
   );
+
+export type CapabilityCatalogResource = {
+  schemaVersion: 1;
+  capabilities: {
+    name: string;
+    version: number;
+    description: string;
+    effect: 'external';
+    artifact: { type: string; mediaType: string };
+    authority: NonNullable<Approval['authority']>;
+    enabled: boolean;
+    destination?: CapabilityDestination;
+  }[];
+};
 
 export type RunEventsResource = {
   schemaVersion: 1;
@@ -341,6 +390,7 @@ export class VeraApiError extends Error {
 }
 
 export type VeraApi = {
+  listCapabilities(): Promise<CapabilityCatalogResource>;
   registerProject(input: {
     displayName: string;
     rootPath: string;
@@ -446,6 +496,31 @@ function assertTaskResource(value: unknown): asserts value is TaskResource {
   }
 }
 
+function assertCapabilityCatalogResource(
+  value: unknown,
+): asserts value is CapabilityCatalogResource {
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== 1 ||
+    !Array.isArray(value.capabilities) ||
+    value.capabilities.some(
+      (capability) =>
+        !isRecord(capability) ||
+        typeof capability.name !== 'string' ||
+        typeof capability.version !== 'number' ||
+        typeof capability.description !== 'string' ||
+        capability.effect !== 'external' ||
+        typeof capability.enabled !== 'boolean' ||
+        !isRecord(capability.artifact) ||
+        typeof capability.artifact.type !== 'string' ||
+        typeof capability.artifact.mediaType !== 'string' ||
+        !isRecord(capability.authority),
+    )
+  ) {
+    throw new Error('Vera returned an invalid capability catalog.');
+  }
+}
+
 function assertChangeApplicationResource(
   value: unknown,
 ): asserts value is ChangeApplicationResource {
@@ -510,6 +585,12 @@ export class VeraClient implements VeraApi {
       '',
     );
     this.fetch = options?.fetch ?? globalThis.fetch;
+  }
+
+  public async listCapabilities(): Promise<CapabilityCatalogResource> {
+    const catalog = await this.request<unknown>('/v1/capabilities');
+    assertCapabilityCatalogResource(catalog);
+    return catalog;
   }
 
   public registerProject(input: {

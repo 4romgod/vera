@@ -22,6 +22,7 @@ void describe('application configuration', () => {
       adapterId: 'codex_cli',
       adapters: { codexCli: { command: 'codex' } },
     });
+    assert.deepEqual(config.research, { adapterId: 'disabled' });
   });
 
   void it('supports an independent software-change adapter and Codex override', () => {
@@ -122,6 +123,53 @@ void describe('application configuration', () => {
           GEMINI_BASE_URL: 'https://user:password@gemini.test/v1beta',
         }),
       /must not contain embedded credentials/u,
+    );
+  });
+
+  void it('configures web research independently from the orchestration model', () => {
+    const defaultResearch = loadConfig({
+      VERA_RESEARCH_ADAPTER: 'openai_web_search',
+      RESEARCH_OPENAI_API_KEY: 'research-test-key',
+    }).research;
+    assert.equal(defaultResearch.adapterId, 'openai_web_search');
+    assert.equal(defaultResearch.openai.model, 'gpt-5.4-mini');
+
+    assert.deepEqual(
+      loadConfig({
+        VERA_MODEL_PROVIDER: 'ollama',
+        VERA_RESEARCH_ADAPTER: 'openai_web_search',
+        RESEARCH_OPENAI_API_KEY: 'research-test-key',
+        RESEARCH_OPENAI_MODEL: 'gpt-research-test',
+        RESEARCH_SEARCH_CONTEXT_SIZE: 'high',
+      }).research,
+      {
+        adapterId: 'openai_web_search',
+        openai: {
+          baseUrl: 'https://api.openai.com/v1',
+          apiKey: 'research-test-key',
+          model: 'gpt-research-test',
+          timeoutMs: 120_000,
+          readinessTimeoutMs: 3_000,
+          maxOutputTokens: 8_192,
+          searchContextSize: 'high',
+        },
+      },
+    );
+    assert.throws(
+      () =>
+        loadConfig({
+          VERA_RESEARCH_ADAPTER: 'openai_web_search',
+        }),
+      /RESEARCH_OPENAI_API_KEY or OPENAI_API_KEY is required/u,
+    );
+    assert.throws(
+      () =>
+        loadConfig({
+          VERA_RESEARCH_ADAPTER: 'openai_web_search',
+          RESEARCH_OPENAI_API_KEY: 'research-test-key',
+          RESEARCH_OPENAI_BASE_URL: 'http://openai.test/v1',
+        }),
+      /OPENAI_BASE_URL must use HTTPS/u,
     );
   });
 });

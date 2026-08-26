@@ -9,6 +9,7 @@ import type { ArtifactService } from '../../../application/artifacts/artifact-se
 import type { ConversationService } from '../../../application/conversations/conversation-service.ts';
 import type { EvaluateModelDecision } from '../../../application/model-decisions/evaluate-model-decision.ts';
 import type { ProjectService } from '../../../application/projects/project-service.ts';
+import type { CapabilityService } from '../../../application/capabilities/capability-service.ts';
 import { ResourceError } from '../../../application/shared/resource-error.ts';
 import {
   LifecycleError,
@@ -26,6 +27,7 @@ import { registerChangeApplicationRoutes } from './routes/change-application-rou
 import { registerConversationRoutes } from './routes/conversation-routes.ts';
 import { registerProjectRoutes } from './routes/project-routes.ts';
 import { registerTaskRoutes } from './routes/task-routes.ts';
+import { registerCapabilityRoutes } from './routes/capability-routes.ts';
 import {
   EvaluateRequestJsonSchema,
   HealthResponseJsonSchema,
@@ -41,6 +43,7 @@ export type BuildAppOptions = {
   artifacts?: ArtifactService;
   conversations?: ConversationService;
   projects?: ProjectService;
+  capabilities?: CapabilityService;
   changeApplications?: SoftwareChangeApplicationLifecycle & {
     wake(): void;
   };
@@ -163,7 +166,9 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
                 ? 'planning_capability_unavailable'
                 : error.dependency === 'software_change_capability'
                   ? 'software_change_capability_unavailable'
-                  : 'operational_store_unavailable';
+                  : error.dependency.endsWith('_capability')
+                    ? 'capability_unavailable'
+                    : 'operational_store_unavailable';
           request.log.error(
             { err: error, errorCode: code, dependency: error.dependency },
             'Runtime dependency readiness check failed',
@@ -214,6 +219,10 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     },
     async (request) => options.evaluateModelDecision(request.body.message),
   );
+
+  if (options.capabilities !== undefined) {
+    registerCapabilityRoutes(app, options.capabilities);
+  }
 
   if (options.projects !== undefined) {
     registerProjectRoutes(app, { principalId, projects: options.projects });

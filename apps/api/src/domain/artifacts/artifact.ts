@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { DevelopmentPlanSchema } from '../plans/development-plan.ts';
 import { CapabilityDestinationSchema } from '../capabilities/capability-destination.ts';
 import { SoftwareChangeSchema } from '../changes/software-change.ts';
+import { ResearchReportSchema } from '../research/research-report.ts';
 
 const ArtifactProducerSchema = z
   .object({
@@ -29,7 +30,6 @@ const ArtifactIdentitySchema = z
     taskId: z.string().startsWith('task_'),
     runId: z.string().startsWith('run_'),
     invocationId: z.string().startsWith('invocation_'),
-    projectId: z.string().startsWith('project_'),
     sha256: z.string().regex(/^[a-f0-9]{64}$/),
     byteLength: z.number().int().nonnegative(),
     producer: ArtifactProducerSchema,
@@ -38,20 +38,29 @@ const ArtifactIdentitySchema = z
   .strict();
 
 export const ImplementationPlanArtifactSchema = ArtifactIdentitySchema.extend({
+  projectId: z.string().startsWith('project_'),
   type: z.literal('implementation_plan'),
   mediaType: z.literal('application/vnd.vera.implementation-plan+json'),
   content: DevelopmentPlanSchema,
 }).strict();
 
 export const SoftwareChangeArtifactSchema = ArtifactIdentitySchema.extend({
+  projectId: z.string().startsWith('project_'),
   type: z.literal('software_change'),
   mediaType: z.literal('application/vnd.vera.software-change+json'),
   content: SoftwareChangeSchema,
 }).strict();
 
+export const ResearchReportArtifactSchema = ArtifactIdentitySchema.extend({
+  type: z.literal('research_report'),
+  mediaType: z.literal('application/vnd.vera.research-report+json'),
+  content: ResearchReportSchema,
+}).strict();
+
 export const ArtifactSchema = z.discriminatedUnion('type', [
   ImplementationPlanArtifactSchema,
   SoftwareChangeArtifactSchema,
+  ResearchReportArtifactSchema,
 ]);
 
 const ArtifactReferenceBaseSchema = ArtifactIdentitySchema.pick({
@@ -73,9 +82,16 @@ export const SoftwareChangeArtifactReferenceSchema =
     mediaType: z.literal('application/vnd.vera.software-change+json'),
   }).strict();
 
+export const ResearchReportArtifactReferenceSchema =
+  ArtifactReferenceBaseSchema.extend({
+    type: z.literal('research_report'),
+    mediaType: z.literal('application/vnd.vera.research-report+json'),
+  }).strict();
+
 export const ArtifactReferenceSchema = z.discriminatedUnion('type', [
   ImplementationPlanArtifactReferenceSchema,
   SoftwareChangeArtifactReferenceSchema,
+  ResearchReportArtifactReferenceSchema,
 ]);
 
 export type Artifact = z.infer<typeof ArtifactSchema>;

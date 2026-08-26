@@ -3,12 +3,15 @@ import { z } from 'zod';
 import {
   ImplementationPlanArtifactReferenceSchema,
   SoftwareChangeArtifactReferenceSchema,
+  ResearchReportArtifactReferenceSchema,
 } from '../artifacts/artifact.ts';
 import { CapabilityDestinationSchema } from '../capabilities/capability-destination.ts';
 import { ConversationContextBundleSchema } from '../conversations/conversation-context.ts';
 import {
   DevelopmentPlanningProposalArgumentsSchema,
   SoftwareChangeProposalArgumentsSchema,
+  WebResearchProposalArgumentsSchema,
+  CapabilityAuthoritySchema,
 } from '../capabilities/capability-registry.ts';
 import { DevelopmentPlanSchema } from '../plans/development-plan.ts';
 import { DecisionResultSchema } from '../model/execution-decision.ts';
@@ -18,6 +21,7 @@ import {
 } from '../projects/project-context.ts';
 import { RunBudgetSchema } from './run-budget.ts';
 import { SoftwareChangeSchema } from '../changes/software-change.ts';
+import { ResearchReportSchema } from '../research/research-report.ts';
 
 export const TaskStatusSchema = z.enum([
   'active',
@@ -52,6 +56,7 @@ const ApprovalIdentitySchema = z
       .optional(),
     contextManifest: ProjectContextManifestSchema.optional(),
     destination: CapabilityDestinationSchema.optional(),
+    authority: CapabilityAuthoritySchema.optional(),
     requestedAt: z.iso.datetime(),
     decidedAt: z.iso.datetime().optional(),
     decidedBy: z.string().optional(),
@@ -67,6 +72,15 @@ export const ApprovalSchema = z.union([
       })
       .strict(),
     proposedArguments: DevelopmentPlanningProposalArgumentsSchema,
+  }).strict(),
+  ApprovalIdentitySchema.extend({
+    capability: z
+      .object({
+        name: z.literal('web_research'),
+        version: z.literal(1),
+      })
+      .strict(),
+    proposedArguments: WebResearchProposalArgumentsSchema,
   }).strict(),
   ApprovalIdentitySchema.extend({
     capability: z
@@ -92,6 +106,7 @@ const CapabilityInvocationIdentitySchema = z
       .optional(),
     contextManifest: ProjectContextManifestSchema.optional(),
     destination: CapabilityDestinationSchema.optional(),
+    authority: CapabilityAuthoritySchema.optional(),
     startedAt: z.iso.datetime(),
     completedAt: z.iso.datetime().optional(),
     model: z
@@ -125,6 +140,15 @@ export const CapabilityInvocationSchema = z.union([
   CapabilityInvocationIdentitySchema.extend({
     capability: z
       .object({
+        name: z.literal('web_research'),
+        version: z.literal(1),
+      })
+      .strict(),
+    arguments: WebResearchProposalArgumentsSchema,
+  }).strict(),
+  CapabilityInvocationIdentitySchema.extend({
+    capability: z
+      .object({
         name: z.literal('software_change'),
         version: z.literal(1),
       })
@@ -152,6 +176,13 @@ export const TaskOutputSchema = z.discriminatedUnion('kind', [
       kind: z.literal('software_change'),
       change: SoftwareChangeSchema,
       artifact: SoftwareChangeArtifactReferenceSchema.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('research_report'),
+      report: ResearchReportSchema,
+      artifact: ResearchReportArtifactReferenceSchema.optional(),
     })
     .strict(),
 ]);

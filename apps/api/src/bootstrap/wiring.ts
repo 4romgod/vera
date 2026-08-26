@@ -22,12 +22,15 @@ import { MongoDbWorkLeaseStore } from '../adapters/outbound/persistence/mongodb/
 import { RedisScratchpad } from '../adapters/outbound/persistence/redis/redis-scratchpad.ts';
 import { createDevelopmentPlanningCapabilityRegistry } from '../adapters/outbound/capabilities/development-planning/development-planning-adapter-registry.ts';
 import { createSoftwareChangeCapabilityRegistry } from '../adapters/outbound/capabilities/software-change/software-change-adapter-registry.ts';
+import { createWebResearchCapabilityRegistry } from '../adapters/outbound/capabilities/web-research/web-research-adapter-registry.ts';
+import { createCapabilityRuntimeRegistry } from '../adapters/outbound/capabilities/capability-runtime-registry.ts';
 import { createArtifactService } from '../application/artifacts/artifact-service.ts';
 import { createConversationService } from '../application/conversations/conversation-service.ts';
 import { createProjectService } from '../application/projects/project-service.ts';
 import { createTaskWorker } from '../application/tasks/task-worker.ts';
 import { createSoftwareChangeApplicationLifecycle } from '../application/change-applications/software-change-application-lifecycle.ts';
 import { createSoftwareChangeApplicationWorker } from '../application/change-applications/software-change-application-worker.ts';
+import { createCapabilityService } from '../application/capabilities/capability-service.ts';
 import type { AppConfig } from './config.ts';
 import { DefaultRunBudget } from '../domain/tasks/run-budget.ts';
 import { buildApp } from '../adapters/inbound/http/build-app.ts';
@@ -49,7 +52,6 @@ export function createApp(
     );
   }
   const provider = createModelProvider(config.model);
-  const evaluateModelDecision = createEvaluateModelDecision(provider);
   const store: ExecutionStore =
     config.storage.mode === 'memory'
       ? new InMemoryExecutionStore()
@@ -118,6 +120,18 @@ export function createApp(
     codexCli: config.change.adapters.codexCli,
     dependencyTimeoutMs: config.storage.dependencyTimeoutMs,
   });
+  const webResearch = createWebResearchCapabilityRegistry(config.research);
+  const capabilities = createCapabilityRuntimeRegistry({
+    developmentPlanning,
+    softwareChange,
+    webResearch,
+  });
+  const capabilityService = createCapabilityService({ registry: capabilities });
+  const evaluateModelDecision = createEvaluateModelDecision(
+    provider,
+    undefined,
+    { enabledCapabilities: capabilities.enabledReferences() },
+  );
   const changeApplicationExecutor =
     new LocalGitSoftwareChangeApplicationExecutor({
       workspacesRoot: config.application.workspacesRoot,
@@ -136,8 +150,7 @@ export function createApp(
     store,
     scratchpad,
     evaluateModelDecision,
-    developmentPlanning,
-    softwareChange,
+    capabilities,
     resources,
     contextAssembler,
     conversationContextLimits: config.conversationContext,
@@ -207,6 +220,7 @@ export function createApp(
     artifacts: artifactService,
     conversations: conversationService,
     projects: projectService,
+    capabilities: capabilityService,
     changeApplications: {
       ...changeApplicationLifecycle,
       wake: () => changeApplicationWorker.wake(),
@@ -221,14 +235,20 @@ export function createApp(
         name: 'mongodb_resource_store',
         check: () => resources.checkReadiness(),
       },
-      {
-        name: 'development_planning_capability',
-        check: () => developmentPlanning.selected().checkReadiness(),
-      },
-      {
-        name: 'software_change_capability',
-        check: () => softwareChange.selected().checkReadiness(),
-      },
+      ...capabilities.declarations().flatMap((declaration) => {
+        const runtime = capabilities.selected({
+          name: declaration.definition.name,
+          version: declaration.definition.version,
+        });
+        return runtime === null
+          ? []
+          : [
+              {
+                name: `${declaration.definition.name}_capability`,
+                check: () => runtime.checkReadiness(),
+              },
+            ];
+      }),
       { name: 'task_worker', check: () => worker.checkReadiness() },
       {
         name: 'change_application_store',

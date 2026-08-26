@@ -179,6 +179,9 @@ Conversation-aware orchestration and reply recovery are accepted in
 [ADR-0016](decisions/0016-freeze-bounded-conversation-context-and-durably-project-replies.md).
 Isolated software-change artifacts are accepted in
 [ADR-0017](decisions/0017-produce-software-changes-as-isolated-patch-artifacts.md).
+The declarative capability runtime and approval-gated, project-independent
+web-research contract are accepted in
+[ADR-0020](decisions/0020-use-a-declarative-capability-runtime-and-approval-gated-web-research.md).
 
 ## Documentation and implementation cadence
 
@@ -202,6 +205,10 @@ Codex-adapter isolation, path-safety, and Vera-derived patch tests.
 The separate change-application path has managed-worktree, exact staged-effect,
 idempotency, ordered-event, MongoDB validation, cancellation reconciliation,
 and project-mutation lease evidence.
+The `vera research` path has deterministic compiled catalog, approval-authority,
+project-independent artifact, source-persistence, and restart-retrieval
+evidence. The live OpenAI adapter separately has request-shape, readiness,
+source-validation, refusal, failure-classification, and secret-redaction tests.
 Required CI now runs the compiled CLI-to-artifact journey with real
 ephemeral MongoDB and Redis plus deterministic owner-controlled adapters; it
 does not download models or call a third party. The owner separately approved

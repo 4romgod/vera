@@ -41,6 +41,7 @@ erasing why a choice was made.
 | [0017](0017-produce-software-changes-as-isolated-patch-artifacts.md) | Accepted | Produce software changes as isolated, review-only patch artifacts without mutating or publishing the registered project. |
 | [0018](0018-apply-approved-software-changes-in-managed-git-worktrees.md) | Accepted | Apply exact approved patch artifacts into durable managed Git worktrees without commit or publication authority. |
 | [0019](0019-organize-the-api-as-an-inward-dependent-modular-monolith.md) | Accepted | Organize the growing API by architectural role and cohesive responsibility, enforced by dependency tests. |
+| [0020](0020-use-a-declarative-capability-runtime-and-approval-gated-web-research.md) | Accepted | Route enabled specialists through one declarative runtime and add project-independent, approval-gated web research. |
 
 ADRs 0001–0008 were accepted 24 August 2026 following the owner's review of
 the foundation documentation. ADR-0007 accepted a semantic boundary without
@@ -66,7 +67,9 @@ workspace writes from repository mutation, commits, pushes, and pull requests.
 ADR-0018 adds repository mutation as a separate, exactly approved and
 recoverable managed-worktree effect while continuing to exclude commits and
 publication. ADR-0019 makes the API's role-first nested module map explicit and
-executable without prematurely splitting the modular monolith.
+executable without prematurely splitting the modular monolith. ADR-0020 makes
+capability availability, authority, routing, and execution one declarative
+runtime fact and proves the boundary with project-independent web research.
 
 ## ADR rules
 

@@ -34,6 +34,7 @@ function config(workspacesRoot = '/tmp/vera-test-applications'): AppConfig {
       adapterId: 'deterministic_change',
       adapters: { codexCli: { command: 'codex' } },
     },
+    research: { adapterId: 'disabled' },
     application: { workspacesRoot },
     worker: { concurrency: 2, pollIntervalMs: 25, leaseMs: 900_000 },
   };
@@ -81,7 +82,7 @@ async function waitForRun(
         status: string;
         proposedArguments: Record<string, unknown>;
       };
-      output?: { artifact?: { id: string } };
+      output?: { kind: string; artifact?: { id: string } };
     }>();
     if (body.runStatus === status) return body;
     await new Promise<void>((resolve) => setTimeout(resolve, 5));
@@ -174,6 +175,144 @@ void describe('production worker HTTP journey', () => {
       url: `/v1/artifacts/${completed.output.artifact.id}`,
     });
     assert.equal(artifact.statusCode, 200, artifact.body);
+  });
+
+  void it('discovers and executes approved project-independent web research end to end', async () => {
+    const researchConfig = config();
+    researchConfig.research = { adapterId: 'deterministic_research' };
+    const app = createApp(researchConfig);
+    cleanups.push(async () => app.close());
+
+    const catalogResponse = await app.inject({
+      method: 'GET',
+      url: '/v1/capabilities',
+    });
+    assert.equal(catalogResponse.statusCode, 200, catalogResponse.body);
+    const catalog = catalogResponse.json<{
+      capabilities: {
+        name: string;
+        enabled: boolean;
+        destination?: { adapterId: string };
+        authority: {
+          projectContext: string;
+          networkAccess: string;
+          maxWebSearchCalls?: number;
+        };
+      }[];
+    }>();
+    const research = catalog.capabilities.find(
+      (capability) => capability.name === 'web_research',
+    );
+    assert.deepEqual(research, {
+      name: 'web_research',
+      version: 1,
+      description:
+        'Research a project-independent question on the public web and return a source-backed report.',
+      effect: 'external',
+      artifact: {
+        type: 'research_report',
+        mediaType: 'application/vnd.vera.research-report+json',
+      },
+      authority: {
+        approval: 'always',
+        projectContext: 'none',
+        networkAccess: 'none',
+        dataClasses: ['owner_request', 'public_web'],
+        sideEffects: [],
+        credentials: 'none',
+        maxWebSearchCalls: 4,
+      },
+      enabled: true,
+      destination: {
+        schemaVersion: 1,
+        adapterId: 'deterministic_research',
+        provider: 'deterministic',
+        transport: 'in_process',
+        dataBoundary: 'owner_controlled',
+      },
+    });
+
+    const objective = 'Research the evidence for durable task execution.';
+    const submitted = await app.inject({
+      method: 'POST',
+      url: '/v1/tasks',
+      headers: { 'idempotency-key': 'worker-http-research' },
+      payload: { message: objective },
+    });
+    assert.equal(submitted.statusCode, 202, submitted.body);
+    const runId = submitted.json<{ runId: string }>().runId;
+
+    const pending = await waitForRun(app, runId, 'awaiting_approval');
+    assert.ok(pending.approval);
+    assert.deepEqual(pending.approval.proposedArguments, { objective });
+    assert.equal(
+      (pending.approval as { capability?: { name: string } }).capability?.name,
+      'web_research',
+    );
+    assert.equal(
+      (
+        pending.approval as {
+          authority?: { projectContext: string; maxWebSearchCalls?: number };
+        }
+      ).authority?.projectContext,
+      'none',
+    );
+    assert.equal(
+      (
+        pending.approval as {
+          authority?: { projectContext: string; maxWebSearchCalls?: number };
+        }
+      ).authority?.maxWebSearchCalls,
+      4,
+    );
+
+    const approved = await app.inject({
+      method: 'POST',
+      url: `/v1/approvals/${pending.approval.id}/decision`,
+      payload: { decision: 'approved' },
+    });
+    assert.equal(approved.statusCode, 202, approved.body);
+
+    const completed = await waitForRun(app, runId, 'succeeded');
+    assert.equal(completed.output?.kind, 'research_report');
+    assert.ok(completed.output.artifact);
+
+    const artifactResponse = await app.inject({
+      method: 'GET',
+      url: `/v1/artifacts/${completed.output.artifact.id}`,
+    });
+    assert.equal(artifactResponse.statusCode, 200, artifactResponse.body);
+    const artifact = artifactResponse.json<{
+      type: string;
+      projectId?: string;
+      content: {
+        objective: string;
+        report: string;
+        sources: { title: string; url: string }[];
+      };
+    }>();
+    assert.equal(artifact.type, 'research_report');
+    assert.equal(artifact.projectId, undefined);
+    assert.equal(artifact.content.objective, objective);
+    assert.match(artifact.content.report, /deterministic/iu);
+    assert.deepEqual(artifact.content.sources, [
+      {
+        title: 'Deterministic research fixture',
+        url: 'https://example.com/vera/research-fixture',
+      },
+    ]);
+
+    const eventsResponse = await app.inject({
+      method: 'GET',
+      url: `/v1/runs/${runId}/events`,
+    });
+    assert.equal(eventsResponse.statusCode, 200, eventsResponse.body);
+    const eventTypes = eventsResponse
+      .json<{ events: { type: string }[] }>()
+      .events.map((event) => event.type);
+    assert.equal(eventTypes.includes('context_assembled'), false);
+    assert.equal(eventTypes.includes('artifact_created'), true);
+    assert.equal(eventTypes.at(-1), 'run_succeeded');
   });
 
   void it('applies one approved software-change artifact to a durable managed worktree', async () => {

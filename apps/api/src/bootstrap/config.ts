@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import type { ModelConfig } from '../adapters/outbound/model/model-provider-registry.ts';
+import type { WebResearchAdapterConfig } from '../adapters/outbound/capabilities/web-research/web-research-adapter-registry.ts';
 
 const EnvironmentSchema = z.object({
   HOST: z.enum(['127.0.0.1', '::1', 'localhost']).default('127.0.0.1'),
@@ -59,6 +60,15 @@ const EnvironmentSchema = z.object({
     .default('codex_cli'),
   CHANGE_CODEX_COMMAND: z.string().min(1).optional(),
   CHANGE_CODEX_MODEL: z.string().min(1).optional(),
+  VERA_RESEARCH_ADAPTER: z
+    .enum(['disabled', 'openai_web_search', 'deterministic_research'])
+    .default('disabled'),
+  RESEARCH_OPENAI_BASE_URL: z.url().optional(),
+  RESEARCH_OPENAI_API_KEY: z.string().trim().min(1).optional(),
+  RESEARCH_OPENAI_MODEL: z.string().trim().min(1).default('gpt-5.4-mini'),
+  RESEARCH_SEARCH_CONTEXT_SIZE: z
+    .enum(['low', 'medium', 'high'])
+    .default('medium'),
   CHANGE_APPLICATION_ROOT: z.string().min(1).optional(),
   WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(2),
   WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(25).default(250),
@@ -99,6 +109,7 @@ export type AppConfig = {
       };
     };
   };
+  research: WebResearchAdapterConfig;
   application: {
     workspacesRoot: string;
   };
@@ -184,6 +195,38 @@ function createModelConfig(
   }
 }
 
+function createResearchConfig(
+  parsed: z.infer<typeof EnvironmentSchema>,
+): WebResearchAdapterConfig {
+  if (parsed.VERA_RESEARCH_ADAPTER === 'disabled') {
+    return { adapterId: 'disabled' };
+  }
+  if (parsed.VERA_RESEARCH_ADAPTER === 'deterministic_research') {
+    return { adapterId: 'deterministic_research' };
+  }
+  const apiKey = parsed.RESEARCH_OPENAI_API_KEY ?? parsed.OPENAI_API_KEY;
+  if (apiKey === undefined) {
+    throw new Error(
+      'RESEARCH_OPENAI_API_KEY or OPENAI_API_KEY is required when VERA_RESEARCH_ADAPTER=openai_web_search.',
+    );
+  }
+  return {
+    adapterId: 'openai_web_search',
+    openai: {
+      baseUrl: normalizeProviderBaseUrl(
+        'openai',
+        parsed.RESEARCH_OPENAI_BASE_URL ?? parsed.OPENAI_BASE_URL,
+      ),
+      apiKey,
+      model: parsed.RESEARCH_OPENAI_MODEL,
+      timeoutMs: parsed.MODEL_TIMEOUT_MS,
+      readinessTimeoutMs: parsed.MODEL_READINESS_TIMEOUT_MS,
+      maxOutputTokens: parsed.MODEL_MAX_OUTPUT_TOKENS,
+      searchContextSize: parsed.RESEARCH_SEARCH_CONTEXT_SIZE,
+    },
+  };
+}
+
 export function loadConfig(
   environment: NodeJS.ProcessEnv = process.env,
 ): AppConfig {
@@ -229,6 +272,7 @@ export function loadConfig(
         },
       },
     },
+    research: createResearchConfig(parsed),
     application: {
       workspacesRoot: resolve(
         parsed.CHANGE_APPLICATION_ROOT ??

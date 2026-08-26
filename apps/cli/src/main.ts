@@ -19,6 +19,8 @@ export type CliDependencies = {
 };
 
 const usage = `Usage:
+  vera capability list
+  vera capability show <capability-name>
   vera project add --name <name> --path <absolute-git-root> [--key <key>]
   vera project list
   vera project show <project-id>
@@ -41,6 +43,7 @@ const usage = `Usage:
   vera application cancel <application-id>
   vera plan --project <project-id> --message <message> [--key <key>] [--approve]
   vera change --project <project-id> --message <message> [--key <key>] [--approve]
+  vera research --message <message> [--key <key>] [--approve]
   vera change apply --artifact <artifact-id> [--key <key>] [--approve]
 
 Global options:
@@ -98,6 +101,7 @@ function approvalDisclosure(approval: Approval): Record<string, unknown> {
     capability: approval.capability,
     project: approval.project,
     destination: approval.destination,
+    authority: approval.authority,
     proposedArguments: approval.proposedArguments,
     contextManifest: approval.contextManifest,
   };
@@ -191,6 +195,23 @@ export async function runCli(
   if (resource === undefined || ['help', '--help', '-h'].includes(resource)) {
     stderr.write(usage);
     return resource === undefined ? 1 : 0;
+  }
+
+  if (resource === 'capability' && action === 'list') {
+    print(stdout, await client.listCapabilities());
+    return 0;
+  }
+  if (resource === 'capability' && action === 'show') {
+    const name = positional(args, 2, 'capability-name');
+    const catalog = await client.listCapabilities();
+    const capability = catalog.capabilities.find(
+      (candidate) => candidate.name === name,
+    );
+    if (capability === undefined) {
+      throw new Error(`Capability ${name} was not found.`);
+    }
+    print(stdout, capability);
+    return 0;
   }
 
   if (resource === 'project' && action === 'add') {
@@ -433,12 +454,18 @@ export async function runCli(
     return current.status === 'succeeded' ? 0 : 2;
   }
 
-  if (resource === 'plan' || resource === 'change') {
+  if (resource === 'plan' || resource === 'change' || resource === 'research') {
     const expectedCapability =
-      resource === 'plan' ? 'development_planning' : 'software_change';
+      resource === 'plan'
+        ? 'development_planning'
+        : resource === 'change'
+          ? 'software_change'
+          : 'web_research';
+    const projectId =
+      resource === 'research' ? undefined : requiredOption(args, '--project');
     const submitted = await client.submitTask({
       message: requiredOption(args, '--message'),
-      projectId: requiredOption(args, '--project'),
+      ...(projectId === undefined ? {} : { projectId }),
       idempotencyKey: option(args, '--key') ?? createKey(),
     });
     const review = await client.waitForRun(submitted.runId, {

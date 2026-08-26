@@ -1,18 +1,25 @@
 import { randomUUID } from 'node:crypto';
 
-import { findCapability } from '../../domain/capabilities/capability-registry.ts';
+import {
+  DevelopmentPlanningProposalArgumentsSchema,
+  SoftwareChangeProposalArgumentsSchema,
+  WebResearchProposalArgumentsSchema,
+  findCapability,
+} from '../../domain/capabilities/capability-registry.ts';
 import type { ConversationContextBundle } from '../../domain/conversations/conversation-context.ts';
 import type {
   DecisionResult,
   ExecutionDecision,
 } from '../../domain/model/execution-decision.ts';
 import {
-  ModelProposalJsonSchema,
   ModelProposalSchema,
+  createModelProposalSchema,
   type ModelProposal,
 } from '../../domain/model/model-proposal.ts';
 import { buildModelSystemPrompt } from './model-system-prompt.ts';
 import type { ModelProvider } from '../../ports/model/model-provider.ts';
+import type { CapabilityReference } from '../../domain/capabilities/capability-registry.ts';
+import { z } from 'zod';
 
 export type EvaluateModelDecision = (
   message: string,
@@ -57,26 +64,53 @@ function decide(proposal: ModelProposal): ExecutionDecision {
       kind: 'approval_required',
       reason: 'specialist_capability_invocation',
       capability: proposal.capability,
-      proposedArguments: proposal.arguments,
+      proposedArguments: DevelopmentPlanningProposalArgumentsSchema.parse(
+        proposal.arguments,
+      ),
     };
   }
-
+  if (proposal.capability.name === 'software_change') {
+    return {
+      kind: 'approval_required',
+      reason: 'specialist_capability_invocation',
+      capability: proposal.capability,
+      proposedArguments: SoftwareChangeProposalArgumentsSchema.parse(
+        proposal.arguments,
+      ),
+    };
+  }
   return {
     kind: 'approval_required',
     reason: 'specialist_capability_invocation',
     capability: proposal.capability,
-    proposedArguments: proposal.arguments,
+    proposedArguments: WebResearchProposalArgumentsSchema.parse(
+      proposal.arguments,
+    ),
   };
 }
 
 export function createEvaluateModelDecision(
   provider: ModelProvider,
   createId: () => string = () => `decision_${randomUUID()}`,
+  options: {
+    enabledCapabilities?: readonly CapabilityReference[];
+  } = {},
 ): EvaluateModelDecision {
+  const enabledCapabilities = options.enabledCapabilities ?? [
+    { name: 'development_planning', version: 1 },
+    { name: 'software_change', version: 1 },
+  ];
+  const webResearchEnabled = enabledCapabilities.some(
+    (capability) => capability.name === 'web_research',
+  );
+  const generationSchema = createModelProposalSchema({ webResearchEnabled });
+  const generationJsonSchema = z.toJSONSchema(generationSchema, {
+    target: 'draft-7',
+  });
   return async (message, context) => {
     const generation = await provider.generateStructured({
       purpose: 'orchestration_decision',
-      systemPrompt: buildModelSystemPrompt(),
+      systemPrompt: buildModelSystemPrompt(enabledCapabilities),
       message:
         context === undefined
           ? message
@@ -95,11 +129,12 @@ export function createEvaluateModelDecision(
                     },
                   }),
             }),
-      outputSchema: ModelProposalJsonSchema,
+      outputSchema: generationJsonSchema,
     });
-    const validatedProposal = ModelProposalSchema.safeParse(
-      generation.candidate,
-    );
+    const enabledProposal = generationSchema.safeParse(generation.candidate);
+    const validatedProposal = enabledProposal.success
+      ? ModelProposalSchema.safeParse(enabledProposal.data)
+      : enabledProposal;
 
     if (!validatedProposal.success) {
       return {

@@ -2,10 +2,10 @@
 
 **Status:** Accepted (capability declaration shape, invocation lifecycle,
 selection checks, and resource/delegation budget model)
-**Version:** 0.5
+**Version:** 0.6
 **Last updated:** 25 August 2026
-**Accepted:** 24 August 2026 (owner) — V1 capability selected during
-ratification; future registry design remains open
+**Accepted:** 24 August 2026 (owner); declarative runtime, catalog, and
+`web_research@1` accepted by ADR-0020 on 25 August 2026
 
 ## Purpose
 
@@ -56,7 +56,32 @@ Vera chooses capabilities, not internal implementation nodes.
 
 ## Capability declaration
 
-An eventual declaration should cover at least:
+The implemented runtime declaration is deliberately smaller than the eventual
+operations model. It currently owns:
+
+```text
+identity: name, version, description
+contract: proposal arguments and artifact type/media type
+authority:
+  approval
+  project-context requirement
+  network access
+  data classes
+  side-effect classes
+  credential mode
+  capability-specific hard ceilings
+runtime: enabled state, destination, readiness, execution
+```
+
+The owner-visible catalog exposes these non-secret fields through
+`GET /v1/capabilities`. Only enabled declarations are supplied to the
+orchestration model and its structured-output schema. Credentials and native
+provider payloads never enter the catalog. A disabled declaration exposes its
+maximum authority envelope. An enabled declaration narrows that envelope to
+the selected runtime's effective authority; approval freezes that effective
+value and execution fails closed if the runtime later disagrees with it.
+
+Later declaration versions may cover:
 
 ```text
 identity
@@ -94,8 +119,9 @@ operations
   observability_links
 ```
 
-The exact schema is not yet accepted. The semantic categories are required for
-safe selection and execution.
+Those future fields are not implied authority. They require explicit contracts
+and enforcement before an adapter may rely on them. See
+[ADR-0020](decisions/0020-use-a-declarative-capability-runtime-and-approval-gated-web-research.md).
 
 ## Capability invocation lifecycle
 
@@ -139,6 +165,32 @@ Vera's code must then verify:
 - a safe idempotency identity exists for side effects.
 
 The model does not invent a capability, permission, credential, or contract.
+
+### Runtime resolution
+
+```mermaid
+flowchart LR
+    DECL["Versioned declaration"] --> ENABLED{"Adapter enabled?"}
+    ENABLED -->|"no"| CATALOG["Catalog: disabled"]
+    ENABLED -->|"yes"| MODEL["Model-visible proposal contract"]
+    MODEL --> POLICY["Validate arguments + authority"]
+    POLICY --> APPROVAL["Freeze destination + authority + exact input"]
+    APPROVAL --> RESOLVE["Resolve frozen runtime"]
+    RESOLVE --> EXECUTE["Execute through generic capability port"]
+    EXECUTE --> ARTIFACT["Typed durable artifact"]
+```
+
+The application lifecycle does not branch on planning, code change, research,
+or provider names. Capability-specific argument parsing, identity validation,
+and result normalization live in runtime registrations. The lifecycle owns the
+shared invariants: durable decision and approval, exact destination resolution,
+budget, cancellation, invocation identity, events, artifact idempotency, and
+terminal projection.
+
+Declarations remain visible when disabled so owners can inspect supported
+contracts and missing runtime configuration. A disabled declaration is absent
+from the model prompt and proposal schema, so model output cannot make it
+available.
 
 ### Proposal arguments are not invocation input
 
@@ -298,7 +350,7 @@ run.
 - Capabilities must not read Vera's private database tables as their API.
 - Removal requires handling tasks that still reference an older version.
 
-## V1 capability requirement
+## Original V1 capability requirement
 
 V1 needs one real capability, not a catalog of hypothetical integrations. The
 selected capability is the provider-neutral `development_planning@1`, with
@@ -330,6 +382,48 @@ work but cannot redirect an already approved invocation.
 See [ADR-0011](decisions/0011-use-generic-project-sources-and-bounded-context-snapshots.md)
 and [ADR-0012](decisions/0012-late-bind-specialist-platforms-behind-capability-adapters.md)
 and the [V1 Definition](v1-definition.md#required-first-journey).
+
+## Implemented web-research capability
+
+`web_research@1` is the first capability that neither requires nor accepts a
+project. It receives only the exact approved research objective and returns a
+versioned `research_report` artifact with readable Markdown, deduplicated
+HTTP(S) sources, and an ISO-8601 search time.
+
+```mermaid
+sequenceDiagram
+    actor Owner
+    participant Vera
+    participant Registry as "Capability runtime"
+    participant Provider as "Research adapter"
+    participant Web as "Public web"
+    participant Store as "Artifact store"
+
+    Owner->>Vera: Current source-backed question
+    Vera->>Registry: Validate web_research@1 proposal
+    Vera-->>Owner: Disclose objective, provider, network authority, limits
+    Owner->>Vera: Approve exact invocation
+    Vera->>Registry: Resolve frozen destination
+    Registry->>Provider: Objective + hard ceilings
+    Provider->>Web: Bounded public-web search
+    Web-->>Provider: Public sources
+    Provider-->>Registry: Report + cited sources + usage
+    Registry->>Vera: Schema-valid research artifact draft
+    Vera->>Store: Idempotent artifact by invocation ID
+    Vera-->>Owner: Durable research_report reference
+```
+
+The live `openai_web_search` adapter uses OpenAI's Responses web-search tool and
+fails closed unless the response contains an observed search call, report text,
+and at least one source. Its API key is server-managed configuration. The
+adapter does not receive project context, conversation history beyond the
+approved current objective, long-term memory, or unrelated credentials.
+
+Research adapter selection is independent of the orchestration model. Ollama,
+OpenAI, Gemini, or deterministic orchestration may propose research only when a
+research runtime is enabled. Research is disabled by default; there is no
+automatic fallback between providers or trust boundaries. The deterministic
+adapter is conformance evidence, not public-web research.
 
 ## Implemented software-change capability
 

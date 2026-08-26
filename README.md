@@ -19,10 +19,12 @@ repeatable test boundary. Provider-native payloads, credentials, and schema
 dialects stay behind adapters and do not enter Vera's domain contracts.
 
 `POST /v1/model-decisions` accepts a natural-language message. A model may
-propose a direct response, `development_planning@1`, or `software_change@1`;
-Vera's code validates the closed, versioned proposal and routing arguments,
-then returns a direct response, an approval requirement, or a rejection. It
-never treats model output as authorization.
+propose a direct response or one of the capabilities enabled in the runtime
+catalog. The implemented declarations are `development_planning@1`,
+`software_change@1`, and project-independent `web_research@1`; Vera's code
+validates the closed, versioned proposal and routing arguments, then returns a
+direct response, an approval requirement, or a rejection. A disabled capability
+is absent from the model contract. Model output is never authorization.
 
 The owner-facing journey registers a generic project, creates a conversation,
 and posts project-linked messages. Vera freezes bounded prior complete turns
@@ -43,7 +45,12 @@ resource can then stage that artifact on a deterministic branch in a durable
 managed Git worktree while leaving the owner's active checkout unchanged. It
 does not commit, push, or open a pull request. Both capability results are
 stored as versioned artifacts keyed by invocation identity. Task,
-conversation, project, and artifact idempotency are principal-scoped.
+conversation, project, and artifact idempotency are principal-scoped. The same
+generic runtime can execute an explicitly approved public-web research request
+without a synthetic project. The initial live adapter uses OpenAI Responses web
+search and stores a source-backed `research_report` artifact; research selection
+is independent of the orchestration model and disabled by default unless
+configured.
 Every terminal task also records a recoverable pending Vera reply before that
 reply is appended to the conversation, so a crash cannot silently remove one
 side of the dialogue.
@@ -83,6 +90,9 @@ The implementation boundary and first source layout are accepted in
 The growing API's nested role-first module map and enforced dependency direction
 are accepted in
 [ADR-0019](docs/decisions/0019-organize-the-api-as-an-inward-dependent-modular-monolith.md).
+The declarative capability runtime, owner-visible catalog, authority envelope,
+and project-independent web-research contract are accepted in
+[ADR-0020](docs/decisions/0020-use-a-declarative-capability-runtime-and-approval-gated-web-research.md).
 Broader long-term-memory and retention policy remain open on purpose; the V1
 operational storage products do not.
 
@@ -158,7 +168,9 @@ MongoDB lease exclusion, Redis scratchpad reconstruction, artifact and event
 persistence, controlled managed-worktree application, project-mutation lease
 exclusion, durable owner/Vera dialogue, survival of a forced process
 termination at the approval boundary, and retrieval after a later graceful
-restart. It then removes its own database, Redis scratchpads, managed
+restart. The same compiled journey discovers `web_research@1`, approves its
+project-independent authority, retrieves its sourced artifact, and verifies it
+again after restart. It then removes its own database, Redis scratchpads, managed
 worktrees, and temporary Git fixture.
 
 Required CI runs the same compiled journey against ephemeral MongoDB 8.2 and
@@ -278,6 +290,17 @@ defaults to `gemini-2.5-flash`; both model names remain configurable because
 account access and provider aliases change. `MODEL_MAX_OUTPUT_TOKENS` is sent as
 the provider output ceiling. `GET /ready` verifies the configured credentials
 and model without running inference.
+
+Capability adapters are selected independently. `VERA_RESEARCH_ADAPTER`
+accepts `disabled` (the default), `openai_web_search`, or the non-production
+`deterministic_research` adapter. The live adapter reads
+`RESEARCH_OPENAI_API_KEY`, falling back to `OPENAI_API_KEY`, plus optional
+`RESEARCH_OPENAI_BASE_URL`, `RESEARCH_OPENAI_MODEL`, and
+`RESEARCH_SEARCH_CONTEXT_SIZE`. Research defaults to the web-search-capable
+`gpt-5.4-mini`, independently of the orchestration-model default. This permits
+an Ollama orchestration profile to delegate research to OpenAI without changing
+Vera's brain. The OpenAI profile template enables this adapter explicitly. No
+adapter fallback occurs.
 
 Vera never falls back automatically between providers. An Ollama failure will
 not silently send the request to a cloud service, and a failed cloud request
@@ -399,6 +422,23 @@ opening a pull request remains a separate owner action. The `plan` and `change`
 commands refuse to auto-approve a capability other than the one named by the
 command.
 
+Inspect the complete capability catalog, including disabled declarations and
+their authority, then run project-independent research:
+
+```bash
+npm run cli -- capability list
+npm run cli -- capability show web_research
+
+npm run cli -- research \
+  --message "Compare current approaches to durable AI task execution and cite primary sources."
+```
+
+The research command submits no project identity. Before confirmation it prints
+the exact objective, adapter destination, third-party disclosure, public-web
+read authority, and search-call ceiling. On success it prints the durable
+`research_report` artifact and sources. Use `--approve` only when you intend to
+approve that exact disclosure.
+
 For a multi-turn conversation, use `chat`. The first command creates a
 conversation and returns its ID with Vera's durable reply:
 
@@ -429,10 +469,11 @@ npm run cli -- artifact show artifact_...
 ```
 
 `/health` reports only that the Vera process is alive. `/ready` checks the
-configured provider and model, MongoDB, Redis, lifecycle recovery, and the
-configured planning and software-change specialists. For Codex this verifies
-the CLI, non-interactive execution grammar, and login status. The readiness
-checks do not run inference or spend inference tokens.
+configured provider and model, MongoDB, Redis, lifecycle recovery, and every
+enabled capability runtime. For Codex this verifies the CLI, non-interactive
+execution grammar, and login status. For OpenAI web research it checks exact
+model access but does not perform a search. The readiness checks do not run
+orchestration inference or web-search calls.
 
 The initial submission normally returns in `deciding`; the worker later moves
 it to `awaiting_approval`. Inspect
@@ -476,6 +517,7 @@ Provider failures are intentionally distinguishable:
 | `scratchpad_unavailable` | 503 | Redis is unavailable. |
 | `planning_capability_unavailable` | 503 | The configured planning specialist is unavailable or not authenticated. |
 | `software_change_capability_unavailable` | 503 | The configured software-change specialist is unavailable or not authenticated. |
+| `capability_unavailable` | 503 | An enabled generic capability runtime is unavailable; inspect the response dependency. |
 
 Client errors are sanitized. The server log records the internal classified
 cause and upstream status without returning provider details to the client.
@@ -485,7 +527,9 @@ the deterministic and in-memory adapters:
 
 ```bash
 VERA_MODEL_PROVIDER=deterministic VERA_PLANNING_ADAPTER=structured_model \
-  VERA_CHANGE_ADAPTER=deterministic_change VERA_STORAGE_MODE=memory npm start
+  VERA_CHANGE_ADAPTER=deterministic_change \
+  VERA_RESEARCH_ADAPTER=deterministic_research \
+  VERA_STORAGE_MODE=memory npm start
 ```
 
 Memory mode is not a persistence fallback and loses all work when the process

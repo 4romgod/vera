@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CapabilityCatalogSchema } from '../../../domain/capabilities/capability-registry.ts';
 
 import {
   ApprovalSchema,
@@ -12,6 +13,7 @@ import {
 import { DecisionResultSchema } from '../../../domain/model/execution-decision.ts';
 import {
   ImplementationPlanArtifactSchema,
+  ResearchReportArtifactSchema,
   SoftwareChangeArtifactSchema,
 } from '../../../domain/artifacts/artifact.ts';
 import {
@@ -208,6 +210,7 @@ export const ConversationsResponseSchema = z
 export const ArtifactResponseSchema = z.discriminatedUnion('type', [
   ImplementationPlanArtifactSchema.omit({ principalId: true }),
   SoftwareChangeArtifactSchema.omit({ principalId: true }),
+  ResearchReportArtifactSchema.omit({ principalId: true }),
 ]);
 
 export const EvaluateRequestJsonSchema = z.toJSONSchema(EvaluateRequestSchema, {
@@ -293,6 +296,11 @@ export const ArtifactResponseJsonSchema = z.toJSONSchema(
   { target: 'draft-7' },
 );
 
+export const CapabilityCatalogJsonSchema = z.toJSONSchema(
+  CapabilityCatalogSchema,
+  { target: 'draft-7' },
+);
+
 const ModelIdentitySchema = z
   .object({
     name: z.string(),
@@ -331,6 +339,7 @@ export const NotReadyResponseSchema = z
           'scratchpad_unavailable',
           'planning_capability_unavailable',
           'software_change_capability_unavailable',
+          'capability_unavailable',
           'model_not_found',
           'provider_request_rejected',
           'provider_response_invalid',

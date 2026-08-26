@@ -22,11 +22,16 @@ export async function requestProvider(options: {
   init: RequestInit;
   timeoutMs: number;
   fetch: typeof globalThis.fetch;
+  signal?: AbortSignal;
 }): Promise<Response> {
   try {
+    const timeoutSignal = AbortSignal.timeout(options.timeoutMs);
     return await options.fetch(options.url, {
       ...options.init,
-      signal: AbortSignal.timeout(options.timeoutMs),
+      signal:
+        options.signal === undefined
+          ? timeoutSignal
+          : AbortSignal.any([options.signal, timeoutSignal]),
     });
   } catch (error) {
     if (isProviderTimeout(error)) {

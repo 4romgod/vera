@@ -176,6 +176,59 @@ void describe('model decision boundary', () => {
     });
   });
 
+  void it('exposes and accepts web research only when its runtime is enabled', async () => {
+    const candidate = {
+      schemaVersion: 1,
+      kind: 'invoke_capability',
+      decisionSummary: 'Current public evidence is required.',
+      capability: { name: 'web_research', version: 1 },
+      arguments: { objective: 'Research current durable execution patterns.' },
+    };
+    const disabledProvider = new FakeModelProvider(candidate);
+    const disabled =
+      await createEvaluateModelDecision(disabledProvider)('research this');
+    assert.equal(disabled.decision.kind, 'rejected');
+    assert.equal(disabled.decision.code, 'invalid_model_output');
+    assert.equal(
+      JSON.stringify(disabledProvider.inputs[0]?.outputSchema).includes(
+        'web_research',
+      ),
+      false,
+    );
+
+    const enabledProvider = new FakeModelProvider(candidate);
+    const enabled = await createEvaluateModelDecision(
+      enabledProvider,
+      () => 'decision_research',
+      {
+        enabledCapabilities: [
+          { name: 'development_planning', version: 1 },
+          { name: 'software_change', version: 1 },
+          { name: 'web_research', version: 1 },
+        ],
+      },
+    )('research this');
+
+    assert.deepEqual(enabled.decision, {
+      kind: 'approval_required',
+      reason: 'specialist_capability_invocation',
+      capability: { name: 'web_research', version: 1 },
+      proposedArguments: {
+        objective: 'Research current durable execution patterns.',
+      },
+    });
+    assert.match(
+      enabledProvider.inputs[0]?.systemPrompt ?? '',
+      /web_research/u,
+    );
+    assert.equal(
+      JSON.stringify(enabledProvider.inputs[0]?.outputSchema).includes(
+        'web_research',
+      ),
+      true,
+    );
+  });
+
   void it('rejects capabilities outside the model-visible contract', async () => {
     const result = await evaluator({
       schemaVersion: 1,

@@ -167,6 +167,34 @@ void describe('HTTP API', () => {
     });
   });
 
+  void it('reports an unavailable generic capability without treating it as storage', async () => {
+    const provider = new FakeModelProvider({});
+    const app = buildApp({
+      evaluateModelDecision: createEvaluateModelDecision(provider),
+      provider,
+      readinessChecks: [
+        {
+          name: 'web_research_capability',
+          check: () => Promise.reject(new Error('Research model unavailable')),
+        },
+      ],
+    });
+    apps.push(app);
+    const response = await app.inject({ method: 'GET', url: '/ready' });
+
+    assert.equal(response.statusCode, 503);
+    assert.deepEqual(response.json(), {
+      status: 'not_ready',
+      service: 'vera-api',
+      model: { name: 'fake', model: 'fake-v1' },
+      error: {
+        code: 'capability_unavailable',
+        message: 'The web_research_capability dependency is unavailable.',
+        dependency: 'web_research_capability',
+      },
+    });
+  });
+
   void it('evaluates a request end to end through the HTTP boundary', async () => {
     const app = appFor({
       schemaVersion: 1,
