@@ -342,23 +342,18 @@ outcome from the actual managed Git state. An ambiguous partial effect becomes
 Durable information that may be useful beyond the immediate run.
 
 Memory is not equivalent to a transcript, vector embedding, or database table.
-Potential memory classes include user-stated facts, preferences, project
-knowledge, episodic summaries, capability knowledge, and model-derived
-inferences.
+The implemented classes are owner-stated facts, preferences, instructions, and
+project knowledge. Vera does not automatically promote conversations or model
+inferences into memory.
 
-A memory record should eventually include:
-
-- content and type;
-- subject and scope;
-- provenance;
-- whether it was stated, observed, or inferred;
-- confidence where inference is involved;
-- creation and review timestamps;
-- sensitivity and access policy;
-- retention and deletion behaviour.
-
-V1 may postpone broad long-term memory, but it must not introduce an
-unstructured store that later makes provenance and deletion impossible.
+A memory record contains stable identity, revision, kind, subject, content,
+global or exact-project scope, owner-message provenance, sensitivity, active or
+forgotten status, timestamps, and immutable prior revisions. Correction keeps
+the stable identity and appends history; forgetting creates a tombstone and
+excludes the record from model context. Every conversational memory action is
+an exact, approval-gated `memory_management@1` capability action; trusted owner
+clients may inspect the same records through read-only API projections. See
+ADR-0025.
 
 ### Model context
 
@@ -501,8 +496,10 @@ and do not block use of the accepted vocabulary.
 - Which event classes may contain sensitive or provider-specific data?
 - Beyond V1, should plans become first-class durable entities? V1 stores its
   implementation plan as a versioned artifact attached to an invocation.
-- Which memory types, if any, are allowed after V1? Broad personal memory is
-  excluded from V1.
+- What physical-erasure and retention policy is required beyond the current
+  auditable forget tombstone?
+- Under what separately approved policy may a third-party orchestration
+  provider receive long-term memory?
 - When should capability invocation create a child task?
 - What guarantees are required for event ordering and delivery?
 - Which identifiers should clients persist and which should remain internal?

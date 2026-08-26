@@ -27,6 +27,10 @@ export type CapabilityArtifactDraft =
   | Pick<
       Extract<Artifact, { type: 'personal_reminder_result' }>,
       'type' | 'mediaType' | 'content'
+    >
+  | Pick<
+      Extract<Artifact, { type: 'memory_result' }>,
+      'type' | 'mediaType' | 'content'
     >;
 
 export type CapabilityRuntime = {
@@ -45,6 +49,11 @@ export type CapabilityRuntime = {
       startedAt: string;
       recovery: boolean;
       arguments: Record<string, unknown>;
+      source?: {
+        taskId: string;
+        conversationId?: string;
+        messageId?: string;
+      };
       project?: { id: string; displayName: string };
       context?: ProjectContextBundle;
       artifacts?: Artifact[];

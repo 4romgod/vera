@@ -49,6 +49,8 @@ import { VeraInboxReminderDelivery } from '../adapters/outbound/notifications/ve
 import { createReminderService } from '../application/reminders/reminder-service.ts';
 import { createNotificationService } from '../application/reminders/notification-service.ts';
 import { createReminderWorker } from '../application/reminders/reminder-worker.ts';
+import { LocalMemoryActionExecutor } from '../adapters/outbound/integrations/memories/local-memory-action-executor.ts';
+import { createMemoryService } from '../application/memories/memory-service.ts';
 
 export function createApp(
   config: AppConfig,
@@ -131,16 +133,19 @@ export function createApp(
   const webResearch = createWebResearchCapabilityRegistry(config.research);
   const personalTaskExecutor = new LocalPersonalTaskActionExecutor(resources);
   const reminderExecutor = new LocalReminderActionExecutor(resources);
+  const memoryExecutor = new LocalMemoryActionExecutor(resources);
   const capabilities = createCapabilityRuntimeRegistry({
     developmentPlanning,
     softwareChange,
     webResearch,
     personalTasks: personalTaskExecutor,
     reminders: reminderExecutor,
+    memories: memoryExecutor,
   });
   const personalTaskService = createPersonalTaskService({ store: resources });
   const reminderService = createReminderService({ store: resources });
   const notificationService = createNotificationService({ store: resources });
+  const memoryService = createMemoryService({ store: resources });
   const capabilityService = createCapabilityService({ registry: capabilities });
   const evaluateModelDecision = createEvaluateModelDecision(
     provider,
@@ -177,6 +182,7 @@ export function createApp(
     resources,
     contextAssembler,
     conversationContextLimits: config.conversationContext,
+    memoryContext: { enabled: provider.dataBoundary === 'owner_controlled' },
     ownerTimeZone: config.reminders.ownerTimeZone,
     executionMode: 'worker',
     observer: lifecycleObserver,
@@ -257,6 +263,7 @@ export function createApp(
     personalTasks: personalTaskService,
     reminders: reminderService,
     notifications: notificationService,
+    memories: memoryService,
     changeApplications: {
       ...changeApplicationLifecycle,
       wake: () => changeApplicationWorker.wake(),

@@ -32,12 +32,22 @@ import {
   reminderMutationOrderKey,
   type ReminderListStatus,
 } from '../../../../ports/persistence/reminder-store.ts';
+import {
+  MEMORY_HISTORY_LIMIT,
+  MemoryRecordSchema,
+  type MemoryRecord,
+} from '../../../../domain/memories/memory.ts';
+import {
+  memoryMutationOrderKey,
+  type MemoryListOptions,
+} from '../../../../ports/persistence/memory-store.ts';
 
 const PROJECTS = 'projects';
 const CONVERSATIONS = 'conversations';
 const ARTIFACTS = 'artifacts';
 const PERSONAL_TASKS = 'personal_tasks';
 const REMINDERS = 'reminders';
+const MEMORIES = 'memories';
 
 export type MongoDbOwnerResourceStoreOptions = {
   uri: string;
@@ -54,6 +64,7 @@ export class MongoDbOwnerResourceStore implements OwnerResourceStore {
   private readonly artifacts: Collection;
   private readonly personalTasks: Collection;
   private readonly reminders: Collection;
+  private readonly memories: Collection;
   private connection: Promise<void> | undefined;
 
   public constructor(options: MongoDbOwnerResourceStoreOptions) {
@@ -70,6 +81,7 @@ export class MongoDbOwnerResourceStore implements OwnerResourceStore {
     this.artifacts = this.database.collection(ARTIFACTS);
     this.personalTasks = this.database.collection(PERSONAL_TASKS);
     this.reminders = this.database.collection(REMINDERS);
+    this.memories = this.database.collection(MEMORIES);
   }
 
   public async createProject(
@@ -741,6 +753,249 @@ export class MongoDbOwnerResourceStore implements OwnerResourceStore {
     });
   }
 
+  public async createMemory(memory: MemoryRecord): Promise<MemoryRecord> {
+    await this.ensureConnected();
+    const validated = MemoryRecordSchema.parse(memory);
+    await this.memories.updateOne(
+      {
+        principalId: validated.principalId,
+        creationInvocationId: validated.creationInvocationId,
+      },
+      { $setOnInsert: validated },
+      { upsert: true },
+    );
+    const stored = await this.findMemoryByInvocation(
+      validated.principalId,
+      validated.creationInvocationId,
+    );
+    if (stored === null) {
+      throw new Error('MongoDB memory create did not return a memory.');
+    }
+    return stored;
+  }
+
+  public async correctMemory(input: {
+    principalId: string;
+    memoryId: string;
+    replacement: Pick<
+      MemoryRecord,
+      'kind' | 'subject' | 'content' | 'scope' | 'sensitivity' | 'provenance'
+    >;
+    invocationId: string;
+    mutationAt: string;
+    recovery: boolean;
+  }): Promise<MemoryRecord | null> {
+    await this.ensureConnected();
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const document = await this.memories.findOne({
+        principalId: input.principalId,
+        id: input.memoryId,
+      });
+      if (document === null) return null;
+      const current = this.parseMemory(document);
+      if (current.lastMutation.invocationId === input.invocationId) {
+        return current;
+      }
+      const requestedOrderKey = memoryMutationOrderKey(
+        input.mutationAt,
+        input.invocationId,
+      );
+      if (input.recovery && current.lastMutation.orderKey > requestedOrderKey) {
+        return current;
+      }
+      if (current.status !== 'active') {
+        throw new Error('Only an active memory can be corrected.');
+      }
+      if (current.history.length >= MEMORY_HISTORY_LIMIT) {
+        throw new Error(
+          'Memory revision history limit reached; forget it and create a replacement memory.',
+        );
+      }
+      const mutationAt =
+        current.updatedAt >= input.mutationAt
+          ? new Date(Date.parse(current.updatedAt) + 1).toISOString()
+          : input.mutationAt;
+      const updated = await this.memories.findOneAndUpdate(
+        {
+          principalId: input.principalId,
+          id: input.memoryId,
+          status: 'active',
+          revision: current.revision,
+          'lastMutation.orderKey': current.lastMutation.orderKey,
+        },
+        {
+          $push: {
+            history: {
+              revision: current.revision,
+              kind: current.kind,
+              subject: current.subject,
+              content: current.content,
+              scope: current.scope,
+              sensitivity: current.sensitivity,
+              provenance: current.provenance,
+              supersededAt: mutationAt,
+            },
+          },
+          $set: {
+            revision: current.revision + 1,
+            kind: input.replacement.kind,
+            subject: input.replacement.subject,
+            content: input.replacement.content,
+            scope: input.replacement.scope,
+            sensitivity: input.replacement.sensitivity,
+            provenance: input.replacement.provenance,
+            updatedAt: mutationAt,
+            lastMutation: {
+              invocationId: input.invocationId,
+              orderKey: memoryMutationOrderKey(mutationAt, input.invocationId),
+            },
+          },
+        } as Document,
+        { returnDocument: 'after' },
+      );
+      if (updated !== null) return this.parseMemory(updated);
+    }
+    throw new Error('Memory changed too frequently to apply correction.');
+  }
+
+  public async forgetMemory(input: {
+    principalId: string;
+    memoryId: string;
+    invocationId: string;
+    mutationAt: string;
+    recovery: boolean;
+  }): Promise<MemoryRecord | null> {
+    await this.ensureConnected();
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const document = await this.memories.findOne({
+        principalId: input.principalId,
+        id: input.memoryId,
+      });
+      if (document === null) return null;
+      const current = this.parseMemory(document);
+      if (current.lastMutation.invocationId === input.invocationId) {
+        return current;
+      }
+      const requestedOrderKey = memoryMutationOrderKey(
+        input.mutationAt,
+        input.invocationId,
+      );
+      if (input.recovery && current.lastMutation.orderKey > requestedOrderKey) {
+        return current;
+      }
+      if (current.status === 'forgotten') return current;
+      const mutationAt =
+        current.updatedAt >= input.mutationAt
+          ? new Date(Date.parse(current.updatedAt) + 1).toISOString()
+          : input.mutationAt;
+      const updated = await this.memories.findOneAndUpdate(
+        {
+          principalId: input.principalId,
+          id: input.memoryId,
+          status: 'active',
+          'lastMutation.orderKey': current.lastMutation.orderKey,
+        },
+        {
+          $set: {
+            status: 'forgotten',
+            forgottenAt: mutationAt,
+            updatedAt: mutationAt,
+            lastMutation: {
+              invocationId: input.invocationId,
+              orderKey: memoryMutationOrderKey(mutationAt, input.invocationId),
+            },
+          },
+        },
+        { returnDocument: 'after' },
+      );
+      if (updated !== null) return this.parseMemory(updated);
+    }
+    throw new Error('Memory changed too frequently to forget.');
+  }
+
+  public async findMemoryById(
+    principalId: string,
+    memoryId: string,
+  ): Promise<MemoryRecord | null> {
+    await this.ensureConnected();
+    const document = await this.memories.findOne({ principalId, id: memoryId });
+    return document === null ? null : this.parseMemory(document);
+  }
+
+  public async findMemoryByInvocation(
+    principalId: string,
+    invocationId: string,
+  ): Promise<MemoryRecord | null> {
+    await this.ensureConnected();
+    const document = await this.memories.findOne({
+      principalId,
+      $or: [
+        { creationInvocationId: invocationId },
+        { 'lastMutation.invocationId': invocationId },
+      ],
+    });
+    return document === null ? null : this.parseMemory(document);
+  }
+
+  public async listMemories(
+    principalId: string,
+    options: MemoryListOptions,
+  ): Promise<MemoryRecord[]> {
+    await this.ensureConnected();
+    const documents = await this.memories
+      .find({
+        principalId,
+        ...(options.status === 'all' ? {} : { status: 'active' }),
+        ...(options.kind === undefined ? {} : { kind: options.kind }),
+        ...(options.scope === undefined
+          ? {}
+          : options.scope.kind === 'global'
+            ? { 'scope.kind': 'global' }
+            : {
+                'scope.kind': 'project',
+                'scope.projectId': options.scope.projectId,
+              }),
+      })
+      .sort({ updatedAt: -1, id: 1 })
+      .limit(options.limit)
+      .toArray();
+    return documents.map((document) => this.parseMemory(document));
+  }
+
+  public async countActiveMemoriesOutsideScope(
+    principalId: string,
+    projectId?: string,
+  ): Promise<number> {
+    await this.ensureConnected();
+    return this.memories.countDocuments({
+      principalId,
+      status: 'active',
+      'scope.kind': 'project',
+      ...(projectId === undefined
+        ? {}
+        : { 'scope.projectId': { $ne: projectId } }),
+    });
+  }
+
+  public async countActiveMemoriesInScope(
+    principalId: string,
+    projectId?: string,
+  ): Promise<number> {
+    await this.ensureConnected();
+    return this.memories.countDocuments({
+      principalId,
+      status: 'active',
+      ...(projectId === undefined
+        ? { 'scope.kind': 'global' }
+        : {
+            $or: [
+              { 'scope.kind': 'global' },
+              { 'scope.kind': 'project', 'scope.projectId': projectId },
+            ],
+          }),
+    });
+  }
+
   public async checkReadiness(): Promise<void> {
     await this.ensureConnected();
     await this.database.command({ ping: 1 });
@@ -800,6 +1055,16 @@ export class MongoDbOwnerResourceStore implements OwnerResourceStore {
         scheduledFor: 1,
         'claim.expiresAt': 1,
       }),
+      this.memories.createIndex({ id: 1 }, { unique: true }),
+      this.memories.createIndex(
+        { principalId: 1, creationInvocationId: 1 },
+        { unique: true },
+      ),
+      this.memories.createIndex({
+        principalId: 1,
+        status: 1,
+        updatedAt: -1,
+      }),
       this.reminders.createIndex({
         principalId: 1,
         'notification.deliveredAt': 1,
@@ -820,6 +1085,10 @@ export class MongoDbOwnerResourceStore implements OwnerResourceStore {
 
   private parseReminder(document: Document): Reminder {
     return ReminderSchema.parse(this.withoutId(document));
+  }
+
+  private parseMemory(document: Document): MemoryRecord {
+    return MemoryRecordSchema.parse(this.withoutId(document));
   }
 
   private parseProject(document: Document): Project {

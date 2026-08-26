@@ -11,7 +11,8 @@ TypeScript/Node.js npm-workspaces modular monolith in `apps/api`, using Fastify
 for HTTP and Zod for runtime and JSON Schema contracts. It implements a durable
 request-to-decision-to-approval-to-capability lifecycle, fixed and
 evidence-adaptive bounded goal execution, an asynchronous worker, a
-browser-neutral TypeScript client, and an owner CLI.
+browser-neutral TypeScript client, an owner CLI, a universal Expo React Native
+frontend, and explicit owner-governed long-term memory.
 
 The orchestration brain is selected at startup through a provider registry.
 Ollama remains the default owner-controlled provider; OpenAI and Gemini are
@@ -131,9 +132,10 @@ mutation lease, ordered events, and recovery rules; see
 The accepted V1 journey, including an exact owner-reviewed third-party Codex
 disclosure and real artifact, was demonstrated on 25 August 2026. Additional
 cloud-brain profiles remain optional conformance targets, not V1 blockers or
-modules specific to one project. V1's authenticated perimeter is the trusted Mac Mini account and SSH
-session around a code-enforced loopback listener; application authentication is
-required before broader exposure.
+modules specific to one project. V1's owner perimeter is the trusted Mac Mini
+account and SSH session around a code-enforced loopback listener, optionally
+extended to the owner's private devices through Tailscale Serve. Application
+authentication remains required before shared or multi-user exposure.
 
 As of 24 August 2026, the Product Charter, the Domain Model's core
 vocabulary, the System Architecture's logical shape, the Capability Model's
@@ -159,8 +161,15 @@ accepted in
 [ADR-0023](docs/decisions/0023-deliver-durable-reminders-through-a-vera-owned-notification-inbox.md).
 Bounded evidence-adaptive orchestration is accepted in
 [ADR-0024](docs/decisions/0024-adapt-bounded-goals-from-validated-capability-evidence.md).
-Broader long-term-memory and retention policy remain open on purpose; the V1
-operational storage products do not.
+Explicit, versioned owner-governed memory is accepted in
+[ADR-0025](docs/decisions/0025-use-explicit-versioned-owner-governed-memory.md),
+and the universal frontend's thin-client boundary is accepted in
+[ADR-0026](docs/decisions/0026-use-one-expo-react-native-frontend-for-web-and-mobile.md).
+Private physical-device ingress through Tailscale Serve is accepted in
+[ADR-0027](docs/decisions/0027-use-tailscale-serve-for-private-physical-device-access.md).
+Explicit owner-governed long-term memory is now implemented through ADR-0025.
+Physical erasure, retention beyond tombstones, and third-party-provider memory
+disclosure remain deliberately open.
 
 The repository is currently the durable source of truth for the project. Chat
 history and external source material may inform the project, but decisions only
@@ -210,6 +219,9 @@ Requirements:
   adapter selections independently for conformance work.
 - MongoDB on `127.0.0.1:27017` and Redis on `127.0.0.1:6379` for persistent
   operation. Docker Compose configuration is included.
+- Optional physical-phone development requires Tailscale on the Mac Mini and
+  phone. The phone uses the universal frontend through its browser; no Expo
+  tunnel or public development endpoint is required.
 
 Install dependencies and run the full deterministic quality gate:
 
@@ -218,6 +230,42 @@ npm install
 npm run check
 npm run build
 ```
+
+Start the API and universal frontend for web in two terminals:
+
+```bash
+VERA_PROFILE=ollama npm run dev
+npm run dev:web
+```
+
+Open the URL printed by Expo (normally `http://localhost:8081`). The frontend
+uses the public client/API contract
+for conversations, exact approvals, cancellation, memory inspection and
+correction, tasks, reminders, and durable notifications. It contains no model
+keys, credentials, orchestration policy, or execution authority. The web and
+iOS simulator defaults use `http://127.0.0.1:4310`; Android emulator builds use
+`http://10.0.2.2:4310`. Override either with
+`EXPO_PUBLIC_VERA_API_URL=http://127.0.0.1:4311 npm run dev:web` when testing an
+intentional alternate local listener.
+
+Run `npm run dev:frontend` to open Expo's interactive launcher for web, iOS, or
+Android simulators.
+
+To use a physical phone already enrolled in the same private tailnet as the Mac
+Mini, keep the API running above and start the private phone frontend:
+
+```bash
+npm run dev:phone
+```
+
+The command discovers the Mac Mini's MagicDNS HTTPS URL, configures Tailscale
+Serve with the frontend at `/` and the loopback API at `/api`, verifies the API,
+and starts Expo web on loopback. Open the printed private HTTPS URL in the
+phone's browser. Both the page and API then share one tailnet-only origin, so no
+remote browser origin needs to be added to CORS. Check the routes with
+`npm run tailscale:status`; configure them without starting Expo with
+`npm run tailscale:serve`, and remove them with
+`npm run tailscale:serve:off`. Never use Tailscale Funnel for Vera.
 
 With local MongoDB and Redis running, execute the repeatable compiled
 persistence journey:
@@ -246,9 +294,11 @@ inbox notification, acknowledges it, and retrieves it through the compiled
 client and CLI. The gate additionally runs an adaptive research-to-reminder
 goal, kills the API between the two approval boundaries, and verifies its
 continuation evidence, final response, artifact lineage, budgets, and reminder
-after restart. It then removes its own database, Redis
-scratchpads, managed
-worktrees, and temporary Git fixture.
+after restart. The gate also remembers an owner preference, verifies that a new
+conversation freezes it into owner-controlled model context, restarts, corrects
+the same stable memory with revision history, forgets it, and checks both the
+compiled client and CLI. It then removes its own database, Redis scratchpads,
+managed worktrees, and temporary Git fixture.
 
 Required CI runs the same compiled journey against ephemeral MongoDB 8.2 and
 Redis 8 service containers in the existing Linux job. CI builds once and calls
@@ -688,8 +738,8 @@ Memory mode is not a persistence fallback and loses all work when the process
 stops. Persistent mode is the default.
 
 V1 authenticates the owner at the deployment perimeter: Vera runs in the
-owner's Mac Mini session and remote access uses authenticated SSH to the
-loopback listener. The configuration rejects non-loopback `HOST` values and
-maps admitted requests to `owner_v1`. This is not application-layer caller
-authentication; that remains mandatory before any LAN, public, shared-host, or
-multi-user exposure.
+owner's Mac Mini session, while remote owner devices use authenticated SSH or
+private Tailscale Serve ingress to the loopback listener. The configuration
+rejects non-loopback `HOST` values and maps admitted requests to `owner_v1`.
+This is not application-layer caller authentication; it remains mandatory
+before public, shared-host, shared-tailnet, or multi-user exposure.

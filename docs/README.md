@@ -20,9 +20,8 @@ Architecture's logical shape, the Capability Model's contract, Security and
 Trust, and the Engineering Method are now Accepted. V1 scope was trimmed —
 see [ADR-0008](decisions/0008-trim-v1-scope-and-ratify-foundation.md).
 The durable-state/execution-scratchpad/model-context separation and the V1
-journey are also accepted. Broader personal-memory and retention design remains
-open on purpose. ADR-0010 selects MongoDB for durable operational authority and
-Redis for a rebuildable execution scratchpad.
+journey are also accepted. ADR-0010 selects MongoDB for durable operational
+authority and Redis for a rebuildable execution scratchpad.
 ADR-0011 makes projects generic and constrains specialist disclosure to a
 bounded, approved, hash-verified context snapshot.
 ADR-0012 keeps specialist platforms late-bound behind provider-neutral
@@ -30,8 +29,10 @@ capabilities while preserving their exact identity in approvals.
 ADR-0013 derives asynchronous work from durable MongoDB state and coordinates
 workers with expiring per-run leases; Redis remains a disposable scratchpad.
 ADR-0014 defines the authenticated host/SSH session and enforced loopback
-listener as V1's single-owner perimeter. ADR-0015 registers Ollama, OpenAI, and
-Gemini behind explicit startup profiles without silent provider fallback.
+listener as V1's initial single-owner perimeter. ADR-0027 later extends that
+perimeter to private owner devices through Tailscale Serve without changing the
+loopback listener. ADR-0015 registers Ollama, OpenAI, and Gemini behind explicit
+startup profiles without silent provider fallback.
 ADR-0016 freezes bounded prior complete conversation turns by exact project
 scope and durably projects every terminal Vera reply.
 ADR-0017 adds provider-neutral software implementation as a review-only patch
@@ -46,6 +47,11 @@ capability boundary, and integrity-checked artifact handoffs.
 ADR-0024 extends that substrate with evidence-adaptive goals: one validated
 step at a time, a fresh approval for every effect, and an owner-controlled
 continuation brain under hard step and model-call ceilings.
+ADR-0025 adds explicit, versioned owner-governed memory with deterministic
+retrieval and an owner-controlled-provider disclosure boundary. ADR-0026 adds
+one Expo React Native frontend for web, iOS, and Android as a thin client of the
+existing API. ADR-0027 permits physical owner devices through private
+Tailscale Serve ingress while keeping Vera's listener on loopback.
 
 Implementation began on the same date. ADR-0009 accepts the first production
 source layout and model decision boundary. ADR-0010 accepts the durable
@@ -86,7 +92,7 @@ flowchart TD
 | [Domain Model](domain-model.md) | Accepted (core) | What do conversation, task, run, capability, event, approval, and memory mean? |
 | [System Architecture](system-architecture.md) | Accepted (shape) | What are Vera's major components and how does a request move through them? |
 | [HTTP API](api.md) | Accepted (implemented paths) | How does a client submit, inspect, approve, and audit work? |
-| [Memory and Context](memory-and-context.md) | Proposed (except accepted separation principle) | What is durable truth, working state, model context, and long-term memory? |
+| [Memory and Context](memory-and-context.md) | Accepted (implemented layers and governed memory) | What is durable truth, working state, model context, and long-term memory? |
 | [Capability Model](capability-model.md) | Accepted (contract) | How does Vera discover and invoke models, tools, agents, and specialist workflows? |
 | [Security and Trust](security-and-trust.md) | Accepted | What may Vera access or change, and who authorizes it? |
 | [V1 Definition](v1-definition.md) | Accepted | What exact architectural claim must the first version prove? |
@@ -169,11 +175,12 @@ rather than surviving only as a transcript.
 
 ## Current implementation boundary
 
-The repository now has two applications: the deployable service under
-`apps/api` and an owner CLI under `apps/cli`. The API is a modular monolith;
+The repository now has three applications: the deployable service under
+`apps/api`, an owner CLI under `apps/cli`, and a universal Expo React Native
+frontend under `apps/frontend`. The API is a modular monolith;
 internal modules preserve domain, application, adapter, and HTTP boundaries.
 `packages/client` is the first genuine shared boundary: a browser-neutral
-TypeScript client used by the CLI and available to future user interfaces. See
+TypeScript client used by both the CLI and universal frontend. See
 [ADR-0009](decisions/0009-implement-the-model-decision-boundary.md),
 [ADR-0010](decisions/0010-use-mongodb-for-operational-truth-and-redis-for-scratchpads.md),
 and [ADR-0013](decisions/0013-dispatch-durable-work-with-mongodb-leases.md).
@@ -196,6 +203,12 @@ Restart-safe reminders and the durable Vera notification inbox are accepted in
 [ADR-0023](decisions/0023-deliver-durable-reminders-through-a-vera-owned-notification-inbox.md).
 Evidence-adaptive bounded orchestration is accepted in
 [ADR-0024](decisions/0024-adapt-bounded-goals-from-validated-capability-evidence.md).
+Explicit owner-governed memory is accepted in
+[ADR-0025](decisions/0025-use-explicit-versioned-owner-governed-memory.md), and
+the thin-client universal frontend boundary is accepted in
+[ADR-0026](decisions/0026-use-one-expo-react-native-frontend-for-web-and-mobile.md).
+Private tailnet ingress for physical owner devices is accepted in
+[ADR-0027](decisions/0027-use-tailscale-serve-for-private-physical-device-access.md).
 
 ## Documentation and implementation cadence
 

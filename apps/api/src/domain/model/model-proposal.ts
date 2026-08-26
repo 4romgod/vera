@@ -7,6 +7,7 @@ import {
 } from '../capabilities/capability-registry.ts';
 import { PersonalTaskActionArgumentsSchema } from '../personal-tasks/personal-task.ts';
 import { ReminderActionArgumentsSchema } from '../reminders/reminder.ts';
+import { MemoryActionArgumentsSchema } from '../memories/memory.ts';
 import {
   DevelopmentPlanningGoalStepSchema,
   GoalPlanSchema,
@@ -15,6 +16,7 @@ import {
   WebResearchGoalStepSchema,
   PersonalTaskManagementGoalStepSchema,
   PersonalReminderManagementGoalStepSchema,
+  MemoryManagementGoalStepSchema,
 } from '../goals/goal-plan.ts';
 import type { CapabilityReference } from '../capabilities/capability-registry.ts';
 import { AdaptiveGoalPlanSchema } from '../goals/adaptive-goal.ts';
@@ -102,6 +104,19 @@ const PersonalReminderManagementProposalSchema = z
   })
   .strict();
 
+const MemoryManagementProposalSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    kind: z.literal('invoke_capability'),
+    decisionSummary: DecisionSummarySchema,
+    capability: CapabilityReferenceSchema.extend({
+      name: z.literal('memory_management'),
+      version: z.literal(1),
+    }),
+    arguments: MemoryActionArgumentsSchema,
+  })
+  .strict();
+
 const ExecuteGoalProposalSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -127,6 +142,7 @@ export const ModelProposalSchema = z.union([
   WebResearchProposalSchema,
   PersonalTaskManagementProposalSchema,
   PersonalReminderManagementProposalSchema,
+  MemoryManagementProposalSchema,
   ExecuteGoalProposalSchema,
   PursueAdaptiveGoalProposalSchema,
 ]);
@@ -159,6 +175,10 @@ export function createModelProposalSchema(options: {
       capability.name === 'personal_reminder_management' &&
       capability.version === 1,
   );
+  const memoryManagementEnabled = options.enabledCapabilities.some(
+    (capability) =>
+      capability.name === 'memory_management' && capability.version === 1,
+  );
   const enabledGoalSteps = [
     ...(developmentPlanningEnabled ? [DevelopmentPlanningGoalStepSchema] : []),
     ...(softwareChangeEnabled ? [SoftwareChangeGoalStepSchema] : []),
@@ -169,6 +189,7 @@ export function createModelProposalSchema(options: {
     ...(personalReminderManagementEnabled
       ? [PersonalReminderManagementGoalStepSchema]
       : []),
+    ...(memoryManagementEnabled ? [MemoryManagementGoalStepSchema] : []),
   ];
   const schemas: z.ZodType[] = [RespondProposalSchema];
   if (developmentPlanningEnabled) {
@@ -182,6 +203,7 @@ export function createModelProposalSchema(options: {
   if (personalReminderManagementEnabled) {
     schemas.push(PersonalReminderManagementProposalSchema);
   }
+  if (memoryManagementEnabled) schemas.push(MemoryManagementProposalSchema);
   if (enabledGoalSteps.length >= 2) {
     const enabledGoalStepSchema = z.union(
       enabledGoalSteps as unknown as [z.ZodType, z.ZodType, ...z.ZodType[]],

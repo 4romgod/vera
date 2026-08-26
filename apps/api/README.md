@@ -24,6 +24,7 @@ src/
 │   ├── capabilities/                # Owner-visible runtime catalog
 │   ├── change-applications/
 │   ├── conversations/
+│   ├── memories/                    # Governed memory commands, retrieval, and context integrity
 │   ├── model-decisions/
 │   ├── projects/
 │   ├── reminders/                   # Reminder queries, inbox, and scheduler

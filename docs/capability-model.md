@@ -8,7 +8,8 @@ selection checks, and resource/delegation budget model)
 `web_research@1` accepted by ADR-0020 on 25 August 2026; bounded composition
 accepted by ADR-0021 on 26 August 2026; provider-neutral integration actions
 and `personal_task_management@1` accepted by ADR-0022 on 26 August 2026;
-evidence-adaptive bounded orchestration accepted by ADR-0024 on 26 August 2026
+evidence-adaptive bounded orchestration accepted by ADR-0024 on 26 August 2026;
+and `memory_management@1` accepted by ADR-0025 on 26 August 2026
 
 ## Purpose
 
@@ -125,6 +126,13 @@ operations
 Those future fields are not implied authority. They require explicit contracts
 and enforcement before an adapter may rely on them. See
 [ADR-0020](decisions/0020-use-a-declarative-capability-runtime-and-approval-gated-web-research.md).
+
+`memory_management@1` is the owner-governed long-term-memory boundary. It has
+four closed actions: remember, list, correct, and forget. Every action is
+approval-gated; mutations declare `personal_data_write`, while list has no side
+effect. The local adapter is provider-neutral and writes to the authoritative
+owner memory store. See
+[ADR-0025](decisions/0025-use-explicit-versioned-owner-governed-memory.md).
 
 ## Capability invocation lifecycle
 

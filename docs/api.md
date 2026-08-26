@@ -1,7 +1,7 @@
 # Vera HTTP API
 
 **Status:** Accepted for implemented V1 paths
-**Version:** 1.1
+**Version:** 1.2
 **Last updated:** 26 August 2026
 
 ## Purpose
@@ -13,9 +13,9 @@ defines how an HTTP client observes them.
 All paths are versioned except process health. JSON request objects are closed:
 unknown properties are rejected rather than silently removed. The service
 rejects non-loopback bind configuration and uses the implicit `owner_v1`
-principal inside the trusted Mac Mini account/SSH perimeter. This topology does
-not provide application-layer caller authentication and must not be exposed to
-an untrusted network.
+principal inside the trusted Mac Mini account/SSH/private-tailnet perimeter.
+This topology does not provide application-layer caller authentication and
+must not be exposed to an untrusted or shared network.
 
 ## Implemented paths
 
@@ -28,6 +28,8 @@ an untrusted network.
 | `GET /v1/personal-tasks/{personalTaskId}` | Retrieve one owner-scoped personal task | `200` |
 | `GET /v1/reminders` | List owner-scoped reminders; filters: `status`, `limit` | `200` |
 | `GET /v1/reminders/{reminderId}` | Retrieve one owner-scoped reminder | `200` |
+| `GET /v1/memories` | List owner-scoped memories; filters: `status`, `kind`, `scopeKind`, `projectId`, `limit` | `200` |
+| `GET /v1/memories/{memoryId}` | Retrieve one owner-scoped memory including revision history | `200` |
 | `GET /v1/notifications` | Page durable inbox notifications after an opaque cursor | `200` |
 | `GET /v1/notifications/stream` | Watch the durable inbox as resumable server-sent events | `200` |
 | `POST /v1/projects` | Register an owner-controlled project source | `201` |
@@ -380,6 +382,28 @@ pending projection idempotently. A polling client should treat a conversation
 task as settled only after this status is `projected`, even if the run has
 already reached a terminal status.
 
+For owner-controlled orchestration providers, a task may also expose a
+`memoryContextManifest`. It identifies the exact bounded, revisioned memory
+selection frozen for that run, including hashes, scopes, limits, totals, and
+exclusions, without duplicating memory content. Vera verifies it against the
+authoritative memory records immediately before provider disclosure. For a
+third-party provider the manifest is absent because long-term memory is not
+disclosed.
+
+## Governed memory
+
+Memory mutations are requested through an ordinary task or conversation
+message and proposed as `memory_management@1`. `remember`, `correct`, and
+`forget` approvals disclose `personal_data_write`; `list` has no side effect.
+The approved invocation produces a typed `memory_result` artifact. Direct HTTP
+memory paths are intentionally read-only so clients cannot bypass approval.
+
+`GET /v1/memories` defaults to active records. `status=all` includes forgotten
+tombstones. `scopeKind=project` requires `projectId`; exact project scope is
+validated against the project registry. `GET /v1/memories/{memoryId}` returns
+the current revision and immutable correction history. Creation-invocation
+idempotency metadata remains internal.
+
 The list endpoint returns bounded summaries instead: identity, title, status,
 timestamps, `messageCount`, and the most recent message without its internal
 idempotency key.
@@ -572,9 +596,11 @@ Error envelopes use:
 
 ## Current security boundary
 
-The API has no application-layer caller authentication. ADR-0014 explicitly
-sets the V1 owner perimeter at the trusted Mac Mini account and authenticated
-SSH session, and configuration rejects non-loopback listeners. SSH forwarding
-may expose the loopback service to the owner's MacBook. Vera must not bind to a
-LAN or public interface until application identity, authentication, and
-transport policy are implemented.
+The API has no application-layer caller authentication. ADR-0014 and ADR-0027
+set the V1 owner perimeter at the trusted Mac Mini account, authenticated SSH,
+and an optional private owner-controlled tailnet. Configuration rejects
+non-loopback listeners. SSH forwarding or Tailscale Serve may proxy the
+loopback service to the owner's devices; direct LAN/Tailscale binding and
+Tailscale Funnel remain forbidden. Every device admitted by tailnet policy has
+`owner_v1` authority, so application identity is required before shared or
+multi-user exposure.

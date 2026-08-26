@@ -53,6 +53,9 @@ export function taskResponse(aggregate: TaskAggregate) {
           conversationContextManifest:
             aggregate.run.conversationContext.manifest,
         }),
+    ...(aggregate.run.memoryContext === undefined
+      ? {}
+      : { memoryContextManifest: aggregate.run.memoryContext.manifest }),
     ...(aggregate.run.conversationReply === undefined
       ? {}
       : {

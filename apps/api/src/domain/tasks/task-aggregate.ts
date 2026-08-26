@@ -7,6 +7,7 @@ import {
   ArtifactReferenceSchema,
   PersonalTaskResultArtifactReferenceSchema,
   PersonalReminderResultArtifactReferenceSchema,
+  MemoryResultArtifactReferenceSchema,
 } from '../artifacts/artifact.ts';
 import { CapabilityDestinationSchema } from '../capabilities/capability-destination.ts';
 import { ConversationContextBundleSchema } from '../conversations/conversation-context.ts';
@@ -35,6 +36,11 @@ import {
   ReminderActionArgumentsSchema,
   ReminderResultSchema,
 } from '../reminders/reminder.ts';
+import {
+  MemoryActionArgumentsSchema,
+  MemoryResultSchema,
+} from '../memories/memory.ts';
+import { MemoryContextBundleSchema } from '../memories/memory-context.ts';
 
 export const TaskStatusSchema = z.enum([
   'active',
@@ -79,6 +85,12 @@ const ApprovalIdentitySchema = z
   .strict();
 
 export const ApprovalSchema = z.union([
+  ApprovalIdentitySchema.extend({
+    capability: z
+      .object({ name: z.literal('memory_management'), version: z.literal(1) })
+      .strict(),
+    proposedArguments: MemoryActionArgumentsSchema,
+  }).strict(),
   ApprovalIdentitySchema.extend({
     capability: z
       .object({
@@ -165,6 +177,12 @@ const CapabilityInvocationIdentitySchema = z
 export const CapabilityInvocationSchema = z.union([
   CapabilityInvocationIdentitySchema.extend({
     capability: z
+      .object({ name: z.literal('memory_management'), version: z.literal(1) })
+      .strict(),
+    arguments: MemoryActionArgumentsSchema,
+  }).strict(),
+  CapabilityInvocationIdentitySchema.extend({
+    capability: z
       .object({
         name: z.literal('personal_reminder_management'),
         version: z.literal(1),
@@ -211,6 +229,13 @@ export const CapabilityInvocationSchema = z.union([
 ]);
 
 export const TaskOutputSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('memory_result'),
+      result: MemoryResultSchema,
+      artifact: MemoryResultArtifactReferenceSchema.optional(),
+    })
+    .strict(),
   z
     .object({
       kind: z.literal('personal_reminder_result'),
@@ -281,6 +306,7 @@ export const TaskFailureSchema = z
       'project_not_found',
       'project_context_failure',
       'conversation_context_failure',
+      'memory_context_failure',
       'adaptive_goal_failure',
       'budget_exhausted',
       'cancelled',
@@ -321,6 +347,7 @@ export const TaskEventTypeSchema = z.enum([
   'cancellation_requested',
   'run_cancelled',
   'conversation_context_assembled',
+  'memory_context_assembled',
   'conversation_reply_pending',
   'conversation_reply_projected',
   'goal_planned',
@@ -381,6 +408,7 @@ export const TaskAggregateSchema = z
         budget: RunBudgetSchema.optional(),
         context: ProjectContextBundleSchema.optional(),
         conversationContext: ConversationContextBundleSchema.optional(),
+        memoryContext: MemoryContextBundleSchema.optional(),
         conversationReply: ConversationReplyProjectionSchema.optional(),
         goal: z
           .union([GoalExecutionSchema, AdaptiveGoalExecutionSchema])

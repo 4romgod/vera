@@ -27,6 +27,7 @@ import {
 } from '../../domain/goals/goal-plan.ts';
 import { PersonalTaskActionArgumentsSchema } from '../../domain/personal-tasks/personal-task.ts';
 import { ReminderActionArgumentsSchema } from '../../domain/reminders/reminder.ts';
+import { MemoryActionArgumentsSchema } from '../../domain/memories/memory.ts';
 import {
   AdaptiveGoalPlanSchema,
   AdaptiveGoalRequirementSchema,
@@ -38,6 +39,7 @@ export type EvaluateModelDecision = (
   context?: {
     selectedProject?: { id: string; displayName: string };
     conversationContext?: ConversationContextBundle;
+    memoryContext?: import('../../domain/memories/memory-context.ts').MemoryContextBundle;
     temporalContext?: { currentTime?: string; ownerTimeZone?: string };
   },
 ) => Promise<DecisionResult>;
@@ -357,6 +359,27 @@ function decide(
       proposedArguments: arguments_,
     };
   }
+  if (proposal.capability.name === 'memory_management') {
+    const arguments_ = MemoryActionArgumentsSchema.parse(proposal.arguments);
+    if (
+      'scope' in arguments_ &&
+      arguments_.scope?.kind === 'project' &&
+      arguments_.scope.projectId !== selectedProject?.id
+    ) {
+      return {
+        kind: 'rejected',
+        code: 'invalid_capability_arguments',
+        message:
+          'The proposed memory scope does not preserve the selected project identity.',
+      };
+    }
+    return {
+      kind: 'approval_required',
+      reason: 'specialist_capability_invocation',
+      capability: proposal.capability,
+      proposedArguments: arguments_,
+    };
+  }
   return {
     kind: 'approval_required',
     reason: 'specialist_capability_invocation',
@@ -414,6 +437,20 @@ export function createEvaluateModelDecision(
                   ({ role, content }) => ({ role, content }),
                 ),
               },
+            }),
+        ...(context?.memoryContext === undefined ||
+        provider.dataBoundary !== 'owner_controlled'
+          ? {}
+          : {
+              memoryContext: context.memoryContext.memories.map(
+                ({ kind, subject, content, scope, sensitivity }) => ({
+                  kind,
+                  subject,
+                  content,
+                  scope,
+                  sensitivity,
+                }),
+              ),
             }),
       }),
       outputSchema: generationJsonSchema,

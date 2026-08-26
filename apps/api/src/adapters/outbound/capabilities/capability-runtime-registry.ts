@@ -35,6 +35,12 @@ import {
   type ReminderActionArguments,
   type ReminderResult,
 } from '../../../domain/reminders/reminder.ts';
+import {
+  MemoryActionArgumentsSchema,
+  MemoryResultSchema,
+  type MemoryActionArguments,
+  type MemoryResult,
+} from '../../../domain/memories/memory.ts';
 
 function definition(name: string): CapabilityDefinition {
   const value = CapabilityDefinitions.find(
@@ -466,6 +472,69 @@ function reminderRegistration(
   };
 }
 
+function memoryRegistration(
+  executor: IntegrationActionExecutor<MemoryActionArguments, MemoryResult>,
+): CapabilityRuntimeRegistration {
+  const capabilityDefinition = definition('memory_management');
+  const runtime = (): CapabilityRuntime => ({
+    definition: capabilityDefinition,
+    destination: executor.destination,
+    authority: executor.maximumAuthority,
+    authorityFor({ arguments: arguments_ }) {
+      return executor.authorityFor(
+        MemoryActionArgumentsSchema.parse(arguments_),
+      );
+    },
+    checkReadiness: () => executor.checkReadiness(),
+    async execute(invocation, options) {
+      if (
+        invocation.project !== undefined ||
+        invocation.context !== undefined ||
+        invocation.artifacts !== undefined
+      ) {
+        throw new Error(
+          'Memory management must not receive project context or artifacts.',
+        );
+      }
+      const started = Date.now();
+      const result = await executor.execute(
+        {
+          principalId: invocation.principalId,
+          invocationId: invocation.invocationId,
+          startedAt: invocation.startedAt,
+          recovery: invocation.recovery,
+          arguments: MemoryActionArgumentsSchema.parse(invocation.arguments),
+          ...(invocation.source === undefined
+            ? {}
+            : { source: invocation.source }),
+        },
+        options,
+      );
+      return {
+        artifact: {
+          type: 'memory_result',
+          mediaType: 'application/vnd.vera.memory-result+json',
+          content: MemoryResultSchema.parse(result),
+        },
+        model: {
+          provider: 'vera',
+          model: executor.integrationId,
+          durationMs: Date.now() - started,
+        },
+      };
+    },
+  });
+  return {
+    definition: capabilityDefinition,
+    selected: runtime,
+    resolve(destination) {
+      return sameCapabilityDestination(executor.destination, destination)
+        ? runtime()
+        : null;
+    },
+  };
+}
+
 function sameReference(
   definition_: CapabilityDefinition,
   reference: CapabilityReference,
@@ -485,6 +554,7 @@ export function createCapabilityRuntimeRegistry(options: {
     PersonalTaskResult
   >;
   reminders: IntegrationActionExecutor<ReminderActionArguments, ReminderResult>;
+  memories: IntegrationActionExecutor<MemoryActionArguments, MemoryResult>;
 }): CapabilityRuntimeRegistry {
   const registrations = [
     planningRegistration(options.developmentPlanning),
@@ -492,6 +562,7 @@ export function createCapabilityRuntimeRegistry(options: {
     webResearchRegistration(options.webResearch),
     personalTaskRegistration(options.personalTasks),
     reminderRegistration(options.reminders),
+    memoryRegistration(options.memories),
   ];
   const registrationFor = (reference: CapabilityReference) =>
     registrations.find((candidate) =>

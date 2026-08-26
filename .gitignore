@@ -4,5 +4,6 @@
 !.env.example
 !.env.*.example
 dist/
+.expo/
 node_modules/
 *.log

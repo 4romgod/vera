@@ -25,6 +25,8 @@ const usage = `Usage:
   vera personal-task show <personal-task-id>
   vera reminder list [--status <all|scheduled|delivered|acknowledged|cancelled>] [--limit <number>]
   vera reminder show <reminder-id>
+  vera memory list [--status <active|all>] [--kind <fact|preference|instruction|project_knowledge>] [--project <project-id>] [--limit <number>]
+  vera memory show <memory-id>
   vera notification list [--after <cursor>] [--limit <number>]
   vera notification watch [--after <cursor>]
   vera project add --name <name> --path <absolute-git-root> [--key <key>]
@@ -293,6 +295,48 @@ export async function runCli(
     return 0;
   }
 
+  if (resource === 'memory' && action === 'list') {
+    const status = option(args, '--status');
+    if (status !== undefined && !['active', 'all'].includes(status)) {
+      throw new Error('--status must be active or all.');
+    }
+    const kind = option(args, '--kind');
+    if (
+      kind !== undefined &&
+      !['fact', 'preference', 'instruction', 'project_knowledge'].includes(kind)
+    ) {
+      throw new Error(
+        '--kind must be fact, preference, instruction, or project_knowledge.',
+      );
+    }
+    const projectId = option(args, '--project');
+    const limit = positiveIntegerOption(args, '--limit');
+    print(
+      stdout,
+      await client.listMemories({
+        ...(status === undefined ? {} : { status: status as 'active' | 'all' }),
+        ...(kind === undefined
+          ? {}
+          : {
+              kind: kind as
+                | 'fact'
+                | 'preference'
+                | 'instruction'
+                | 'project_knowledge',
+            }),
+        ...(projectId === undefined
+          ? {}
+          : { scope: { kind: 'project', projectId } }),
+        ...(limit === undefined ? {} : { limit }),
+      }),
+    );
+    return 0;
+  }
+  if (resource === 'memory' && action === 'show') {
+    print(stdout, await client.getMemory(positional(args, 2, 'memory-id')));
+    return 0;
+  }
+
   if (resource === 'notification' && action === 'list') {
     const after = option(args, '--after');
     const limit = positiveIntegerOption(args, '--limit');
@@ -426,6 +470,9 @@ export async function runCli(
       ...(finalTask.conversationContextManifest === undefined
         ? {}
         : { conversationContext: finalTask.conversationContextManifest }),
+      ...(finalTask.memoryContextManifest === undefined
+        ? {}
+        : { memoryContext: finalTask.memoryContextManifest }),
     });
     return finalTask.runStatus === 'succeeded' ? 0 : 2;
   }
