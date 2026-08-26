@@ -5,8 +5,9 @@ durable state, rebuildable execution scratchpad, and disposable model context
 is Accepted through ADR-0007, MongoDB/Redis operational storage is Accepted
 through ADR-0010, and bounded conversation context with durable reply
 projection is Accepted through ADR-0016
-and durable reminders with inbox notifications are Accepted through ADR-0023
-**Version:** 0.4
+and durable reminders with inbox notifications are Accepted through ADR-0023;
+adaptive observation context is Accepted through ADR-0024
+**Version:** 0.5
 **Last updated:** 26 August 2026
 
 ## Purpose
@@ -171,6 +172,16 @@ Key rules:
 - it may expire after the invocation or run;
 - durable facts are promoted through an explicit process, not by copying either
   the whole context or scratchpad into memory.
+
+Adaptive-goal continuation is one purpose-specific context. Vera reloads the
+completed step artifacts from durable storage, verifies owner/task/run/project
+scope and content integrity, then sends only ordered step purpose, capability,
+artifact type, and artifact content to an owner-controlled orchestration brain.
+Artifact IDs, invocation IDs, hashes, byte limits, and other internal audit
+metadata remain local. The artifact content is explicitly labelled untrusted
+and cannot grant authority. Which immutable artifacts informed the resulting
+decision is persisted as evidence; this does not promote their contents into
+long-term memory or automatically disclose them to the next capability.
 
 ## Long-term memory
 

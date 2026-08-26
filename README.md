@@ -9,9 +9,9 @@ the appropriate models, tools, workflows, machines, and services.
 Vera is now in production implementation. The executable control plane is a
 TypeScript/Node.js npm-workspaces modular monolith in `apps/api`, using Fastify
 for HTTP and Zod for runtime and JSON Schema contracts. It implements a durable
-request-to-decision-to-approval-to-capability lifecycle, bounded multi-step goal
-execution, an asynchronous worker, a browser-neutral TypeScript client, and an
-owner CLI.
+request-to-decision-to-approval-to-capability lifecycle, fixed and
+evidence-adaptive bounded goal execution, an asynchronous worker, a
+browser-neutral TypeScript client, and an owner CLI.
 
 The orchestration brain is selected at startup through a provider registry.
 Ollama remains the default owner-controlled provider; OpenAI and Gemini are
@@ -30,9 +30,21 @@ catalog. The implemented declarations are `development_planning@1`,
 `software_change@1`, project-independent `web_research@1`, and owner-scoped
 `personal_task_management@1`, and `personal_reminder_management@1`; Vera's code
 validates the closed, versioned proposal and routing arguments, then returns a
-direct response, one approval requirement, a validated two- or three-step goal,
-or a rejection. A disabled capability is absent from the model contract. Model
-output is never authorization.
+direct response, one approval requirement, a validated fixed goal, an adaptive
+goal's first step, or a rejection. A disabled capability is absent from the
+model contract. Model output is never authorization.
+
+For evidence-dependent outcomes, an owner-controlled brain may propose an
+adaptive goal with a durable contract for every requested outcome and only its first step. After each separately approved
+capability produces a durable artifact, Vera validates that observation and
+asks for exactly one next step or an evidence-linked final answer. The loop is
+limited to three capability steps and four model calls; no model may add a
+capability, grant authority, reuse approval, or extend the budget. Completion
+requires capability-matched evidence for every satisfied outcome and produces a
+code-authored execution ledger, so model prose cannot manufacture an effect. Artifact
+contents are not sent to OpenAI, Gemini, or another third-party orchestration
+brain until a separate exact disclosure policy is designed. See
+[ADR-0024](docs/decisions/0024-adapt-bounded-goals-from-validated-capability-evidence.md).
 
 Vera can now create, list, complete, and reopen durable personal tasks through
 ordinary conversation. The first adapter stores them locally in Vera's
@@ -61,6 +73,13 @@ receive only artifact types their declarations accept, with exact hashes and
 lineage frozen into approval and checked again at execution. Historical
 approvals and invocations remain inspectable and restart-safe. See
 [ADR-0021](docs/decisions/0021-execute-bounded-goals-with-step-scoped-approvals-and-artifact-lineage.md).
+
+Conditional requests no longer need to guess every step up front. For example,
+Vera can research a question, inspect the validated report, and only then ask
+for approval to create a reminder when the evidence warrants it. The
+continuation records which artifacts informed the decision but passes their
+contents to the next capability only when its declared input contract requires
+them.
 
 The owner-facing journey registers a generic project, creates a conversation,
 and posts project-linked messages. Vera freezes bounded prior complete turns
@@ -138,6 +157,8 @@ in
 Durable reminders, scheduler claims, and the Vera-owned notification inbox are
 accepted in
 [ADR-0023](docs/decisions/0023-deliver-durable-reminders-through-a-vera-owned-notification-inbox.md).
+Bounded evidence-adaptive orchestration is accepted in
+[ADR-0024](docs/decisions/0024-adapt-bounded-goals-from-validated-capability-evidence.md).
 Broader long-term-memory and retention policy remain open on purpose; the V1
 operational storage products do not.
 
@@ -222,7 +243,10 @@ restarts the API, completes the task through another approved action, and reads
 it through the compiled client and CLI. It also creates a future reminder,
 restarts the API, reschedules it to a due instant, verifies exactly one durable
 inbox notification, acknowledges it, and retrieves it through the compiled
-client and CLI. It then removes its own database, Redis
+client and CLI. The gate additionally runs an adaptive research-to-reminder
+goal, kills the API between the two approval boundaries, and verifies its
+continuation evidence, final response, artifact lineage, budgets, and reminder
+after restart. It then removes its own database, Redis
 scratchpads, managed
 worktrees, and temporary Git fixture.
 
@@ -394,6 +418,12 @@ VERA_PROFILE=openai npm run test:model
 VERA_PROFILE=gemini npm run test:model
 VERA_PROFILE=ollama npm run test:model
 ```
+
+For an owner-controlled profile with web research enabled, this also verifies
+the adaptive boundary end to end: the brain must plan a conditional
+research-to-reminder goal and select the reminder after positive research
+evidence. Profiles that cannot run adaptive orchestration report that case as
+skipped rather than implying it was tested.
 
 The compatibility command for the default local provider remains:
 

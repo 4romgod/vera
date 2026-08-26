@@ -5,6 +5,7 @@ import {
   SoftwareChangeProposalArgumentsSchema,
   WebResearchProposalArgumentsSchema,
   findCapability,
+  findExplicitAdaptiveOutcomes,
 } from '../../domain/capabilities/capability-registry.ts';
 import type { ConversationContextBundle } from '../../domain/conversations/conversation-context.ts';
 import type {
@@ -23,6 +24,8 @@ import { z } from 'zod';
 import { GoalPlanSchema } from '../../domain/goals/goal-plan.ts';
 import { PersonalTaskActionArgumentsSchema } from '../../domain/personal-tasks/personal-task.ts';
 import { ReminderActionArgumentsSchema } from '../../domain/reminders/reminder.ts';
+import { AdaptiveGoalPlanSchema } from '../../domain/goals/adaptive-goal.ts';
+import type { AdaptiveGoalPlan } from '../../domain/goals/adaptive-goal.ts';
 
 export type EvaluateModelDecision = (
   message: string,
@@ -33,11 +36,39 @@ export type EvaluateModelDecision = (
   },
 ) => Promise<DecisionResult>;
 
+type AdaptiveRequirement = AdaptiveGoalPlan['requirements'][number];
+
+function inferExplicitAdaptiveRequirements(
+  ownerMessage: string,
+  enabledCapabilities: readonly CapabilityReference[],
+): AdaptiveRequirement[] {
+  const message = ownerMessage.toLowerCase();
+  const conditional = /\b(if|when|unless|depending on|based on)\b/u.test(
+    message,
+  );
+  return findExplicitAdaptiveOutcomes(ownerMessage, enabledCapabilities).map(
+    (outcome) => ({
+      id: `requirement_explicit_${outcome.capability.name}`,
+      description: outcome.description,
+      capability: outcome.capability.name,
+      version: outcome.capability.version,
+      condition: conditional
+        ? {
+            kind: 'evidence_dependent' as const,
+            description:
+              'The condition stated in the owner request is supported by validated evidence.',
+          }
+        : { kind: 'always' as const },
+    }),
+  );
+}
+
 function decide(
   proposal: ModelProposal,
   enabledCapabilities: readonly CapabilityReference[],
   selectedProject?: { id: string; displayName: string },
   ownerTimeZone = 'UTC',
+  ownerMessage = '',
 ): ExecutionDecision {
   if (proposal.kind === 'respond') {
     return { kind: 'respond', message: proposal.message };
@@ -94,6 +125,103 @@ function decide(
       };
     }
     return { kind: 'goal_planned', plan: plan.data };
+  }
+
+  if (proposal.kind === 'pursue_goal') {
+    const plan = AdaptiveGoalPlanSchema.safeParse(proposal.goal);
+    if (!plan.success) {
+      return {
+        kind: 'rejected',
+        code: 'invalid_goal_plan',
+        message: 'The proposed adaptive goal is invalid.',
+      };
+    }
+    const explicitRequirements = inferExplicitAdaptiveRequirements(
+      ownerMessage,
+      enabledCapabilities,
+    );
+    const requirements = [...plan.data.requirements];
+    for (const inferred of explicitRequirements) {
+      if (
+        !requirements.some(
+          (requirement) =>
+            requirement.capability === inferred.capability &&
+            requirement.version === inferred.version,
+        )
+      ) {
+        const id = requirements.some(
+          (requirement) => requirement.id === inferred.id,
+        )
+          ? `${inferred.id}_owner`
+          : inferred.id;
+        requirements.push({ ...inferred, id });
+      }
+    }
+    const enrichedPlan = AdaptiveGoalPlanSchema.safeParse({
+      ...plan.data,
+      requirements,
+    });
+    if (!enrichedPlan.success) {
+      return {
+        kind: 'rejected',
+        code: 'invalid_goal_plan',
+        message:
+          'The adaptive goal cannot preserve every explicit owner outcome within its bounded contract.',
+      };
+    }
+    const step = enrichedPlan.data.firstStep;
+    const unavailableRequirement = enrichedPlan.data.requirements.find(
+      (requirement) =>
+        !enabledCapabilities.some(
+          (capability) =>
+            capability.name === requirement.capability &&
+            capability.version === requirement.version,
+        ),
+    );
+    if (unavailableRequirement !== undefined) {
+      return {
+        kind: 'rejected',
+        code: 'unknown_capability',
+        message: `Adaptive goal requirement ${unavailableRequirement.id} selected an unavailable capability.`,
+      };
+    }
+    if (
+      !enabledCapabilities.some(
+        (capability) =>
+          capability.name === step.capability &&
+          capability.version === step.version,
+      )
+    ) {
+      return {
+        kind: 'rejected',
+        code: 'unknown_capability',
+        message: 'The adaptive goal selected an unavailable first capability.',
+      };
+    }
+    if (
+      'project' in step.arguments &&
+      step.arguments.project.name !== selectedProject?.displayName
+    ) {
+      return {
+        kind: 'rejected',
+        code: 'invalid_goal_plan',
+        message:
+          'The adaptive goal did not preserve the selected project identity.',
+      };
+    }
+    if (
+      step.capability === 'personal_reminder_management' &&
+      'timeZone' in step.arguments &&
+      step.arguments.timeZone !== ownerTimeZone
+    ) {
+      return {
+        kind: 'rejected',
+        code: 'invalid_goal_plan',
+        message:
+          'The adaptive goal did not preserve the configured owner time zone.',
+      };
+    }
+    return { kind: 'adaptive_goal_planned', plan: enrichedPlan.data };
   }
 
   const capability = findCapability(
@@ -191,7 +319,11 @@ export function createEvaluateModelDecision(
     { name: 'development_planning', version: 1 },
     { name: 'software_change', version: 1 },
   ];
-  const generationSchema = createModelProposalSchema({ enabledCapabilities });
+  const allowAdaptiveGoals = provider.dataBoundary === 'owner_controlled';
+  const generationSchema = createModelProposalSchema({
+    enabledCapabilities,
+    allowAdaptiveGoals,
+  });
   const generationJsonSchema = z.toJSONSchema(generationSchema, {
     target: 'draft-7',
   });
@@ -204,7 +336,9 @@ export function createEvaluateModelDecision(
     };
     const generation = await provider.generateStructured({
       purpose: 'orchestration_decision',
-      systemPrompt: buildModelSystemPrompt(enabledCapabilities),
+      systemPrompt: buildModelSystemPrompt(enabledCapabilities, {
+        allowAdaptiveGoals,
+      }),
       message: JSON.stringify({
         ownerMessage: message,
         temporalContext,
@@ -256,6 +390,7 @@ export function createEvaluateModelDecision(
         enabledCapabilities,
         context?.selectedProject,
         temporalContext.ownerTimeZone,
+        message,
       ),
       model: {
         provider: generation.provider,

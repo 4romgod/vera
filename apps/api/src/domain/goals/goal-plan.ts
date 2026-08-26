@@ -10,7 +10,7 @@ import {
 import { PersonalTaskActionArgumentsSchema } from '../personal-tasks/personal-task.ts';
 import { ReminderActionArgumentsSchema } from '../reminders/reminder.ts';
 
-const GoalStepBaseSchema = z.object({
+export const GoalStepBaseSchema = z.object({
   id: z.string().regex(/^step_[a-z0-9_]+$/u),
   purpose: z.string().trim().min(1).max(500),
   inputStepIds: z.array(z.string().regex(/^step_[a-z0-9_]+$/u)).max(2),
@@ -125,7 +125,7 @@ export const GoalExecutionStepSchema = z.discriminatedUnion('capability', [
   PersonalReminderManagementGoalStepSchema.extend(GoalExecutionFields).strict(),
 ]);
 
-export const GoalExecutionSchema = z
+export const FixedGoalExecutionSchema = z
   .object({
     schemaVersion: z.literal(1),
     objective: z.string().trim().min(1).max(10_000),
@@ -142,6 +142,8 @@ export const GoalExecutionSchema = z
     steps: z.array(GoalExecutionStepSchema).min(2).max(3),
   })
   .strict();
+
+export const GoalExecutionSchema = FixedGoalExecutionSchema;
 
 export type GoalPlan = z.infer<typeof GoalPlanSchema>;
 export type GoalExecution = z.infer<typeof GoalExecutionSchema>;

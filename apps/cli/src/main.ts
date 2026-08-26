@@ -111,6 +111,7 @@ function approvalDisclosure(approval: Approval): Record<string, unknown> {
     proposedArguments: approval.proposedArguments,
     contextManifest: approval.contextManifest,
     inputArtifacts: approval.inputArtifacts,
+    decisionEvidence: approval.decisionEvidence,
   };
 }
 

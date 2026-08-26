@@ -1,7 +1,7 @@
 # Vera Security and Trust Model
 
 **Status:** Accepted
-**Version:** 0.5
+**Version:** 0.6
 **Last updated:** 26 August 2026
 **Accepted:** 24 August 2026 (owner); V1 perimeter clarified by ADR-0014 and
 cloud-provider policy clarified by ADR-0015 and bounded conversation disclosure
@@ -9,7 +9,8 @@ accepted by ADR-0016 on 25 August 2026
 and managed-worktree application accepted by ADR-0018; bounded goal authority
 accepted by ADR-0021 and personal-task integration authority accepted by
 ADR-0022, with reminder scheduling and inbox authority accepted by ADR-0023 on
-26 August 2026
+26 August 2026; adaptive evidence disclosure and budget authority accepted by
+ADR-0024
 
 ## Purpose
 
@@ -208,20 +209,44 @@ Budget rules:
 - capability-local limits may be stricter but cannot weaken Vera's envelope.
 
 The original flat V1 envelope allowed one initial model decision and one
-capability invocation. The accepted bounded-goal increment still allows one
-initial model decision but permits at most three capability invocations, one per
-validated goal step, plus one recovery retry, ten minutes of run duration, 40
-context files, 200,000 total context bytes, 40,000 bytes per context file, and
-a 100,000-byte capability artifact. Context, output, call, invocation, retry, and
-duration limits are enforced in code. Each step has its own exact approval; a
-prior artifact adds an explicit `artifact_content` disclosure and is hash-checked
-before use. Model adapters additionally send a
+capability invocation. The accepted goal increments now permit at most four
+model calls and three capability invocations. A fixed goal normally uses one
+initial decision; an adaptive goal may use one additional continuation decision
+after each of at most three validated observations. Both retain one recovery
+retry, ten minutes of run duration, 40 context files, 200,000 total context
+bytes, 40,000 bytes per context file, and a 100,000-byte capability artifact.
+Context, observation, output, call, invocation, retry, and duration limits are
+enforced in code. Each step has its own exact approval; a prior artifact used as
+capability input adds an explicit `artifact_content` disclosure and is
+hash-checked before use. Evidence that only informed the orchestration decision
+is disclosed separately as `decisionEvidence` and is not passed to the next
+capability. Model adapters additionally send a
 configured maximum output-token request and record provider token usage when it
 is returned. The fixed three-step ceiling provides a finite per-operation
 boundary without allowing a self-extending model loop.
 Cumulative token or monetary accounting is required before increasing those
 call counts or enabling provider fallback/routing; absence of measurable usage
 must remain explicit.
+
+Adaptive continuation introduces a second model-data boundary because
+capability artifacts can contain project, personal, or third-party data not
+present in the owner's original request. The implemented rule is fail-closed:
+only an `owner_controlled` orchestration provider may receive minimized artifact
+type and content, and third-party profiles do not receive the adaptive proposal
+schema at all. Recovery with a cloud brain stops before disclosure. Enabling
+cloud continuation requires a new exact evidence-disclosure approval policy;
+startup provider selection is not sufficient consent. Artifact contents remain
+untrusted even inside the owner boundary and cannot grant authority through
+prompt instructions.
+
+Natural-language completion is not proof that an effect occurred. Adaptive
+plans therefore persist a capability-backed requirement for every requested
+outcome. Code rejects completion unless each requirement is resolved exactly
+once, each satisfied outcome cites an observation from its declared capability,
+and any not-applicable outcome was explicitly conditional and cites evidence.
+The owner reply includes a code-authored outcome and execution ledger; model
+prose cannot silently manufacture a reminder, task, code change, or other side
+effect.
 
 ## Approval model
 

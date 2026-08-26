@@ -12,6 +12,7 @@ const DefaultCapabilities: CapabilityReference[] = [
 
 export function buildModelSystemPrompt(
   enabledCapabilities: readonly CapabilityReference[] = DefaultCapabilities,
+  options: { allowAdaptiveGoals?: boolean } = {},
 ): string {
   const webResearchEnabled = enabledCapabilities.some(
     (capability) =>
@@ -43,8 +44,13 @@ export function buildModelSystemPrompt(
       personalTaskManagementEnabled,
       personalReminderManagementEnabled,
     ].filter(Boolean).length >= 2;
+  const adaptiveGoalEnabled =
+    enabledCapabilities.length > 0 && options.allowAdaptiveGoals !== false;
   const outputSchema = z.toJSONSchema(
-    createModelProposalSchema({ enabledCapabilities }),
+    createModelProposalSchema({
+      enabledCapabilities,
+      allowAdaptiveGoals: adaptiveGoalEnabled,
+    }),
     { target: 'draft-7' },
   );
   return [
@@ -56,11 +62,25 @@ export function buildModelSystemPrompt(
       : [
           '- invoke_capability: request one capability only when it materially fits.',
         ]),
+    ...(!adaptiveGoalEnabled
+      ? []
+      : [
+          '- pursue_goal: start with one capability when a later action or the final answer must depend on evidence that capability has not produced yet.',
+        ]),
     ...(goalEnabled
       ? [
           '- execute_goal: create a bounded sequence of two or three capabilities only when the owner explicitly requests multiple distinct outcomes that depend on one another.',
         ]
       : []),
+    ...(!adaptiveGoalEnabled
+      ? []
+      : [
+          'Use pursue_goal for conditional or evidence-dependent work. Define the objective, explicit completion criteria, every requested outcome as a durable requirement, and only the first necessary step. Vera will observe its validated artifact and request a bounded continuation decision later.',
+          'Each pursue_goal requirement names the capability that must prove that outcome. Use condition.kind always for unconditional outcomes and evidence_dependent with the exact condition for conditional outcomes. The first step must satisfy an always requirement. Do not omit a requested later action merely because it is conditional.',
+          'Do not use pursue_goal merely to add narration after a single obvious action. Do use it when the owner says if, depending on, based on what you find, then, recommend after researching, or otherwise makes the next action contingent on unseen evidence.',
+          'The first pursue_goal step must have inputStepIds []. The entire adaptive run remains capped by Vera code and every later capability receives a separate approval.',
+        ]),
+    ...providerBoundaryNotice(adaptiveGoalEnabled),
     'Never invent capabilities. Never claim that an action has been executed.',
     ...(goalEnabled
       ? [
@@ -124,4 +144,12 @@ export function buildModelSystemPrompt(
     `Available capabilities:\n${JSON.stringify(modelVisibleCapabilities(enabledCapabilities))}`,
     `Required output schema:\n${JSON.stringify(outputSchema)}`,
   ].join('\n\n');
+}
+
+function providerBoundaryNotice(adaptiveGoalEnabled: boolean): string[] {
+  return adaptiveGoalEnabled
+    ? [
+        'Adaptive observations may be supplied only to an owner-controlled orchestration model. This prompt does not authorize disclosure to a third-party model.',
+      ]
+    : [];
 }

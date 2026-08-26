@@ -45,6 +45,7 @@ erasing why a choice was made.
 | [0021](0021-execute-bounded-goals-with-step-scoped-approvals-and-artifact-lineage.md) | Accepted | Execute two- or three-step goals through separate approvals and integrity-checked artifact handoffs. |
 | [0022](0022-introduce-provider-neutral-integration-actions-with-vera-owned-personal-tasks.md) | Accepted | Add a provider-neutral integration-action boundary and durable, approval-gated personal tasks. |
 | [0023](0023-deliver-durable-reminders-through-a-vera-owned-notification-inbox.md) | Accepted | Schedule restart-safe reminders and atomically deliver them to a durable, cursor-addressable Vera inbox. |
+| [0024](0024-adapt-bounded-goals-from-validated-capability-evidence.md) | Accepted | Let bounded goals choose one next approved step or finish after validating durable capability evidence. |
 
 ADRs 0001–0008 were accepted 24 August 2026 following the owner's review of
 the foundation documentation. ADR-0007 accepted a semantic boundary without
@@ -81,6 +82,9 @@ external task vendor.
 ADR-0023 adds time-triggered assistant behavior through MongoDB-authoritative
 reminders, expiring delivery claims, atomic inbox notifications, and resumable
 SSE projection without making Redis or a client connection authoritative.
+ADR-0024 adds a durable observe-decide-act boundary for evidence-dependent
+goals while retaining exact approval, finite budgets, provider-neutral
+capabilities, and owner-controlled artifact disclosure.
 
 ## ADR rules
 

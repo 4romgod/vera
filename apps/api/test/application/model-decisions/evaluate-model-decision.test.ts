@@ -258,6 +258,160 @@ void describe('model decision boundary', () => {
     assert.deepEqual(result.decision, { kind: 'goal_planned', plan: goal });
   });
 
+  void it('accepts an adaptive goal with only its first evidence-producing step', async () => {
+    const goal = {
+      schemaVersion: 1 as const,
+      objective: 'Research the forecast and conditionally create a reminder.',
+      summary: 'Observe the research result before choosing the next action.',
+      completionCriteria:
+        'Create a reminder only if rain is expected, then explain the outcome.',
+      requirements: [
+        {
+          id: 'requirement_research',
+          description: 'Research the forecast.',
+          capability: 'web_research',
+          version: 1,
+          condition: { kind: 'always' as const },
+        },
+        {
+          id: 'requirement_reminder',
+          description: 'Create a reminder if rain is expected.',
+          capability: 'personal_reminder_management',
+          version: 1,
+          condition: {
+            kind: 'evidence_dependent' as const,
+            description: 'The forecast predicts rain.',
+          },
+        },
+      ],
+      firstStep: {
+        id: 'step_1',
+        purpose: 'Research the forecast.',
+        inputStepIds: [],
+        capability: 'web_research' as const,
+        version: 1 as const,
+        arguments: { objective: 'Check whether rain is expected tomorrow.' },
+      },
+    };
+    const provider = new FakeModelProvider({
+      schemaVersion: 1,
+      kind: 'pursue_goal',
+      decisionSummary: 'The next action depends on unseen evidence.',
+      goal,
+    });
+    const result = await createEvaluateModelDecision(provider, undefined, {
+      enabledCapabilities: [
+        { name: 'web_research', version: 1 },
+        { name: 'personal_reminder_management', version: 1 },
+      ],
+    })('Research the forecast and if it rains remind me.');
+
+    assert.deepEqual(result.decision, {
+      kind: 'adaptive_goal_planned',
+      plan: goal,
+    });
+    assert.match(
+      provider.inputs[0]?.systemPrompt ?? '',
+      /later action or the final answer must depend on evidence/u,
+    );
+  });
+
+  void it('restores an explicit owner outcome omitted from the model goal contract', async () => {
+    const provider = new FakeModelProvider({
+      schemaVersion: 1,
+      kind: 'pursue_goal',
+      decisionSummary: 'Research first.',
+      goal: {
+        schemaVersion: 1,
+        objective: 'Research the system and conditionally create a reminder.',
+        summary: 'Observe the research result.',
+        completionCriteria: 'Finish the owner request.',
+        requirements: [
+          {
+            id: 'requirement_research',
+            description: 'Research the system.',
+            capability: 'web_research',
+            version: 1,
+            condition: { kind: 'always' },
+          },
+        ],
+        firstStep: {
+          id: 'step_1',
+          purpose: 'Research the system.',
+          inputStepIds: [],
+          capability: 'web_research',
+          version: 1,
+          arguments: { objective: 'Verify whether the system works.' },
+        },
+      },
+    });
+    const result = await createEvaluateModelDecision(provider, undefined, {
+      enabledCapabilities: [
+        { name: 'web_research', version: 1 },
+        { name: 'personal_reminder_management', version: 1 },
+      ],
+    })('Research whether it works and if it does then remind me tomorrow.');
+
+    assert.equal(result.decision.kind, 'adaptive_goal_planned');
+    assert.deepEqual(
+      result.decision.plan.requirements.map(({ capability, condition }) => [
+        capability,
+        condition.kind,
+      ]),
+      [
+        ['web_research', 'always'],
+        ['personal_reminder_management', 'evidence_dependent'],
+      ],
+    );
+  });
+
+  void it('does not expose adaptive evidence loops to an unapproved third-party brain', async () => {
+    const provider = new FakeModelProvider(
+      {
+        schemaVersion: 1,
+        kind: 'pursue_goal',
+        decisionSummary: 'Attempt an adaptive goal.',
+        goal: {
+          schemaVersion: 1,
+          objective: 'Research and decide.',
+          summary: 'Observe evidence.',
+          completionCriteria: 'Return an evidence-grounded answer.',
+          requirements: [
+            {
+              id: 'requirement_research',
+              description: 'Research the request.',
+              capability: 'web_research',
+              version: 1,
+              condition: { kind: 'always' },
+            },
+          ],
+          firstStep: {
+            id: 'step_1',
+            purpose: 'Research.',
+            inputStepIds: [],
+            capability: 'web_research',
+            version: 1,
+            arguments: { objective: 'Research this.' },
+          },
+        },
+      },
+      undefined,
+      undefined,
+      'third_party',
+    );
+    const result = await createEvaluateModelDecision(provider, undefined, {
+      enabledCapabilities: [{ name: 'web_research', version: 1 }],
+    })('Research and decide.');
+
+    assert.equal(result.decision.kind, 'rejected');
+    assert.doesNotMatch(provider.inputs[0]?.systemPrompt ?? '', /pursue_goal/u);
+    assert.match(provider.inputs[0]?.systemPrompt ?? '', /invoke_capability/u);
+    assert.doesNotMatch(
+      JSON.stringify(provider.inputs[0]?.outputSchema),
+      /pursue_goal/u,
+    );
+  });
+
   void it('rejects a goal that rewrites the selected project identity', async () => {
     const result = await evaluator({
       schemaVersion: 1,

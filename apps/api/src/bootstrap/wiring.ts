@@ -1,4 +1,5 @@
 import { createEvaluateModelDecision } from '../application/model-decisions/evaluate-model-decision.ts';
+import { createEvaluateGoalContinuation } from '../application/model-decisions/evaluate-goal-continuation.ts';
 import {
   createTaskLifecycle,
   type TaskLifecycle,
@@ -149,6 +150,10 @@ export function createApp(
       ownerTimeZone: config.reminders.ownerTimeZone,
     },
   );
+  const evaluateGoalContinuation = createEvaluateGoalContinuation(provider, {
+    enabledCapabilities: capabilities.enabledReferences(),
+    ownerTimeZone: config.reminders.ownerTimeZone,
+  });
   const changeApplicationExecutor =
     new LocalGitSoftwareChangeApplicationExecutor({
       workspacesRoot: config.application.workspacesRoot,
@@ -167,10 +172,12 @@ export function createApp(
     store,
     scratchpad,
     evaluateModelDecision,
+    evaluateGoalContinuation,
     capabilities,
     resources,
     contextAssembler,
     conversationContextLimits: config.conversationContext,
+    ownerTimeZone: config.reminders.ownerTimeZone,
     executionMode: 'worker',
     observer: lifecycleObserver,
   });

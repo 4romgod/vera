@@ -796,6 +796,16 @@ void describe('Vera CLI', () => {
             byteLength: 10,
           },
         ],
+        decisionEvidence: [
+          {
+            id: 'artifact_plan',
+            version: 1,
+            type: 'implementation_plan',
+            mediaType: 'application/vnd.vera.implementation-plan+json',
+            sha256: 'a'.repeat(64),
+            byteLength: 10,
+          },
+        ],
         requestedAt: '2026-08-25T00:00:01.000Z',
       },
     });
@@ -865,6 +875,7 @@ void describe('Vera CLI', () => {
     assert.equal(confirmations, 2);
     assert.deepEqual(calls, ['approval_plan', 'approval_change']);
     assert.match(output.join(''), /artifact_plan/u);
+    assert.match(output.join(''), /decisionEvidence/u);
     assert.match(output.join(''), /I completed both approved steps\./u);
   });
 

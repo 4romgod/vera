@@ -8,6 +8,7 @@ import { createEvaluateModelDecision } from '../../../../src/application/model-d
 import { createTaskLifecycle } from '../../../../src/application/tasks/task-lifecycle.ts';
 import type { DevelopmentPlan } from '../../../../src/domain/plans/development-plan.ts';
 import { buildApp } from '../../../../src/adapters/inbound/http/build-app.ts';
+import { TaskLifecycleResponseJsonSchema } from '../../../../src/adapters/inbound/http/schemas.ts';
 import type { DevelopmentPlanningCapability } from '../../../../src/ports/capabilities/development-planning-capability.ts';
 import { FakeModelProvider } from '../../../support/fake-model-provider.ts';
 import { createDeterministicSoftwareChangeRegistry } from '../../../support/deterministic-software-change-registry.ts';
@@ -126,6 +127,14 @@ afterEach(async () => {
 });
 
 void describe('task lifecycle HTTP API', () => {
+  void it('publishes fixed and adaptive goal response contracts', () => {
+    const schema = JSON.stringify(TaskLifecycleResponseJsonSchema);
+    assert.match(schema, /"const":1/u);
+    assert.match(schema, /"const":2/u);
+    assert.match(schema, /"const":"adaptive"/u);
+    assert.match(schema, /"continuations"/u);
+  });
+
   void it('requires an idempotency key when submitting work', async () => {
     const response = await createHarness().inject({
       method: 'POST',

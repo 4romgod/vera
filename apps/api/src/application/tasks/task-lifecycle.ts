@@ -2,9 +2,17 @@ import { createHash, randomUUID } from 'node:crypto';
 
 import { assembleConversationContext } from '../conversations/assemble-conversation-context.ts';
 import type { EvaluateModelDecision } from '../model-decisions/evaluate-model-decision.ts';
+import type {
+  AdaptiveGoalObservation,
+  EvaluateGoalContinuation,
+} from '../model-decisions/evaluate-goal-continuation.ts';
 import { assertConversationContextIntegrity } from '../conversations/validate-conversation-context.ts';
 import { assertProjectContextIntegrity } from '../projects/validate-project-context.ts';
 import type { DecisionResult } from '../../domain/model/execution-decision.ts';
+import {
+  nextAdaptiveGoalStepId,
+  type AdaptiveGoalContinuationResult,
+} from '../../domain/goals/adaptive-goal.ts';
 import {
   ArtifactReferenceSchema,
   ArtifactSchema,
@@ -117,10 +125,12 @@ export function createTaskLifecycle(options: {
   store: ExecutionStore;
   scratchpad: Scratchpad;
   evaluateModelDecision: EvaluateModelDecision;
+  evaluateGoalContinuation?: EvaluateGoalContinuation;
   capabilities: CapabilityRuntimeRegistry;
   resources: OwnerResourceStore;
   contextAssembler: ProjectContextAssembler;
   conversationContextLimits?: ConversationContextLimits;
+  ownerTimeZone?: string;
   budget?: RunBudget;
   executionMode?: 'inline' | 'worker';
   observer?: LifecycleObserver;
@@ -137,6 +147,7 @@ export function createTaskLifecycle(options: {
     maxMessages: 20,
     maxCharacters: 40_000,
   };
+  const ownerTimeZone = options.ownerTimeZone ?? 'UTC';
   const activeInvocations = new Map<string, AbortController>();
 
   function artifactReference(artifact: Artifact) {
@@ -259,6 +270,7 @@ export function createTaskLifecycle(options: {
     aggregate: TaskAggregate,
     stepIndex: number,
     requestedAt: string,
+    decisionEvidence: ReturnType<typeof artifactReference>[] = [],
   ): void {
     const goal = aggregate.run.goal;
     const step = goal?.steps[stepIndex];
@@ -318,6 +330,7 @@ export function createTaskLifecycle(options: {
           }
         : {}),
       ...(inputs.length === 0 ? {} : { inputArtifacts: inputs }),
+      ...(decisionEvidence.length === 0 ? {} : { decisionEvidence }),
       destination: runtime.destination,
       authority,
       requestedAt,
@@ -337,6 +350,9 @@ export function createTaskLifecycle(options: {
         approvalId,
         capability: `${step.capability}@${String(step.version)}`,
         inputArtifactIds: inputs.map((artifact) => artifact.id),
+        decisionEvidenceArtifactIds: decisionEvidence.map(
+          (artifact) => artifact.id,
+        ),
       },
       createId,
     );
@@ -409,6 +425,9 @@ export function createTaskLifecycle(options: {
         aggregate.run.output.summary,
         `Artifacts: ${aggregate.run.output.artifacts.map((artifact) => artifact.id).join(', ')}`,
       ].join('\n\n');
+    }
+    if (aggregate.run.output?.kind === 'adaptive_goal_result') {
+      return aggregate.run.output.message;
     }
     if (aggregate.run.failure !== undefined) {
       return aggregate.run.failure.message;
@@ -664,8 +683,12 @@ export function createTaskLifecycle(options: {
         ? options.capabilities.selected(decision.decision.capability)
         : null;
     const goalRuntimes =
-      decision.decision.kind === 'goal_planned'
-        ? decision.decision.plan.steps.map((step) =>
+      decision.decision.kind === 'goal_planned' ||
+      decision.decision.kind === 'adaptive_goal_planned'
+        ? (decision.decision.kind === 'goal_planned'
+            ? decision.decision.plan.steps
+            : [decision.decision.plan.firstStep]
+          ).map((step) =>
             options.capabilities.selected({
               name: step.capability,
               version: step.version,
@@ -807,6 +830,72 @@ export function createTaskLifecycle(options: {
           return true;
         }
 
+        if (decision.decision.kind === 'adaptive_goal_planned') {
+          const requiresProjectContext = goalRuntimes.some(
+            (runtime) => runtime?.authority.projectContext === 'required',
+          );
+          if (requiresProjectContext && approvedContext === undefined) {
+            throw new Error('Adaptive goal project context was not assembled.');
+          }
+          if (!requiresProjectContext && approvedContext !== undefined) {
+            throw new Error(
+              'A project-independent adaptive goal cannot receive project context.',
+            );
+          }
+          if (approvedContext !== undefined) {
+            candidate.run.context = approvedContext.context;
+            appendEvent(
+              candidate,
+              'context_assembled',
+              now,
+              {
+                projectId: approvedContext.project.id,
+                revision: approvedContext.context.manifest.revision,
+                totalFiles: approvedContext.context.manifest.totalFiles,
+                totalBytes: approvedContext.context.manifest.totalBytes,
+              },
+              createId,
+            );
+          }
+          candidate.run.goal = {
+            schemaVersion: 2,
+            mode: 'adaptive',
+            objective: decision.decision.plan.objective,
+            summary: decision.decision.plan.summary,
+            completionCriteria: decision.decision.plan.completionCriteria,
+            requirements: decision.decision.plan.requirements,
+            status: 'active',
+            ...(approvedContext === undefined
+              ? {}
+              : {
+                  project: {
+                    id: approvedContext.project.id,
+                    displayName: approvedContext.project.displayName,
+                  },
+                }),
+            currentStepIndex: 0,
+            steps: [
+              {
+                ...decision.decision.plan.firstStep,
+                status: 'pending' as const,
+              },
+            ],
+            continuations: [],
+          };
+          appendEvent(
+            candidate,
+            'adaptive_goal_planned',
+            now,
+            {
+              completionCriteria: candidate.run.goal.completionCriteria,
+              firstCapability: `${decision.decision.plan.firstStep.capability}@${String(decision.decision.plan.firstStep.version)}`,
+            },
+            createId,
+          );
+          prepareGoalStepApproval(candidate, 0, now);
+          return true;
+        }
+
         if (selectedCapability === null) {
           throw new Error('The approved capability runtime is unavailable.');
         }
@@ -884,6 +973,7 @@ export function createTaskLifecycle(options: {
       | 'project_not_found'
       | 'project_context_failure'
       | 'conversation_context_failure'
+      | 'adaptive_goal_failure'
       | 'budget_exhausted'
       | 'cancelled',
     publicMessage: string,
@@ -919,6 +1009,417 @@ export function createTaskLifecycle(options: {
       return true;
     });
     return result.aggregate;
+  }
+
+  async function loadAdaptiveGoalObservations(
+    aggregate: TaskAggregate,
+  ): Promise<AdaptiveGoalObservation[]> {
+    const goal = aggregate.run.goal;
+    if (goal?.schemaVersion !== 2) {
+      throw new Error('The run does not contain an adaptive goal.');
+    }
+    const observations: AdaptiveGoalObservation[] = [];
+    for (const step of goal.steps) {
+      if (step.status !== 'succeeded' || step.artifact === undefined) {
+        throw new Error(
+          `Adaptive goal step ${step.id} is missing its completed artifact.`,
+        );
+      }
+      const artifact = await options.resources.findArtifactById(
+        aggregate.task.principalId,
+        step.artifact.id,
+      );
+      if (artifact === null) {
+        throw new Error(
+          `Adaptive goal observation ${step.id} failed integrity or scope validation.`,
+        );
+      }
+      const artifactProjectId =
+        'projectId' in artifact ? artifact.projectId : undefined;
+      if (
+        artifact.taskId !== aggregate.task.id ||
+        artifact.runId !== aggregate.run.id ||
+        artifact.type !== step.artifact.type ||
+        artifact.mediaType !== step.artifact.mediaType ||
+        artifact.sha256 !== step.artifact.sha256 ||
+        artifact.byteLength !== step.artifact.byteLength ||
+        (artifactProjectId !== undefined &&
+          artifactProjectId !== aggregate.task.projectId) ||
+        !artifactContentIsIntact(artifact)
+      ) {
+        throw new Error(
+          `Adaptive goal observation ${step.id} failed integrity or scope validation.`,
+        );
+      }
+      observations.push({
+        stepId: step.id,
+        purpose: step.purpose,
+        capability: { name: step.capability, version: step.version },
+        artifact,
+      });
+    }
+    return observations;
+  }
+
+  async function assembleAdaptiveStepContext(
+    aggregate: TaskAggregate,
+    step: NonNullable<
+      Extract<
+        AdaptiveGoalContinuationResult['decision'],
+        { kind: 'continue_goal' }
+      >['step']
+    >,
+  ): Promise<{ project: Project; context: ProjectContextBundle } | undefined> {
+    const runtime = options.capabilities.selected({
+      name: step.capability,
+      version: step.version,
+    });
+    if (runtime === null) {
+      throw new Error('The adaptive continuation runtime is unavailable.');
+    }
+    if (runtime.authority.projectContext !== 'required') return undefined;
+    const projectId = aggregate.task.projectId;
+    if (projectId === undefined) {
+      throw new LifecycleError(
+        'A registered projectId is required for this adaptive goal step.',
+        'project_required',
+      );
+    }
+    const project = await options.resources.findProjectById(
+      aggregate.task.principalId,
+      projectId,
+    );
+    if (project === null) {
+      throw new LifecycleError(
+        `Project ${projectId} was not found.`,
+        'project_not_found',
+      );
+    }
+    if (aggregate.run.context !== undefined) {
+      assertProjectContextIntegrity(aggregate.run.context, project.id);
+      return { project, context: aggregate.run.context };
+    }
+    if (!('ticket' in step.arguments)) {
+      throw new Error(
+        'The adaptive project step is missing project-routing arguments.',
+      );
+    }
+    const runBudget = aggregate.run.budget ?? budget;
+    const context = await options.contextAssembler.assemble({
+      project,
+      objective: step.arguments.objective,
+      ticket: step.arguments.ticket,
+      limits: {
+        maxFiles: runBudget.limits.maxContextFiles,
+        maxBytes: runBudget.limits.maxContextBytes,
+        maxFileBytes: runBudget.limits.maxContextFileBytes,
+      },
+    });
+    assertProjectContextIntegrity(context, project.id);
+    return { project, context };
+  }
+
+  async function recordAdaptiveGoalContinuation(
+    aggregate: TaskAggregate,
+    continuation: AdaptiveGoalContinuationResult,
+    assembledContext?: { project: Project; context: ProjectContextBundle },
+  ): Promise<TaskAggregate> {
+    const result = await update(
+      aggregate.task.principalId,
+      aggregate.task.id,
+      (candidate) => {
+        const goal = candidate.run.goal;
+        const currentStep = goal?.steps[goal.currentStepIndex];
+        if (
+          candidate.run.status !== 'deciding' ||
+          goal?.schemaVersion !== 2 ||
+          goal.status !== 'active' ||
+          currentStep?.status !== 'succeeded'
+        ) {
+          return false;
+        }
+        if (
+          goal.continuations.some(
+            (record) => record.decisionId === continuation.decisionId,
+          )
+        ) {
+          return false;
+        }
+        goal.continuations.push(continuation);
+        candidate.run.updatedAt = continuation.decidedAt;
+        candidate.task.updatedAt = continuation.decidedAt;
+        appendEvent(
+          candidate,
+          'adaptive_goal_continuation_recorded',
+          continuation.decidedAt,
+          {
+            decisionId: continuation.decisionId,
+            kind: continuation.decision.kind,
+            observedStepIds: goal.steps.map((step) => step.id),
+          },
+          createId,
+        );
+
+        if (continuation.decision.kind === 'rejected') {
+          goal.status = 'failed';
+          candidate.run.status = 'failed';
+          candidate.task.status = 'failed';
+          candidate.run.failure = {
+            code:
+              continuation.decision.code === 'budget_exhausted'
+                ? 'budget_exhausted'
+                : 'adaptive_goal_failure',
+            message: continuation.decision.message,
+          };
+          appendEvent(
+            candidate,
+            'run_failed',
+            continuation.decidedAt,
+            { code: continuation.decision.code },
+            createId,
+          );
+          return true;
+        }
+
+        const evidence = continuation.decision.evidenceStepIds.map((stepId) => {
+          const step = goal.steps.find(
+            (candidateStep) => candidateStep.id === stepId,
+          );
+          if (step?.artifact === undefined) {
+            throw new Error(
+              `Adaptive continuation evidence ${stepId} is unavailable.`,
+            );
+          }
+          return step.artifact;
+        });
+
+        if (continuation.decision.kind === 'complete_goal') {
+          const artifacts = goal.steps.map((step) => {
+            if (step.artifact === undefined) {
+              throw new Error('An adaptive goal step is missing its artifact.');
+            }
+            return step.artifact;
+          });
+          const verifiedExecution = goal.steps
+            .map((step) => `${step.capability}@${String(step.version)}`)
+            .join(', ');
+          const requirementResolutions =
+            continuation.decision.requirementResolutions;
+          const verifiedOutcomes = requirementResolutions.map((resolution) => {
+            const requirement = goal.requirements.find(
+              ({ id }) => id === resolution.requirementId,
+            );
+            if (requirement === undefined) {
+              throw new Error(
+                `Adaptive requirement ${resolution.requirementId} is unavailable.`,
+              );
+            }
+            return resolution.status === 'satisfied'
+              ? `Completed: ${requirement.description} (verified by ${requirement.capability}@${String(requirement.version)}).`
+              : `Not performed: ${requirement.description} The orchestration brain judged its evidence-dependent condition not applicable.`;
+          });
+          const hasUnperformedOutcome = requirementResolutions.some(
+            ({ status }) => status === 'not_applicable',
+          );
+          const finalMessage = [
+            `Verified outcomes:\n${verifiedOutcomes.map((outcome) => `- ${outcome}`).join('\n')}`,
+            ...(hasUnperformedOutcome
+              ? []
+              : [
+                  `Evidence-grounded summary: ${continuation.decision.message}`,
+                ]),
+            `Verified execution record: ${verifiedExecution}. No other capability or side effect was executed in this goal.`,
+          ].join('\n\n');
+          goal.status = 'succeeded';
+          goal.finalResponse = {
+            message: finalMessage,
+            evidence,
+            decisionId: continuation.decisionId,
+          };
+          candidate.run.status = 'succeeded';
+          candidate.task.status = 'completed';
+          candidate.run.output = {
+            kind: 'adaptive_goal_result',
+            objective: goal.objective,
+            message: finalMessage,
+            evidence,
+            artifacts,
+          };
+          appendEvent(
+            candidate,
+            'adaptive_goal_succeeded',
+            continuation.decidedAt,
+            {
+              evidenceArtifactIds: evidence.map((artifact) => artifact.id),
+              artifactIds: artifacts.map((artifact) => artifact.id),
+            },
+            createId,
+          );
+          appendEvent(
+            candidate,
+            'run_succeeded',
+            continuation.decidedAt,
+            {},
+            createId,
+          );
+          return true;
+        }
+
+        if (goal.steps.length >= 3) {
+          throw new Error(
+            'The adaptive continuation exceeded the three-step ceiling.',
+          );
+        }
+        if (assembledContext !== undefined) {
+          if (
+            candidate.run.context !== undefined &&
+            candidate.run.context.manifest.revision !==
+              assembledContext.context.manifest.revision
+          ) {
+            throw new Error(
+              'The adaptive goal project context changed after it was frozen.',
+            );
+          }
+          if (candidate.run.context === undefined) {
+            candidate.run.context = assembledContext.context;
+            appendEvent(
+              candidate,
+              'context_assembled',
+              continuation.decidedAt,
+              {
+                projectId: assembledContext.project.id,
+                revision: assembledContext.context.manifest.revision,
+                totalFiles: assembledContext.context.manifest.totalFiles,
+                totalBytes: assembledContext.context.manifest.totalBytes,
+              },
+              createId,
+            );
+          }
+          goal.project ??= {
+            id: assembledContext.project.id,
+            displayName: assembledContext.project.displayName,
+          };
+        }
+        archiveCurrentGoalBoundary(candidate);
+        goal.steps.push({
+          ...continuation.decision.step,
+          status: 'pending',
+        });
+        prepareGoalStepApproval(
+          candidate,
+          goal.steps.length - 1,
+          continuation.decidedAt,
+          evidence,
+        );
+        return true;
+      },
+    );
+    return result.aggregate;
+  }
+
+  async function evaluateAdaptiveGoalContinuation(
+    aggregate: TaskAggregate,
+    selectedProject?: Project | null,
+  ): Promise<TaskAggregate> {
+    const goal = aggregate.run.goal;
+    if (goal?.schemaVersion !== 2) {
+      throw new Error('The run does not contain an adaptive goal.');
+    }
+    const evaluator = options.evaluateGoalContinuation;
+    if (evaluator === undefined) {
+      throw new Error('Adaptive goal continuation is not configured.');
+    }
+    const observations = await loadAdaptiveGoalObservations(aggregate);
+    const observationBytes = observations.reduce(
+      (total, observation) => total + observation.artifact.byteLength,
+      0,
+    );
+    const contextByteLimit =
+      aggregate.run.budget?.limits.maxContextBytes ??
+      budget.limits.maxContextBytes;
+    if (observationBytes > contextByteLimit) {
+      const failedAt = clock();
+      const failure = await update(
+        aggregate.task.principalId,
+        aggregate.task.id,
+        (candidate) => {
+          if (
+            candidate.run.status !== 'deciding' ||
+            candidate.run.goal?.schemaVersion !== 2 ||
+            candidate.run.goal.status !== 'active'
+          ) {
+            return false;
+          }
+          candidate.run.goal.status = 'failed';
+          candidate.run.status = 'failed';
+          candidate.task.status = 'failed';
+          candidate.run.failure = {
+            code: 'budget_exhausted',
+            message:
+              'The adaptive goal observations exceeded the model-context byte budget.',
+          };
+          candidate.run.updatedAt = failedAt;
+          candidate.task.updatedAt = failedAt;
+          appendEvent(
+            candidate,
+            'budget_exhausted',
+            failedAt,
+            {
+              resource: 'adaptive_observation_bytes',
+              consumed: observationBytes,
+              limit: contextByteLimit,
+            },
+            createId,
+          );
+          appendEvent(
+            candidate,
+            'run_failed',
+            failedAt,
+            { code: 'budget_exhausted' },
+            createId,
+          );
+          return true;
+        },
+      );
+      return failure.aggregate;
+    }
+    const continuation = await evaluator({
+      ownerMessage: aggregate.task.message,
+      objective: goal.objective,
+      completionCriteria: goal.completionCriteria,
+      requirements: goal.requirements,
+      observations,
+      nextStepId: nextAdaptiveGoalStepId(goal.steps.map(({ id }) => id)),
+      remainingCapabilityInvocations: Math.max(
+        0,
+        (aggregate.run.budget?.limits.capabilityInvocations ??
+          budget.limits.capabilityInvocations) - goal.steps.length,
+      ),
+      ...(selectedProject === undefined || selectedProject === null
+        ? {}
+        : {
+            selectedProject: {
+              id: selectedProject.id,
+              displayName: selectedProject.displayName,
+            },
+          }),
+      temporalContext: {
+        currentTime: aggregate.task.createdAt,
+        ownerTimeZone,
+      },
+    });
+    const assembledContext =
+      continuation.decision.kind === 'continue_goal'
+        ? await assembleAdaptiveStepContext(
+            aggregate,
+            continuation.decision.step,
+          )
+        : undefined;
+    return recordAdaptiveGoalContinuation(
+      aggregate,
+      continuation,
+      assembledContext,
+    );
   }
 
   async function evaluate(aggregate: TaskAggregate): Promise<TaskAggregate> {
@@ -1044,6 +1545,15 @@ export function createTaskLifecycle(options: {
           );
         }
       }
+      if (
+        budgetClaim.aggregate.run.goal?.schemaVersion === 2 &&
+        budgetClaim.aggregate.run.goal.status === 'active'
+      ) {
+        return await evaluateAdaptiveGoalContinuation(
+          budgetClaim.aggregate,
+          selectedProject,
+        );
+      }
       const decision = await options.evaluateModelDecision(
         budgetClaim.aggregate.task.message,
         {
@@ -1070,20 +1580,23 @@ export function createTaskLifecycle(options: {
       );
       if (
         decision.decision.kind !== 'approval_required' &&
-        decision.decision.kind !== 'goal_planned'
+        decision.decision.kind !== 'goal_planned' &&
+        decision.decision.kind !== 'adaptive_goal_planned'
       ) {
         return await recordDecision(budgetClaim.aggregate, decision);
       }
       const plannedSteps =
         decision.decision.kind === 'goal_planned'
           ? decision.decision.plan.steps
-          : [
-              {
-                capability: decision.decision.capability.name,
-                version: decision.decision.capability.version,
-                arguments: decision.decision.proposedArguments,
-              },
-            ];
+          : decision.decision.kind === 'adaptive_goal_planned'
+            ? [decision.decision.plan.firstStep]
+            : [
+                {
+                  capability: decision.decision.capability.name,
+                  version: decision.decision.capability.version,
+                  arguments: decision.decision.proposedArguments,
+                },
+              ];
       const plannedRuntimes = plannedSteps.map((step) =>
         options.capabilities.selected({
           name: step.capability,
@@ -1169,10 +1682,14 @@ export function createTaskLifecycle(options: {
         aggregate.task.id,
         error instanceof ModelProviderError
           ? 'model_provider_failure'
-          : 'internal_failure',
+          : aggregate.run.goal?.schemaVersion === 2
+            ? 'adaptive_goal_failure'
+            : 'internal_failure',
         error instanceof ModelProviderError
           ? 'The model provider could not decide how to handle this task.'
-          : 'Vera could not decide how to handle this task.',
+          : aggregate.run.goal?.schemaVersion === 2
+            ? 'Vera could not validate or continue the adaptive goal.'
+            : 'Vera could not decide how to handle this task.',
         'run_failed',
       );
     }
@@ -1252,6 +1769,9 @@ export function createTaskLifecycle(options: {
           ...(candidate.run.approval.inputArtifacts === undefined
             ? {}
             : { inputArtifacts: candidate.run.approval.inputArtifacts }),
+          ...(candidate.run.approval.decisionEvidence === undefined
+            ? {}
+            : { decisionEvidence: candidate.run.approval.decisionEvidence }),
           startedAt: now,
         });
         const goalStep =
@@ -1365,6 +1885,22 @@ export function createTaskLifecycle(options: {
               },
               createId,
             );
+            if (goal.schemaVersion === 2) {
+              candidate.run.status = 'deciding';
+              delete candidate.run.output;
+              appendEvent(
+                candidate,
+                'adaptive_goal_observation_recorded',
+                completedAt,
+                {
+                  goalStepId: step.id,
+                  artifactId: artifact.id,
+                  capability: `${step.capability}@${String(step.version)}`,
+                },
+                createId,
+              );
+              return true;
+            }
             const nextStepIndex = goal.currentStepIndex + 1;
             if (nextStepIndex < goal.steps.length) {
               archiveCurrentGoalBoundary(candidate);
@@ -1613,6 +2149,16 @@ export function createTaskLifecycle(options: {
       ) {
         throw new Error(
           'The claimed invocation authority differs from the approved authority.',
+        );
+      }
+      if (
+        !sameArtifactReferences(
+          claimedInvocation.decisionEvidence,
+          executionAggregate.run.approval?.decisionEvidence,
+        )
+      ) {
+        throw new Error(
+          'The claimed decision evidence differs from the approved evidence.',
         );
       }
       const capabilityRuntime = options.capabilities.resolve(
@@ -2019,6 +2565,18 @@ export function createTaskLifecycle(options: {
     return aggregate;
   }
 
+  async function continueAdaptiveGoalInline(
+    aggregate: TaskAggregate,
+  ): Promise<TaskAggregate> {
+    if (
+      aggregate.run.status !== 'deciding' ||
+      aggregate.run.goal?.schemaVersion !== 2
+    ) {
+      return aggregate;
+    }
+    return progress(aggregate);
+  }
+
   return {
     async submit(input) {
       const existing = await options.store.findByRequestKey(
@@ -2190,7 +2748,9 @@ export function createTaskLifecycle(options: {
         }
         const progressed =
           currentStatus === 'approved' && executionMode === 'inline'
-            ? await executeApproved(existing, false)
+            ? await continueAdaptiveGoalInline(
+                await executeApproved(existing, false),
+              )
             : existing;
         return finalizeConversationReply(progressed);
       }
@@ -2243,7 +2803,9 @@ export function createTaskLifecycle(options: {
       }
       const progressed =
         input.decision === 'approved' && executionMode === 'inline'
-          ? await executeApproved(decision.aggregate, false)
+          ? await continueAdaptiveGoalInline(
+              await executeApproved(decision.aggregate, false),
+            )
           : decision.aggregate;
       return finalizeConversationReply(progressed);
     },
