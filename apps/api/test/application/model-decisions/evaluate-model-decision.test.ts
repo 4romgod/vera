@@ -4,6 +4,9 @@ import { describe, it } from 'node:test';
 import { createEvaluateModelDecision } from '../../../src/application/model-decisions/evaluate-model-decision.ts';
 import { FakeModelProvider } from '../../support/fake-model-provider.ts';
 
+const currentTime = '2026-08-26T08:00:00.000Z';
+const temporalContext = { currentTime, ownerTimeZone: 'Africa/Johannesburg' };
+
 function evaluator(candidate: unknown) {
   return createEvaluateModelDecision(
     new FakeModelProvider(candidate),
@@ -20,14 +23,20 @@ void describe('model decision boundary', () => {
       message: 'Hello.',
     });
 
-    await createEvaluateModelDecision(provider)('plan request IDs');
+    await createEvaluateModelDecision(provider, undefined, {
+      ownerTimeZone: temporalContext.ownerTimeZone,
+      clock: () => currentTime,
+    })('plan request IDs');
 
     assert.equal(provider.inputs.length, 1);
     assert.match(
       provider.inputs[0]?.systemPrompt ?? '',
       /faithfully restate only the requested outcome/u,
     );
-    assert.equal(provider.inputs[0]?.message, 'plan request IDs');
+    assert.deepEqual(JSON.parse(provider.inputs[0]?.message ?? '{}'), {
+      ownerMessage: 'plan request IDs',
+      temporalContext,
+    });
   });
 
   void it('supplies the selected project as authoritative orchestration context', async () => {
@@ -38,18 +47,43 @@ void describe('model decision boundary', () => {
       message: 'Hello.',
     });
 
-    await createEvaluateModelDecision(provider)('plan this', {
+    await createEvaluateModelDecision(provider, undefined, {
+      ownerTimeZone: temporalContext.ownerTimeZone,
+      clock: () => currentTime,
+    })('plan this', {
       selectedProject: { id: 'project_vera', displayName: 'Vera' },
     });
 
     assert.deepEqual(JSON.parse(provider.inputs[0]?.message ?? '{}'), {
       ownerMessage: 'plan this',
+      temporalContext,
       selectedProject: { id: 'project_vera', displayName: 'Vera' },
     });
     assert.match(
       provider.inputs[0]?.systemPrompt ?? '',
       /selectedProject is supplied, it is authoritative/u,
     );
+  });
+
+  void it('uses a caller-frozen request instant with the configured owner time zone', async () => {
+    const provider = new FakeModelProvider({
+      schemaVersion: 1,
+      kind: 'respond',
+      decisionSummary: 'No specialist is needed.',
+      message: 'Hello.',
+    });
+
+    await createEvaluateModelDecision(provider, undefined, {
+      ownerTimeZone: temporalContext.ownerTimeZone,
+      clock: () => '2099-01-01T00:00:00.000Z',
+    })('remind me later', {
+      temporalContext: { currentTime },
+    });
+
+    assert.deepEqual(JSON.parse(provider.inputs[0]?.message ?? '{}'), {
+      ownerMessage: 'remind me later',
+      temporalContext,
+    });
   });
 
   void it('supplies bounded conversation history as untrusted structured context', async () => {
@@ -86,7 +120,10 @@ void describe('model decision boundary', () => {
       exclusions: { differentScope: 2, incompleteTurns: 1, limits: 0 },
     };
 
-    await createEvaluateModelDecision(provider)('continue', {
+    await createEvaluateModelDecision(provider, undefined, {
+      ownerTimeZone: temporalContext.ownerTimeZone,
+      clock: () => currentTime,
+    })('continue', {
       selectedProject: { id: 'project_vera', displayName: 'Vera' },
       conversationContext: {
         manifest,
@@ -109,6 +146,7 @@ void describe('model decision boundary', () => {
 
     assert.deepEqual(JSON.parse(provider.inputs[0]?.message ?? '{}'), {
       ownerMessage: 'continue',
+      temporalContext,
       selectedProject: { id: 'project_vera', displayName: 'Vera' },
       conversationContext: {
         messages: [
@@ -390,6 +428,52 @@ void describe('model decision boundary', () => {
       provider.inputs[0]?.systemPrompt ?? '',
       /execute_goal/u,
     );
+  });
+
+  void it('accepts reminders only in the code-configured owner time zone', async () => {
+    const candidate = {
+      schemaVersion: 1,
+      kind: 'invoke_capability',
+      decisionSummary: 'The owner asked to create a reminder.',
+      capability: { name: 'personal_reminder_management', version: 1 },
+      arguments: {
+        action: 'create',
+        message: 'Stand up',
+        scheduledFor: '2026-08-26T08:05:00.000Z',
+        timeZone: 'Africa/Johannesburg',
+      },
+    };
+    const accepted = await createEvaluateModelDecision(
+      new FakeModelProvider(candidate),
+      () => 'decision_reminder',
+      {
+        enabledCapabilities: [
+          { name: 'personal_reminder_management', version: 1 },
+        ],
+        ownerTimeZone: 'Africa/Johannesburg',
+      },
+    )('Remind me to stand up in five minutes.');
+    assert.equal(accepted.decision.kind, 'approval_required');
+
+    const rejected = await createEvaluateModelDecision(
+      new FakeModelProvider({
+        ...candidate,
+        arguments: { ...candidate.arguments, timeZone: 'America/New_York' },
+      }),
+      () => 'decision_reminder_wrong_zone',
+      {
+        enabledCapabilities: [
+          { name: 'personal_reminder_management', version: 1 },
+        ],
+        ownerTimeZone: 'Africa/Johannesburg',
+      },
+    )('Remind me to stand up in five minutes.');
+    assert.deepEqual(rejected.decision, {
+      kind: 'rejected',
+      code: 'invalid_capability_arguments',
+      message:
+        'The proposed reminder does not preserve the configured owner time zone.',
+    });
   });
 
   void it('advertises only the enabled single-capability contract', async () => {

@@ -73,6 +73,19 @@ const EnvironmentSchema = z.object({
   WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(2),
   WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(25).default(250),
   WORKER_LEASE_MS: z.coerce.number().int().min(1_000).default(900_000),
+  VERA_OWNER_TIME_ZONE: z
+    .string()
+    .trim()
+    .min(1)
+    .default(Intl.DateTimeFormat().resolvedOptions().timeZone),
+  REMINDER_WORKER_CONCURRENCY: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(32)
+    .default(2),
+  REMINDER_POLL_INTERVAL_MS: z.coerce.number().int().min(25).default(500),
+  REMINDER_LEASE_MS: z.coerce.number().int().min(1_000).default(30_000),
 });
 
 export type AppConfig = {
@@ -118,7 +131,24 @@ export type AppConfig = {
     pollIntervalMs: number;
     leaseMs: number;
   };
+  reminders: {
+    ownerTimeZone: string;
+    concurrency: number;
+    pollIntervalMs: number;
+    leaseMs: number;
+  };
 };
+
+function requireTimeZone(value: string): string {
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: value }).format();
+    return value;
+  } catch {
+    throw new Error(
+      `VERA_OWNER_TIME_ZONE "${value}" is not a valid IANA time zone.`,
+    );
+  }
+}
 
 function requireApiKey(
   provider: 'openai' | 'gemini',
@@ -283,6 +313,12 @@ export function loadConfig(
       concurrency: parsed.WORKER_CONCURRENCY,
       pollIntervalMs: parsed.WORKER_POLL_INTERVAL_MS,
       leaseMs: parsed.WORKER_LEASE_MS,
+    },
+    reminders: {
+      ownerTimeZone: requireTimeZone(parsed.VERA_OWNER_TIME_ZONE),
+      concurrency: parsed.REMINDER_WORKER_CONCURRENCY,
+      pollIntervalMs: parsed.REMINDER_POLL_INTERVAL_MS,
+      leaseMs: parsed.REMINDER_LEASE_MS,
     },
   };
 }

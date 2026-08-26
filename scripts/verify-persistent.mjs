@@ -68,6 +68,10 @@ async function startServer(port) {
       CHANGE_APPLICATION_ROOT: changeApplicationRoot,
       WORKER_CONCURRENCY: '2',
       WORKER_POLL_INTERVAL_MS: '25',
+      VERA_OWNER_TIME_ZONE: 'Africa/Johannesburg',
+      REMINDER_WORKER_CONCURRENCY: '2',
+      REMINDER_POLL_INTERVAL_MS: '25',
+      REMINDER_LEASE_MS: '1000',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -278,6 +282,7 @@ async function verifyCliJourney(
   changeProjectRoot,
   client,
   personalTaskId,
+  reminderId,
 ) {
   const catalog = await client.listCapabilities();
   const researchCapability = catalog.capabilities.find(
@@ -392,6 +397,48 @@ async function verifyCliJourney(
   );
   assert.match(personalTasksResult.stdout, new RegExp(personalTaskId, 'u'));
   assert.match(personalTasksResult.stdout, /"status": "completed"/u);
+
+  const remindersResult = await executeFile(
+    process.execPath,
+    [
+      'apps/cli/dist/bin.js',
+      'reminder',
+      'list',
+      '--url',
+      baseUrl,
+      '--status',
+      'acknowledged',
+    ],
+    {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: operationTimeoutMs,
+      maxBuffer: 2 * 1024 * 1024,
+    },
+  );
+  assert.match(remindersResult.stdout, new RegExp(reminderId, 'u'));
+  assert.match(remindersResult.stdout, /"status": "acknowledged"/u);
+
+  const notificationsResult = await executeFile(
+    process.execPath,
+    [
+      'apps/cli/dist/bin.js',
+      'notification',
+      'list',
+      '--url',
+      baseUrl,
+      '--limit',
+      '10',
+    ],
+    {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: operationTimeoutMs,
+      maxBuffer: 2 * 1024 * 1024,
+    },
+  );
+  assert.match(notificationsResult.stdout, new RegExp(reminderId, 'u'));
+  assert.match(notificationsResult.stdout, /"channel": "vera_inbox"/u);
 
   const changeResult = await executeFile(
     process.execPath,
@@ -838,6 +885,40 @@ async function verifyScenarios(mongo, redis) {
   assert.ok(personalTaskId);
   assert.equal((await client.getPersonalTask(personalTaskId)).status, 'open');
 
+  const reminderSubmitted = rememberRun(
+    await client.submitTask({
+      message:
+        'Remind me to verify restart-safe scheduling at 2035-08-26T10:00:00.000Z',
+      idempotencyKey: 'persistent-verification-reminder-create',
+    }),
+  );
+  const reminderApproval = await client.waitForRun(reminderSubmitted.runId, {
+    until: (task) => task.runStatus === 'awaiting_approval',
+    timeoutMs: operationTimeoutMs,
+    intervalMs: 25,
+  });
+  assert.equal(
+    reminderApproval.approval?.capability.name,
+    'personal_reminder_management',
+  );
+  assert.deepEqual(reminderApproval.approval?.authority?.sideEffects, [
+    'personal_data_write',
+    'scheduled_notification',
+  ]);
+  assert.ok(reminderApproval.approval);
+  await client.decideApproval(reminderApproval.approval.id, 'approved');
+  const reminderCreated = await client.waitForRun(reminderSubmitted.runId, {
+    timeoutMs: operationTimeoutMs,
+    intervalMs: 25,
+  });
+  assert.equal(reminderCreated.output?.kind, 'personal_reminder_result');
+  if (reminderCreated.output?.kind !== 'personal_reminder_result') {
+    throw new Error('Persistent reminder creation did not return a result.');
+  }
+  const reminderId = reminderCreated.output.result.reminders[0]?.id;
+  assert.ok(reminderId);
+  assert.equal((await client.getReminder(reminderId)).status, 'scheduled');
+
   const goalSubmitted = rememberRun(
     await client.submitTask({
       message: 'Plan and implement a README update.',
@@ -880,6 +961,75 @@ async function verifyScenarios(mongo, redis) {
   child = started.processHandle;
   client = new VeraClient({ baseUrl: started.baseUrl });
   assert.equal((await client.getPersonalTask(personalTaskId)).status, 'open');
+  assert.equal((await client.getReminder(reminderId)).status, 'scheduled');
+
+  const rescheduleSubmitted = rememberRun(
+    await client.submitTask({
+      message: `Reschedule ${reminderId} to 2026-08-25T10:00:00.000Z`,
+      idempotencyKey: 'persistent-verification-reminder-reschedule',
+    }),
+  );
+  const rescheduleApproval = await client.waitForRun(
+    rescheduleSubmitted.runId,
+    {
+      until: (task) => task.runStatus === 'awaiting_approval',
+      timeoutMs: operationTimeoutMs,
+      intervalMs: 25,
+    },
+  );
+  assert.deepEqual(rescheduleApproval.approval?.proposedArguments, {
+    action: 'reschedule',
+    reminderId,
+    scheduledFor: '2026-08-25T10:00:00.000Z',
+    timeZone: 'Africa/Johannesburg',
+  });
+  assert.ok(rescheduleApproval.approval);
+  await client.decideApproval(rescheduleApproval.approval.id, 'approved');
+  await client.waitForRun(rescheduleSubmitted.runId, {
+    timeoutMs: operationTimeoutMs,
+    intervalMs: 25,
+  });
+  let notifications;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    notifications = await client.listNotifications({ limit: 10 });
+    if (
+      notifications.notifications.some(
+        (notification) => notification.reminderId === reminderId,
+      )
+    ) {
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  assert.ok(notifications);
+  const reminderNotification = notifications.notifications.find(
+    (notification) => notification.reminderId === reminderId,
+  );
+  assert.ok(reminderNotification);
+  assert.equal(reminderNotification.status, 'unread');
+  assert.equal((await client.getReminder(reminderId)).status, 'delivered');
+
+  const acknowledgeSubmitted = rememberRun(
+    await client.submitTask({
+      message: `Acknowledge ${reminderId}`,
+      idempotencyKey: 'persistent-verification-reminder-acknowledge',
+    }),
+  );
+  const acknowledgeApproval = await client.waitForRun(
+    acknowledgeSubmitted.runId,
+    {
+      until: (task) => task.runStatus === 'awaiting_approval',
+      timeoutMs: operationTimeoutMs,
+      intervalMs: 25,
+    },
+  );
+  assert.ok(acknowledgeApproval.approval);
+  await client.decideApproval(acknowledgeApproval.approval.id, 'approved');
+  await client.waitForRun(acknowledgeSubmitted.runId, {
+    timeoutMs: operationTimeoutMs,
+    intervalMs: 25,
+  });
+  assert.equal((await client.getReminder(reminderId)).status, 'acknowledged');
   const recoveredGoalApproval = await client.getRun(goalSubmitted.runId);
   assert.equal(recoveredGoalApproval.runStatus, 'awaiting_approval');
   assert.equal(
@@ -948,6 +1098,7 @@ async function verifyScenarios(mongo, redis) {
     changeProjectRoot,
     client,
     personalTaskId,
+    reminderId,
   );
   await verifyLeaseExclusion();
   await verifyProjectMutationLeaseExclusion();
@@ -1031,6 +1182,10 @@ async function verifyScenarios(mongo, redis) {
     (await recoveredClient.getPersonalTask(personalTaskId)).status,
     'completed',
   );
+  assert.equal(
+    (await recoveredClient.getReminder(reminderId)).status,
+    'acknowledged',
+  );
   const upgradedLegacy = await recoveredClient.waitForRun(legacy.runId, {
     timeoutMs: operationTimeoutMs,
     intervalMs: 25,
@@ -1088,11 +1243,20 @@ async function verifyScenarios(mongo, redis) {
     .collection('personal_tasks')
     .find({})
     .toArray();
-  assert.equal(aggregates.length, 16);
-  assert.equal(artifacts.length, 10);
+  const reminders = await mongo
+    .db(database)
+    .collection('reminders')
+    .find({})
+    .toArray();
+  assert.equal(aggregates.length, 19);
+  assert.equal(artifacts.length, 13);
   assert.equal(personalTasks.length, 1);
   assert.equal(personalTasks[0]?.id, personalTaskId);
   assert.equal(personalTasks[0]?.status, 'completed');
+  assert.equal(reminders.length, 1);
+  assert.equal(reminders[0]?.id, reminderId);
+  assert.equal(reminders[0]?.status, 'acknowledged');
+  assert.equal(reminders[0]?.notification?.channel, 'vera_inbox');
   assert.equal(applications.length, 1);
   assert.equal(applications[0]?.id, applicationId);
   assert.equal(
@@ -1119,6 +1283,8 @@ async function verifyScenarios(mongo, redis) {
     managedChangeApplicationVerified: true,
     durableResearchVerified: true,
     durablePersonalTasksVerified: true,
+    durableRemindersVerified: true,
+    restartSafeNotificationDeliveryVerified: true,
     legacyConversationUpgradeVerified: true,
     roleScopedMessageIdempotencyVerified: true,
   };

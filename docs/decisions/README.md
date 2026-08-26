@@ -44,6 +44,7 @@ erasing why a choice was made.
 | [0020](0020-use-a-declarative-capability-runtime-and-approval-gated-web-research.md) | Accepted | Route enabled specialists through one declarative runtime and add project-independent, approval-gated web research. |
 | [0021](0021-execute-bounded-goals-with-step-scoped-approvals-and-artifact-lineage.md) | Accepted | Execute two- or three-step goals through separate approvals and integrity-checked artifact handoffs. |
 | [0022](0022-introduce-provider-neutral-integration-actions-with-vera-owned-personal-tasks.md) | Accepted | Add a provider-neutral integration-action boundary and durable, approval-gated personal tasks. |
+| [0023](0023-deliver-durable-reminders-through-a-vera-owned-notification-inbox.md) | Accepted | Schedule restart-safe reminders and atomically deliver them to a durable, cursor-addressable Vera inbox. |
 
 ADRs 0001–0008 were accepted 24 August 2026 following the owner's review of
 the foundation documentation. ADR-0007 accepted a semantic boundary without
@@ -77,6 +78,9 @@ execution without introducing an unbounded model loop or blanket approval.
 ADR-0022 adds the first owner-state integration through per-action authority,
 durable personal tasks, and a provider-neutral adapter port without selecting an
 external task vendor.
+ADR-0023 adds time-triggered assistant behavior through MongoDB-authoritative
+reminders, expiring delivery claims, atomic inbox notifications, and resumable
+SSE projection without making Redis or a client connection authoritative.
 
 ## ADR rules
 

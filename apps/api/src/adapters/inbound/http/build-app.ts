@@ -11,6 +11,8 @@ import type { EvaluateModelDecision } from '../../../application/model-decisions
 import type { ProjectService } from '../../../application/projects/project-service.ts';
 import type { CapabilityService } from '../../../application/capabilities/capability-service.ts';
 import type { PersonalTaskService } from '../../../application/personal-tasks/personal-task-service.ts';
+import type { ReminderService } from '../../../application/reminders/reminder-service.ts';
+import type { NotificationService } from '../../../application/reminders/notification-service.ts';
 import { ResourceError } from '../../../application/shared/resource-error.ts';
 import {
   LifecycleError,
@@ -30,6 +32,8 @@ import { registerProjectRoutes } from './routes/project-routes.ts';
 import { registerTaskRoutes } from './routes/task-routes.ts';
 import { registerCapabilityRoutes } from './routes/capability-routes.ts';
 import { registerPersonalTaskRoutes } from './routes/personal-task-routes.ts';
+import { registerReminderRoutes } from './routes/reminder-routes.ts';
+import { registerNotificationRoutes } from './routes/notification-routes.ts';
 import {
   EvaluateRequestJsonSchema,
   HealthResponseJsonSchema,
@@ -47,6 +51,8 @@ export type BuildAppOptions = {
   projects?: ProjectService;
   capabilities?: CapabilityService;
   personalTasks?: PersonalTaskService;
+  reminders?: ReminderService;
+  notifications?: NotificationService;
   changeApplications?: SoftwareChangeApplicationLifecycle & {
     wake(): void;
   };
@@ -248,6 +254,18 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       personalTasks: options.personalTasks,
     });
   }
+  if (options.reminders !== undefined) {
+    registerReminderRoutes(app, {
+      principalId,
+      reminders: options.reminders,
+    });
+  }
+  if (options.notifications !== undefined) {
+    registerNotificationRoutes(app, {
+      principalId,
+      notifications: options.notifications,
+    });
+  }
   if (options.taskLifecycle !== undefined) {
     registerTaskRoutes(app, {
       principalId,
@@ -281,9 +299,11 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       const statusCode =
         error.code === 'idempotency_key_reused'
           ? 409
-          : error.code === 'invalid_project_source'
-            ? 422
-            : 404;
+          : error.code === 'invalid_notification_cursor'
+            ? 400
+            : error.code === 'invalid_project_source'
+              ? 422
+              : 404;
       void reply.status(statusCode).send({
         error: { code: error.code, message: error.message },
       });

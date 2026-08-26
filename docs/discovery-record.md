@@ -174,8 +174,9 @@ That advantage is a hypothesis to validate, not an accepted product fact.
 3. What availability and recovery guarantees are required for V1? — persistent
    mode is single-node and must recover or safely classify interrupted work;
    multi-node guarantees stay out of scope.
-4. ~~How will a V1 client receive progress?~~ Resolved for V1: polling.
-   Server-sent events, WebSockets, and notifications remain future options.
+4. ~~How will a V1 client receive progress?~~ Resolved for V1: task progress
+   uses polling. ADR-0023 separately selects cursor-resumable SSE for durable
+   inbox notifications; general progress streaming remains open.
 5. How are credentials brokered without exposing secrets to models?
 6. What is the minimum capability protocol needed for progress, cancellation,
    retries, approvals, artifacts, and errors?
@@ -392,7 +393,7 @@ The project has not selected:
 - an agent or graph framework;
 - a durable workflow engine;
 - an ORM;
-- a post-V1 streaming or notification protocol;
+- a general task-progress streaming or WebSocket protocol;
 - an authentication provider;
 - a mobile or web framework;
 - a monorepo task runner;

@@ -8,7 +8,8 @@ cloud-provider policy clarified by ADR-0015 and bounded conversation disclosure
 accepted by ADR-0016 on 25 August 2026
 and managed-worktree application accepted by ADR-0018; bounded goal authority
 accepted by ADR-0021 and personal-task integration authority accepted by
-ADR-0022 on 26 August 2026
+ADR-0022, with reminder scheduling and inbox authority accepted by ADR-0023 on
+26 August 2026
 
 ## Purpose
 

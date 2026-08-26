@@ -5,6 +5,7 @@ import { CapabilityDestinationSchema } from '../capabilities/capability-destinat
 import { SoftwareChangeSchema } from '../changes/software-change.ts';
 import { ResearchReportSchema } from '../research/research-report.ts';
 import { PersonalTaskResultSchema } from '../personal-tasks/personal-task.ts';
+import { ReminderResultSchema } from '../reminders/reminder.ts';
 
 export const ArtifactLineageReferenceSchema = z
   .object({
@@ -15,6 +16,7 @@ export const ArtifactLineageReferenceSchema = z
       'software_change',
       'research_report',
       'personal_task_result',
+      'personal_reminder_result',
     ]),
     mediaType: z.string().min(1),
     sha256: z.string().regex(/^[a-f0-9]{64}$/),
@@ -81,11 +83,19 @@ export const PersonalTaskResultArtifactSchema = ArtifactIdentitySchema.extend({
   content: PersonalTaskResultSchema,
 }).strict();
 
+export const PersonalReminderResultArtifactSchema =
+  ArtifactIdentitySchema.extend({
+    type: z.literal('personal_reminder_result'),
+    mediaType: z.literal('application/vnd.vera.personal-reminder-result+json'),
+    content: ReminderResultSchema,
+  }).strict();
+
 export const ArtifactSchema = z.discriminatedUnion('type', [
   ImplementationPlanArtifactSchema,
   SoftwareChangeArtifactSchema,
   ResearchReportArtifactSchema,
   PersonalTaskResultArtifactSchema,
+  PersonalReminderResultArtifactSchema,
 ]);
 
 const ArtifactReferenceBaseSchema = ArtifactIdentitySchema.pick({
@@ -119,11 +129,18 @@ export const PersonalTaskResultArtifactReferenceSchema =
     mediaType: z.literal('application/vnd.vera.personal-task-result+json'),
   }).strict();
 
+export const PersonalReminderResultArtifactReferenceSchema =
+  ArtifactReferenceBaseSchema.extend({
+    type: z.literal('personal_reminder_result'),
+    mediaType: z.literal('application/vnd.vera.personal-reminder-result+json'),
+  }).strict();
+
 export const ArtifactReferenceSchema = z.discriminatedUnion('type', [
   ImplementationPlanArtifactReferenceSchema,
   SoftwareChangeArtifactReferenceSchema,
   ResearchReportArtifactReferenceSchema,
   PersonalTaskResultArtifactReferenceSchema,
+  PersonalReminderResultArtifactReferenceSchema,
 ]);
 
 export type Artifact = z.infer<typeof ArtifactSchema>;

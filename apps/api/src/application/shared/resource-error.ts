@@ -3,6 +3,8 @@ export type ResourceErrorCode =
   | 'conversation_not_found'
   | 'artifact_not_found'
   | 'personal_task_not_found'
+  | 'reminder_not_found'
+  | 'invalid_notification_cursor'
   | 'idempotency_key_reused'
   | 'invalid_project_source';
 

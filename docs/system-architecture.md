@@ -2,7 +2,7 @@
 
 **Status:** Accepted (logical architecture, component responsibilities,
 request lifecycle, architectural invariants, initial modular API shape, and V1
-operational storage); post-V1 progress transport and deployment topology remain open
+operational storage); general progress transport and deployment topology remain open
 **Version:** 1.0
 **Last updated:** 26 August 2026
 **Accepted:** 24 August 2026 (owner) — post-V1 progress transport and deployment
@@ -16,7 +16,8 @@ map, and the declarative capability runtime with project-independent web
 research are accepted by ADRs 0017–0020.
 Bounded goal execution and typed artifact lineage are accepted by ADR-0021.
 Provider-neutral integration actions and Vera-owned personal tasks are accepted
-by ADR-0022.
+by ADR-0022. Durable reminders and the Vera-owned notification inbox are
+accepted by ADR-0023; task progress continues to use polling.
 
 ## Purpose
 
@@ -518,10 +519,12 @@ flowchart TD
     RESOLVE --> CHANGE["software_change adapter"]
     RESOLVE --> RESEARCH["web_research adapter"]
     RESOLVE --> PERSONAL["personal_task integration action"]
+    RESOLVE --> REMINDER["personal_reminder integration action"]
     PLAN --> ARTIFACT["Versioned artifacts"]
     CHANGE --> ARTIFACT
     RESEARCH --> ARTIFACT
     PERSONAL --> ARTIFACT
+    REMINDER --> ARTIFACT
 ```
 
 The initial live research adapter uses OpenAI Responses web search, is selected
@@ -539,6 +542,27 @@ recovered older mutation cannot overwrite a newer task state. Each invocation
 produces a `personal_task_result` artifact while the task remains a separately
 addressable owner resource. See
 [ADR-0022](decisions/0022-introduce-provider-neutral-integration-actions-with-vera-owned-personal-tasks.md).
+
+`personal_reminder_management@1` adds time as an external trigger without
+adding an unbounded agent loop. The approved action writes a one-shot reminder
+to MongoDB. A scheduler claims only due reminders with expiring tokens; delivery
+atomically transitions the reminder and embeds one durable inbox notification.
+The API exposes the inbox through cursor-based reads and a resumable SSE
+projection. Redis and live HTTP connections are never reminder authority.
+
+```mermaid
+flowchart LR
+    ACTION["Approved reminder action"] --> STORE["MongoDB reminder"]
+    CLOCK["Scheduler clock"] --> CLAIM["Expiring due claim"]
+    STORE --> CLAIM
+    CLAIM --> DELIVERY["Notification delivery port"]
+    DELIVERY --> ATOMIC["Atomic delivered state + inbox notification"]
+    ATOMIC --> PAGE["Cursor-based inbox"]
+    ATOMIC --> SSE["SSE projection"]
+```
+
+See
+[ADR-0023](decisions/0023-deliver-durable-reminders-through-a-vera-owned-notification-inbox.md).
 
 Artifact application is a separate durable lifecycle rather than hidden inside
 that capability. The owner approves an exact artifact hash, immutable base

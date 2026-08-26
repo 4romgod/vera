@@ -6,13 +6,17 @@ import type { SoftwareChangeCapabilityRegistry } from '../../src/ports/capabilit
 import { LocalPersonalTaskActionExecutor } from '../../src/adapters/outbound/integrations/personal-tasks/local-personal-task-action-executor.ts';
 import { InMemoryOwnerResourceStore } from '../../src/adapters/outbound/persistence/memory/in-memory-owner-resource-store.ts';
 import type { PersonalTaskStore } from '../../src/ports/persistence/personal-task-store.ts';
+import { LocalReminderActionExecutor } from '../../src/adapters/outbound/integrations/reminders/local-reminder-action-executor.ts';
+import type { ReminderStore } from '../../src/ports/persistence/reminder-store.ts';
 
 export function createTestCapabilityRuntime(options: {
   developmentPlanning: DevelopmentPlanningCapabilityRegistry;
   softwareChange: SoftwareChangeCapabilityRegistry;
   webResearch?: 'disabled' | 'deterministic_research';
   personalTaskStore?: PersonalTaskStore;
+  reminderStore?: ReminderStore;
 }): CapabilityRuntimeRegistry {
+  const defaultStore = new InMemoryOwnerResourceStore();
   return createCapabilityRuntimeRegistry({
     developmentPlanning: options.developmentPlanning,
     softwareChange: options.softwareChange,
@@ -20,7 +24,10 @@ export function createTestCapabilityRuntime(options: {
       adapterId: options.webResearch ?? 'disabled',
     }),
     personalTasks: new LocalPersonalTaskActionExecutor(
-      options.personalTaskStore ?? new InMemoryOwnerResourceStore(),
+      options.personalTaskStore ?? defaultStore,
+    ),
+    reminders: new LocalReminderActionExecutor(
+      options.reminderStore ?? defaultStore,
     ),
   });
 }

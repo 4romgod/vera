@@ -23,6 +23,10 @@ export type CapabilityArtifactDraft =
   | Pick<
       Extract<Artifact, { type: 'personal_task_result' }>,
       'type' | 'mediaType' | 'content'
+    >
+  | Pick<
+      Extract<Artifact, { type: 'personal_reminder_result' }>,
+      'type' | 'mediaType' | 'content'
     >;
 
 export type CapabilityRuntime = {

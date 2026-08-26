@@ -37,6 +37,12 @@ function config(workspacesRoot = '/tmp/vera-test-applications'): AppConfig {
     research: { adapterId: 'disabled' },
     application: { workspacesRoot },
     worker: { concurrency: 2, pollIntervalMs: 25, leaseMs: 900_000 },
+    reminders: {
+      ownerTimeZone: 'Africa/Johannesburg',
+      concurrency: 2,
+      pollIntervalMs: 25,
+      leaseMs: 1_000,
+    },
   };
 }
 
@@ -211,7 +217,8 @@ void describe('production worker HTTP journey', () => {
     );
 
     const completed = await waitForRun(app, initial.runId, 'succeeded');
-    assert.ok(completed.output?.artifact);
+    assert.ok(completed.output);
+    assert.ok(completed.output.artifact);
     const artifact = await app.inject({
       method: 'GET',
       url: `/v1/artifacts/${completed.output.artifact.id}`,
@@ -552,6 +559,144 @@ void describe('production worker HTTP journey', () => {
     assert.equal(
       artifactResponse.json<{ type: string }>().type,
       'personal_task_result',
+    );
+  });
+
+  void it('schedules, delivers, lists, and acknowledges a durable reminder end to end', async () => {
+    const app = createApp(config());
+    cleanups.push(async () => app.close());
+
+    const submitted = await app.inject({
+      method: 'POST',
+      url: '/v1/tasks',
+      headers: { 'idempotency-key': 'reminder-create-http' },
+      payload: {
+        message: 'Remind me to stand up at 2026-08-25T10:00:00.000Z',
+      },
+    });
+    assert.equal(submitted.statusCode, 202, submitted.body);
+    const runId = submitted.json<{ runId: string }>().runId;
+    const pending = await waitForRun(app, runId, 'awaiting_approval');
+    assert.ok(pending.approval);
+    assert.equal(
+      (pending.approval as unknown as { capability: { name: string } })
+        .capability.name,
+      'personal_reminder_management',
+    );
+    assert.deepEqual(
+      (
+        pending.approval as unknown as {
+          authority: { sideEffects: string[] };
+        }
+      ).authority.sideEffects,
+      ['personal_data_write', 'scheduled_notification'],
+    );
+
+    const approved = await app.inject({
+      method: 'POST',
+      url: `/v1/approvals/${pending.approval.id}/decision`,
+      payload: { decision: 'approved' },
+    });
+    assert.equal(approved.statusCode, 202, approved.body);
+    const completed = await waitForRun(app, runId, 'succeeded');
+    assert.ok(completed.output);
+    assert.equal(completed.output.kind, 'personal_reminder_result');
+    assert.ok(completed.output.artifact);
+
+    let notificationResponse;
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      notificationResponse = await app.inject({
+        method: 'GET',
+        url: '/v1/notifications?limit=10',
+      });
+      if (
+        notificationResponse.json<{ notifications: unknown[] }>().notifications
+          .length === 1
+      ) {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 5));
+    }
+    assert.ok(notificationResponse);
+    assert.equal(
+      notificationResponse.statusCode,
+      200,
+      notificationResponse.body,
+    );
+    const notificationPage = notificationResponse.json<{
+      notifications: {
+        id: string;
+        reminderId: string;
+        status: string;
+        channel: string;
+      }[];
+      nextCursor: string;
+    }>();
+    assert.equal(notificationPage.notifications.length, 1);
+    const notification = notificationPage.notifications[0];
+    assert.ok(notification);
+    assert.equal(notification.status, 'unread');
+    assert.equal(notification.channel, 'vera_inbox');
+
+    const reminderResponse = await app.inject({
+      method: 'GET',
+      url: `/v1/reminders/${notification.reminderId}`,
+    });
+    assert.equal(reminderResponse.statusCode, 200, reminderResponse.body);
+    assert.equal(
+      reminderResponse.json<{ status: string }>().status,
+      'delivered',
+    );
+
+    const emptyPage = await app.inject({
+      method: 'GET',
+      url: `/v1/notifications?after=${encodeURIComponent(notificationPage.nextCursor)}`,
+    });
+    assert.equal(emptyPage.statusCode, 200, emptyPage.body);
+    assert.deepEqual(
+      emptyPage.json<{ notifications: unknown[] }>().notifications,
+      [],
+    );
+    const invalidCursor = await app.inject({
+      method: 'GET',
+      url: '/v1/notifications?after=invalid',
+    });
+    assert.equal(invalidCursor.statusCode, 400, invalidCursor.body);
+
+    const acknowledge = await app.inject({
+      method: 'POST',
+      url: '/v1/tasks',
+      headers: { 'idempotency-key': 'reminder-acknowledge-http' },
+      payload: {
+        message: `Acknowledge ${notification.reminderId}`,
+      },
+    });
+    const acknowledgeRunId = acknowledge.json<{ runId: string }>().runId;
+    const acknowledgePending = await waitForRun(
+      app,
+      acknowledgeRunId,
+      'awaiting_approval',
+    );
+    assert.ok(acknowledgePending.approval);
+    await app.inject({
+      method: 'POST',
+      url: `/v1/approvals/${acknowledgePending.approval.id}/decision`,
+      payload: { decision: 'approved' },
+    });
+    await waitForRun(app, acknowledgeRunId, 'succeeded');
+    const acknowledged = await app.inject({
+      method: 'GET',
+      url: `/v1/reminders/${notification.reminderId}`,
+    });
+    assert.equal(
+      acknowledged.json<{ status: string; notification: { status: string } }>()
+        .status,
+      'acknowledged',
+    );
+    assert.equal(
+      acknowledged.json<{ notification: { status: string } }>().notification
+        .status,
+      'acknowledged',
     );
   });
 

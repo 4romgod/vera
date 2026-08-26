@@ -5,8 +5,9 @@ durable state, rebuildable execution scratchpad, and disposable model context
 is Accepted through ADR-0007, MongoDB/Redis operational storage is Accepted
 through ADR-0010, and bounded conversation context with durable reply
 projection is Accepted through ADR-0016
+and durable reminders with inbox notifications are Accepted through ADR-0023
 **Version:** 0.4
-**Last updated:** 25 August 2026
+**Last updated:** 26 August 2026
 
 ## Purpose
 
@@ -106,6 +107,7 @@ It includes:
 - run and step states;
 - capability invocations and idempotency identities;
 - approvals;
+- scheduled reminders, expiring claims, and delivered inbox notifications;
 - current projections derived from events;
 - artifact metadata;
 - retry, timeout, and cancellation information.

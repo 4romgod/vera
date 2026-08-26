@@ -22,11 +22,22 @@ import {
   type PersonalTask,
 } from '../../../../domain/personal-tasks/personal-task.ts';
 import { personalTaskMutationOrderKey } from '../../../../ports/persistence/personal-task-store.ts';
+import {
+  ReminderSchema,
+  type NotificationResource,
+  type Reminder,
+} from '../../../../domain/reminders/reminder.ts';
+import {
+  notificationIdForReminder,
+  reminderMutationOrderKey,
+  type ReminderListStatus,
+} from '../../../../ports/persistence/reminder-store.ts';
 
 const PROJECTS = 'projects';
 const CONVERSATIONS = 'conversations';
 const ARTIFACTS = 'artifacts';
 const PERSONAL_TASKS = 'personal_tasks';
+const REMINDERS = 'reminders';
 
 export type MongoDbOwnerResourceStoreOptions = {
   uri: string;
@@ -42,6 +53,7 @@ export class MongoDbOwnerResourceStore implements OwnerResourceStore {
   private readonly conversations: Collection;
   private readonly artifacts: Collection;
   private readonly personalTasks: Collection;
+  private readonly reminders: Collection;
   private connection: Promise<void> | undefined;
 
   public constructor(options: MongoDbOwnerResourceStoreOptions) {
@@ -57,6 +69,7 @@ export class MongoDbOwnerResourceStore implements OwnerResourceStore {
     this.conversations = this.database.collection(CONVERSATIONS);
     this.artifacts = this.database.collection(ARTIFACTS);
     this.personalTasks = this.database.collection(PERSONAL_TASKS);
+    this.reminders = this.database.collection(REMINDERS);
   }
 
   public async createProject(
@@ -437,6 +450,297 @@ export class MongoDbOwnerResourceStore implements OwnerResourceStore {
     return document === null ? null : this.parsePersonalTask(document);
   }
 
+  public async createReminder(reminder: Reminder): Promise<Reminder> {
+    await this.ensureConnected();
+    const validated = ReminderSchema.parse(reminder);
+    await this.reminders.updateOne(
+      {
+        principalId: validated.principalId,
+        creationInvocationId: validated.creationInvocationId,
+      },
+      { $setOnInsert: validated },
+      { upsert: true },
+    );
+    const stored = await this.findReminderByCreationInvocation(
+      validated.principalId,
+      validated.creationInvocationId,
+    );
+    if (stored === null) {
+      throw new Error('MongoDB reminder create did not return a reminder.');
+    }
+    return stored;
+  }
+
+  public async findReminderByCreationInvocation(
+    principalId: string,
+    invocationId: string,
+  ): Promise<Reminder | null> {
+    await this.ensureConnected();
+    const document = await this.reminders.findOne({
+      principalId,
+      creationInvocationId: invocationId,
+    });
+    return document === null ? null : this.parseReminder(document);
+  }
+
+  public async findReminderById(
+    principalId: string,
+    reminderId: string,
+  ): Promise<Reminder | null> {
+    await this.ensureConnected();
+    const document = await this.reminders.findOne({
+      principalId,
+      id: reminderId,
+    });
+    return document === null ? null : this.parseReminder(document);
+  }
+
+  public async listReminders(
+    principalId: string,
+    options: { status: ReminderListStatus; limit: number },
+  ): Promise<Reminder[]> {
+    await this.ensureConnected();
+    const documents = await this.reminders
+      .find({
+        principalId,
+        ...(options.status === 'all' ? {} : { status: options.status }),
+      })
+      .sort({ scheduledFor: 1, id: 1 })
+      .limit(options.limit)
+      .toArray();
+    return documents.map((document) => this.parseReminder(document));
+  }
+
+  public async mutateReminder(input: {
+    principalId: string;
+    reminderId: string;
+    action:
+      | {
+          action: 'reschedule';
+          reminderId: string;
+          scheduledFor: string;
+          timeZone: string;
+        }
+      | { action: 'cancel' | 'acknowledge'; reminderId: string };
+    invocationId: string;
+    mutationAt: string;
+    recovery: boolean;
+  }): Promise<Reminder | null> {
+    await this.ensureConnected();
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const document = await this.reminders.findOne({
+        principalId: input.principalId,
+        id: input.reminderId,
+      });
+      if (document === null) return null;
+      const current = this.parseReminder(document);
+      if (current.lastMutation.invocationId === input.invocationId) {
+        return current;
+      }
+      const requestedOrderKey = reminderMutationOrderKey(
+        input.mutationAt,
+        input.invocationId,
+      );
+      if (input.recovery && current.lastMutation.orderKey > requestedOrderKey) {
+        return current;
+      }
+      if (
+        input.action.action !== 'acknowledge' &&
+        current.status !== 'scheduled'
+      ) {
+        throw new Error(
+          `Only a scheduled reminder can be ${input.action.action === 'cancel' ? 'cancelled' : 'rescheduled'}.`,
+        );
+      }
+      if (
+        input.action.action === 'acknowledge' &&
+        (current.status !== 'delivered' || current.notification === undefined)
+      ) {
+        throw new Error('Only a delivered reminder can be acknowledged.');
+      }
+      const mutationAt =
+        current.updatedAt >= input.mutationAt
+          ? new Date(Date.parse(current.updatedAt) + 1).toISOString()
+          : input.mutationAt;
+      const orderKey = reminderMutationOrderKey(mutationAt, input.invocationId);
+      const set: Record<string, unknown> = {
+        updatedAt: mutationAt,
+        lastMutation: { invocationId: input.invocationId, orderKey },
+      };
+      const unset: Record<string, ''> = {};
+      if (input.action.action === 'reschedule') {
+        set.scheduledFor = input.action.scheduledFor;
+        set.timeZone = input.action.timeZone;
+        unset.claim = '';
+      } else if (input.action.action === 'cancel') {
+        set.status = 'cancelled';
+        set.cancelledAt = mutationAt;
+        unset.claim = '';
+      } else {
+        set.status = 'acknowledged';
+        set.acknowledgedAt = mutationAt;
+        set['notification.status'] = 'acknowledged';
+        set['notification.acknowledgedAt'] = mutationAt;
+      }
+      const updated = await this.reminders.findOneAndUpdate(
+        {
+          principalId: input.principalId,
+          id: input.reminderId,
+          'lastMutation.orderKey': current.lastMutation.orderKey,
+          status:
+            input.action.action === 'acknowledge' ? 'delivered' : 'scheduled',
+          ...(input.action.action === 'acknowledge'
+            ? { notification: { $exists: true } }
+            : {}),
+        },
+        {
+          $set: set,
+          ...(Object.keys(unset).length === 0 ? {} : { $unset: unset }),
+        },
+        { returnDocument: 'after' },
+      );
+      if (updated !== null) return this.parseReminder(updated);
+    }
+    throw new Error('Reminder changed too frequently to apply mutation.');
+  }
+
+  public async claimDueReminder(input: {
+    workerId: string;
+    token: string;
+    now: string;
+    expiresAt: string;
+  }): Promise<Reminder | null> {
+    await this.ensureConnected();
+    const document = await this.reminders.findOneAndUpdate(
+      {
+        status: 'scheduled',
+        scheduledFor: { $lte: input.now },
+        $or: [
+          { claim: { $exists: false } },
+          { 'claim.expiresAt': { $lte: input.now } },
+        ],
+      },
+      {
+        $set: {
+          claim: {
+            workerId: input.workerId,
+            token: input.token,
+            claimedAt: input.now,
+            expiresAt: input.expiresAt,
+          },
+        },
+      },
+      { sort: { scheduledFor: 1, id: 1 }, returnDocument: 'after' },
+    );
+    return document === null ? null : this.parseReminder(document);
+  }
+
+  public async finalizeReminderDelivery(input: {
+    principalId: string;
+    reminderId: string;
+    workerId: string;
+    token: string;
+    deliveredAt: string;
+  }): Promise<Reminder | null> {
+    await this.ensureConnected();
+    const current = await this.findReminderById(
+      input.principalId,
+      input.reminderId,
+    );
+    if (current?.status === 'delivered' && current.notification !== undefined) {
+      return current;
+    }
+    if (
+      current?.status !== 'scheduled' ||
+      current.claim?.workerId !== input.workerId ||
+      current.claim.token !== input.token
+    ) {
+      return null;
+    }
+    const notification: NotificationResource = {
+      schemaVersion: 1,
+      id: notificationIdForReminder(current.id),
+      reminderId: current.id,
+      message: current.message,
+      scheduledFor: current.scheduledFor,
+      deliveredAt: input.deliveredAt,
+      status: 'unread',
+      channel: 'vera_inbox',
+    };
+    const updated = await this.reminders.findOneAndUpdate(
+      {
+        principalId: input.principalId,
+        id: input.reminderId,
+        status: 'scheduled',
+        'claim.workerId': input.workerId,
+        'claim.token': input.token,
+      },
+      {
+        $set: {
+          status: 'delivered',
+          updatedAt: input.deliveredAt,
+          notification,
+        },
+        $unset: { claim: '' },
+      },
+      { returnDocument: 'after' },
+    );
+    return updated === null ? null : this.parseReminder(updated);
+  }
+
+  public async releaseReminderClaim(input: {
+    reminderId: string;
+    workerId: string;
+    token: string;
+  }): Promise<void> {
+    await this.ensureConnected();
+    await this.reminders.updateOne(
+      {
+        id: input.reminderId,
+        'claim.workerId': input.workerId,
+        'claim.token': input.token,
+      },
+      { $unset: { claim: '' } },
+    );
+  }
+
+  public async listNotifications(
+    principalId: string,
+    options: {
+      after?: { deliveredAt: string; id: string };
+      limit: number;
+    },
+  ): Promise<NotificationResource[]> {
+    await this.ensureConnected();
+    const after = options.after;
+    const documents = await this.reminders
+      .find({
+        principalId,
+        notification: { $exists: true },
+        ...(after === undefined
+          ? {}
+          : {
+              $or: [
+                { 'notification.deliveredAt': { $gt: after.deliveredAt } },
+                {
+                  'notification.deliveredAt': after.deliveredAt,
+                  'notification.id': { $gt: after.id },
+                },
+              ],
+            }),
+      })
+      .sort({ 'notification.deliveredAt': 1, 'notification.id': 1 })
+      .limit(options.limit)
+      .toArray();
+    return documents.map((document) => {
+      const reminder = this.parseReminder(document);
+      if (reminder.notification === undefined) {
+        throw new Error('MongoDB notification projection is missing.');
+      }
+      return reminder.notification;
+    });
+  }
+
   public async checkReadiness(): Promise<void> {
     await this.ensureConnected();
     await this.database.command({ ping: 1 });
@@ -486,6 +790,21 @@ export class MongoDbOwnerResourceStore implements OwnerResourceStore {
         status: 1,
         updatedAt: -1,
       }),
+      this.reminders.createIndex({ id: 1 }, { unique: true }),
+      this.reminders.createIndex(
+        { principalId: 1, creationInvocationId: 1 },
+        { unique: true },
+      ),
+      this.reminders.createIndex({
+        status: 1,
+        scheduledFor: 1,
+        'claim.expiresAt': 1,
+      }),
+      this.reminders.createIndex({
+        principalId: 1,
+        'notification.deliveredAt': 1,
+        'notification.id': 1,
+      }),
     ]);
   }
 
@@ -497,6 +816,10 @@ export class MongoDbOwnerResourceStore implements OwnerResourceStore {
 
   private parsePersonalTask(document: Document): PersonalTask {
     return PersonalTaskSchema.parse(this.withoutId(document));
+  }
+
+  private parseReminder(document: Document): Reminder {
+    return ReminderSchema.parse(this.withoutId(document));
   }
 
   private parseProject(document: Document): Project {

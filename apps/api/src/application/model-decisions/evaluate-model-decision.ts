@@ -22,12 +22,14 @@ import type { CapabilityReference } from '../../domain/capabilities/capability-r
 import { z } from 'zod';
 import { GoalPlanSchema } from '../../domain/goals/goal-plan.ts';
 import { PersonalTaskActionArgumentsSchema } from '../../domain/personal-tasks/personal-task.ts';
+import { ReminderActionArgumentsSchema } from '../../domain/reminders/reminder.ts';
 
 export type EvaluateModelDecision = (
   message: string,
   context?: {
     selectedProject?: { id: string; displayName: string };
     conversationContext?: ConversationContextBundle;
+    temporalContext?: { currentTime?: string; ownerTimeZone?: string };
   },
 ) => Promise<DecisionResult>;
 
@@ -35,6 +37,7 @@ function decide(
   proposal: ModelProposal,
   enabledCapabilities: readonly CapabilityReference[],
   selectedProject?: { id: string; displayName: string },
+  ownerTimeZone = 'UTC',
 ): ExecutionDecision {
   if (proposal.kind === 'respond') {
     return { kind: 'respond', message: proposal.message };
@@ -75,6 +78,19 @@ function decide(
         kind: 'rejected',
         code: 'invalid_goal_plan',
         message: `Goal step ${mismatchedProjectStep.id} does not preserve the selected project identity.`,
+      };
+    }
+    const mismatchedReminderStep = plan.data.steps.find(
+      (step) =>
+        step.capability === 'personal_reminder_management' &&
+        'timeZone' in step.arguments &&
+        step.arguments.timeZone !== ownerTimeZone,
+    );
+    if (mismatchedReminderStep !== undefined) {
+      return {
+        kind: 'rejected',
+        code: 'invalid_goal_plan',
+        message: `Goal step ${mismatchedReminderStep.id} does not preserve the configured owner time zone.`,
       };
     }
     return { kind: 'goal_planned', plan: plan.data };
@@ -135,6 +151,23 @@ function decide(
       ),
     };
   }
+  if (proposal.capability.name === 'personal_reminder_management') {
+    const arguments_ = ReminderActionArgumentsSchema.parse(proposal.arguments);
+    if ('timeZone' in arguments_ && arguments_.timeZone !== ownerTimeZone) {
+      return {
+        kind: 'rejected',
+        code: 'invalid_capability_arguments',
+        message:
+          'The proposed reminder does not preserve the configured owner time zone.',
+      };
+    }
+    return {
+      kind: 'approval_required',
+      reason: 'specialist_capability_invocation',
+      capability: proposal.capability,
+      proposedArguments: arguments_,
+    };
+  }
   return {
     kind: 'approval_required',
     reason: 'specialist_capability_invocation',
@@ -150,6 +183,8 @@ export function createEvaluateModelDecision(
   createId: () => string = () => `decision_${randomUUID()}`,
   options: {
     enabledCapabilities?: readonly CapabilityReference[];
+    ownerTimeZone?: string;
+    clock?: () => string;
   } = {},
 ): EvaluateModelDecision {
   const enabledCapabilities = options.enabledCapabilities ?? [
@@ -160,28 +195,32 @@ export function createEvaluateModelDecision(
   const generationJsonSchema = z.toJSONSchema(generationSchema, {
     target: 'draft-7',
   });
+  const ownerTimeZone = options.ownerTimeZone ?? 'UTC';
+  const clock = options.clock ?? (() => new Date().toISOString());
   return async (message, context) => {
+    const temporalContext = {
+      currentTime: context?.temporalContext?.currentTime ?? clock(),
+      ownerTimeZone: context?.temporalContext?.ownerTimeZone ?? ownerTimeZone,
+    };
     const generation = await provider.generateStructured({
       purpose: 'orchestration_decision',
       systemPrompt: buildModelSystemPrompt(enabledCapabilities),
-      message:
-        context === undefined
-          ? message
-          : JSON.stringify({
-              ownerMessage: message,
-              ...(context.selectedProject === undefined
-                ? {}
-                : { selectedProject: context.selectedProject }),
-              ...(context.conversationContext === undefined
-                ? {}
-                : {
-                    conversationContext: {
-                      messages: context.conversationContext.messages.map(
-                        ({ role, content }) => ({ role, content }),
-                      ),
-                    },
-                  }),
+      message: JSON.stringify({
+        ownerMessage: message,
+        temporalContext,
+        ...(context?.selectedProject === undefined
+          ? {}
+          : { selectedProject: context.selectedProject }),
+        ...(context?.conversationContext === undefined
+          ? {}
+          : {
+              conversationContext: {
+                messages: context.conversationContext.messages.map(
+                  ({ role, content }) => ({ role, content }),
+                ),
+              },
             }),
+      }),
       outputSchema: generationJsonSchema,
     });
     const enabledProposal = generationSchema.safeParse(generation.candidate);
@@ -216,6 +255,7 @@ export function createEvaluateModelDecision(
         validatedProposal.data,
         enabledCapabilities,
         context?.selectedProject,
+        temporalContext.ownerTimeZone,
       ),
       model: {
         provider: generation.provider,

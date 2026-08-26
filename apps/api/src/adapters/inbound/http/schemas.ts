@@ -16,6 +16,7 @@ import {
   ResearchReportArtifactSchema,
   SoftwareChangeArtifactSchema,
   PersonalTaskResultArtifactSchema,
+  PersonalReminderResultArtifactSchema,
 } from '../../../domain/artifacts/artifact.ts';
 import {
   ConversationSchema,
@@ -30,6 +31,11 @@ import {
 } from '../../../domain/changes/software-change-application.ts';
 import { GoalExecutionSchema } from '../../../domain/goals/goal-plan.ts';
 import { PersonalTaskResourceSchema } from '../../../domain/personal-tasks/personal-task.ts';
+import {
+  NotificationResourceSchema,
+  ReminderResourceSchema,
+  ReminderStatusSchema,
+} from '../../../domain/reminders/reminder.ts';
 
 export const EvaluateRequestSchema = z
   .object({
@@ -218,6 +224,7 @@ export const ArtifactResponseSchema = z.discriminatedUnion('type', [
   SoftwareChangeArtifactSchema.omit({ principalId: true }),
   ResearchReportArtifactSchema.omit({ principalId: true }),
   PersonalTaskResultArtifactSchema.omit({ principalId: true }),
+  PersonalReminderResultArtifactSchema.omit({ principalId: true }),
 ]);
 
 export const PersonalTaskListQuerySchema = z
@@ -235,6 +242,41 @@ export const PersonalTasksResponseSchema = z
   .object({
     schemaVersion: z.literal(1),
     tasks: z.array(PersonalTaskResourceSchema).max(100),
+  })
+  .strict();
+
+export const ReminderListQuerySchema = z
+  .object({
+    status: z.union([z.literal('all'), ReminderStatusSchema]).optional(),
+    limit: z.coerce.number().int().positive().max(100).optional(),
+  })
+  .strict();
+
+export type ReminderListQuery = z.infer<typeof ReminderListQuerySchema>;
+
+export const ReminderResponseSchema = ReminderResourceSchema;
+
+export const RemindersResponseSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    reminders: z.array(ReminderResourceSchema).max(100),
+  })
+  .strict();
+
+export const NotificationListQuerySchema = z
+  .object({
+    after: z.string().min(1).max(500).optional(),
+    limit: z.coerce.number().int().positive().max(100).optional(),
+  })
+  .strict();
+
+export type NotificationListQuery = z.infer<typeof NotificationListQuerySchema>;
+
+export const NotificationsResponseSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    notifications: z.array(NotificationResourceSchema).max(100),
+    nextCursor: z.string().min(1).optional(),
   })
   .strict();
 
@@ -284,6 +326,31 @@ export const PersonalTaskResponseJsonSchema = z.toJSONSchema(
 
 export const PersonalTasksResponseJsonSchema = z.toJSONSchema(
   PersonalTasksResponseSchema,
+  { target: 'draft-7' },
+);
+
+export const ReminderListQueryJsonSchema = z.toJSONSchema(
+  ReminderListQuerySchema,
+  { target: 'draft-7' },
+);
+
+export const ReminderResponseJsonSchema = z.toJSONSchema(
+  ReminderResponseSchema,
+  { target: 'draft-7' },
+);
+
+export const RemindersResponseJsonSchema = z.toJSONSchema(
+  RemindersResponseSchema,
+  { target: 'draft-7' },
+);
+
+export const NotificationListQueryJsonSchema = z.toJSONSchema(
+  NotificationListQuerySchema,
+  { target: 'draft-7' },
+);
+
+export const NotificationsResponseJsonSchema = z.toJSONSchema(
+  NotificationsResponseSchema,
   { target: 'draft-7' },
 );
 

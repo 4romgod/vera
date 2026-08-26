@@ -64,6 +64,7 @@ app.log.info(
             }
           : { adapterId: config.research.adapterId },
       worker: config.worker,
+      reminders: config.reminders,
       storage: {
         mode: config.storage.mode,
         ...(config.storage.mode === 'persistent'
