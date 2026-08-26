@@ -71,7 +71,10 @@ export class InMemoryExecutionStore implements ExecutionStore {
       this.find(
         (aggregate) =>
           aggregate.task.principalId === principalId &&
-          aggregate.run.approval?.id === approvalId,
+          (aggregate.run.approval?.id === approvalId ||
+            aggregate.run.approvalHistory?.some(
+              (approval) => approval.id === approvalId,
+            ) === true),
       ),
     );
   }

@@ -4,6 +4,7 @@ import type { DevelopmentPlanningProposalArgumentsSchema } from '../../domain/ca
 import type { DevelopmentPlan } from '../../domain/plans/development-plan.ts';
 import type { ProjectContextBundle } from '../../domain/projects/project-context.ts';
 import type { CapabilityDestination } from '../../domain/capabilities/capability-destination.ts';
+import type { Artifact } from '../../domain/artifacts/artifact.ts';
 
 export type DevelopmentPlanningArguments = z.infer<
   typeof DevelopmentPlanningProposalArgumentsSchema
@@ -15,6 +16,7 @@ export type DevelopmentPlanningInvocation = {
   arguments: DevelopmentPlanningArguments;
   project: { id: string; displayName: string };
   context: ProjectContextBundle;
+  artifacts?: Artifact[];
   limits: { maxDurationMs: number; maxArtifactBytes: number };
 };
 

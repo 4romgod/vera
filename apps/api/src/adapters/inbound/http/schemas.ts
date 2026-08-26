@@ -15,6 +15,7 @@ import {
   ImplementationPlanArtifactSchema,
   ResearchReportArtifactSchema,
   SoftwareChangeArtifactSchema,
+  PersonalTaskResultArtifactSchema,
 } from '../../../domain/artifacts/artifact.ts';
 import {
   ConversationSchema,
@@ -27,6 +28,8 @@ import {
   ChangeApplicationEventSchema,
   SoftwareChangeApplicationSchema,
 } from '../../../domain/changes/software-change-application.ts';
+import { GoalExecutionSchema } from '../../../domain/goals/goal-plan.ts';
+import { PersonalTaskResourceSchema } from '../../../domain/personal-tasks/personal-task.ts';
 
 export const EvaluateRequestSchema = z
   .object({
@@ -145,7 +148,9 @@ export const TaskLifecycleResponseSchema = z
     updatedAt: z.iso.datetime(),
     decision: DecisionResultSchema.optional(),
     approval: ApprovalSchema.optional(),
+    approvalHistory: z.array(ApprovalSchema).max(2).optional(),
     invocation: CapabilityInvocationSchema.optional(),
+    invocationHistory: z.array(CapabilityInvocationSchema).max(2).optional(),
     output: TaskOutputSchema.optional(),
     failure: TaskFailureSchema.optional(),
     budget: RunBudgetSchema.optional(),
@@ -159,6 +164,7 @@ export const TaskLifecycleResponseSchema = z
       })
       .strict()
       .optional(),
+    goal: GoalExecutionSchema.optional(),
     links: z
       .object({
         task: z.string(),
@@ -211,7 +217,26 @@ export const ArtifactResponseSchema = z.discriminatedUnion('type', [
   ImplementationPlanArtifactSchema.omit({ principalId: true }),
   SoftwareChangeArtifactSchema.omit({ principalId: true }),
   ResearchReportArtifactSchema.omit({ principalId: true }),
+  PersonalTaskResultArtifactSchema.omit({ principalId: true }),
 ]);
+
+export const PersonalTaskListQuerySchema = z
+  .object({
+    status: z.enum(['all', 'open', 'completed']).optional(),
+    limit: z.coerce.number().int().positive().max(100).optional(),
+  })
+  .strict();
+
+export type PersonalTaskListQuery = z.infer<typeof PersonalTaskListQuerySchema>;
+
+export const PersonalTaskResponseSchema = PersonalTaskResourceSchema;
+
+export const PersonalTasksResponseSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    tasks: z.array(PersonalTaskResourceSchema).max(100),
+  })
+  .strict();
 
 export const EvaluateRequestJsonSchema = z.toJSONSchema(EvaluateRequestSchema, {
   target: 'draft-7',
@@ -244,6 +269,21 @@ export const IdempotencyHeadersJsonSchema = z.toJSONSchema(
 
 export const ResourceIdParamsJsonSchema = z.toJSONSchema(
   ResourceIdParamsSchema,
+  { target: 'draft-7' },
+);
+
+export const PersonalTaskListQueryJsonSchema = z.toJSONSchema(
+  PersonalTaskListQuerySchema,
+  { target: 'draft-7' },
+);
+
+export const PersonalTaskResponseJsonSchema = z.toJSONSchema(
+  PersonalTaskResponseSchema,
+  { target: 'draft-7' },
+);
+
+export const PersonalTasksResponseJsonSchema = z.toJSONSchema(
+  PersonalTasksResponseSchema,
   { target: 'draft-7' },
 );
 

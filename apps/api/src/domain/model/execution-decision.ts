@@ -5,7 +5,9 @@ import {
   SoftwareChangeProposalArgumentsSchema,
   WebResearchProposalArgumentsSchema,
 } from '../capabilities/capability-registry.ts';
+import { PersonalTaskActionArgumentsSchema } from '../personal-tasks/personal-task.ts';
 import { ModelProposalSchema } from './model-proposal.ts';
+import { GoalPlanSchema } from '../goals/goal-plan.ts';
 
 const ResponseDecisionSchema = z
   .object({
@@ -56,6 +58,20 @@ const WebResearchApprovalDecisionSchema = z
   })
   .strict();
 
+const PersonalTaskManagementApprovalDecisionSchema = z
+  .object({
+    kind: z.literal('approval_required'),
+    reason: z.literal('specialist_capability_invocation'),
+    capability: z
+      .object({
+        name: z.literal('personal_task_management'),
+        version: z.literal(1),
+      })
+      .strict(),
+    proposedArguments: PersonalTaskActionArgumentsSchema,
+  })
+  .strict();
+
 const RejectedProposalDecisionSchema = z
   .object({
     kind: z.literal('rejected'),
@@ -63,8 +79,16 @@ const RejectedProposalDecisionSchema = z
       'invalid_model_output',
       'unknown_capability',
       'invalid_capability_arguments',
+      'invalid_goal_plan',
     ]),
     message: z.string(),
+  })
+  .strict();
+
+const GoalPlannedDecisionSchema = z
+  .object({
+    kind: z.literal('goal_planned'),
+    plan: GoalPlanSchema,
   })
   .strict();
 
@@ -73,6 +97,8 @@ export const ExecutionDecisionSchema = z.union([
   DevelopmentPlanningApprovalDecisionSchema,
   SoftwareChangeApprovalDecisionSchema,
   WebResearchApprovalDecisionSchema,
+  PersonalTaskManagementApprovalDecisionSchema,
+  GoalPlannedDecisionSchema,
   RejectedProposalDecisionSchema,
 ]);
 

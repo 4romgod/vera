@@ -3,8 +3,8 @@
 **Status:** Living discovery log — not subject to owner acceptance like a
 spec or decision record; see the
 [Documentation Guide](README.md#authority-model)
-**Version:** 0.4
-**Last updated:** 25 August 2026
+**Version:** 0.6
+**Last updated:** 26 August 2026
 
 ## Purpose
 
@@ -47,6 +47,8 @@ foundation decisions:
   credentials.
 - V1 should prove the architectural spine rather than imitate a complete
   consumer assistant.
+- Assistant usefulness should grow through closed, replaceable integration
+  actions rather than by giving a model unrestricted generic tools.
 
 ## Decision candidates from initial discovery
 
@@ -195,6 +197,17 @@ first increment completed the structured-model and local-provider boundaries.
 The remaining entries are required capabilities, not permission to postpone
 implementation. See
 [ADR-0009](decisions/0009-implement-the-model-decision-boundary.md).
+
+### Bounded assistant goals — implemented
+
+Vera can now translate one explicit compound request into a validated sequence
+of two or three enabled capabilities. The implementation proves separate
+approval at each authority boundary, preservation of prior approvals and
+invocations, typed and hash-verified artifact handoff, terminal goal projection,
+CLI review of every step, and restart recovery between steps. It deliberately
+does not add autonomous replanning, scheduled work, approval memory, or an
+unbounded tool loop. See
+[ADR-0021](decisions/0021-execute-bounded-goals-with-step-scoped-approvals-and-artifact-lineage.md).
 
 ### Structured model proposal — completed
 

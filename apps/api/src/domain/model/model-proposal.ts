@@ -5,6 +5,16 @@ import {
   SoftwareChangeProposalArgumentsSchema,
   WebResearchProposalArgumentsSchema,
 } from '../capabilities/capability-registry.ts';
+import { PersonalTaskActionArgumentsSchema } from '../personal-tasks/personal-task.ts';
+import {
+  DevelopmentPlanningGoalStepSchema,
+  GoalPlanSchema,
+  GoalStepSchema,
+  SoftwareChangeGoalStepSchema,
+  WebResearchGoalStepSchema,
+  PersonalTaskManagementGoalStepSchema,
+} from '../goals/goal-plan.ts';
+import type { CapabilityReference } from '../capabilities/capability-registry.ts';
 
 const DecisionSummarySchema = z.string().trim().min(1).max(500);
 
@@ -63,26 +73,111 @@ const WebResearchProposalSchema = z
   })
   .strict();
 
+const PersonalTaskManagementProposalSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    kind: z.literal('invoke_capability'),
+    decisionSummary: DecisionSummarySchema,
+    capability: CapabilityReferenceSchema.extend({
+      name: z.literal('personal_task_management'),
+      version: z.literal(1),
+    }),
+    arguments: PersonalTaskActionArgumentsSchema,
+  })
+  .strict();
+
+const ExecuteGoalProposalSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    kind: z.literal('execute_goal'),
+    decisionSummary: DecisionSummarySchema,
+    goal: GoalPlanSchema,
+  })
+  .strict();
+
 export const ModelProposalSchema = z.union([
   RespondProposalSchema,
   DevelopmentPlanningProposalSchema,
   SoftwareChangeProposalSchema,
   WebResearchProposalSchema,
+  PersonalTaskManagementProposalSchema,
+  ExecuteGoalProposalSchema,
 ]);
 
-export function createModelProposalSchema(options: {
-  webResearchEnabled: boolean;
-}) {
-  return options.webResearchEnabled
-    ? ModelProposalSchema
-    : z.union([
-        RespondProposalSchema,
-        DevelopmentPlanningProposalSchema,
-        SoftwareChangeProposalSchema,
-      ]);
-}
-
 export type ModelProposal = z.infer<typeof ModelProposalSchema>;
+
+export function createModelProposalSchema(options: {
+  enabledCapabilities: readonly CapabilityReference[];
+}): z.ZodType<ModelProposal> {
+  const developmentPlanningEnabled = options.enabledCapabilities.some(
+    (capability) =>
+      capability.name === 'development_planning' && capability.version === 1,
+  );
+  const softwareChangeEnabled = options.enabledCapabilities.some(
+    (capability) =>
+      capability.name === 'software_change' && capability.version === 1,
+  );
+  const webResearchEnabled = options.enabledCapabilities.some(
+    (capability) =>
+      capability.name === 'web_research' && capability.version === 1,
+  );
+  const personalTaskManagementEnabled = options.enabledCapabilities.some(
+    (capability) =>
+      capability.name === 'personal_task_management' &&
+      capability.version === 1,
+  );
+  const enabledGoalSteps = [
+    ...(developmentPlanningEnabled ? [DevelopmentPlanningGoalStepSchema] : []),
+    ...(softwareChangeEnabled ? [SoftwareChangeGoalStepSchema] : []),
+    ...(webResearchEnabled ? [WebResearchGoalStepSchema] : []),
+    ...(personalTaskManagementEnabled
+      ? [PersonalTaskManagementGoalStepSchema]
+      : []),
+  ];
+  const schemas: z.ZodType[] = [RespondProposalSchema];
+  if (developmentPlanningEnabled) {
+    schemas.push(DevelopmentPlanningProposalSchema);
+  }
+  if (softwareChangeEnabled) schemas.push(SoftwareChangeProposalSchema);
+  if (webResearchEnabled) schemas.push(WebResearchProposalSchema);
+  if (personalTaskManagementEnabled) {
+    schemas.push(PersonalTaskManagementProposalSchema);
+  }
+  if (enabledGoalSteps.length >= 2) {
+    const enabledGoalStepSchema = z.union(
+      enabledGoalSteps as unknown as [z.ZodType, z.ZodType, ...z.ZodType[]],
+    ) as unknown as typeof GoalStepSchema;
+    const enabledGoalPlanSchema = z
+      .object({
+        schemaVersion: z.literal(1),
+        objective: z.string().trim().min(1).max(10_000),
+        summary: z.string().trim().min(1).max(1_000),
+        steps: z.array(enabledGoalStepSchema).min(2).max(3),
+      })
+      .strict()
+      .superRefine((plan, context) => {
+        const validation = GoalPlanSchema.safeParse(plan);
+        if (!validation.success) {
+          for (const issue of validation.error.issues) {
+            context.addIssue({
+              code: 'custom',
+              path: issue.path,
+              message: issue.message,
+            });
+          }
+        }
+      });
+    schemas.push(
+      ExecuteGoalProposalSchema.extend({
+        goal: enabledGoalPlanSchema,
+      }),
+    );
+  }
+  if (schemas.length === 1) return RespondProposalSchema;
+  return z.union(
+    schemas as [z.ZodType, z.ZodType, ...z.ZodType[]],
+  ) as z.ZodType<ModelProposal>;
+}
 
 export const ModelProposalJsonSchema = z.toJSONSchema(ModelProposalSchema, {
   target: 'draft-7',

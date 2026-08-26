@@ -10,6 +10,7 @@ import type { ConversationService } from '../../../application/conversations/con
 import type { EvaluateModelDecision } from '../../../application/model-decisions/evaluate-model-decision.ts';
 import type { ProjectService } from '../../../application/projects/project-service.ts';
 import type { CapabilityService } from '../../../application/capabilities/capability-service.ts';
+import type { PersonalTaskService } from '../../../application/personal-tasks/personal-task-service.ts';
 import { ResourceError } from '../../../application/shared/resource-error.ts';
 import {
   LifecycleError,
@@ -28,6 +29,7 @@ import { registerConversationRoutes } from './routes/conversation-routes.ts';
 import { registerProjectRoutes } from './routes/project-routes.ts';
 import { registerTaskRoutes } from './routes/task-routes.ts';
 import { registerCapabilityRoutes } from './routes/capability-routes.ts';
+import { registerPersonalTaskRoutes } from './routes/personal-task-routes.ts';
 import {
   EvaluateRequestJsonSchema,
   HealthResponseJsonSchema,
@@ -44,6 +46,7 @@ export type BuildAppOptions = {
   conversations?: ConversationService;
   projects?: ProjectService;
   capabilities?: CapabilityService;
+  personalTasks?: PersonalTaskService;
   changeApplications?: SoftwareChangeApplicationLifecycle & {
     wake(): void;
   };
@@ -238,6 +241,12 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   }
   if (options.artifacts !== undefined) {
     registerArtifactRoutes(app, { principalId, artifacts: options.artifacts });
+  }
+  if (options.personalTasks !== undefined) {
+    registerPersonalTaskRoutes(app, {
+      principalId,
+      personalTasks: options.personalTasks,
+    });
   }
   if (options.taskLifecycle !== undefined) {
     registerTaskRoutes(app, {

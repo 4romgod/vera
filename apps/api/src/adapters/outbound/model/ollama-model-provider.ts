@@ -77,10 +77,24 @@ function toOllamaGrammarSchema(value: unknown): unknown {
     Object.entries(value)
       .filter(
         ([key]) =>
-          !['minLength', 'maxLength', 'minItems', 'maxItems'].includes(key),
+          !['minLength', 'maxLength', 'maxItems', 'pattern'].includes(key),
       )
-      .map(([key, item]) => [key, toOllamaGrammarSchema(item)]),
+      .map(([key, item]) => [
+        key === 'oneOf' ? 'anyOf' : key,
+        toOllamaGrammarSchema(item),
+      ]),
   );
+}
+
+async function rejectedGrammar(response: Response): Promise<boolean> {
+  if (response.status !== 400) return false;
+  try {
+    return /grammar|json schema conversion failed/iu.test(
+      await response.clone().text(),
+    );
+  } catch {
+    return false;
+  }
 }
 
 export class OllamaModelProvider implements ModelProvider {
@@ -161,34 +175,44 @@ export class OllamaModelProvider implements ModelProvider {
     input: GenerateStructuredInput,
   ): Promise<ModelGeneration> {
     const startedAt = performance.now();
-    const response = await this.request(
-      '/api/chat',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          model: this.model,
-          messages: [
-            { role: 'system', content: input.systemPrompt },
-            { role: 'user', content: input.message },
-          ],
-          // Ollama's grammar compiler rejects sufficiently nested schemas
-          // containing array/string bounds. Preserve the structural schema for
-          // generation and enforce every bound with the authoritative Zod
-          // parser after generation.
-          format: toOllamaGrammarSchema(input.outputSchema),
-          stream: false,
-          think: false,
-          options: {
-            temperature: 0,
-            ...(this.maxOutputTokens === undefined
-              ? {}
-              : { num_predict: this.maxOutputTokens }),
-          },
-        }),
-      },
-      this.timeoutMs,
+    const requestGeneration = (format: unknown) =>
+      this.request(
+        '/api/chat',
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            model: this.model,
+            messages: [
+              { role: 'system', content: input.systemPrompt },
+              { role: 'user', content: input.message },
+            ],
+            format,
+            stream: false,
+            think: false,
+            options: {
+              temperature: 0,
+              ...(this.maxOutputTokens === undefined
+                ? {}
+                : { num_predict: this.maxOutputTokens }),
+            },
+          }),
+        },
+        this.timeoutMs,
+      );
+    // Ollama grammar implementations reject sufficiently nested schemas
+    // containing some array/string bounds and regexes, and do not consistently
+    // accept `oneOf`. Preserve compatible structural constraints, including
+    // minimum array cardinality, and express exclusive discriminator branches
+    // as `anyOf`. If this exact provider still rejects grammar initialization,
+    // retry in its JSON mode; the full authoritative Zod schema validates the
+    // candidate either way.
+    let response = await requestGeneration(
+      toOllamaGrammarSchema(input.outputSchema),
     );
+    if (await rejectedGrammar(response)) {
+      response = await requestGeneration('json');
+    }
     await this.requireSuccess(response);
 
     const untrustedBody = await this.readJson(response);

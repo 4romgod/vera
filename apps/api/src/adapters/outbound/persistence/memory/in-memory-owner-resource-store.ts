@@ -5,7 +5,12 @@ import type {
   ConversationSummary,
 } from '../../../../domain/conversations/conversation.ts';
 import type { Project } from '../../../../domain/projects/project.ts';
+import {
+  PersonalTaskSchema,
+  type PersonalTask,
+} from '../../../../domain/personal-tasks/personal-task.ts';
 import type { OwnerResourceStore } from '../../../../ports/persistence/owner-resource-store.ts';
+import { personalTaskMutationOrderKey } from '../../../../ports/persistence/personal-task-store.ts';
 
 export class InMemoryOwnerResourceStore implements OwnerResourceStore {
   private readonly projects = new Map<string, Project>();
@@ -14,6 +19,11 @@ export class InMemoryOwnerResourceStore implements OwnerResourceStore {
   private readonly conversationIdByCreation = new Map<string, string>();
   private readonly artifacts = new Map<string, Artifact>();
   private readonly artifactIdByInvocation = new Map<string, string>();
+  private readonly personalTasks = new Map<string, PersonalTask>();
+  private readonly personalTaskIdByCreationInvocation = new Map<
+    string,
+    string
+  >();
 
   public createProject(
     project: Project,
@@ -229,6 +239,97 @@ export class InMemoryOwnerResourceStore implements OwnerResourceStore {
     return artifactId === undefined
       ? Promise.resolve(null)
       : this.findArtifactById(principalId, artifactId);
+  }
+
+  public createPersonalTask(task: PersonalTask): Promise<PersonalTask> {
+    const identity = this.identity(task.principalId, task.creationInvocationId);
+    const existingId = this.personalTaskIdByCreationInvocation.get(identity);
+    if (existingId !== undefined) {
+      const existing = this.personalTasks.get(existingId);
+      if (existing === undefined) {
+        throw new Error('In-memory personal task index is inconsistent.');
+      }
+      return Promise.resolve(structuredClone(existing));
+    }
+    const validated = PersonalTaskSchema.parse(task);
+    this.personalTaskIdByCreationInvocation.set(identity, validated.id);
+    this.personalTasks.set(validated.id, structuredClone(validated));
+    return Promise.resolve(structuredClone(validated));
+  }
+
+  public listPersonalTasks(
+    principalId: string,
+    options: { status: 'all' | 'open' | 'completed'; limit: number },
+  ): Promise<PersonalTask[]> {
+    return Promise.resolve(
+      [...this.personalTasks.values()]
+        .filter(
+          (task) =>
+            task.principalId === principalId &&
+            (options.status === 'all' || task.status === options.status),
+        )
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+        .slice(0, options.limit)
+        .map((task) => structuredClone(task)),
+    );
+  }
+
+  public setPersonalTaskStatus(input: {
+    principalId: string;
+    taskId: string;
+    status: 'open' | 'completed';
+    invocationId: string;
+    mutationAt: string;
+    recovery: boolean;
+  }): Promise<PersonalTask | null> {
+    const task = this.personalTasks.get(input.taskId);
+    if (task?.principalId !== input.principalId) return Promise.resolve(null);
+    if (task.lastMutation.invocationId === input.invocationId) {
+      return Promise.resolve(structuredClone(task));
+    }
+    const requestedOrderKey = personalTaskMutationOrderKey(
+      input.mutationAt,
+      input.invocationId,
+    );
+    if (input.recovery && task.lastMutation.orderKey > requestedOrderKey) {
+      return Promise.resolve(structuredClone(task));
+    }
+    const mutationAt =
+      task.updatedAt >= input.mutationAt
+        ? new Date(Date.parse(task.updatedAt) + 1).toISOString()
+        : input.mutationAt;
+    const orderKey = personalTaskMutationOrderKey(
+      mutationAt,
+      input.invocationId,
+    );
+    task.status = input.status;
+    task.updatedAt = mutationAt;
+    task.lastMutation = { invocationId: input.invocationId, orderKey };
+    if (input.status === 'completed') task.completedAt = mutationAt;
+    else delete task.completedAt;
+    return Promise.resolve(structuredClone(task));
+  }
+
+  public findPersonalTaskByCreationInvocation(
+    principalId: string,
+    invocationId: string,
+  ): Promise<PersonalTask | null> {
+    const id = this.personalTaskIdByCreationInvocation.get(
+      this.identity(principalId, invocationId),
+    );
+    if (id === undefined) return Promise.resolve(null);
+    const task = this.personalTasks.get(id);
+    return Promise.resolve(task === undefined ? null : structuredClone(task));
+  }
+
+  public findPersonalTaskById(
+    principalId: string,
+    taskId: string,
+  ): Promise<PersonalTask | null> {
+    const task = this.personalTasks.get(taskId);
+    return Promise.resolve(
+      task?.principalId === principalId ? structuredClone(task) : null,
+    );
   }
 
   public checkReadiness(): Promise<void> {

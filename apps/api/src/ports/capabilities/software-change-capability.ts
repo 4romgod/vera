@@ -4,6 +4,7 @@ import type { CapabilityDestination } from '../../domain/capabilities/capability
 import type { SoftwareChangeProposalArgumentsSchema } from '../../domain/capabilities/capability-registry.ts';
 import type { ProjectContextBundle } from '../../domain/projects/project-context.ts';
 import type { SoftwareChange } from '../../domain/changes/software-change.ts';
+import type { Artifact } from '../../domain/artifacts/artifact.ts';
 
 export type SoftwareChangeArguments = z.infer<
   typeof SoftwareChangeProposalArgumentsSchema
@@ -15,6 +16,7 @@ export type SoftwareChangeInvocation = {
   arguments: SoftwareChangeArguments;
   project: { id: string; displayName: string };
   context: ProjectContextBundle;
+  artifacts?: Artifact[];
   limits: {
     maxDurationMs: number;
     maxArtifactBytes: number;

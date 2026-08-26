@@ -70,6 +70,11 @@ access without performing paid inference. Every provider request has a timeout
 and a configured maximum output-token request. Provider output is still
 validated by Vera's authoritative Zod schema after provider-native structured
 generation.
+An adapter may translate that schema into the subset its provider accepts. The
+Ollama adapter may also retry with JSON-only formatting when Ollama explicitly
+rejects its grammar, but the retry remains on the selected Ollama model and the
+original Zod schema still validates the result. This is compatibility handling,
+not cross-provider fallback or weaker authorization.
 
 ## Rationale
 

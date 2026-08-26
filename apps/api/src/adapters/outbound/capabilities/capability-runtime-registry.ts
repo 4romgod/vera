@@ -7,10 +7,19 @@ import {
   type CapabilityAuthority,
   type CapabilityReference,
 } from '../../../domain/capabilities/capability-registry.ts';
+import {
+  PersonalTaskActionArgumentsSchema,
+  PersonalTaskResultSchema,
+  type PersonalTaskActionArguments,
+  type PersonalTaskResult,
+} from '../../../domain/personal-tasks/personal-task.ts';
 import { DevelopmentPlanSchema } from '../../../domain/plans/development-plan.ts';
 import { SoftwareChangeSchema } from '../../../domain/changes/software-change.ts';
 import { ResearchReportSchema } from '../../../domain/research/research-report.ts';
-import type { CapabilityDestination } from '../../../domain/capabilities/capability-destination.ts';
+import {
+  sameCapabilityDestination,
+  type CapabilityDestination,
+} from '../../../domain/capabilities/capability-destination.ts';
 import type {
   CapabilityRuntime,
   CapabilityRuntimeRegistration,
@@ -19,6 +28,7 @@ import type {
 import type { DevelopmentPlanningCapabilityRegistry } from '../../../ports/capabilities/development-planning-capability.ts';
 import type { SoftwareChangeCapabilityRegistry } from '../../../ports/capabilities/software-change-capability.ts';
 import type { WebResearchCapabilityRegistry } from '../../../ports/capabilities/web-research-capability.ts';
+import type { IntegrationActionExecutor } from '../../../ports/integrations/integration-action-executor.ts';
 
 function definition(name: string): CapabilityDefinition {
   const value = CapabilityDefinitions.find(
@@ -37,6 +47,34 @@ function requireProjectInvocation(
   return { project: invocation.project, context: invocation.context };
 }
 
+function requireAcceptedArtifacts(
+  invocation: Parameters<CapabilityRuntime['execute']>[0],
+  definition_: CapabilityDefinition,
+) {
+  const artifacts = invocation.artifacts ?? [];
+  const unsupported = artifacts.find(
+    (artifact) => !definition_.acceptedInputArtifacts.includes(artifact.type),
+  );
+  if (unsupported !== undefined) {
+    throw new Error(
+      `${definition_.name}@${String(definition_.version)} does not accept ${unsupported.type} artifacts.`,
+    );
+  }
+  return artifacts;
+}
+
+function withArtifactAuthority(
+  authority: CapabilityAuthority,
+  hasInputArtifacts: boolean,
+): CapabilityAuthority {
+  return {
+    ...authority,
+    dataClasses: authority.dataClasses.filter(
+      (dataClass) => dataClass !== 'artifact_content' || hasInputArtifacts,
+    ),
+  };
+}
+
 function projectCapabilityAuthority(options: {
   destination: CapabilityDestination;
   isolatedWorkspaceWrite: boolean;
@@ -46,7 +84,7 @@ function projectCapabilityAuthority(options: {
     approval: 'always',
     projectContext: 'required',
     networkAccess: thirdParty ? 'provider_api' : 'none',
-    dataClasses: ['owner_request', 'project_context'],
+    dataClasses: ['owner_request', 'project_context', 'artifact_content'],
     sideEffects: [
       ...(thirdParty ? (['third_party_disclosure'] as const) : []),
       ...(options.isolatedWorkspaceWrite
@@ -87,9 +125,21 @@ function planningRegistration(
       destination: capability.destination,
       isolatedWorkspaceWrite: false,
     }),
+    authorityFor: ({ hasInputArtifacts }) =>
+      withArtifactAuthority(
+        projectCapabilityAuthority({
+          destination: capability.destination,
+          isolatedWorkspaceWrite: false,
+        }),
+        hasInputArtifacts,
+      ),
     checkReadiness: () => capability.checkReadiness(),
     async execute(invocation, options) {
       const { project, context } = requireProjectInvocation(invocation);
+      const artifacts = requireAcceptedArtifacts(
+        invocation,
+        capabilityDefinition,
+      );
       const arguments_ = DevelopmentPlanningProposalArgumentsSchema.parse(
         invocation.arguments,
       );
@@ -100,6 +150,7 @@ function planningRegistration(
           arguments: arguments_,
           project,
           context,
+          ...(artifacts.length === 0 ? {} : { artifacts }),
           limits: {
             maxDurationMs: invocation.limits.maxDurationMs,
             maxArtifactBytes: invocation.limits.maxArtifactBytes,
@@ -152,9 +203,21 @@ function softwareChangeRegistration(
       destination: capability.destination,
       isolatedWorkspaceWrite: true,
     }),
+    authorityFor: ({ hasInputArtifacts }) =>
+      withArtifactAuthority(
+        projectCapabilityAuthority({
+          destination: capability.destination,
+          isolatedWorkspaceWrite: true,
+        }),
+        hasInputArtifacts,
+      ),
     checkReadiness: () => capability.checkReadiness(),
     async execute(invocation, options) {
       const { project, context } = requireProjectInvocation(invocation);
+      const artifacts = requireAcceptedArtifacts(
+        invocation,
+        capabilityDefinition,
+      );
       const arguments_ = SoftwareChangeProposalArgumentsSchema.parse(
         invocation.arguments,
       );
@@ -165,6 +228,7 @@ function softwareChangeRegistration(
           arguments: arguments_,
           project,
           context,
+          ...(artifacts.length === 0 ? {} : { artifacts }),
           limits: {
             maxDurationMs: invocation.limits.maxDurationMs,
             maxArtifactBytes: invocation.limits.maxArtifactBytes,
@@ -217,11 +281,13 @@ function webResearchRegistration(
     definition: capabilityDefinition,
     destination: capability.destination,
     authority: webResearchAuthority(capability.destination),
+    authorityFor: () => webResearchAuthority(capability.destination),
     checkReadiness: () => capability.checkReadiness(),
     async execute(invocation, options) {
       if (
         invocation.project !== undefined ||
-        invocation.context !== undefined
+        invocation.context !== undefined ||
+        invocation.artifacts !== undefined
       ) {
         throw new Error('Web research must not receive project context.');
       }
@@ -269,6 +335,71 @@ function webResearchRegistration(
   };
 }
 
+function personalTaskRegistration(
+  executor: IntegrationActionExecutor<
+    PersonalTaskActionArguments,
+    PersonalTaskResult
+  >,
+): CapabilityRuntimeRegistration {
+  const capabilityDefinition = definition('personal_task_management');
+  const runtime = (): CapabilityRuntime => ({
+    definition: capabilityDefinition,
+    destination: executor.destination,
+    authority: executor.maximumAuthority,
+    authorityFor({ arguments: arguments_ }) {
+      return executor.authorityFor(
+        PersonalTaskActionArgumentsSchema.parse(arguments_),
+      );
+    },
+    checkReadiness: () => executor.checkReadiness(),
+    async execute(invocation, options) {
+      if (
+        invocation.project !== undefined ||
+        invocation.context !== undefined ||
+        invocation.artifacts !== undefined
+      ) {
+        throw new Error(
+          'Personal task management must not receive project context or artifacts.',
+        );
+      }
+      const started = Date.now();
+      const result = await executor.execute(
+        {
+          principalId: invocation.principalId,
+          invocationId: invocation.invocationId,
+          startedAt: invocation.startedAt,
+          recovery: invocation.recovery,
+          arguments: PersonalTaskActionArgumentsSchema.parse(
+            invocation.arguments,
+          ),
+        },
+        options,
+      );
+      return {
+        artifact: {
+          type: 'personal_task_result',
+          mediaType: 'application/vnd.vera.personal-task-result+json',
+          content: PersonalTaskResultSchema.parse(result),
+        },
+        model: {
+          provider: 'vera',
+          model: executor.integrationId,
+          durationMs: Date.now() - started,
+        },
+      };
+    },
+  });
+  return {
+    definition: capabilityDefinition,
+    selected: runtime,
+    resolve(destination) {
+      return sameCapabilityDestination(executor.destination, destination)
+        ? runtime()
+        : null;
+    },
+  };
+}
+
 function sameReference(
   definition_: CapabilityDefinition,
   reference: CapabilityReference,
@@ -283,11 +414,16 @@ export function createCapabilityRuntimeRegistry(options: {
   developmentPlanning: DevelopmentPlanningCapabilityRegistry;
   softwareChange: SoftwareChangeCapabilityRegistry;
   webResearch: WebResearchCapabilityRegistry;
+  personalTasks: IntegrationActionExecutor<
+    PersonalTaskActionArguments,
+    PersonalTaskResult
+  >;
 }): CapabilityRuntimeRegistry {
   const registrations = [
     planningRegistration(options.developmentPlanning),
     softwareChangeRegistration(options.softwareChange),
     webResearchRegistration(options.webResearch),
+    personalTaskRegistration(options.personalTasks),
   ];
   const registrationFor = (reference: CapabilityReference) =>
     registrations.find((candidate) =>

@@ -1,8 +1,8 @@
 # Vera HTTP API
 
 **Status:** Accepted for implemented V1 paths
-**Version:** 0.8
-**Last updated:** 25 August 2026
+**Version:** 1.0
+**Last updated:** 26 August 2026
 
 ## Purpose
 
@@ -24,6 +24,8 @@ an untrusted network.
 | `GET /health` | Process liveness only | `200` |
 | `GET /ready` | Model, stores, recovery, and every enabled capability runtime | `200` or `503` |
 | `GET /v1/capabilities` | List declared capability contracts, authority, enabled state, and destination | `200` |
+| `GET /v1/personal-tasks` | List owner-scoped personal tasks; filters: `status`, `limit` | `200` |
+| `GET /v1/personal-tasks/{personalTaskId}` | Retrieve one owner-scoped personal task | `200` |
 | `POST /v1/projects` | Register an owner-controlled project source | `201` |
 | `GET /v1/projects` | List registered projects | `200` |
 | `GET /v1/projects/{projectId}` | Retrieve a registered project | `200` |
@@ -65,6 +67,7 @@ stateDiagram-v2
     cancellation_requested --> cancelled: capability stops
     cancellation_requested --> succeeded: capability finishes first
     executing --> succeeded: validated result recorded
+    executing --> awaiting_approval: goal step succeeds; next step disclosed
     executing --> failed: capability fails
 ```
 
@@ -79,6 +82,18 @@ Task status is a coarser projection:
 | `cancelled` | `cancelled` |
 
 Terminal runs are not reopened. Retry as a new run is not implemented yet.
+
+For a compound request, the optional `goal` projection contains the objective,
+authoritative project identity when applicable, current step, and two or three
+ordered step states. `approval` and `invocation` always name the current
+boundary. When a step completes and another begins, its full records move to
+the bounded `approvalHistory` and `invocationHistory`; the next approval gets a
+new identity. Clients must therefore continue polling after approval and must
+handle another `awaiting_approval` before terminal completion.
+
+The final `goal_result` contains every step's artifact reference. An artifact's
+optional `inputs` field records the exact upstream references that were approved
+for that invocation.
 
 ## Submit a task
 
@@ -191,6 +206,42 @@ For `web_research@1`, `projectContext` is `none`, network access is
 `public_web_via_provider`, and the maximum is four search calls. No project or
 context manifest is present. This authority is added by Vera code; it is never
 accepted from the model or caller.
+
+For `personal_task_management@1`, `projectContext`, network access, and
+credentials are all `none`; the destination is the owner-controlled
+`vera_personal_tasks` local-store adapter. A `list` action discloses
+`personal_task_data` with no side effect. `create`, `complete`, and `reopen`
+also disclose `personal_data_write`. These are calculated from the validated
+action by Vera code and frozen before execution.
+
+## Personal tasks
+
+Personal task mutations are submitted as natural-language tasks or conversation
+messages and follow the normal decision and approval lifecycle. The supported
+closed action contract is:
+
+```text
+create   { title, notes?, dueAt? }
+list     { status?: all|open|completed, limit?: 1..100 }
+complete { taskId }
+reopen   { taskId }
+```
+
+Successful execution returns a `personal_task_result` artifact and a matching
+task output. The personal task itself is a durable owner resource with a stable
+`personal_task_...` identity and `open` or `completed` status.
+
+The retrieval endpoint is read-only:
+
+```http
+GET /v1/personal-tasks?status=open&limit=50
+```
+
+It returns `{ "schemaVersion": 1, "tasks": [...] }`. `GET
+/v1/personal-tasks/{id}` returns one task or `404 personal_task_not_found`.
+There is deliberately no direct HTTP mutation path in this increment; mutations
+must pass through proposal validation, approval, durable invocation, and
+artifact evidence.
 
 The destination is provider-neutral but not anonymous. A future
 `claude_code_cli` adapter would appear as that `adapterId` with provider

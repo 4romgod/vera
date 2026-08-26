@@ -2,8 +2,8 @@
 
 **Status:** Accepted (core vocabulary and critical distinctions); the open
 questions below are explicitly excluded from this acceptance
-**Version:** 0.4
-**Last updated:** 25 August 2026
+**Version:** 0.6
+**Last updated:** 26 August 2026
 **Accepted:** 24 August 2026 (owner) — accepts the Core concepts and
 Critical distinctions sections as Vera's shared language.
 
@@ -35,9 +35,13 @@ erDiagram
     CONVERSATION ||--o{ MESSAGE : contains
     MESSAGE o|--o{ TASK : requests_or_steers
     PRINCIPAL ||--o{ TASK : owns
+    PRINCIPAL ||--o{ PERSONAL_TASK : owns
     TASK ||--o{ RUN : attempted_by
+    RUN o|--|| GOAL : pursues
+    GOAL ||--|{ STEP : orders
     RUN ||--o{ STEP : contains
     STEP o|--o{ CAPABILITY_INVOCATION : initiates
+    CAPABILITY_INVOCATION o|--o| INTEGRATION_ACTION : delegates
     CAPABILITY_VERSION ||--o{ CAPABILITY_INVOCATION : fulfills
     TASK ||--o{ EVENT : records
     RUN ||--o{ EVENT : records
@@ -154,6 +158,21 @@ Key invariants:
 - cancellation is a recorded request and outcome, not an assumption that every
   external side effect was reversed.
 
+### Goal
+
+A durable, owner-facing outcome that requires a short composition of
+capabilities inside one run. A goal is not private model chain-of-thought and
+not an unrestricted agent loop. Its plan contains two or three validated,
+ordered steps and an explicit current position.
+
+Key invariants:
+
+- every step uses an enabled, versioned capability;
+- dependencies refer only to earlier steps with compatible artifact contracts;
+- each capability boundary receives its own exact approval;
+- failure, rejection, cancellation, or budget exhaustion stops later steps;
+- goal progress and outcomes survive worker or process restart.
+
 ### Step
 
 A bounded unit of execution within a run.
@@ -193,6 +212,29 @@ where possible.
 
 Implementation deployments may change without a contract change, but a
 breaking semantic or schema change requires a new capability version.
+
+### Integration action
+
+A closed, typed operation delegated by a capability to one provider-neutral
+integration executor. It is an execution boundary, not a model tool name or a
+vendor SDK call.
+
+An integration action carries the initiating principal, durable invocation
+identity, validated action arguments, resolved destination, exact action-level
+authority, and recovery context. The executor owns provider translation and
+returns a normalized domain result. The capability lifecycle still owns policy,
+approval, budgets, events, and artifacts.
+
+### Personal task
+
+A durable, owner-scoped reminder of work the owner wants to track. It is not an
+orchestration task: a Vera task represents one request and run lifecycle, while
+a personal task remains useful across conversations and invocations.
+
+A personal task has a stable identity, title, optional notes and due time, an
+`open` or `completed` status, timestamps, and mutation provenance. The first
+contract supports create, list, complete, and reopen. The resource belongs to
+Vera even when a future integration mirrors it into an external task service.
 
 ### Event
 
@@ -235,6 +277,9 @@ large artifact content may live in an appropriate external or object store.
 
 Artifacts should record provenance, content type, integrity information,
 producer, task/run association, access policy, and retention information.
+When one artifact is approved as another invocation's input, the downstream
+artifact records the exact upstream reference as lineage; prompt text is not a
+substitute for this relationship.
 
 ### Software change application
 
@@ -321,6 +366,13 @@ invocation.
 "Develop software" or "inspect cloud health" may be capabilities. Codex,
 Ollama, a Python workflow, or another provider may implement them. Provider
 identity should not replace the capability contract.
+
+### Personal task is not orchestration task
+
+An orchestration task records Vera attempting to satisfy one request. A
+personal task is owner data manipulated by that request. Completing the former
+does not implicitly complete the latter, and retries of the former must not
+duplicate or roll back the latter.
 
 ### Memory is not history
 

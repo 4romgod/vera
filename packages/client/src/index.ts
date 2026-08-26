@@ -65,16 +65,24 @@ export type Approval = {
   proposedArguments: Record<string, unknown>;
   project?: { id: string; displayName: string };
   contextManifest?: ContextManifest;
+  inputArtifacts?: ArtifactReference[];
   destination?: CapabilityDestination;
   authority?: {
     approval: 'always';
     projectContext: 'required' | 'none';
     networkAccess: 'none' | 'provider_api' | 'public_web_via_provider';
-    dataClasses: ('owner_request' | 'project_context' | 'public_web')[];
+    dataClasses: (
+      | 'owner_request'
+      | 'project_context'
+      | 'artifact_content'
+      | 'personal_task_data'
+      | 'public_web'
+    )[];
     sideEffects: (
       | 'third_party_disclosure'
       | 'isolated_workspace_write'
       | 'public_network_read'
+      | 'personal_data_write'
     )[];
     credentials: 'none' | 'server_managed';
     maxWebSearchCalls?: number;
@@ -105,7 +113,30 @@ export type ArtifactReference = ArtifactReferenceIdentity &
         type: 'research_report';
         mediaType: 'application/vnd.vera.research-report+json';
       }
+    | {
+        type: 'personal_task_result';
+        mediaType: 'application/vnd.vera.personal-task-result+json';
+      }
   );
+
+export type PersonalTaskResource = {
+  schemaVersion: 1;
+  id: string;
+  title: string;
+  notes?: string;
+  dueAt?: string;
+  status: 'open' | 'completed';
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+};
+
+export type PersonalTaskResultContent = {
+  schemaVersion: 1;
+  action: 'create' | 'list' | 'complete' | 'reopen';
+  summary: string;
+  tasks: PersonalTaskResource[];
+};
 
 export type SoftwareChangeContent = {
   schemaVersion: 1;
@@ -165,10 +196,15 @@ export type TaskResource = {
   updatedAt: string;
   decision?: unknown;
   approval?: Approval;
+  approvalHistory?: Approval[];
   invocation?: { destination?: CapabilityDestination } & Record<
     string,
     unknown
   >;
+  invocationHistory?: ({ destination?: CapabilityDestination } & Record<
+    string,
+    unknown
+  >)[];
   output?:
     | { kind: 'response'; message?: string }
     | {
@@ -185,6 +221,17 @@ export type TaskResource = {
         kind: 'research_report';
         report?: ResearchReportContent;
         artifact?: Extract<ArtifactReference, { type: 'research_report' }>;
+      }
+    | {
+        kind: 'personal_task_result';
+        result?: PersonalTaskResultContent;
+        artifact?: Extract<ArtifactReference, { type: 'personal_task_result' }>;
+      }
+    | {
+        kind: 'goal_result';
+        objective: string;
+        summary: string;
+        artifacts: ArtifactReference[];
       };
   failure?: { code: string; message: string };
   budget?: unknown;
@@ -194,6 +241,33 @@ export type TaskResource = {
     messageId: string;
     createdAt: string;
     projectedAt?: string;
+  };
+  goal?: {
+    schemaVersion: 1;
+    objective: string;
+    summary: string;
+    status: 'active' | 'succeeded' | 'rejected' | 'failed' | 'cancelled';
+    project?: { id: string; displayName: string };
+    currentStepIndex: number;
+    steps: {
+      id: string;
+      purpose: string;
+      inputStepIds: string[];
+      capability: string;
+      version: number;
+      arguments: Record<string, unknown>;
+      status:
+        | 'pending'
+        | 'awaiting_approval'
+        | 'executing'
+        | 'succeeded'
+        | 'rejected'
+        | 'failed'
+        | 'cancelled';
+      approvalId?: string;
+      invocationId?: string;
+      artifact?: ArtifactReference;
+    }[];
   };
   links: {
     task: string;
@@ -244,6 +318,7 @@ type ArtifactResourceIdentity = {
   sha256: string;
   byteLength: number;
   producer: { destination?: CapabilityDestination } & Record<string, unknown>;
+  inputs?: ArtifactReference[];
   createdAt: string;
 };
 
@@ -264,6 +339,11 @@ export type ArtifactResource = ArtifactResourceIdentity &
         mediaType: 'application/vnd.vera.research-report+json';
         content: ResearchReportContent;
       }
+    | {
+        type: 'personal_task_result';
+        mediaType: 'application/vnd.vera.personal-task-result+json';
+        content: PersonalTaskResultContent;
+      }
   );
 
 export type CapabilityCatalogResource = {
@@ -272,8 +352,9 @@ export type CapabilityCatalogResource = {
     name: string;
     version: number;
     description: string;
-    effect: 'external';
+    effect: 'external' | 'owner_state';
     artifact: { type: string; mediaType: string };
+    acceptedInputArtifacts: string[];
     authority: NonNullable<Approval['authority']>;
     enabled: boolean;
     destination?: CapabilityDestination;
@@ -391,6 +472,11 @@ export class VeraApiError extends Error {
 
 export type VeraApi = {
   listCapabilities(): Promise<CapabilityCatalogResource>;
+  listPersonalTasks(options?: {
+    status?: 'all' | 'open' | 'completed';
+    limit?: number;
+  }): Promise<{ schemaVersion: 1; tasks: PersonalTaskResource[] }>;
+  getPersonalTask(taskId: string): Promise<PersonalTaskResource>;
   registerProject(input: {
     displayName: string;
     rootPath: string;
@@ -509,7 +595,7 @@ function assertCapabilityCatalogResource(
         typeof capability.name !== 'string' ||
         typeof capability.version !== 'number' ||
         typeof capability.description !== 'string' ||
-        capability.effect !== 'external' ||
+        !['external', 'owner_state'].includes(String(capability.effect)) ||
         typeof capability.enabled !== 'boolean' ||
         !isRecord(capability.artifact) ||
         typeof capability.artifact.type !== 'string' ||
@@ -518,6 +604,23 @@ function assertCapabilityCatalogResource(
     )
   ) {
     throw new Error('Vera returned an invalid capability catalog.');
+  }
+}
+
+function assertPersonalTaskResource(
+  value: unknown,
+): asserts value is PersonalTaskResource {
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== 1 ||
+    typeof value.id !== 'string' ||
+    !value.id.startsWith('personal_task_') ||
+    typeof value.title !== 'string' ||
+    !['open', 'completed'].includes(String(value.status)) ||
+    typeof value.createdAt !== 'string' ||
+    typeof value.updatedAt !== 'string'
+  ) {
+    throw new Error('Vera returned an invalid personal task resource.');
   }
 }
 
@@ -591,6 +694,40 @@ export class VeraClient implements VeraApi {
     const catalog = await this.request<unknown>('/v1/capabilities');
     assertCapabilityCatalogResource(catalog);
     return catalog;
+  }
+
+  public async listPersonalTasks(
+    options: {
+      status?: 'all' | 'open' | 'completed';
+      limit?: number;
+    } = {},
+  ): Promise<{ schemaVersion: 1; tasks: PersonalTaskResource[] }> {
+    const query = new URLSearchParams();
+    if (options.status !== undefined) query.set('status', options.status);
+    if (options.limit !== undefined) query.set('limit', String(options.limit));
+    const value = await this.request<unknown>(
+      `/v1/personal-tasks${query.size === 0 ? '' : `?${query.toString()}`}`,
+    );
+    if (
+      !isRecord(value) ||
+      value.schemaVersion !== 1 ||
+      !Array.isArray(value.tasks)
+    ) {
+      throw new Error('Vera returned an invalid personal task collection.');
+    }
+    const tasks = value.tasks.map((task): PersonalTaskResource => {
+      assertPersonalTaskResource(task);
+      return task;
+    });
+    return { schemaVersion: 1, tasks };
+  }
+
+  public async getPersonalTask(taskId: string): Promise<PersonalTaskResource> {
+    const value = await this.request<unknown>(
+      `/v1/personal-tasks/${encodeURIComponent(taskId)}`,
+    );
+    assertPersonalTaskResource(value);
+    return value;
   }
 
   public registerProject(input: {

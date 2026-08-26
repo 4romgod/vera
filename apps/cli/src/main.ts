@@ -21,6 +21,8 @@ export type CliDependencies = {
 const usage = `Usage:
   vera capability list
   vera capability show <capability-name>
+  vera personal-task list [--status <all|open|completed>] [--limit <number>]
+  vera personal-task show <personal-task-id>
   vera project add --name <name> --path <absolute-git-root> [--key <key>]
   vera project list
   vera project show <project-id>
@@ -104,6 +106,7 @@ function approvalDisclosure(approval: Approval): Record<string, unknown> {
     authority: approval.authority,
     proposedArguments: approval.proposedArguments,
     contextManifest: approval.contextManifest,
+    inputArtifacts: approval.inputArtifacts,
   };
 }
 
@@ -155,7 +158,14 @@ async function resolveApproval(input: {
   input.stderr.write(
     `Approval recorded. Waiting for run ${decided.runId} to finish...\n`,
   );
-  return input.client.waitForRun(decided.runId);
+  const decidedApprovalId = input.task.approval.id;
+  return input.client.waitForRun(decided.runId, {
+    until: (task) =>
+      isTerminal(task) ||
+      (task.runStatus === 'awaiting_approval' &&
+        task.approval?.status === 'pending' &&
+        task.approval.id !== decidedApprovalId),
+  });
 }
 
 async function interactiveConfirm(question: string): Promise<boolean> {
@@ -211,6 +221,34 @@ export async function runCli(
       throw new Error(`Capability ${name} was not found.`);
     }
     print(stdout, capability);
+    return 0;
+  }
+
+  if (resource === 'personal-task' && action === 'list') {
+    const status = option(args, '--status');
+    if (
+      status !== undefined &&
+      !['all', 'open', 'completed'].includes(status)
+    ) {
+      throw new Error('--status must be all, open, or completed.');
+    }
+    const limit = positiveIntegerOption(args, '--limit');
+    print(
+      stdout,
+      await client.listPersonalTasks({
+        ...(status === undefined
+          ? {}
+          : { status: status as 'all' | 'open' | 'completed' }),
+        ...(limit === undefined ? {} : { limit }),
+      }),
+    );
+    return 0;
+  }
+  if (resource === 'personal-task' && action === 'show') {
+    print(
+      stdout,
+      await client.getPersonalTask(positional(args, 2, 'personal-task-id')),
+    );
     return 0;
   }
 
@@ -292,14 +330,17 @@ export async function runCli(
       until: (task) =>
         task.runStatus === 'awaiting_approval' || isConversationTerminal(task),
     });
-    const completed = await resolveApproval({
-      task: review,
-      client,
-      autoApprove: args.includes('--approve'),
-      confirm,
-      stdout,
-      stderr,
-    });
+    let completed = review;
+    while (completed.runStatus === 'awaiting_approval') {
+      completed = await resolveApproval({
+        task: completed,
+        client,
+        autoApprove: args.includes('--approve'),
+        confirm,
+        stdout,
+        stderr,
+      });
+    }
     const finalTask = isConversationTerminal(completed)
       ? completed
       : await client.waitForRun(completed.runId);

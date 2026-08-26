@@ -35,6 +35,8 @@ function fakeApi(overrides: Partial<VeraApi>): VeraApi {
   };
   return {
     listCapabilities: unavailable,
+    listPersonalTasks: unavailable,
+    getPersonalTask: unavailable,
     registerProject: unavailable,
     listProjects: unavailable,
     getProject: unavailable,
@@ -98,6 +100,45 @@ function changeApplication(
 }
 
 void describe('Vera CLI', () => {
+  void it('lists durable personal tasks through the shared client', async () => {
+    const output: string[] = [];
+    let options: Parameters<VeraApi['listPersonalTasks']>[0];
+    const exit = await runCli(
+      ['personal-task', 'list', '--status', 'completed', '--limit', '5'],
+      {
+        client: fakeApi({
+          listPersonalTasks: (input) => {
+            options = input;
+            return Promise.resolve({
+              schemaVersion: 1,
+              tasks: [
+                {
+                  schemaVersion: 1,
+                  id: 'personal_task_test',
+                  title: 'Buy milk',
+                  status: 'completed',
+                  createdAt: '2026-08-26T10:00:00.000Z',
+                  updatedAt: '2026-08-26T11:00:00.000Z',
+                  completedAt: '2026-08-26T11:00:00.000Z',
+                },
+              ],
+            });
+          },
+        }),
+        stdout: {
+          write: (value) => {
+            output.push(String(value));
+            return true;
+          },
+        },
+      },
+    );
+
+    assert.equal(exit, 0);
+    assert.deepEqual(options, { status: 'completed', limit: 5 });
+    assert.match(output.join(''), /personal_task_test/u);
+  });
+
   void it('lists the runtime capability catalog', async () => {
     const output: string[] = [];
     const client = fakeApi({
@@ -114,6 +155,7 @@ void describe('Vera CLI', () => {
                 type: 'research_report',
                 mediaType: 'application/vnd.vera.research-report+json',
               },
+              acceptedInputArtifacts: [],
               authority: {
                 approval: 'always',
                 projectContext: 'none',
@@ -180,15 +222,23 @@ void describe('Vera CLI', () => {
       },
     });
     const artifact = { id: 'artifact_test' } as ArtifactResource;
+    assert.ok(pending.approval);
+    const approvedPending = task('awaiting_approval', {
+      approval: { ...pending.approval, status: 'approved' },
+    });
     let waits = 0;
     const client = fakeApi({
       submitTask: () => {
         calls.push('submit');
         return Promise.resolve(task('deciding'));
       },
-      waitForRun: () => {
+      waitForRun: (_runId, options) => {
         calls.push('wait');
         waits += 1;
+        if (waits === 2) {
+          assert.equal(options?.until?.(approvedPending), false);
+          assert.equal(options.until(completed), true);
+        }
         return Promise.resolve(waits === 1 ? pending : completed);
       },
       decideApproval: (_approvalId, decision) => {
@@ -633,6 +683,119 @@ void describe('Vera CLI', () => {
       'get',
     ]);
     assert.match(output.join(''), /Vera orchestrates work\./u);
+  });
+
+  void it('reviews every approval in a multi-step chat goal', async () => {
+    const output: string[] = [];
+    const calls: string[] = [];
+    const conversation: ConversationResource = {
+      schemaVersion: 1,
+      id: 'conversation_goal',
+      title: 'Plan and implement',
+      status: 'active',
+      messages: [],
+      createdAt: '2026-08-25T00:00:00.000Z',
+      updatedAt: '2026-08-25T00:00:00.000Z',
+    };
+    const planningApproval = task('awaiting_approval', {
+      conversationId: conversation.id,
+      approval: {
+        id: 'approval_plan',
+        status: 'pending',
+        reason: 'specialist_capability_invocation',
+        capability: { name: 'development_planning', version: 1 },
+        proposedArguments: { objective: 'Plan the change.' },
+        requestedAt: '2026-08-25T00:00:00.000Z',
+      },
+    });
+    const changeApproval = task('awaiting_approval', {
+      conversationId: conversation.id,
+      approval: {
+        id: 'approval_change',
+        status: 'pending',
+        reason: 'specialist_capability_invocation',
+        capability: { name: 'software_change', version: 1 },
+        proposedArguments: { objective: 'Implement the change.' },
+        inputArtifacts: [
+          {
+            id: 'artifact_plan',
+            version: 1,
+            type: 'implementation_plan',
+            mediaType: 'application/vnd.vera.implementation-plan+json',
+            sha256: 'a'.repeat(64),
+            byteLength: 10,
+          },
+        ],
+        requestedAt: '2026-08-25T00:00:01.000Z',
+      },
+    });
+    const terminal = task('succeeded', { conversationId: conversation.id });
+    const completed = task('succeeded', {
+      conversationId: conversation.id,
+      conversationReply: {
+        status: 'projected',
+        messageId: 'message_goal_reply',
+        createdAt: '2026-08-25T00:00:02.000Z',
+        projectedAt: '2026-08-25T00:00:03.000Z',
+      },
+    });
+    let wait = 0;
+    const client = fakeApi({
+      createConversation: () => Promise.resolve(conversation),
+      appendMessage: () => Promise.resolve(task('deciding')),
+      waitForRun: () => {
+        wait += 1;
+        return Promise.resolve(
+          wait === 1
+            ? planningApproval
+            : wait === 2
+              ? changeApproval
+              : completed,
+        );
+      },
+      decideApproval: (approvalId) => {
+        calls.push(approvalId);
+        return Promise.resolve(task('executing'));
+      },
+      getConversation: () =>
+        Promise.resolve({
+          ...conversation,
+          messages: [
+            {
+              id: 'message_goal_reply',
+              role: 'vera',
+              content: 'I completed both approved steps.',
+              taskId: terminal.taskId,
+              createdAt: '2026-08-25T00:00:03.000Z',
+            },
+          ],
+        }),
+    });
+    let confirmations = 0;
+
+    const exitCode = await runCli(
+      ['chat', '--message', 'Plan and implement the change.'],
+      {
+        client,
+        stdout: {
+          write: (value) => {
+            output.push(String(value));
+            return true;
+          },
+        },
+        stderr: { write: () => true },
+        confirm: () => {
+          confirmations += 1;
+          return Promise.resolve(true);
+        },
+      },
+    );
+
+    assert.equal(exitCode, 0);
+    assert.equal(confirmations, 2);
+    assert.deepEqual(calls, ['approval_plan', 'approval_change']);
+    assert.match(output.join(''), /artifact_plan/u);
+    assert.match(output.join(''), /I completed both approved steps\./u);
   });
 
   void it('rejects an all-whitespace chat message before calling the API', async () => {

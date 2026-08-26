@@ -41,6 +41,8 @@ import type { OwnerResourceStore } from '../ports/persistence/owner-resource-sto
 import type { WorkLeaseStore } from '../ports/persistence/work-lease-store.ts';
 import type { ChangeApplicationStore } from '../ports/persistence/change-application-store.ts';
 import type { ProjectMutationLeaseStore } from '../ports/persistence/project-mutation-lease-store.ts';
+import { LocalPersonalTaskActionExecutor } from '../adapters/outbound/integrations/personal-tasks/local-personal-task-action-executor.ts';
+import { createPersonalTaskService } from '../application/personal-tasks/personal-task-service.ts';
 
 export function createApp(
   config: AppConfig,
@@ -121,11 +123,14 @@ export function createApp(
     dependencyTimeoutMs: config.storage.dependencyTimeoutMs,
   });
   const webResearch = createWebResearchCapabilityRegistry(config.research);
+  const personalTaskExecutor = new LocalPersonalTaskActionExecutor(resources);
   const capabilities = createCapabilityRuntimeRegistry({
     developmentPlanning,
     softwareChange,
     webResearch,
+    personalTasks: personalTaskExecutor,
   });
+  const personalTaskService = createPersonalTaskService({ store: resources });
   const capabilityService = createCapabilityService({ registry: capabilities });
   const evaluateModelDecision = createEvaluateModelDecision(
     provider,
@@ -221,6 +226,7 @@ export function createApp(
     conversations: conversationService,
     projects: projectService,
     capabilities: capabilityService,
+    personalTasks: personalTaskService,
     changeApplications: {
       ...changeApplicationLifecycle,
       wake: () => changeApplicationWorker.wake(),

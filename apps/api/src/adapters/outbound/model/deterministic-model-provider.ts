@@ -90,48 +90,175 @@ export class DeterministicModelProvider implements ModelProvider {
       /\b(research|investigate|look up|verify|compare)\b/u.test(
         normalizedMessage,
       ) && JSON.stringify(input.outputSchema).includes('web_research');
+    const canManagePersonalTasks = JSON.stringify(input.outputSchema).includes(
+      'personal_task_management',
+    );
+    const personalTaskId = /personal_task_[a-z0-9-]+/u.exec(ownerMessage)?.[0];
+    const personalTaskAction =
+      canManagePersonalTasks &&
+      personalTaskId !== undefined &&
+      /\breopen\b/u.test(normalizedMessage)
+        ? ({ action: 'reopen', taskId: personalTaskId } as const)
+        : canManagePersonalTasks &&
+            personalTaskId !== undefined &&
+            /\b(complete|finish|done)\b/u.test(normalizedMessage)
+          ? ({ action: 'complete', taskId: personalTaskId } as const)
+          : canManagePersonalTasks &&
+              /\b(list|show)\b.*\b(tasks?|todos?)\b/u.test(normalizedMessage)
+            ? ({
+                action: 'list',
+                status: /\b(all)\b/u.test(normalizedMessage)
+                  ? ('all' as const)
+                  : /\b(completed|done)\b/u.test(normalizedMessage)
+                    ? ('completed' as const)
+                    : ('open' as const),
+              } as const)
+            : canManagePersonalTasks &&
+                /\b(add|create|remember)\b.*\b(task|todo)\b/u.test(
+                  normalizedMessage,
+                )
+              ? ({
+                  action: 'create',
+                  title: ownerMessage.includes(':')
+                    ? ownerMessage.slice(ownerMessage.indexOf(':') + 1).trim()
+                    : ownerMessage,
+                } as const)
+              : undefined;
 
-    const candidate = shouldResearch
+    const canExecuteGoal = JSON.stringify(input.outputSchema).includes(
+      'execute_goal',
+    );
+    const shouldExecuteGoal =
+      canExecuteGoal &&
+      [
+        shouldResearch,
+        shouldPlan,
+        shouldChange,
+        personalTaskAction !== undefined,
+      ].filter(Boolean).length >= 2;
+
+    const projectArguments = {
+      objective: ownerMessage,
+      ticket: { reference: 'untracked', details: ownerMessage },
+      project: { name: projectName },
+    };
+    const goalSteps = [
+      ...(shouldResearch
+        ? [
+            {
+              id: 'step_research',
+              purpose: 'Gather current source-backed evidence.',
+              inputStepIds: [],
+              capability: 'web_research' as const,
+              version: 1 as const,
+              arguments: { objective: ownerMessage },
+            },
+          ]
+        : []),
+      ...(shouldPlan
+        ? [
+            {
+              id: 'step_plan',
+              purpose:
+                'Turn the objective and evidence into an implementation plan.',
+              inputStepIds: shouldResearch ? ['step_research'] : [],
+              capability: 'development_planning' as const,
+              version: 1 as const,
+              arguments: projectArguments,
+            },
+          ]
+        : []),
+      ...(shouldChange
+        ? [
+            {
+              id: 'step_change',
+              purpose:
+                'Implement the approved objective in an isolated workspace.',
+              inputStepIds: shouldPlan
+                ? ['step_plan']
+                : shouldResearch
+                  ? ['step_research']
+                  : [],
+              capability: 'software_change' as const,
+              version: 1 as const,
+              arguments: projectArguments,
+            },
+          ]
+        : []),
+      ...(personalTaskAction === undefined
+        ? []
+        : [
+            {
+              id: 'step_personal_task',
+              purpose: 'Apply the requested owner-scoped personal task action.',
+              inputStepIds: [],
+              capability: 'personal_task_management' as const,
+              version: 1 as const,
+              arguments: personalTaskAction,
+            },
+          ]),
+    ];
+    const boundedGoalSteps = goalSteps.slice(0, 3);
+    const executeBoundedGoal =
+      shouldExecuteGoal &&
+      boundedGoalSteps.length >= 2 &&
+      boundedGoalSteps.length <= 3;
+
+    const candidate = executeBoundedGoal
       ? {
           schemaVersion: 1,
-          kind: 'invoke_capability',
+          kind: 'execute_goal',
           decisionSummary:
-            'The request asks for current, source-backed public-web research.',
-          capability: { name: 'web_research', version: 1 },
-          arguments: { objective: ownerMessage },
+            'The owner requested multiple dependent outcomes that require a bounded capability sequence.',
+          goal: {
+            schemaVersion: 1,
+            objective: ownerMessage,
+            summary: `Execute ${String(boundedGoalSteps.length)} bounded capability steps and carry approved artifacts forward.`,
+            steps: boundedGoalSteps,
+          },
         }
-      : shouldPlan
+      : personalTaskAction !== undefined
         ? {
             schemaVersion: 1,
             kind: 'invoke_capability',
             decisionSummary:
-              'The request asks for specialist software planning.',
-            capability: { name: 'development_planning', version: 1 },
-            arguments: {
-              objective: ownerMessage,
-              ticket: { reference: 'untracked', details: ownerMessage },
-              project: { name: projectName },
-            },
+              'The owner requested an action against durable personal tasks.',
+            capability: { name: 'personal_task_management', version: 1 },
+            arguments: personalTaskAction,
           }
-        : shouldChange
+        : shouldResearch
           ? {
               schemaVersion: 1,
               kind: 'invoke_capability',
               decisionSummary:
-                'The request asks for an isolated specialist software change.',
-              capability: { name: 'software_change', version: 1 },
-              arguments: {
-                objective: ownerMessage,
-                ticket: { reference: 'untracked', details: ownerMessage },
-                project: { name: projectName },
-              },
+                'The request asks for current, source-backed public-web research.',
+              capability: { name: 'web_research', version: 1 },
+              arguments: { objective: ownerMessage },
             }
-          : {
-              schemaVersion: 1,
-              kind: 'respond',
-              decisionSummary: 'The request can be answered directly.',
-              message: `Vera received: ${ownerMessage}`,
-            };
+          : shouldPlan
+            ? {
+                schemaVersion: 1,
+                kind: 'invoke_capability',
+                decisionSummary:
+                  'The request asks for specialist software planning.',
+                capability: { name: 'development_planning', version: 1 },
+                arguments: projectArguments,
+              }
+            : shouldChange
+              ? {
+                  schemaVersion: 1,
+                  kind: 'invoke_capability',
+                  decisionSummary:
+                    'The request asks for an isolated specialist software change.',
+                  capability: { name: 'software_change', version: 1 },
+                  arguments: projectArguments,
+                }
+              : {
+                  schemaVersion: 1,
+                  kind: 'respond',
+                  decisionSummary: 'The request can be answered directly.',
+                  message: `Vera received: ${ownerMessage}`,
+                };
 
     return Promise.resolve({
       candidate,

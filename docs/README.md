@@ -1,7 +1,7 @@
 # Vera Documentation Guide
 
 **Status:** Active index
-**Last updated:** 25 August 2026
+**Last updated:** 26 August 2026
 
 ## Purpose
 
@@ -41,6 +41,8 @@ ADR-0018 adds exact, separately approved patch application in durable managed
 Git worktrees while leaving commit and publication authority absent. ADR-0019
 organizes the growing API by architectural role and cohesive responsibility,
 with executable dependency-boundary checks.
+ADR-0021 adds bounded two- or three-step goals, exact approval at every
+capability boundary, and integrity-checked artifact handoffs.
 
 Implementation began on the same date. ADR-0009 accepts the first production
 source layout and model decision boundary. ADR-0010 accepts the durable
@@ -182,6 +184,11 @@ Isolated software-change artifacts are accepted in
 The declarative capability runtime and approval-gated, project-independent
 web-research contract are accepted in
 [ADR-0020](decisions/0020-use-a-declarative-capability-runtime-and-approval-gated-web-research.md).
+Bounded goal execution is accepted in
+[ADR-0021](decisions/0021-execute-bounded-goals-with-step-scoped-approvals-and-artifact-lineage.md).
+Provider-neutral integration actions and Vera-owned personal tasks are accepted
+in
+[ADR-0022](decisions/0022-introduce-provider-neutral-integration-actions-with-vera-owned-personal-tasks.md).
 
 ## Documentation and implementation cadence
 
@@ -209,6 +216,12 @@ The `vera research` path has deterministic compiled catalog, approval-authority,
 project-independent artifact, source-persistence, and restart-retrieval
 evidence. The live OpenAI adapter separately has request-shape, readiness,
 source-validation, refusal, failure-classification, and secret-redaction tests.
+The natural-language goal path has deterministic model-boundary, HTTP, CLI,
+artifact-lineage, historical-approval, and forced-restart evidence across a
+plan-to-change sequence.
+The personal-task path has action-specific approval authority, owner isolation,
+idempotent create and mutation recovery, HTTP/client/CLI discovery, durable
+artifacts, and forced-restart MongoDB evidence.
 Required CI now runs the compiled CLI-to-artifact journey with real
 ephemeral MongoDB and Redis plus deterministic owner-controlled adapters; it
 does not download models or call a third party. The owner separately approved

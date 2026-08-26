@@ -3,8 +3,8 @@
 **Status:** Accepted (logical architecture, component responsibilities,
 request lifecycle, architectural invariants, initial modular API shape, and V1
 operational storage); post-V1 progress transport and deployment topology remain open
-**Version:** 0.9
-**Last updated:** 25 August 2026
+**Version:** 1.0
+**Last updated:** 26 August 2026
 **Accepted:** 24 August 2026 (owner) — post-V1 progress transport and deployment
 topology are deferred; V1 uses HTTP polling. The initial Fastify/Zod modular API
 is accepted by ADR-0009. MongoDB operational truth and the Redis scratchpad are
@@ -14,6 +14,9 @@ reply projection are accepted by ADR-0016.
 Software-change artifacts, controlled application, the enforced API module
 map, and the declarative capability runtime with project-independent web
 research are accepted by ADRs 0017–0020.
+Bounded goal execution and typed artifact lineage are accepted by ADR-0021.
+Provider-neutral integration actions and Vera-owned personal tasks are accepted
+by ADR-0022.
 
 ## Purpose
 
@@ -223,6 +226,14 @@ preserving internal boundaries.
 - make provider capabilities explicit rather than pretending all models are
   identical.
 
+Provider-native structured-output support is an adapter concern. In
+particular, the Ollama adapter derives a compatible grammar schema by removing
+unsupported validation keywords. If Ollama rejects that grammar, the adapter
+may retry the same request against the same Ollama model in JSON mode; it must
+not select another provider. In every case, the unmodified Vera Zod schema is
+the authoritative post-generation validator, so unsupported provider grammar
+features never become relaxed domain contracts.
+
 The canonical distinction between a model provider such as Ollama and a Vera
 capability is defined in the [Capability Model](capability-model.md#model-providers).
 
@@ -233,6 +244,13 @@ capability is defined in the [Capability Model](capability-model.md#model-provid
 - enforce declared inputs and permissions;
 - normalize progress, completion, failure, timeout, and cancellation;
 - keep capability implementations out of Vera's private storage schema.
+
+The gateway may delegate one closed action to an integration-action executor.
+That port describes the logical integration, destination, readiness, exact
+action authority, idempotent invocation identity, and normalized result. It
+does not expose a vendor SDK to the orchestration lifecycle. A local Vera store
+and a future remote service can therefore implement the same capability
+contract without making the capability or model proposal vendor-specific.
 
 ### Credential broker
 
@@ -308,6 +326,31 @@ The client connection or active working-set store may disappear at any point.
 Authoritative execution state remains in durable storage. The scratchpad can be
 reconstructed after reconnection or restart; accepted work never depends only
 on its survival.
+
+## Bounded goal execution
+
+```mermaid
+flowchart LR
+    I["One owner goal"] --> P["Validated 2–3 step plan"]
+    P --> A1["Approval: step 1"]
+    A1 --> C1["Capability 1"]
+    C1 --> R1["Typed artifact + hash"]
+    R1 --> A2["Approval: step 2 + exact input reference"]
+    A2 --> C2["Capability 2"]
+    C2 --> R2["Typed artifact + lineage"]
+    R2 --> G["Durable goal result"]
+```
+
+The model proposes this small graph; it does not control its execution. Vera
+code admits only enabled capability versions, backward-only dependencies, and
+declared artifact compatibility. The lifecycle advances one step at a time and
+freezes a new approval whenever destination, authority, context, or artifact
+disclosure changes. This is the implemented substrate for assistant-level
+outcomes without adopting a provider-owned or unbounded agent loop.
+
+A goal remains one run while it is short, sequential, and serves one outcome.
+Independent delegated work will use child tasks so it can carry its own
+lifecycle, budget, cancellation, and owner-visible result.
 
 ## Concurrent work
 
@@ -474,15 +517,28 @@ flowchart TD
     RESOLVE --> PLAN["development_planning adapter"]
     RESOLVE --> CHANGE["software_change adapter"]
     RESOLVE --> RESEARCH["web_research adapter"]
+    RESOLVE --> PERSONAL["personal_task integration action"]
     PLAN --> ARTIFACT["Versioned artifacts"]
     CHANGE --> ARTIFACT
     RESEARCH --> ARTIFACT
+    PERSONAL --> ARTIFACT
 ```
 
 The initial live research adapter uses OpenAI Responses web search, is selected
 independently from the orchestration model, and is disabled by default. There is
 no automatic fallback. See
 [ADR-0020](decisions/0020-use-a-declarative-capability-runtime-and-approval-gated-web-research.md).
+
+`personal_task_management@1` is the first assistant-oriented integration
+capability. It routes `create`, `list`, `complete`, and `reopen` through the
+provider-neutral integration-action port to Vera's durable owner-scoped task
+store. Authority is calculated from the validated action: listing discloses
+personal-task data without a side effect, while mutations additionally disclose
+`personal_data_write`. The invocation identity makes creation idempotent, and a
+recovered older mutation cannot overwrite a newer task state. Each invocation
+produces a `personal_task_result` artifact while the task remains a separately
+addressable owner resource. See
+[ADR-0022](decisions/0022-introduce-provider-neutral-integration-actions-with-vera-owned-personal-tasks.md).
 
 Artifact application is a separate durable lifecycle rather than hidden inside
 that capability. The owner approves an exact artifact hash, immutable base

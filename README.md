@@ -9,22 +9,48 @@ the appropriate models, tools, workflows, machines, and services.
 Vera is now in production implementation. The executable control plane is a
 TypeScript/Node.js npm-workspaces modular monolith in `apps/api`, using Fastify
 for HTTP and Zod for runtime and JSON Schema contracts. It implements a durable
-request-to-decision-to-approval-to-capability lifecycle, an asynchronous worker,
-a browser-neutral TypeScript client, and an owner CLI.
+request-to-decision-to-approval-to-capability lifecycle, bounded multi-step goal
+execution, an asynchronous worker, a browser-neutral TypeScript client, and an
+owner CLI.
 
 The orchestration brain is selected at startup through a provider registry.
 Ollama remains the default owner-controlled provider; OpenAI and Gemini are
 implemented third-party providers, and the deterministic provider remains the
 repeatable test boundary. Provider-native payloads, credentials, and schema
 dialects stay behind adapters and do not enter Vera's domain contracts.
+The Ollama adapter removes JSON Schema keywords that Ollama's grammar compiler
+cannot represent and, only when Ollama rejects that grammar, retries the same
+provider in JSON mode. Vera's complete Zod contract remains authoritative, so
+this compatibility path does not weaken output validation or cross a provider
+boundary.
 
 `POST /v1/model-decisions` accepts a natural-language message. A model may
 propose a direct response or one of the capabilities enabled in the runtime
 catalog. The implemented declarations are `development_planning@1`,
-`software_change@1`, and project-independent `web_research@1`; Vera's code
+`software_change@1`, project-independent `web_research@1`, and owner-scoped
+`personal_task_management@1`; Vera's code
 validates the closed, versioned proposal and routing arguments, then returns a
-direct response, an approval requirement, or a rejection. A disabled capability
-is absent from the model contract. Model output is never authorization.
+direct response, one approval requirement, a validated two- or three-step goal,
+or a rejection. A disabled capability is absent from the model contract. Model
+output is never authorization.
+
+Vera can now create, list, complete, and reopen durable personal tasks through
+ordinary conversation. The first adapter stores them locally in Vera's
+authoritative owner resource store, requires no external account, and exposes
+read-only task retrieval through the API, client, and CLI. Every conversational
+action is explicitly approved; list approvals carry no write effect while
+mutations disclose `personal_data_write`. The provider-neutral integration port
+is the extension point for future calendars, reminders, and external task
+services. See
+[ADR-0022](docs/decisions/0022-introduce-provider-neutral-integration-actions-with-vera-owned-personal-tasks.md).
+
+For compound requests such as “research, plan, and implement,” Vera now keeps
+one owner-facing goal while approving and executing each capability boundary
+separately. Every completed step produces a typed artifact; later steps may
+receive only artifact types their declarations accept, with exact hashes and
+lineage frozen into approval and checked again at execution. Historical
+approvals and invocations remain inspectable and restart-safe. See
+[ADR-0021](docs/decisions/0021-execute-bounded-goals-with-step-scoped-approvals-and-artifact-lineage.md).
 
 The owner-facing journey registers a generic project, creates a conversation,
 and posts project-linked messages. Vera freezes bounded prior complete turns
@@ -93,6 +119,12 @@ are accepted in
 The declarative capability runtime, owner-visible catalog, authority envelope,
 and project-independent web-research contract are accepted in
 [ADR-0020](docs/decisions/0020-use-a-declarative-capability-runtime-and-approval-gated-web-research.md).
+Bounded goal execution, step-scoped approvals, and typed artifact handoffs are
+accepted in
+[ADR-0021](docs/decisions/0021-execute-bounded-goals-with-step-scoped-approvals-and-artifact-lineage.md).
+Provider-neutral integration actions and Vera-owned personal tasks are accepted
+in
+[ADR-0022](docs/decisions/0022-introduce-provider-neutral-integration-actions-with-vera-owned-personal-tasks.md).
 Broader long-term-memory and retention policy remain open on purpose; the V1
 operational storage products do not.
 
@@ -170,7 +202,12 @@ exclusion, durable owner/Vera dialogue, survival of a forced process
 termination at the approval boundary, and retrieval after a later graceful
 restart. The same compiled journey discovers `web_research@1`, approves its
 project-independent authority, retrieves its sourced artifact, and verifies it
-again after restart. It then removes its own database, Redis scratchpads, managed
+again after restart. It also executes a plan-to-change goal, restarts between
+its two approval boundaries, replays the first decision idempotently, and
+verifies the final artifact lineage. It also creates a durable personal task,
+restarts the API, completes the task through another approved action, and reads
+it through the compiled client and CLI. It then removes its own database, Redis
+scratchpads, managed
 worktrees, and temporary Git fixture.
 
 Required CI runs the same compiled journey against ephemeral MongoDB 8.2 and
@@ -459,6 +496,19 @@ inside one conversation. The CLI waits until Vera's reply is durably projected,
 prints exact approval disclosure when needed, and never auto-approves unless
 `--approve` is supplied.
 
+Chat also drives compound goals. For example:
+
+```bash
+npm run cli -- chat \
+  --project project_... \
+  --message "Plan and implement VERA-101: add health monitoring to the API."
+```
+
+The CLI pauses once for the planning step and again for the implementation
+step. The second disclosure identifies the exact plan artifact Vera will pass
+to the change specialist. `--approve` confirms every disclosed step, so omit it
+when destinations or data boundaries require individual review.
+
 Individual resources remain inspectable:
 
 ```bash
@@ -494,8 +544,10 @@ planning adapter copies the selected files into an ephemeral read-only snapshot
 and closes subprocess stdin explicitly so non-interactive Codex cannot wait for
 terminal input. After approval, the CLI prints the run it is waiting for while
 the specialist executes.
-Approval records model metadata, persists one typed artifact, and ends in
-`succeeded`. The Codex software-change adapter uses a separate isolated
+Each invocation records model metadata and persists one typed artifact. A
+single-capability run then succeeds; a compound goal may return to
+`awaiting_approval` for its next step and succeeds only after all steps do. The
+Codex software-change adapter uses a separate isolated
 workspace-write snapshot and produces a review-only patch artifact; it still
 cannot touch the registered project or publish anything. A later
 change-application approval is independently durable and authorizes only the

@@ -277,6 +277,7 @@ async function verifyCliJourney(
   changeProjectId,
   changeProjectRoot,
   client,
+  personalTaskId,
 ) {
   const catalog = await client.listCapabilities();
   const researchCapability = catalog.capabilities.find(
@@ -370,6 +371,27 @@ async function verifyCliJourney(
   const researchArtifact = await client.getArtifact(researchArtifactId);
   assert.equal(researchArtifact.type, 'research_report');
   assert.equal(researchArtifact.projectId, undefined);
+
+  const personalTasksResult = await executeFile(
+    process.execPath,
+    [
+      'apps/cli/dist/bin.js',
+      'personal-task',
+      'list',
+      '--url',
+      baseUrl,
+      '--status',
+      'completed',
+    ],
+    {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: operationTimeoutMs,
+      maxBuffer: 2 * 1024 * 1024,
+    },
+  );
+  assert.match(personalTasksResult.stdout, new RegExp(personalTaskId, 'u'));
+  assert.match(personalTasksResult.stdout, /"status": "completed"/u);
 
   const changeResult = await executeFile(
     process.execPath,
@@ -779,11 +801,153 @@ async function verifyScenarios(mongo, redis) {
     2,
   );
 
+  const personalTaskSubmitted = rememberRun(
+    await client.submitTask({
+      message: 'Add a task: Review Vera persistent verification',
+      idempotencyKey: 'persistent-verification-personal-task-create',
+    }),
+  );
+  const personalTaskApproval = await client.waitForRun(
+    personalTaskSubmitted.runId,
+    {
+      until: (task) => task.runStatus === 'awaiting_approval',
+      timeoutMs: operationTimeoutMs,
+      intervalMs: 25,
+    },
+  );
+  assert.equal(
+    personalTaskApproval.approval?.capability.name,
+    'personal_task_management',
+  );
+  assert.deepEqual(personalTaskApproval.approval?.authority?.sideEffects, [
+    'personal_data_write',
+  ]);
+  assert.ok(personalTaskApproval.approval);
+  await client.decideApproval(personalTaskApproval.approval.id, 'approved');
+  const personalTaskCreated = await client.waitForRun(
+    personalTaskSubmitted.runId,
+    { timeoutMs: operationTimeoutMs, intervalMs: 25 },
+  );
+  assert.equal(personalTaskCreated.output?.kind, 'personal_task_result');
+  if (personalTaskCreated.output?.kind !== 'personal_task_result') {
+    throw new Error(
+      'Persistent personal task creation did not return a result.',
+    );
+  }
+  const personalTaskId = personalTaskCreated.output.result.tasks[0]?.id;
+  assert.ok(personalTaskId);
+  assert.equal((await client.getPersonalTask(personalTaskId)).status, 'open');
+
+  const goalSubmitted = rememberRun(
+    await client.submitTask({
+      message: 'Plan and implement a README update.',
+      projectId: changeProject.id,
+      idempotencyKey: 'persistent-verification-goal',
+    }),
+  );
+  const goalPlanningApproval = await client.waitForRun(goalSubmitted.runId, {
+    until: (task) =>
+      task.runStatus === 'awaiting_approval' &&
+      task.approval?.capability.name === 'development_planning',
+    timeoutMs: operationTimeoutMs,
+    intervalMs: 25,
+  });
+  assert.ok(goalPlanningApproval.approval);
+  await client.decideApproval(goalPlanningApproval.approval.id, 'approved');
+  const goalChangeApproval = await client.waitForRun(goalSubmitted.runId, {
+    until: (task) =>
+      task.runStatus === 'awaiting_approval' &&
+      task.approval?.capability.name === 'software_change',
+    timeoutMs: operationTimeoutMs,
+    intervalMs: 25,
+  });
+  assert.ok(goalChangeApproval.approval);
+  assert.notEqual(
+    goalChangeApproval.approval.id,
+    goalPlanningApproval.approval.id,
+  );
+  assert.equal(goalChangeApproval.approvalHistory?.length, 1);
+  assert.equal(goalChangeApproval.invocationHistory?.length, 1);
+  assert.equal(goalChangeApproval.approval.inputArtifacts?.length, 1);
+  assert.equal(
+    goalChangeApproval.approval.inputArtifacts?.[0]?.type,
+    'implementation_plan',
+  );
+
+  await waitForLeaseRelease(mongo, goalSubmitted.runId);
+  await crashServer();
+  started = await startServer(port);
+  child = started.processHandle;
+  client = new VeraClient({ baseUrl: started.baseUrl });
+  assert.equal((await client.getPersonalTask(personalTaskId)).status, 'open');
+  const recoveredGoalApproval = await client.getRun(goalSubmitted.runId);
+  assert.equal(recoveredGoalApproval.runStatus, 'awaiting_approval');
+  assert.equal(
+    recoveredGoalApproval.approval?.id,
+    goalChangeApproval.approval.id,
+  );
+  const replayedGoalApproval = await client.decideApproval(
+    goalPlanningApproval.approval.id,
+    'approved',
+  );
+  assert.equal(
+    replayedGoalApproval.approval?.id,
+    goalChangeApproval.approval.id,
+  );
+  await client.decideApproval(goalChangeApproval.approval.id, 'approved');
+  const goalCompleted = await client.waitForRun(goalSubmitted.runId, {
+    timeoutMs: operationTimeoutMs,
+    intervalMs: 25,
+  });
+  assert.equal(goalCompleted.runStatus, 'succeeded');
+  assert.equal(goalCompleted.goal?.status, 'succeeded');
+  assert.equal(goalCompleted.output?.kind, 'goal_result');
+  assert.equal(goalCompleted.output?.artifacts.length, 2);
+  const goalChangeArtifact = await client.getArtifact(
+    goalCompleted.output.artifacts[1].id,
+  );
+  assert.equal(goalChangeArtifact.inputs?.length, 1);
+  assert.equal(
+    goalChangeArtifact.inputs?.[0]?.id,
+    goalCompleted.output.artifacts[0].id,
+  );
+
+  const personalTaskCompletion = rememberRun(
+    await client.submitTask({
+      message: `Complete ${personalTaskId}`,
+      idempotencyKey: 'persistent-verification-personal-task-complete',
+    }),
+  );
+  const completionApproval = await client.waitForRun(
+    personalTaskCompletion.runId,
+    {
+      until: (task) => task.runStatus === 'awaiting_approval',
+      timeoutMs: operationTimeoutMs,
+      intervalMs: 25,
+    },
+  );
+  assert.deepEqual(completionApproval.approval?.proposedArguments, {
+    action: 'complete',
+    taskId: personalTaskId,
+  });
+  assert.ok(completionApproval.approval);
+  await client.decideApproval(completionApproval.approval.id, 'approved');
+  const personalTaskCompleted = await client.waitForRun(
+    personalTaskCompletion.runId,
+    { timeoutMs: operationTimeoutMs, intervalMs: 25 },
+  );
+  assert.equal(personalTaskCompleted.runStatus, 'succeeded');
+  assert.equal(
+    (await client.getPersonalTask(personalTaskId)).status,
+    'completed',
+  );
+
   const { applicationId, researchArtifactId } = await verifyCliJourney(
     started.baseUrl,
     changeProject.id,
     changeProjectRoot,
     client,
+    personalTaskId,
   );
   await verifyLeaseExclusion();
   await verifyProjectMutationLeaseExclusion();
@@ -863,6 +1027,10 @@ async function verifyScenarios(mongo, redis) {
     (await recoveredClient.getArtifact(researchArtifactId)).type,
     'research_report',
   );
+  assert.equal(
+    (await recoveredClient.getPersonalTask(personalTaskId)).status,
+    'completed',
+  );
   const upgradedLegacy = await recoveredClient.waitForRun(legacy.runId, {
     timeoutMs: operationTimeoutMs,
     intervalMs: 25,
@@ -915,8 +1083,16 @@ async function verifyScenarios(mongo, redis) {
     .collection('change_applications')
     .find({})
     .toArray();
-  assert.equal(aggregates.length, 13);
-  assert.equal(artifacts.length, 6);
+  const personalTasks = await mongo
+    .db(database)
+    .collection('personal_tasks')
+    .find({})
+    .toArray();
+  assert.equal(aggregates.length, 16);
+  assert.equal(artifacts.length, 10);
+  assert.equal(personalTasks.length, 1);
+  assert.equal(personalTasks[0]?.id, personalTaskId);
+  assert.equal(personalTasks[0]?.status, 'completed');
   assert.equal(applications.length, 1);
   assert.equal(applications[0]?.id, applicationId);
   assert.equal(
@@ -939,8 +1115,10 @@ async function verifyScenarios(mongo, redis) {
     leaseExclusionVerified: true,
     projectMutationLeaseExclusionVerified: true,
     cliJourneyVerified: true,
+    boundedGoalVerified: true,
     managedChangeApplicationVerified: true,
     durableResearchVerified: true,
+    durablePersonalTasksVerified: true,
     legacyConversationUpgradeVerified: true,
     roleScopedMessageIdempotencyVerified: true,
   };

@@ -17,10 +17,16 @@ import {
   type Project,
 } from '../../../../domain/projects/project.ts';
 import type { OwnerResourceStore } from '../../../../ports/persistence/owner-resource-store.ts';
+import {
+  PersonalTaskSchema,
+  type PersonalTask,
+} from '../../../../domain/personal-tasks/personal-task.ts';
+import { personalTaskMutationOrderKey } from '../../../../ports/persistence/personal-task-store.ts';
 
 const PROJECTS = 'projects';
 const CONVERSATIONS = 'conversations';
 const ARTIFACTS = 'artifacts';
+const PERSONAL_TASKS = 'personal_tasks';
 
 export type MongoDbOwnerResourceStoreOptions = {
   uri: string;
@@ -35,6 +41,7 @@ export class MongoDbOwnerResourceStore implements OwnerResourceStore {
   private readonly projects: Collection;
   private readonly conversations: Collection;
   private readonly artifacts: Collection;
+  private readonly personalTasks: Collection;
   private connection: Promise<void> | undefined;
 
   public constructor(options: MongoDbOwnerResourceStoreOptions) {
@@ -49,6 +56,7 @@ export class MongoDbOwnerResourceStore implements OwnerResourceStore {
     this.projects = this.database.collection(PROJECTS);
     this.conversations = this.database.collection(CONVERSATIONS);
     this.artifacts = this.database.collection(ARTIFACTS);
+    this.personalTasks = this.database.collection(PERSONAL_TASKS);
   }
 
   public async createProject(
@@ -310,6 +318,125 @@ export class MongoDbOwnerResourceStore implements OwnerResourceStore {
     return document === null ? null : this.parseArtifact(document);
   }
 
+  public async createPersonalTask(task: PersonalTask): Promise<PersonalTask> {
+    await this.ensureConnected();
+    const validated = PersonalTaskSchema.parse(task);
+    await this.personalTasks.updateOne(
+      {
+        principalId: validated.principalId,
+        creationInvocationId: validated.creationInvocationId,
+      },
+      { $setOnInsert: validated },
+      { upsert: true },
+    );
+    const stored = await this.findPersonalTaskByCreationInvocation(
+      validated.principalId,
+      validated.creationInvocationId,
+    );
+    if (stored === null) {
+      throw new Error('MongoDB personal task create did not return a task.');
+    }
+    return stored;
+  }
+
+  public async listPersonalTasks(
+    principalId: string,
+    options: { status: 'all' | 'open' | 'completed'; limit: number },
+  ): Promise<PersonalTask[]> {
+    await this.ensureConnected();
+    const documents = await this.personalTasks
+      .find({
+        principalId,
+        ...(options.status === 'all' ? {} : { status: options.status }),
+      })
+      .sort({ updatedAt: -1, id: 1 })
+      .limit(options.limit)
+      .toArray();
+    return documents.map((document) => this.parsePersonalTask(document));
+  }
+
+  public async setPersonalTaskStatus(input: {
+    principalId: string;
+    taskId: string;
+    status: 'open' | 'completed';
+    invocationId: string;
+    mutationAt: string;
+    recovery: boolean;
+  }): Promise<PersonalTask | null> {
+    await this.ensureConnected();
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const currentDocument = await this.personalTasks.findOne({
+        principalId: input.principalId,
+        id: input.taskId,
+      });
+      if (currentDocument === null) return null;
+      const current = this.parsePersonalTask(currentDocument);
+      if (current.lastMutation.invocationId === input.invocationId) {
+        return current;
+      }
+      const requestedOrderKey = personalTaskMutationOrderKey(
+        input.mutationAt,
+        input.invocationId,
+      );
+      if (input.recovery && current.lastMutation.orderKey > requestedOrderKey) {
+        return current;
+      }
+      const mutationAt =
+        current.updatedAt >= input.mutationAt
+          ? new Date(Date.parse(current.updatedAt) + 1).toISOString()
+          : input.mutationAt;
+      const orderKey = personalTaskMutationOrderKey(
+        mutationAt,
+        input.invocationId,
+      );
+      const updated = await this.personalTasks.findOneAndUpdate(
+        {
+          principalId: input.principalId,
+          id: input.taskId,
+          'lastMutation.orderKey': current.lastMutation.orderKey,
+        },
+        {
+          $set: {
+            status: input.status,
+            updatedAt: mutationAt,
+            lastMutation: { invocationId: input.invocationId, orderKey },
+            ...(input.status === 'completed'
+              ? { completedAt: mutationAt }
+              : {}),
+          },
+          ...(input.status === 'open' ? { $unset: { completedAt: '' } } : {}),
+        },
+        { returnDocument: 'after' },
+      );
+      if (updated !== null) return this.parsePersonalTask(updated);
+    }
+    throw new Error('Personal task changed too frequently to apply mutation.');
+  }
+
+  public async findPersonalTaskByCreationInvocation(
+    principalId: string,
+    invocationId: string,
+  ): Promise<PersonalTask | null> {
+    await this.ensureConnected();
+    const document = await this.personalTasks.findOne({
+      principalId,
+      creationInvocationId: invocationId,
+    });
+    return document === null ? null : this.parsePersonalTask(document);
+  }
+
+  public async findPersonalTaskById(
+    principalId: string,
+    taskId: string,
+  ): Promise<PersonalTask | null> {
+    await this.ensureConnected();
+    const document = await this.personalTasks.findOne({
+      principalId,
+      id: taskId,
+    });
+    return document === null ? null : this.parsePersonalTask(document);
+  }
+
   public async checkReadiness(): Promise<void> {
     await this.ensureConnected();
     await this.database.command({ ping: 1 });
@@ -349,6 +476,16 @@ export class MongoDbOwnerResourceStore implements OwnerResourceStore {
         { principalId: 1, invocationId: 1 },
         { unique: true },
       ),
+      this.personalTasks.createIndex({ id: 1 }, { unique: true }),
+      this.personalTasks.createIndex(
+        { principalId: 1, creationInvocationId: 1 },
+        { unique: true },
+      ),
+      this.personalTasks.createIndex({
+        principalId: 1,
+        status: 1,
+        updatedAt: -1,
+      }),
     ]);
   }
 
@@ -356,6 +493,10 @@ export class MongoDbOwnerResourceStore implements OwnerResourceStore {
     const { _id: ignored, ...value } = document;
     void ignored;
     return value;
+  }
+
+  private parsePersonalTask(document: Document): PersonalTask {
+    return PersonalTaskSchema.parse(this.withoutId(document));
   }
 
   private parseProject(document: Document): Project {
