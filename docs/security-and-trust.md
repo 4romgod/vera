@@ -11,7 +11,8 @@ accepted by ADR-0021 and personal-task integration authority accepted by
 ADR-0022, with reminder scheduling and inbox authority accepted by ADR-0023 on
 26 August 2026; adaptive evidence disclosure and budget authority accepted by
 ADR-0024; governed memory and the universal frontend boundary are accepted by
-ADRs 0025 and 0026; private physical-device ingress is accepted by ADR-0027
+ADRs 0025 and 0026; private physical-device ingress is accepted by ADR-0027;
+reviewed device voice interaction is accepted by ADR-0028
 
 ## Purpose
 
@@ -79,6 +80,16 @@ authentication. ADR-0027 gives a physical browser one private same-origin
 Tailscale Serve endpoint for both frontend and API; it does not add a remote
 origin to CORS or permit LAN binding. See
 [ADR-0026](decisions/0026-use-one-expo-react-native-frontend-for-web-and-mobile.md).
+
+Voice capture is an explicit experience-layer disclosure under
+[ADR-0028](decisions/0028-treat-device-voice-as-a-reviewed-experience-adapter.md).
+The owner must deliberately start the microphone and grant operating-system or
+browser permission. The configured device speech service may process audio on
+device or through its own provider boundary; the UI discloses that fact. Vera's
+API receives only the resulting editable transcript and stores no recording.
+The transcript remains untrusted natural-language input, is never submitted
+automatically, and cannot approve a capability. Spoken output is visible and
+stoppable because it can disclose conversation content to nearby people.
 
 ## Threat categories
 

@@ -20,8 +20,9 @@ by ADR-0022. Durable reminders and the Vera-owned notification inbox are
 accepted by ADR-0023; task progress continues to use polling.
 Evidence-adaptive bounded goals are accepted by ADR-0024. Explicit governed
 memory and its provider boundary are accepted by ADR-0025. The universal Expo
-React Native frontend is accepted by ADR-0026, and its private physical-device
-ingress through Tailscale Serve is accepted by ADR-0027.
+React Native frontend is accepted by ADR-0026, its private physical-device
+ingress through Tailscale Serve is accepted by ADR-0027, and reviewed device
+voice input and output are accepted by ADR-0028.
 
 ## Purpose
 
@@ -81,7 +82,7 @@ flowchart TB
     subgraph Experience["Experience plane"]
         CLI["CLI / Postman"]
         FRONTEND["Universal frontend<br/>(web, iOS, Android)"]
-        VOICE["Future voice / ambient clients"]
+        VOICE["Device speech services<br/>(recognition and playback)"]
     end
 
     subgraph Boundary["External boundary"]
@@ -115,7 +116,7 @@ flowchart TB
 
     CLI --> API
     FRONTEND --> API
-    VOICE --> API
+    VOICE --> FRONTEND
     API --> ID --> CONV
     CONV --> TASK --> ORCH
     ORCH --> CONTEXT
@@ -712,6 +713,16 @@ Expo web and `/api` to the API, avoiding a remote CORS exception.
 The API admits browser cross-origin reads only from loopback HTTP(S) origins so
 the Expo web development server can use a separate port without making CORS an
 authentication substitute or exposing Vera to the LAN.
+
+Voice remains inside the experience plane under
+[ADR-0028](decisions/0028-treat-device-voice-as-a-reviewed-experience-adapter.md).
+The device speech service turns deliberately captured audio into an editable
+composer draft; only an explicit Send enters the existing conversation API.
+The API receives text, never microphone audio. A voice-originated terminal
+reply is played only after its durable Vera message has been projected, and
+playback or run polling can be interrupted without creating a second execution
+path.
+
 Health is process liveness.
 Readiness verifies provider connectivity, configured-model availability,
 MongoDB, Redis, worker lease access, lifecycle recovery, and every enabled

@@ -1,5 +1,15 @@
 import { useState, type ReactNode } from 'react';
 import {
+  Bell,
+  Brain,
+  CalendarClock,
+  Check,
+  ListChecks,
+  Pencil,
+  Trash2,
+  X,
+} from 'lucide-react-native';
+import {
   Modal,
   Pressable,
   ScrollView,
@@ -7,6 +17,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type {
   MemoryResource,
@@ -15,7 +26,18 @@ import type {
   ReminderResource,
 } from '@vera/client';
 
+import { IconButton } from '@/components/ui/icon-button';
+import { layout, palette, radius, shadow, spacing } from '@/design/tokens';
+import { humanizeIdentifier } from './assistant/presentation';
+
 export type ResourceTab = 'memory' | 'tasks' | 'reminders' | 'notifications';
+
+const tabs: { id: ResourceTab; label: string; icon: typeof Brain }[] = [
+  { id: 'memory', label: 'Memory', icon: Brain },
+  { id: 'tasks', label: 'Tasks', icon: ListChecks },
+  { id: 'reminders', label: 'Reminders', icon: CalendarClock },
+  { id: 'notifications', label: 'Activity', icon: Bell },
+];
 
 export function ResourcePanel(props: {
   compact: boolean;
@@ -29,109 +51,174 @@ export function ResourcePanel(props: {
   onClose: () => void;
   onMemoryCommand: (command: string) => void;
 }) {
-  const panel = <PanelContent {...props} />;
-  if (!props.compact) return props.open ? panel : null;
+  if (!props.open) return null;
+  const content = <PanelContent {...props} />;
+  if (!props.compact) return content;
   return (
     <Modal
       animationType="slide"
       onRequestClose={props.onClose}
       transparent
-      visible={props.open}
+      visible
     >
       <View
+        accessibilityViewIsModal
         style={{
           flex: 1,
           justifyContent: 'flex-end',
-          backgroundColor: 'rgba(0,0,0,0.5)',
+          backgroundColor: palette.scrim,
         }}
       >
-        {panel}
+        <Pressable
+          accessibilityLabel="Close your Vera"
+          accessibilityRole="button"
+          onPress={props.onClose}
+          style={{ flex: 1 }}
+        />
+        {content}
       </View>
     </Modal>
   );
 }
 
-function PanelContent(
-  props: Omit<Parameters<typeof ResourcePanel>[0], 'compact'>,
-) {
+function PanelContent(props: Parameters<typeof ResourcePanel>[0]) {
+  const insets = useSafeAreaInsets();
   const [editingMemoryId, setEditingMemoryId] = useState<string>();
   const [correction, setCorrection] = useState('');
-  const tabs: ResourceTab[] = ['memory', 'tasks', 'reminders', 'notifications'];
   return (
     <View
       style={{
-        width: '100%',
-        maxWidth: 420,
-        maxHeight: '92%',
+        width: props.compact ? '100%' : layout.inspectorWidth,
+        maxHeight: props.compact ? '92%' : '100%',
         alignSelf: 'flex-end',
-        borderLeftWidth: 1,
-        borderTopWidth: 1,
-        borderColor: '#20262d',
-        borderCurve: 'continuous',
-        borderTopLeftRadius: 22,
-        padding: 18,
-        backgroundColor: '#0e1217',
+        borderLeftWidth: props.compact ? 0 : 1,
+        borderTopWidth: props.compact ? 1 : 0,
+        borderColor: palette.line,
+        borderTopLeftRadius: props.compact ? radius.xl : 0,
+        borderTopRightRadius: props.compact ? radius.xl : 0,
+        paddingHorizontal: spacing.lg,
+        paddingTop: spacing.md,
+        paddingBottom: props.compact
+          ? Math.max(insets.bottom, spacing.lg)
+          : spacing.lg,
+        backgroundColor: palette.canvasRaised,
+        boxShadow: shadow.floating,
       }}
     >
+      {props.compact ? (
+        <View
+          style={{
+            width: 42,
+            height: 4,
+            alignSelf: 'center',
+            borderRadius: radius.pill,
+            backgroundColor: palette.line,
+          }}
+        />
+      ) : null}
       <View
         style={{
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'space-between',
+          paddingTop: spacing.md,
+          paddingBottom: spacing.lg,
         }}
       >
         <View style={{ gap: 3 }}>
-          <Text selectable style={{ color: '#68d6ac', fontSize: 10 }}>
-            OWNER DATA
+          <Text
+            selectable
+            style={{
+              color: palette.accent,
+              fontSize: 10,
+              fontWeight: '700',
+              letterSpacing: 0.9,
+            }}
+          >
+            PERSONAL INTELLIGENCE
           </Text>
-          <Text selectable style={{ color: '#eef2f0', fontSize: 20 }}>
+          <Text
+            selectable
+            style={{
+              color: palette.text,
+              fontSize: 23,
+              fontWeight: '700',
+              letterSpacing: -0.5,
+            }}
+          >
             Your Vera
           </Text>
         </View>
-        <Pressable accessibilityRole="button" onPress={props.onClose}>
-          <Text style={{ color: '#9aa39f', fontSize: 22 }}>×</Text>
-        </Pressable>
-      </View>
-
-      <View
-        style={{
-          flexDirection: 'row',
-          flexWrap: 'wrap',
-          gap: 7,
-          paddingVertical: 16,
-        }}
-      >
-        {tabs.map((tab) => (
-          <Pressable
-            accessibilityRole="button"
-            key={tab}
-            onPress={() => props.onTab(tab)}
-            style={{
-              borderRadius: 999,
-              paddingHorizontal: 11,
-              paddingVertical: 7,
-              backgroundColor: props.tab === tab ? '#26352f' : '#151a20',
-            }}
-          >
-            <Text
-              style={{
-                color: props.tab === tab ? '#dff9ee' : '#7c8782',
-                fontSize: 11,
-                textTransform: 'capitalize',
-              }}
-            >
-              {tab}
-            </Text>
-          </Pressable>
-        ))}
+        <IconButton icon={X} label="Close your Vera" onPress={props.onClose} />
       </View>
 
       <ScrollView
-        contentContainerStyle={{ gap: 10, paddingBottom: 32 }}
+        contentContainerStyle={{
+          flexDirection: 'row',
+          gap: spacing.sm,
+          paddingBottom: spacing.lg,
+        }}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+      >
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          const selected = props.tab === tab.id;
+          return (
+            <Pressable
+              accessibilityRole="tab"
+              accessibilityState={{ selected }}
+              key={tab.id}
+              onPress={() => props.onTab(tab.id)}
+              style={({ pressed }) => ({
+                minHeight: 42,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 7,
+                borderWidth: 1,
+                borderColor: selected ? palette.accentLine : palette.lineSoft,
+                borderRadius: radius.pill,
+                paddingHorizontal: spacing.md,
+                opacity: pressed ? 0.7 : 1,
+                backgroundColor: selected
+                  ? palette.accentSurface
+                  : palette.surface,
+              })}
+            >
+              <Icon
+                color={selected ? palette.accent : palette.muted}
+                size={15}
+                strokeWidth={1.8}
+              />
+              <Text
+                style={{
+                  color: selected ? palette.text : palette.muted,
+                  fontSize: 12,
+                  fontWeight: selected ? '600' : '500',
+                }}
+              >
+                {tab.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+
+      <ScrollView
+        contentContainerStyle={{
+          flexGrow: 1,
+          gap: spacing.md,
+          paddingBottom: spacing.xxxl,
+        }}
         contentInsetAdjustmentBehavior="automatic"
+        keyboardShouldPersistTaps="handled"
       >
         {props.tab === 'memory' && props.memories.length === 0 ? (
-          <Empty label="No active memories yet" />
+          <Empty
+            icon={Brain}
+            title="Nothing remembered yet"
+            description="When you ask Vera to remember something, it will appear here after approval."
+          />
         ) : null}
         {props.tab === 'memory'
           ? props.memories.map((memory) => (
@@ -139,45 +226,70 @@ function PanelContent(
                 <View
                   style={{
                     flexDirection: 'row',
+                    alignItems: 'center',
                     justifyContent: 'space-between',
+                    gap: spacing.sm,
                   }}
                 >
-                  <Tag label={memory.kind.replace('_', ' ')} />
-                  <Text selectable style={{ color: '#6e7874', fontSize: 11 }}>
-                    r{memory.revision}
+                  <Tag label={humanizeIdentifier(memory.kind)} />
+                  <Text
+                    selectable
+                    style={{
+                      color: palette.faint,
+                      fontSize: 10,
+                      fontVariant: ['tabular-nums'],
+                    }}
+                  >
+                    Revision {memory.revision}
                   </Text>
                 </View>
-                <Text selectable style={{ color: '#eef2f0', fontSize: 15 }}>
+                <Text
+                  selectable
+                  style={{
+                    color: palette.text,
+                    fontSize: 16,
+                    fontWeight: '600',
+                  }}
+                >
                   {memory.subject}
                 </Text>
-                <Text selectable style={{ color: '#abb4b0', lineHeight: 20 }}>
+                <Text
+                  selectable
+                  style={{ color: palette.textSoft, lineHeight: 21 }}
+                >
                   {memory.content}
                 </Text>
-                <Text selectable style={{ color: '#737e79', fontSize: 11 }}>
+                <Text selectable style={{ color: palette.muted, fontSize: 11 }}>
                   {memory.scope.kind === 'global'
-                    ? 'Global'
-                    : `Project · ${memory.scope.projectId}`}{' '}
-                  · {memory.sensitivity}
+                    ? 'Personal · All conversations'
+                    : 'Project memory'}{' '}
+                  · {humanizeIdentifier(memory.sensitivity)}
                 </Text>
                 {editingMemoryId === memory.id ? (
-                  <View style={{ gap: 9 }}>
+                  <View style={{ gap: spacing.sm }}>
                     <TextInput
                       accessibilityLabel="Correct memory"
                       multiline
                       onChangeText={setCorrection}
                       style={{
-                        minHeight: 72,
+                        minHeight: 82,
                         borderWidth: 1,
-                        borderColor: '#35413d',
-                        borderRadius: 10,
-                        padding: 10,
-                        color: '#e7ece9',
+                        borderColor: palette.line,
+                        borderRadius: radius.md,
+                        padding: spacing.md,
+                        color: palette.text,
                         textAlignVertical: 'top',
-                        backgroundColor: '#0a0f0d',
+                        backgroundColor: palette.canvas,
                       }}
                       value={correction}
                     />
-                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        justifyContent: 'flex-end',
+                        gap: spacing.sm,
+                      }}
+                    >
                       <SmallButton
                         label="Cancel"
                         onPress={() => setEditingMemoryId(undefined)}
@@ -187,7 +299,9 @@ function PanelContent(
                           correction.trim().length === 0 ||
                           correction.trim() === memory.content
                         }
+                        icon={Check}
                         label="Propose correction"
+                        primary
                         onPress={() => {
                           setEditingMemoryId(undefined);
                           props.onMemoryCommand(
@@ -198,8 +312,9 @@ function PanelContent(
                     </View>
                   </View>
                 ) : (
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <View style={{ flexDirection: 'row', gap: spacing.sm }}>
                     <SmallButton
+                      icon={Pencil}
                       label="Correct"
                       onPress={() => {
                         setEditingMemoryId(memory.id);
@@ -207,6 +322,7 @@ function PanelContent(
                       }}
                     />
                     <SmallButton
+                      icon={Trash2}
                       label="Forget"
                       onPress={() =>
                         props.onMemoryCommand(`Forget memory ${memory.id}.`)
@@ -217,50 +333,96 @@ function PanelContent(
               </ResourceCard>
             ))
           : null}
+
         {props.tab === 'tasks' && props.tasks.length === 0 ? (
-          <Empty label="No open tasks" />
+          <Empty
+            icon={ListChecks}
+            title="No tasks yet"
+            description="Ask Vera to create or track something you need to get done."
+          />
         ) : null}
         {props.tab === 'tasks'
           ? props.tasks.map((task) => (
               <ResourceCard key={task.id}>
                 <Tag label={task.status} />
-                <Text selectable style={{ color: '#eef2f0' }}>
+                <Text
+                  selectable
+                  style={{
+                    color: palette.text,
+                    fontSize: 16,
+                    fontWeight: '600',
+                  }}
+                >
                   {task.title}
                 </Text>
-                <Text selectable style={{ color: '#737e79', fontSize: 11 }}>
-                  {task.dueAt ?? 'No due date'}
+                {task.notes === undefined ? null : (
+                  <Text
+                    selectable
+                    style={{ color: palette.textSoft, lineHeight: 20 }}
+                  >
+                    {task.notes}
+                  </Text>
+                )}
+                <Text selectable style={{ color: palette.muted, fontSize: 11 }}>
+                  {task.dueAt === undefined
+                    ? 'No due date'
+                    : formatDate(task.dueAt)}
                 </Text>
               </ResourceCard>
             ))
           : null}
+
         {props.tab === 'reminders' && props.reminders.length === 0 ? (
-          <Empty label="No scheduled reminders" />
+          <Empty
+            icon={CalendarClock}
+            title="No reminders scheduled"
+            description="Ask Vera to remind you at a specific time."
+          />
         ) : null}
         {props.tab === 'reminders'
           ? props.reminders.map((reminder) => (
               <ResourceCard key={reminder.id}>
                 <Tag label={reminder.status} />
-                <Text selectable style={{ color: '#eef2f0' }}>
+                <Text
+                  selectable
+                  style={{
+                    color: palette.text,
+                    fontSize: 16,
+                    fontWeight: '600',
+                  }}
+                >
                   {reminder.message}
                 </Text>
-                <Text selectable style={{ color: '#737e79', fontSize: 11 }}>
-                  {new Date(reminder.scheduledFor).toLocaleString()}
+                <Text selectable style={{ color: palette.muted, fontSize: 11 }}>
+                  {formatDate(reminder.scheduledFor)}
                 </Text>
               </ResourceCard>
             ))
           : null}
+
         {props.tab === 'notifications' && props.notifications.length === 0 ? (
-          <Empty label="Inbox is clear" />
+          <Empty
+            icon={Bell}
+            title="You are all caught up"
+            description="Delivered reminders and important Vera activity will appear here."
+          />
         ) : null}
         {props.tab === 'notifications'
           ? props.notifications.map((notification) => (
               <ResourceCard key={notification.id}>
                 <Tag label={notification.status} />
-                <Text selectable style={{ color: '#eef2f0' }}>
+                <Text
+                  selectable
+                  style={{
+                    color: palette.text,
+                    fontSize: 16,
+                    fontWeight: '600',
+                  }}
+                >
                   {notification.message}
                 </Text>
-                <Text selectable style={{ color: '#737e79', fontSize: 11 }}>
-                  {new Date(notification.deliveredAt).toLocaleString()}
+                <Text selectable style={{ color: palette.muted, fontSize: 11 }}>
+                  {formatDate(notification.deliveredAt)}
                 </Text>
               </ResourceCard>
             ))
@@ -274,13 +436,13 @@ function ResourceCard(props: { children: ReactNode }) {
   return (
     <View
       style={{
-        gap: 10,
+        gap: spacing.md,
         borderWidth: 1,
-        borderColor: '#252c33',
+        borderColor: palette.lineSoft,
         borderCurve: 'continuous',
-        borderRadius: 14,
-        padding: 15,
-        backgroundColor: '#151a20',
+        borderRadius: radius.lg,
+        padding: spacing.lg,
+        backgroundColor: palette.surface,
       }}
     >
       {props.children}
@@ -294,51 +456,124 @@ function Tag(props: { label: string }) {
       selectable
       style={{
         alignSelf: 'flex-start',
-        borderRadius: 999,
-        paddingHorizontal: 8,
+        borderRadius: radius.pill,
+        paddingHorizontal: 9,
         paddingVertical: 4,
-        color: '#69d8ae',
+        color: palette.accentStrong,
         fontSize: 9,
+        fontWeight: '700',
         textTransform: 'uppercase',
-        backgroundColor: '#20342d',
+        backgroundColor: palette.accentSurface,
       }}
     >
-      {props.label}
+      {humanizeIdentifier(props.label)}
     </Text>
   );
 }
 
 function SmallButton(props: {
   label: string;
+  icon?: typeof Check;
+  primary?: boolean;
   disabled?: boolean;
   onPress: () => void;
 }) {
+  const Icon = props.icon;
   return (
     <Pressable
       accessibilityRole="button"
       disabled={props.disabled}
       onPress={props.onPress}
       style={({ pressed }) => ({
+        minHeight: 40,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 7,
         borderWidth: 1,
-        borderColor: '#354039',
-        borderRadius: 8,
-        paddingHorizontal: 10,
-        paddingVertical: 7,
-        opacity: props.disabled ? 0.4 : pressed ? 0.7 : 1,
+        borderColor: props.primary ? palette.accentLine : palette.line,
+        borderRadius: radius.sm,
+        paddingHorizontal: spacing.md,
+        opacity: props.disabled ? 0.35 : pressed ? 0.68 : 1,
+        backgroundColor: props.primary ? palette.accentSurface : 'transparent',
       })}
     >
-      <Text style={{ color: '#adb7b2', fontSize: 11 }}>{props.label}</Text>
+      {Icon === undefined ? null : (
+        <Icon
+          color={props.primary ? palette.accent : palette.muted}
+          size={15}
+          strokeWidth={1.8}
+        />
+      )}
+      <Text
+        style={{
+          color: props.primary ? palette.text : palette.textSoft,
+          fontSize: 11,
+          fontWeight: '600',
+        }}
+      >
+        {props.label}
+      </Text>
     </Pressable>
   );
 }
 
-function Empty(props: { label: string }) {
+function Empty(props: {
+  icon: typeof Brain;
+  title: string;
+  description: string;
+}) {
+  const Icon = props.icon;
   return (
-    <Text
-      selectable
-      style={{ paddingVertical: 72, color: '#69736f', textAlign: 'center' }}
+    <View
+      style={{
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: spacing.md,
+        paddingHorizontal: spacing.xl,
+        paddingVertical: 72,
+      }}
     >
-      {props.label}
-    </Text>
+      <View
+        style={{
+          width: 48,
+          height: 48,
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRadius: radius.lg,
+          backgroundColor: palette.surface,
+        }}
+      >
+        <Icon color={palette.accent} size={21} strokeWidth={1.8} />
+      </View>
+      <Text
+        selectable
+        style={{
+          color: palette.text,
+          fontSize: 16,
+          fontWeight: '600',
+          textAlign: 'center',
+        }}
+      >
+        {props.title}
+      </Text>
+      <Text
+        selectable
+        style={{
+          maxWidth: 280,
+          color: palette.muted,
+          fontSize: 12,
+          lineHeight: 18,
+          textAlign: 'center',
+        }}
+      >
+        {props.description}
+      </Text>
+    </View>
   );
+}
+
+function formatDate(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.valueOf()) ? value : date.toLocaleString();
 }

@@ -167,6 +167,8 @@ and the universal frontend's thin-client boundary is accepted in
 [ADR-0026](docs/decisions/0026-use-one-expo-react-native-frontend-for-web-and-mobile.md).
 Private physical-device ingress through Tailscale Serve is accepted in
 [ADR-0027](docs/decisions/0027-use-tailscale-serve-for-private-physical-device-access.md).
+Reviewed device speech recognition and reply playback are accepted in
+[ADR-0028](docs/decisions/0028-treat-device-voice-as-a-reviewed-experience-adapter.md).
 Explicit owner-governed long-term memory is now implemented through ADR-0025.
 Physical erasure, retention beyond tombstones, and third-party-provider memory
 disclosure remain deliberately open.
@@ -248,8 +250,27 @@ iOS simulator defaults use `http://127.0.0.1:4310`; Android emulator builds use
 `EXPO_PUBLIC_VERA_API_URL=http://127.0.0.1:4311 npm run dev:web` when testing an
 intentional alternate local listener.
 
+The assistant-first interface keeps conversation primary, presents owner data
+in a secondary drawer or inspector, and renders structured capability results
+as human-readable cards with exact technical data available on demand. Its
+visual and interaction contract is documented in
+[Interface Design](docs/interface-design.md).
+
+Press the microphone control to dictate into the composer. Vera shows interim
+speech as an editable draft and does not submit it until you press Send. A
+reply to a voice-originated message is read aloud after the durable Vera message
+appears; every Vera reply also has explicit Read aloud and Stop audio controls.
+The browser or operating-system speech service handles microphone audio—Vera's
+API receives only the reviewed transcript and stores no recording. Override the
+default `en-US` recognition and playback locale with, for example,
+`EXPO_PUBLIC_VERA_SPEECH_LOCALE=en-ZA npm run dev:web`.
+
 Run `npm run dev:frontend` to open Expo's interactive launcher for web, iOS, or
-Android simulators.
+Android simulators. Device speech recognition is a native module and is not
+included in Expo Go. Use the web build for immediate voice testing, or create a
+Vera development build with `npx expo run:ios` or `npx expo run:android` from
+`apps/frontend`; typed interaction and reply speech remain available in Expo
+Go.
 
 To use a physical phone already enrolled in the same private tailnet as the Mac
 Mini, keep the API running above and start the private phone frontend:

@@ -454,6 +454,17 @@ export type ConversationResource = {
   updatedAt: string;
 };
 
+export type ConversationSummaryResource = {
+  schemaVersion: 1;
+  id: string;
+  title: string;
+  status: 'active';
+  messageCount: number;
+  lastMessage?: ConversationMessageResource;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type ConversationMessageResource = {
   id: string;
   role: 'owner' | 'vera';
@@ -676,7 +687,7 @@ export type VeraApi = {
   }): Promise<ConversationResource>;
   listConversations(): Promise<{
     schemaVersion: 1;
-    conversations: Record<string, unknown>[];
+    conversations: ConversationSummaryResource[];
   }>;
   getConversation(conversationId: string): Promise<ConversationResource>;
   appendMessage(input: {
@@ -1237,7 +1248,7 @@ export class VeraClient implements VeraApi {
 
   public listConversations(): Promise<{
     schemaVersion: 1;
-    conversations: Record<string, unknown>[];
+    conversations: ConversationSummaryResource[];
   }> {
     return this.request('/v1/conversations');
   }

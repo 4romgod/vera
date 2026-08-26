@@ -51,7 +51,9 @@ ADR-0025 adds explicit, versioned owner-governed memory with deterministic
 retrieval and an owner-controlled-provider disclosure boundary. ADR-0026 adds
 one Expo React Native frontend for web, iOS, and Android as a thin client of the
 existing API. ADR-0027 permits physical owner devices through private
-Tailscale Serve ingress while keeping Vera's listener on loopback.
+Tailscale Serve ingress while keeping Vera's listener on loopback. ADR-0028
+adds reviewed device speech input and durable-reply playback without creating a
+second execution path or sending microphone audio to Vera's API.
 
 Implementation began on the same date. ADR-0009 accepts the first production
 source layout and model decision boundary. ADR-0010 accepts the durable
@@ -75,6 +77,7 @@ flowchart TD
     A --> MC["Memory and Context"]
     A --> CM["Capability Model"]
     A --> ST["Security and Trust"]
+    A --> UI["Interface Design"]
     MC --> V1["V1 Definition: first proof"]
     CM --> V1
     ST --> V1
@@ -95,6 +98,7 @@ flowchart TD
 | [Memory and Context](memory-and-context.md) | Accepted (implemented layers and governed memory) | What is durable truth, working state, model context, and long-term memory? |
 | [Capability Model](capability-model.md) | Accepted (contract) | How does Vera discover and invoke models, tools, agents, and specialist workflows? |
 | [Security and Trust](security-and-trust.md) | Accepted | What may Vera access or change, and who authorizes it? |
+| [Interface Design](interface-design.md) | Implemented design language | How should Vera's universal frontend look, behave, and preserve human control? |
 | [V1 Definition](v1-definition.md) | Accepted | What exact architectural claim must the first version prove? |
 | [Engineering Method](engineering-method.md) | Accepted | How do we turn discovery into bounded, verifiable implementation work? |
 | [Architecture decisions](decisions/README.md) | Mixed — see index | Which consequential choices are recommended, why, and with what consequences? |
@@ -136,6 +140,7 @@ and normative wording have one owner.
 | Model-provider and capability semantics, including local/cloud boundaries | [Capability Model](capability-model.md) |
 | Memory, context, and operational-state semantics | [Memory and Context](memory-and-context.md) |
 | Authorization, approval, credential, and budget rules | [Security and Trust](security-and-trust.md) |
+| Universal frontend hierarchy and interaction language | [Interface Design](interface-design.md) |
 | V1 scope and acceptance | [V1 Definition](v1-definition.md) |
 | Decision rationale and consequences | [Architecture Decisions](decisions/README.md) |
 
@@ -209,6 +214,8 @@ the thin-client universal frontend boundary is accepted in
 [ADR-0026](decisions/0026-use-one-expo-react-native-frontend-for-web-and-mobile.md).
 Private tailnet ingress for physical owner devices is accepted in
 [ADR-0027](decisions/0027-use-tailscale-serve-for-private-physical-device-access.md).
+Reviewed voice interaction in the universal frontend is accepted in
+[ADR-0028](decisions/0028-treat-device-voice-as-a-reviewed-experience-adapter.md).
 
 ## Documentation and implementation cadence
 

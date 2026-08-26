@@ -1,12 +1,14 @@
 import { Text, View } from 'react-native';
 
+import { palette } from '@/design/tokens';
+
 export function StructuredValue(props: { value: unknown; depth?: number }) {
   const depth = props.depth ?? 0;
   if (props.value === null || typeof props.value !== 'object') {
     return (
       <Text
         selectable
-        style={{ color: '#d5ddd9', fontSize: 12, lineHeight: 18 }}
+        style={{ color: palette.textSoft, fontSize: 12, lineHeight: 18 }}
       >
         {formatPrimitive(props.value)}
       </Text>
@@ -25,7 +27,7 @@ export function StructuredValue(props: { value: unknown; depth?: number }) {
             key={index}
             style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}
           >
-            <Text selectable style={{ color: '#64716b', fontSize: 11 }}>
+            <Text selectable style={{ color: palette.faint, fontSize: 11 }}>
               {index + 1}.
             </Text>
             <View style={{ minWidth: 0, flex: 1 }}>
@@ -47,11 +49,11 @@ export function StructuredValue(props: { value: unknown; depth?: number }) {
           style={{
             gap: 4,
             borderLeftWidth: depth === 0 ? 0 : 1,
-            borderLeftColor: '#2a3832',
+            borderLeftColor: palette.line,
             paddingLeft: depth === 0 ? 0 : 10,
           }}
         >
-          <Text selectable style={{ color: '#6f7d76', fontSize: 9 }}>
+          <Text selectable style={{ color: palette.muted, fontSize: 9 }}>
             {humanize(key).toUpperCase()}
           </Text>
           <StructuredValue depth={depth + 1} value={value} />
@@ -65,7 +67,7 @@ function EmptyValue(props: { label: string }) {
   return (
     <Text
       selectable
-      style={{ color: '#75817b', fontSize: 12, fontStyle: 'italic' }}
+      style={{ color: palette.muted, fontSize: 12, fontStyle: 'italic' }}
     >
       {props.label}
     </Text>

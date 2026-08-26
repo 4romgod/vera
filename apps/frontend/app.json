@@ -6,13 +6,26 @@
     "orientation": "default",
     "scheme": "vera",
     "userInterfaceStyle": "dark",
-    "plugins": ["expo-router"],
+    "plugins": [
+      "expo-router",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow Vera to listen while you hold a voice conversation.",
+          "speechRecognitionPermission": "Allow Vera to turn your speech into a transcript for your review."
+        }
+      ]
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "dev.vera.app"
     },
     "android": {
-      "package": "dev.vera.app"
+      "package": "dev.vera.app",
+      "blockedPermissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ]
     },
     "web": {
       "bundler": "metro",

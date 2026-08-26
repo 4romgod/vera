@@ -3,3 +3,4 @@ docs
 node_modules
 package-lock.json
 README.md
+apps/frontend/expo-env.d.ts

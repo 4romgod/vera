@@ -17,7 +17,9 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # A cold service-image pull plus all gates currently completes in about five
+    # minutes. Keep a bounded two-minute margin for runner and cleanup variance.
+    timeout-minutes: 7
     services:
       mongodb:
         # The PR already verifies the merge tree. Avoid pulling service images
