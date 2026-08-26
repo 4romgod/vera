@@ -66,6 +66,7 @@ export type Approval = {
   project?: { id: string; displayName: string };
   contextManifest?: ContextManifest;
   inputArtifacts?: ArtifactReference[];
+  decisionEvidence?: ArtifactReference[];
   destination?: CapabilityDestination;
   authority?: {
     approval: 'always';
@@ -290,6 +291,13 @@ export type TaskResource = {
         objective: string;
         summary: string;
         artifacts: ArtifactReference[];
+      }
+    | {
+        kind: 'adaptive_goal_result';
+        objective: string;
+        message: string;
+        evidence: ArtifactReference[];
+        artifacts: ArtifactReference[];
       };
   failure?: { code: string; message: string };
   budget?: unknown;
@@ -301,9 +309,20 @@ export type TaskResource = {
     projectedAt?: string;
   };
   goal?: {
-    schemaVersion: 1;
+    schemaVersion: 1 | 2;
+    mode?: 'adaptive';
     objective: string;
     summary: string;
+    completionCriteria?: string;
+    requirements?: {
+      id: string;
+      description: string;
+      capability: string;
+      version: number;
+      condition:
+        | { kind: 'always' }
+        | { kind: 'evidence_dependent'; description: string };
+    }[];
     status: 'active' | 'succeeded' | 'rejected' | 'failed' | 'cancelled';
     project?: { id: string; displayName: string };
     currentStepIndex: number;
@@ -326,6 +345,17 @@ export type TaskResource = {
       invocationId?: string;
       artifact?: ArtifactReference;
     }[];
+    continuations?: ({
+      decisionId: string;
+      decision: Record<string, unknown>;
+      model: Record<string, unknown>;
+      decidedAt: string;
+    } & Record<string, unknown>)[];
+    finalResponse?: {
+      message: string;
+      evidence: ArtifactReference[];
+      decisionId: string;
+    };
   };
   links: {
     task: string;

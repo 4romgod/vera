@@ -3,7 +3,7 @@
 **Status:** Accepted (logical architecture, component responsibilities,
 request lifecycle, architectural invariants, initial modular API shape, and V1
 operational storage); general progress transport and deployment topology remain open
-**Version:** 1.0
+**Version:** 1.1
 **Last updated:** 26 August 2026
 **Accepted:** 24 August 2026 (owner) — post-V1 progress transport and deployment
 topology are deferred; V1 uses HTTP polling. The initial Fastify/Zod modular API
@@ -18,6 +18,7 @@ Bounded goal execution and typed artifact lineage are accepted by ADR-0021.
 Provider-neutral integration actions and Vera-owned personal tasks are accepted
 by ADR-0022. Durable reminders and the Vera-owned notification inbox are
 accepted by ADR-0023; task progress continues to use polling.
+Evidence-adaptive bounded goals are accepted by ADR-0024.
 
 ## Purpose
 
@@ -330,6 +331,12 @@ on its survival.
 
 ## Bounded goal execution
 
+Vera has two additive, versioned goal modes. A fixed goal is appropriate when
+the complete safe composition is known before work starts. An adaptive goal is
+appropriate when the next action depends on evidence not yet available.
+
+### Fixed goal
+
 ```mermaid
 flowchart LR
     I["One owner goal"] --> P["Validated 2–3 step plan"]
@@ -352,6 +359,58 @@ outcomes without adopting a provider-owned or unbounded agent loop.
 A goal remains one run while it is short, sequential, and serves one outcome.
 Independent delegated work will use child tasks so it can carry its own
 lifecycle, budget, cancellation, and owner-visible result.
+
+### Evidence-adaptive goal
+
+```mermaid
+sequenceDiagram
+    actor Owner
+    participant Kernel as "Vera kernel"
+    participant Model as "Owner-controlled brain"
+    participant Store as "Durable state and artifacts"
+    participant Capability
+
+    Owner->>Kernel: Evidence-dependent outcome
+    Kernel->>Model: Intent + enabled contracts + first-step schema
+    Model-->>Kernel: Objective + outcome requirements + one first step
+    Kernel->>Kernel: Validate capability, arguments, identity, and budget
+    Kernel-->>Owner: Exact step approval
+    Owner->>Kernel: Approve
+    Kernel->>Capability: Approved invocation
+    Capability-->>Kernel: Typed artifact
+    Kernel->>Store: Persist artifact + completed step
+    Kernel->>Store: Reload and verify observation integrity
+    Kernel->>Model: Minimized untrusted evidence + next-step schema
+    Model-->>Kernel: Complete with requirement resolutions or propose one next step
+    alt complete
+        Kernel->>Kernel: Match every satisfied outcome to its capability observation
+        Kernel->>Store: Persist verified outcome ledger and success
+    else continue
+        Kernel->>Kernel: Validate evidence, capability, arguments, identity, and remaining budget
+        Kernel->>Store: Persist continuation before action
+        Kernel-->>Owner: New exact approval
+    end
+```
+
+Adaptive execution does not expose an open model tool loop. Vera supplies the
+next step identity, presents only enabled capability schemas, validates every
+evidence reference and artifact hash, and stops after at most three capability
+steps and four model calls. Evidence that informed a decision is recorded
+separately from artifacts passed as invocation inputs. Every effect receives a
+fresh exact approval.
+
+The kernel also reconciles the initial model plan with conservative explicit
+outcome signals owned by each capability declaration. A plainly requested
+action omitted by the model becomes a durable requirement, not an automatic
+invocation. Continuation schemas enumerate exact step and requirement IDs so
+provider formatting cannot invent control-plane identity.
+
+Capability artifact contents initially cross only an `owner_controlled`
+orchestration-model boundary. The adaptive proposal is absent from third-party
+brain schemas; recovery with a third-party brain fails before artifact
+disclosure. This rule is provider-neutral and therefore permits another local
+or owner-controlled model adapter without coupling the domain to Ollama. See
+[ADR-0024](decisions/0024-adapt-bounded-goals-from-validated-capability-evidence.md).
 
 ## Concurrent work
 
@@ -563,6 +622,31 @@ flowchart LR
 
 See
 [ADR-0023](decisions/0023-deliver-durable-reminders-through-a-vera-owned-notification-inbox.md).
+
+The same worker lifecycle now supports adaptive goals. After a step artifact is
+durable, the run returns to `deciding`; the worker can therefore disappear at
+the observation boundary without losing the completed effect or inventing the
+next one. Recovery reloads and validates all completed artifacts before the
+owner-controlled brain proposes completion or one next step. The continuation
+is stored before any new approval is presented, so a restart cannot turn a
+tentative model response into an unrecorded action. This path reuses the generic
+capability runtime rather than naming research, reminders, or coding in the
+lifecycle.
+
+```mermaid
+stateDiagram-v2
+    [*] --> deciding
+    deciding --> awaiting_approval: first or continued step validated
+    awaiting_approval --> executing: exact approval granted
+    executing --> deciding: observation durably recorded
+    deciding --> succeeded: evidence supports completion
+    deciding --> failed: invalid evidence, proposal, provider, or budget
+    awaiting_approval --> rejected: owner rejects
+    executing --> failed: capability or integrity failure
+```
+
+See
+[ADR-0024](decisions/0024-adapt-bounded-goals-from-validated-capability-evidence.md).
 
 Artifact application is a separate durable lifecycle rather than hidden inside
 that capability. The owner approves an exact artifact hash, immutable base

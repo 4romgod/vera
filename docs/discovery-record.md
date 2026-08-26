@@ -210,6 +210,23 @@ does not add autonomous replanning, scheduled work, approval memory, or an
 unbounded tool loop. See
 [ADR-0021](decisions/0021-execute-bounded-goals-with-step-scoped-approvals-and-artifact-lineage.md).
 
+### Evidence-adaptive assistant goals — implemented
+
+Vera can now begin with one approved capability, validate its durable artifact,
+and ask an owner-controlled brain to either finish with an evidence-linked
+answer or propose exactly one next approved capability. This closes the gap
+between a fixed workflow and a useful assistant for conditional requests while
+remaining a finite code-controlled state machine rather than a model tool loop.
+
+The implementation separates reasoning evidence from capability inputs,
+minimizes model-visible artifact metadata, rejects invented or corrupted
+observations, preserves project and time-zone identity, records each
+continuation before later action, and recovers between observe, decide, approve,
+and act boundaries. The hard envelope is four model calls and three capability
+invocations. Capability artifacts do not cross a third-party orchestration
+boundary until an exact evidence-disclosure approval design is accepted. See
+[ADR-0024](decisions/0024-adapt-bounded-goals-from-validated-capability-evidence.md).
+
 ### Structured model proposal — completed
 
 The TypeScript API requests `ModelProposal` schema v1 from a real Ollama model,
@@ -316,8 +333,8 @@ not use secrets or incur model cost.
 
 Selecting a cloud brain authorizes the current owner message, minimal selected-
 project identity, and bounded prior complete turns from the exact same project
-scope to that provider. It does not disclose repository files, other
-conversation scopes, or long-term memory. If the same cloud model is selected
+scope to that provider. It does not disclose repository files, capability
+artifacts, other conversation scopes, or long-term memory. If the same cloud model is selected
 as the `structured_model` specialist, the
 existing exact context approval remains mandatory before project contents
 cross the boundary.
@@ -360,6 +377,12 @@ one typed plan or software-change artifact per invocation; Redis read repair;
 survival of a forced process
 termination at the approval boundary; and retrieval after a later graceful
 restart. The isolated database and scratchpad keys are removed afterward.
+
+The gate also executes an adaptive research-to-reminder outcome, validates the
+first observation and continuation evidence, kills the API before the second
+approval, resumes the same goal, records the reminder effect, and verifies the
+evidence-linked final response, budgets, artifacts, and owner resource after a
+later restart.
 
 The workflow remains one job, reuses one install and build, cancels superseded
 runs, and has a five-minute hard limit. The persistent tier runs on the pull

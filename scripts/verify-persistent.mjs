@@ -919,6 +919,79 @@ async function verifyScenarios(mongo, redis) {
   assert.ok(reminderId);
   assert.equal((await client.getReminder(reminderId)).status, 'scheduled');
 
+  const adaptiveSubmitted = rememberRun(
+    await client.submitTask({
+      message:
+        'Research whether deterministic verification evidence is available and if it is then remind me to review it at 2035-08-27T05:00:00.000Z',
+      idempotencyKey: 'persistent-verification-adaptive-goal',
+    }),
+  );
+  const adaptiveResearchApproval = await client.waitForRun(
+    adaptiveSubmitted.runId,
+    {
+      until: (task) =>
+        task.runStatus === 'awaiting_approval' &&
+        task.approval?.capability.name === 'web_research',
+      timeoutMs: operationTimeoutMs,
+      intervalMs: 25,
+    },
+  );
+  assert.equal(adaptiveResearchApproval.goal?.schemaVersion, 2);
+  assert.ok(adaptiveResearchApproval.approval);
+  await client.decideApproval(adaptiveResearchApproval.approval.id, 'approved');
+  const adaptiveReminderApproval = await client.waitForRun(
+    adaptiveSubmitted.runId,
+    {
+      until: (task) =>
+        task.runStatus === 'awaiting_approval' &&
+        task.approval?.capability.name === 'personal_reminder_management',
+      timeoutMs: operationTimeoutMs,
+      intervalMs: 25,
+    },
+  );
+  assert.equal(adaptiveReminderApproval.approval?.inputArtifacts, undefined);
+  assert.equal(
+    adaptiveReminderApproval.approval?.decisionEvidence?.[0]?.type,
+    'research_report',
+  );
+  assert.equal(adaptiveReminderApproval.approvalHistory?.length, 1);
+  assert.equal(adaptiveReminderApproval.invocationHistory?.length, 1);
+
+  await waitForLeaseRelease(mongo, adaptiveSubmitted.runId);
+  await crashServer();
+  started = await startServer(port);
+  child = started.processHandle;
+  client = new VeraClient({ baseUrl: started.baseUrl });
+  const recoveredAdaptiveApproval = await client.getRun(
+    adaptiveSubmitted.runId,
+  );
+  assert.equal(
+    recoveredAdaptiveApproval.approval?.id,
+    adaptiveReminderApproval.approval.id,
+  );
+  await client.decideApproval(adaptiveReminderApproval.approval.id, 'approved');
+  const adaptiveCompleted = await client.waitForRun(adaptiveSubmitted.runId, {
+    timeoutMs: operationTimeoutMs,
+    intervalMs: 25,
+  });
+  assert.equal(adaptiveCompleted.runStatus, 'succeeded');
+  assert.equal(adaptiveCompleted.goal?.schemaVersion, 2);
+  assert.equal(adaptiveCompleted.goal?.status, 'succeeded');
+  assert.equal(adaptiveCompleted.output?.kind, 'adaptive_goal_result');
+  if (adaptiveCompleted.output?.kind !== 'adaptive_goal_result') {
+    throw new Error('Persistent adaptive goal did not return its result.');
+  }
+  assert.equal(adaptiveCompleted.output.artifacts.length, 2);
+  assert.equal(adaptiveCompleted.output.evidence.length, 2);
+  assert.equal(adaptiveCompleted.budget?.consumed.modelCalls, 3);
+  assert.equal(adaptiveCompleted.budget?.consumed.capabilityInvocations, 2);
+  const adaptiveReminderId = (
+    await client.listReminders({ status: 'scheduled', limit: 100 })
+  ).reminders.find(
+    (reminder) => reminder.scheduledFor === '2035-08-27T05:00:00.000Z',
+  )?.id;
+  assert.ok(adaptiveReminderId);
+
   const goalSubmitted = rememberRun(
     await client.submitTask({
       message: 'Plan and implement a README update.',
@@ -1186,6 +1259,15 @@ async function verifyScenarios(mongo, redis) {
     (await recoveredClient.getReminder(reminderId)).status,
     'acknowledged',
   );
+  const recoveredAdaptiveGoal = await recoveredClient.getRun(
+    adaptiveSubmitted.runId,
+  );
+  assert.equal(recoveredAdaptiveGoal.runStatus, 'succeeded');
+  assert.equal(recoveredAdaptiveGoal.output?.kind, 'adaptive_goal_result');
+  assert.equal(
+    (await recoveredClient.getReminder(adaptiveReminderId)).status,
+    'scheduled',
+  );
   const upgradedLegacy = await recoveredClient.waitForRun(legacy.runId, {
     timeoutMs: operationTimeoutMs,
     intervalMs: 25,
@@ -1248,15 +1330,21 @@ async function verifyScenarios(mongo, redis) {
     .collection('reminders')
     .find({})
     .toArray();
-  assert.equal(aggregates.length, 19);
-  assert.equal(artifacts.length, 13);
+  assert.equal(aggregates.length, 20);
+  assert.equal(artifacts.length, 15);
   assert.equal(personalTasks.length, 1);
   assert.equal(personalTasks[0]?.id, personalTaskId);
   assert.equal(personalTasks[0]?.status, 'completed');
-  assert.equal(reminders.length, 1);
-  assert.equal(reminders[0]?.id, reminderId);
-  assert.equal(reminders[0]?.status, 'acknowledged');
-  assert.equal(reminders[0]?.notification?.channel, 'vera_inbox');
+  assert.equal(reminders.length, 2);
+  const acknowledgedReminder = reminders.find(
+    (candidate) => candidate.id === reminderId,
+  );
+  assert.equal(acknowledgedReminder?.status, 'acknowledged');
+  assert.equal(acknowledgedReminder?.notification?.channel, 'vera_inbox');
+  const adaptiveReminder = reminders.find(
+    (candidate) => candidate.id === adaptiveReminderId,
+  );
+  assert.equal(adaptiveReminder?.status, 'scheduled');
   assert.equal(applications.length, 1);
   assert.equal(applications[0]?.id, applicationId);
   assert.equal(
@@ -1280,6 +1368,7 @@ async function verifyScenarios(mongo, redis) {
     projectMutationLeaseExclusionVerified: true,
     cliJourneyVerified: true,
     boundedGoalVerified: true,
+    adaptiveGoalVerified: true,
     managedChangeApplicationVerified: true,
     durableResearchVerified: true,
     durablePersonalTasksVerified: true,

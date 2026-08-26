@@ -30,6 +30,7 @@ import { RunBudgetSchema } from './run-budget.ts';
 import { SoftwareChangeSchema } from '../changes/software-change.ts';
 import { ResearchReportSchema } from '../research/research-report.ts';
 import { GoalExecutionSchema } from '../goals/goal-plan.ts';
+import { AdaptiveGoalExecutionSchema } from '../goals/adaptive-goal.ts';
 import {
   ReminderActionArgumentsSchema,
   ReminderResultSchema,
@@ -70,6 +71,7 @@ const ApprovalIdentitySchema = z
     destination: CapabilityDestinationSchema.optional(),
     authority: CapabilityAuthoritySchema.optional(),
     inputArtifacts: z.array(ArtifactReferenceSchema).max(2).optional(),
+    decisionEvidence: z.array(ArtifactReferenceSchema).max(3).optional(),
     requestedAt: z.iso.datetime(),
     decidedAt: z.iso.datetime().optional(),
     decidedBy: z.string().optional(),
@@ -139,6 +141,7 @@ const CapabilityInvocationIdentitySchema = z
     destination: CapabilityDestinationSchema.optional(),
     authority: CapabilityAuthoritySchema.optional(),
     inputArtifacts: z.array(ArtifactReferenceSchema).max(2).optional(),
+    decisionEvidence: z.array(ArtifactReferenceSchema).max(3).optional(),
     startedAt: z.iso.datetime(),
     completedAt: z.iso.datetime().optional(),
     model: z
@@ -238,6 +241,15 @@ export const TaskOutputSchema = z.discriminatedUnion('kind', [
     .strict(),
   z
     .object({
+      kind: z.literal('adaptive_goal_result'),
+      objective: z.string().min(1).max(10_000),
+      message: z.string().min(1).max(20_000),
+      evidence: z.array(ArtifactReferenceSchema).min(1).max(3),
+      artifacts: z.array(ArtifactReferenceSchema).min(1).max(3),
+    })
+    .strict(),
+  z
+    .object({
       kind: z.literal('development_plan'),
       plan: DevelopmentPlanSchema,
       artifact: ImplementationPlanArtifactReferenceSchema.optional(),
@@ -269,6 +281,7 @@ export const TaskFailureSchema = z
       'project_not_found',
       'project_context_failure',
       'conversation_context_failure',
+      'adaptive_goal_failure',
       'budget_exhausted',
       'cancelled',
     ]),
@@ -314,6 +327,10 @@ export const TaskEventTypeSchema = z.enum([
   'goal_step_awaiting_approval',
   'goal_step_succeeded',
   'goal_succeeded',
+  'adaptive_goal_planned',
+  'adaptive_goal_observation_recorded',
+  'adaptive_goal_continuation_recorded',
+  'adaptive_goal_succeeded',
 ]);
 
 export const TaskEventSchema = z
@@ -365,7 +382,9 @@ export const TaskAggregateSchema = z
         context: ProjectContextBundleSchema.optional(),
         conversationContext: ConversationContextBundleSchema.optional(),
         conversationReply: ConversationReplyProjectionSchema.optional(),
-        goal: GoalExecutionSchema.optional(),
+        goal: z
+          .union([GoalExecutionSchema, AdaptiveGoalExecutionSchema])
+          .optional(),
       })
       .strict(),
     events: z.array(TaskEventSchema),

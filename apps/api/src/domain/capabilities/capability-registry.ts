@@ -88,6 +88,10 @@ export type CapabilityDefinition = {
   artifact: { type: string; mediaType: string };
   acceptedInputArtifacts: string[];
   authority: z.infer<typeof CapabilityAuthoritySchema>;
+  explicitAdaptiveOutcome: {
+    patterns: readonly RegExp[];
+    description: string;
+  };
 };
 
 export const CapabilityDefinitions = [
@@ -103,6 +107,12 @@ export const CapabilityDefinitions = [
       mediaType: 'application/vnd.vera.implementation-plan+json',
     },
     acceptedInputArtifacts: ['research_report'],
+    explicitAdaptiveOutcome: {
+      patterns: [
+        /\b(plan|design)\b.{0,60}\b(implementation|feature|fix|change)\b/u,
+      ],
+      description: 'Produce the software plan requested by the owner.',
+    },
     authority: {
       approval: 'always',
       projectContext: 'required',
@@ -124,6 +134,12 @@ export const CapabilityDefinitions = [
       mediaType: 'application/vnd.vera.software-change+json',
     },
     acceptedInputArtifacts: ['implementation_plan', 'research_report'],
+    explicitAdaptiveOutcome: {
+      patterns: [
+        /\b(implement|fix|modify|edit|write|change)\b.{0,80}\b(code|file|project|application|app|api)\b/u,
+      ],
+      description: 'Produce the software change requested by the owner.',
+    },
     authority: {
       approval: 'always',
       projectContext: 'required',
@@ -145,6 +161,12 @@ export const CapabilityDefinitions = [
       mediaType: 'application/vnd.vera.personal-task-result+json',
     },
     acceptedInputArtifacts: [],
+    explicitAdaptiveOutcome: {
+      patterns: [
+        /\b(create|add|list|complete|reopen)\b.{0,60}\b(task|todo|to-do)\b/u,
+      ],
+      description: 'Complete the personal-task action requested by the owner.',
+    },
     authority: {
       approval: 'always',
       projectContext: 'none',
@@ -166,6 +188,12 @@ export const CapabilityDefinitions = [
       mediaType: 'application/vnd.vera.personal-reminder-result+json',
     },
     acceptedInputArtifacts: [],
+    explicitAdaptiveOutcome: {
+      patterns: [
+        /\b(remind me|set (?:me )?(?:a )?reminder|create (?:a )?reminder|schedule (?:a )?reminder)\b/u,
+      ],
+      description: 'Complete the reminder action requested by the owner.',
+    },
     authority: {
       approval: 'always',
       projectContext: 'none',
@@ -187,6 +215,12 @@ export const CapabilityDefinitions = [
       mediaType: 'application/vnd.vera.research-report+json',
     },
     acceptedInputArtifacts: [],
+    explicitAdaptiveOutcome: {
+      patterns: [
+        /\b(research|look up|search (?:the )?web|investigate|verify whether|find out)\b/u,
+      ],
+      description: 'Complete the public-web research requested by the owner.',
+    },
     authority: {
       approval: 'always',
       projectContext: 'none',
@@ -206,6 +240,30 @@ export function findCapability(
   return CapabilityDefinitions.find(
     (candidate) => candidate.name === name && candidate.version === version,
   );
+}
+
+export function findExplicitAdaptiveOutcomes(
+  ownerMessage: string,
+  enabled: readonly CapabilityReference[],
+): {
+  capability: CapabilityReference;
+  description: string;
+}[] {
+  const message = ownerMessage.toLowerCase();
+  return CapabilityDefinitions.filter(
+    (definition) =>
+      enabled.some(
+        (reference) =>
+          reference.name === definition.name &&
+          reference.version === definition.version,
+      ) &&
+      definition.explicitAdaptiveOutcome.patterns.some((pattern) =>
+        pattern.test(message),
+      ),
+  ).map((definition) => ({
+    capability: { name: definition.name, version: definition.version },
+    description: definition.explicitAdaptiveOutcome.description,
+  }));
 }
 
 export type CapabilityReference = z.infer<typeof CapabilityReferenceSchema>;

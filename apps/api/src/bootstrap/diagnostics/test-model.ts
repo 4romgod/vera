@@ -1,5 +1,10 @@
+import { createHash } from 'node:crypto';
+
 import { createEvaluateModelDecision } from '../../application/model-decisions/evaluate-model-decision.ts';
+import { createEvaluateGoalContinuation } from '../../application/model-decisions/evaluate-goal-continuation.ts';
 import { ModelDevelopmentPlanningCapability } from '../../adapters/outbound/capabilities/development-planning/model-development-planning-capability.ts';
+import { ArtifactSchema } from '../../domain/artifacts/artifact.ts';
+import { nextAdaptiveGoalStepId } from '../../domain/goals/adaptive-goal.ts';
 import { loadConfig } from '../config.ts';
 import { loadEnvironmentFiles } from '../environment.ts';
 import { createModelProvider } from '../../adapters/outbound/model/model-provider-registry.ts';
@@ -9,14 +14,18 @@ loadEnvironmentFiles();
 const config = loadConfig();
 const provider = createModelProvider(config.model);
 const researchEnabled = config.research.adapterId !== 'disabled';
+const enabledCapabilities = [
+  { name: 'development_planning' as const, version: 1 as const },
+  { name: 'software_change' as const, version: 1 as const },
+  { name: 'personal_task_management' as const, version: 1 as const },
+  { name: 'personal_reminder_management' as const, version: 1 as const },
+  ...(researchEnabled
+    ? [{ name: 'web_research' as const, version: 1 as const }]
+    : []),
+];
 const evaluate = createEvaluateModelDecision(provider, undefined, {
-  enabledCapabilities: [
-    { name: 'development_planning', version: 1 },
-    { name: 'software_change', version: 1 },
-    ...(researchEnabled
-      ? [{ name: 'web_research' as const, version: 1 as const }]
-      : []),
-  ],
+  enabledCapabilities,
+  ownerTimeZone: config.reminders.ownerTimeZone,
 });
 
 const cases = [
@@ -164,6 +173,152 @@ try {
     case: 'development capability execution',
     passed: false,
     error: error instanceof Error ? error.message : 'unknown error',
+  });
+}
+
+if (provider.dataBoundary === 'owner_controlled' && researchEnabled) {
+  const currentTime = '2030-01-01T00:00:00.000Z';
+  const scheduledFor = '2030-01-02T07:00:00.000Z';
+  const ownerMessage = `Research whether rain is expected in Cape Town on 2030-01-02 and, if rain is expected, remind me at ${scheduledFor} to take an umbrella.`;
+  try {
+    const initial = await evaluate(ownerMessage, {
+      temporalContext: {
+        currentTime,
+        ownerTimeZone: config.reminders.ownerTimeZone,
+      },
+    });
+    const plan =
+      initial.decision.kind === 'adaptive_goal_planned'
+        ? initial.decision.plan
+        : undefined;
+    const researchRequirement = plan?.requirements.find(
+      (requirement) =>
+        requirement.capability === 'web_research' &&
+        requirement.condition.kind === 'always',
+    );
+    const reminderRequirement = plan?.requirements.find(
+      (requirement) =>
+        requirement.capability === 'personal_reminder_management' &&
+        requirement.condition.kind === 'evidence_dependent',
+    );
+    const planPassed =
+      plan?.firstStep.capability === 'web_research' &&
+      researchRequirement !== undefined &&
+      reminderRequirement !== undefined;
+    failed ||= !planPassed;
+    writeDiagnosticResult({
+      case: 'adaptive goal planning',
+      expected:
+        'adaptive goal with unconditional research and evidence-dependent reminder',
+      actual: initial.decision.kind,
+      requirements: plan?.requirements,
+      firstStep: plan?.firstStep,
+      passed: planPassed,
+      model: initial.model,
+      proposal: initial.proposal,
+    });
+
+    if (planPassed) {
+      const report = {
+        schemaVersion: 1 as const,
+        objective: 'Determine whether rain is expected in Cape Town.',
+        report:
+          'Rain is expected in Cape Town on 2030-01-02. The forecast reports a high probability of precipitation.',
+        sources: [
+          {
+            title: 'Model conformance forecast fixture',
+            url: 'https://example.com/forecast',
+          },
+        ],
+        searchedAt: currentTime,
+      };
+      const serializedReport = JSON.stringify(report);
+      const artifact = ArtifactSchema.parse({
+        schemaVersion: 1,
+        id: 'artifact_model_conformance_research',
+        version: 1,
+        principalId: 'owner_v1',
+        taskId: 'task_model_conformance',
+        runId: 'run_model_conformance',
+        invocationId: 'invocation_model_conformance_research',
+        type: 'research_report',
+        mediaType: 'application/vnd.vera.research-report+json',
+        sha256: createHash('sha256').update(serializedReport).digest('hex'),
+        byteLength: Buffer.byteLength(serializedReport),
+        producer: {
+          provider: 'conformance_fixture',
+          model: 'positive-evidence-v1',
+          durationMs: 0,
+        },
+        content: report,
+        createdAt: currentTime,
+      });
+      const continuation = await createEvaluateGoalContinuation(provider, {
+        enabledCapabilities,
+        ownerTimeZone: config.reminders.ownerTimeZone,
+        clock: () => currentTime,
+      })({
+        ownerMessage,
+        objective: plan.objective,
+        completionCriteria: plan.completionCriteria,
+        requirements: plan.requirements,
+        observations: [
+          {
+            stepId: plan.firstStep.id,
+            purpose: plan.firstStep.purpose,
+            capability: {
+              name: plan.firstStep.capability,
+              version: plan.firstStep.version,
+            },
+            artifact,
+          },
+        ],
+        nextStepId: nextAdaptiveGoalStepId([plan.firstStep.id]),
+        remainingCapabilityInvocations: 2,
+        temporalContext: {
+          currentTime,
+          ownerTimeZone: config.reminders.ownerTimeZone,
+        },
+      });
+      const step =
+        continuation.decision.kind === 'continue_goal'
+          ? continuation.decision.step
+          : undefined;
+      const continuationPassed =
+        step?.capability === 'personal_reminder_management' &&
+        step.inputStepIds.length === 0 &&
+        step.arguments.action === 'create' &&
+        step.arguments.scheduledFor === scheduledFor &&
+        step.arguments.timeZone === config.reminders.ownerTimeZone;
+      failed ||= !continuationPassed;
+      writeDiagnosticResult({
+        case: 'adaptive positive-evidence continuation',
+        expected:
+          'continue_goal with an owner-time-zone-preserving reminder step',
+        actual: continuation.decision.kind,
+        passed: continuationPassed,
+        model: continuation.model,
+        proposal: continuation.proposal,
+        decision: continuation.decision,
+      });
+    }
+  } catch (error) {
+    failed = true;
+    writeDiagnosticResult({
+      case: 'adaptive orchestration conformance',
+      passed: false,
+      error: error instanceof Error ? error.message : 'unknown error',
+    });
+  }
+} else {
+  writeDiagnosticResult({
+    case: 'adaptive orchestration conformance',
+    passed: true,
+    skipped: true,
+    reason:
+      provider.dataBoundary !== 'owner_controlled'
+        ? 'The selected orchestration provider is not owner-controlled.'
+        : 'The selected profile does not enable web research.',
   });
 }
 

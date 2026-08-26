@@ -43,6 +43,9 @@ organizes the growing API by architectural role and cohesive responsibility,
 with executable dependency-boundary checks.
 ADR-0021 adds bounded two- or three-step goals, exact approval at every
 capability boundary, and integrity-checked artifact handoffs.
+ADR-0024 extends that substrate with evidence-adaptive goals: one validated
+step at a time, a fresh approval for every effect, and an owner-controlled
+continuation brain under hard step and model-call ceilings.
 
 Implementation began on the same date. ADR-0009 accepts the first production
 source layout and model decision boundary. ADR-0010 accepts the durable
@@ -191,6 +194,8 @@ in
 [ADR-0022](decisions/0022-introduce-provider-neutral-integration-actions-with-vera-owned-personal-tasks.md).
 Restart-safe reminders and the durable Vera notification inbox are accepted in
 [ADR-0023](decisions/0023-deliver-durable-reminders-through-a-vera-owned-notification-inbox.md).
+Evidence-adaptive bounded orchestration is accepted in
+[ADR-0024](decisions/0024-adapt-bounded-goals-from-validated-capability-evidence.md).
 
 ## Documentation and implementation cadence
 
@@ -228,6 +233,11 @@ The reminder path adds model-visible temporal context, action-specific
 authority, expiring scheduler claims, atomic notification delivery,
 cursor-resumable inbox reads and SSE, client/CLI access, and forced-restart
 MongoDB evidence.
+The adaptive-goal path adds a minimized, integrity-checked observation boundary,
+durable continuation decisions, evidence-only approval disclosure, repeated
+exact approvals, terminal evidence linkage, and restart recovery between every
+observe, decide, and act transition. Third-party brains are excluded from that
+artifact-disclosure path until a separate owner approval policy exists.
 Required CI now runs the compiled CLI-to-artifact journey with real
 ephemeral MongoDB and Redis plus deterministic owner-controlled adapters; it
 does not download models or call a third party. The owner separately approved

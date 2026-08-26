@@ -30,6 +30,7 @@ import {
   SoftwareChangeApplicationSchema,
 } from '../../../domain/changes/software-change-application.ts';
 import { GoalExecutionSchema } from '../../../domain/goals/goal-plan.ts';
+import { AdaptiveGoalExecutionSchema } from '../../../domain/goals/adaptive-goal.ts';
 import { PersonalTaskResourceSchema } from '../../../domain/personal-tasks/personal-task.ts';
 import {
   NotificationResourceSchema,
@@ -170,7 +171,9 @@ export const TaskLifecycleResponseSchema = z
       })
       .strict()
       .optional(),
-    goal: GoalExecutionSchema.optional(),
+    goal: z
+      .union([GoalExecutionSchema, AdaptiveGoalExecutionSchema])
+      .optional(),
     links: z
       .object({
         task: z.string(),

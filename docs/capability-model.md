@@ -2,12 +2,13 @@
 
 **Status:** Accepted (capability declaration shape, invocation lifecycle,
 selection checks, and resource/delegation budget model)
-**Version:** 0.8
+**Version:** 0.9
 **Last updated:** 26 August 2026
 **Accepted:** 24 August 2026 (owner); declarative runtime, catalog, and
 `web_research@1` accepted by ADR-0020 on 25 August 2026; bounded composition
 accepted by ADR-0021 on 26 August 2026; provider-neutral integration actions
-and `personal_task_management@1` accepted by ADR-0022 on 26 August 2026
+and `personal_task_management@1` accepted by ADR-0022 on 26 August 2026;
+evidence-adaptive bounded orchestration accepted by ADR-0024 on 26 August 2026
 
 ## Purpose
 
@@ -201,6 +202,61 @@ The current accepted compositions are:
 Every step retains a separate destination and authority approval. Completing a
 planning step does not automatically authorize the implementation step.
 
+### Fixed plans and adaptive continuation
+
+Fixed goals validate the complete two- or three-step graph before the first
+approval. Adaptive goals validate only the first step, then use each completed
+artifact as evidence to choose exactly one next step or produce a final answer.
+Both forms use the same provider-neutral declarations, artifact contracts,
+approval records, invocation lifecycle, and three-step ceiling.
+
+```mermaid
+flowchart LR
+    OBS["Integrity-checked observations"] --> BRAIN["Owner-controlled continuation brain"]
+    BRAIN --> PROPOSAL{"One proposal"}
+    PROPOSAL -->|"complete_goal"| RESPONSE["Evidence-linked final response"]
+    PROPOSAL -->|"continue_goal"| CODE["Code validation"]
+    CODE --> APPROVAL["Fresh exact owner approval"]
+    APPROVAL --> CAPABILITY["Provider-neutral capability"]
+    CAPABILITY --> ARTIFACT["New durable artifact"]
+    ARTIFACT --> OBS
+```
+
+The initial adaptive proposal also records every requested outcome as a durable
+requirement with its proving capability and either an unconditional or
+evidence-dependent condition. The continuation proposal cannot define its own
+capability catalog or next step identity. Vera supplies both, validates
+capability arguments and remaining
+budget, preserves project and time-zone identity, and rejects invented or
+incompatible evidence. `evidenceStepIds` explain why Vera selected the next
+boundary; `inputStepIds` separately identify artifacts that the capability
+must consume. The latter must satisfy the consumer declaration and become part
+of the exact disclosure approval. Completion is valid only when every outcome
+requirement is resolved exactly once; a satisfied outcome must cite an artifact
+from its declared capability, and only a conditional outcome may be marked not
+applicable from evidence.
+
+Each capability declaration owns conservative explicit-request patterns and a
+generic outcome description. During adaptive-plan validation, these patterns
+restore any plainly requested capability outcome that a model omitted from its
+requirement list. Adding a requirement grants no authority: the continuation
+must still propose schema-valid arguments and the owner must still approve the
+exact invocation. New capabilities extend this safety check through their
+declaration instead of adding provider-specific orchestration branches.
+
+When a provider duplicates a cited reasoning observation into `inputStepIds`
+for a capability that cannot consume it, Vera removes that incompatible input
+before approval. This is a disclosure-reducing normalization, not an authority
+expansion. All other unknown, duplicate, or incompatible inputs fail closed.
+
+Capability artifacts may contain project or personal data beyond the original
+owner message. Consequently, the first adaptive continuation implementation is
+restricted to an orchestration provider whose adapter declares
+`owner_controlled`. Cloud providers remain interchangeable for paths whose
+approved disclosure they can receive, but do not receive adaptive artifact
+evidence merely because their startup profile was selected. See
+[ADR-0024](decisions/0024-adapt-bounded-goals-from-validated-capability-evidence.md).
+
 ## Integration actions and owner state
 
 Capabilities that act on an owner service use a provider-neutral integration
@@ -321,8 +377,14 @@ It may fail safely, return a partial result, or request a narrowly scoped budget
 extension from the owner. A model cannot approve or silently increase its own
 budget.
 
-V1 must use finite configured values and demonstrate enforcement. The exact
-numbers remain an owner decision.
+The implemented envelope permits at most four model calls, three capability
+invocations, one retry, ten minutes, 40 context files, 200,000 context bytes,
+40,000 bytes per context file, and a 100,000-byte capability artifact. Fixed and
+ordinary requests consume only the operations they use. An adaptive goal can
+therefore make one initial model call and one continuation decision after each
+of its three possible observations, but it cannot schedule a fourth capability
+step. Increasing these limits requires measured token and monetary accounting,
+not a model proposal.
 
 ## Model providers
 

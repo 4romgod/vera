@@ -8,14 +8,17 @@ import type {
 export class FakeModelProvider implements ModelProvider {
   public readonly name = 'fake';
   public readonly model = 'fake-v1';
-  public readonly dataBoundary = 'owner_controlled';
+  public readonly dataBoundary: 'owner_controlled' | 'third_party';
   public readonly inputs: GenerateStructuredInput[] = [];
 
   public constructor(
     private readonly candidate: unknown,
     private readonly readinessError?: Error,
     private readonly generationError?: Error,
-  ) {}
+    dataBoundary: 'owner_controlled' | 'third_party' = 'owner_controlled',
+  ) {
+    this.dataBoundary = dataBoundary;
+  }
 
   public checkReadiness(): Promise<ModelProviderReadiness> {
     if (this.readinessError !== undefined) {

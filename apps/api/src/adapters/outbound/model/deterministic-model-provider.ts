@@ -56,6 +56,95 @@ export class DeterministicModelProvider implements ModelProvider {
       });
     }
 
+    if (input.purpose === 'goal_continuation') {
+      const context = JSON.parse(input.message) as {
+        ownerMessage: string;
+        nextStepId: string;
+        temporalContext: { currentTime: string; ownerTimeZone: string };
+        requirements: {
+          id: string;
+          capability: string;
+          version: number;
+          condition: { kind: 'always' | 'evidence_dependent' };
+        }[];
+        observations: {
+          stepId: string;
+          capability: { name: string; version: number };
+          artifact: { type: string };
+        }[];
+      };
+      const hasReminder = context.observations.some(
+        (observation) =>
+          observation.artifact.type === 'personal_reminder_result',
+      );
+      const shouldCreateReminder =
+        !hasReminder &&
+        /\bremind\b/u.test(context.ownerMessage.toLowerCase()) &&
+        JSON.stringify(input.outputSchema).includes(
+          'personal_reminder_management',
+        );
+      const explicitInstant =
+        /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z/u.exec(
+          context.ownerMessage,
+        )?.[0];
+      const candidate = shouldCreateReminder
+        ? {
+            schemaVersion: 1,
+            kind: 'continue_goal',
+            decisionSummary:
+              'The observed research result requires the requested reminder action.',
+            evidenceStepIds: context.observations.map(
+              (observation) => observation.stepId,
+            ),
+            step: {
+              id: context.nextStepId,
+              purpose:
+                'Create the requested reminder after reviewing evidence.',
+              inputStepIds: [],
+              capability: 'personal_reminder_management',
+              version: 1,
+              arguments: {
+                action: 'create',
+                message: context.ownerMessage,
+                scheduledFor:
+                  explicitInstant ??
+                  new Date(
+                    Date.parse(context.temporalContext.currentTime) + 60_000,
+                  ).toISOString(),
+                timeZone: context.temporalContext.ownerTimeZone,
+              },
+            },
+          }
+        : {
+            schemaVersion: 1,
+            kind: 'complete_goal',
+            decisionSummary:
+              'The validated observations satisfy the goal completion criteria.',
+            message: `I completed the requested adaptive goal using ${String(context.observations.length)} verified capability result(s).`,
+            evidenceStepIds: context.observations.map(
+              (observation) => observation.stepId,
+            ),
+            requirementResolutions: context.requirements.map((requirement) => ({
+              requirementId: requirement.id,
+              status: 'satisfied' as const,
+              evidenceStepIds: context.observations
+                .filter(
+                  (observation) =>
+                    observation.capability.name === requirement.capability &&
+                    observation.capability.version === requirement.version,
+                )
+                .map((observation) => observation.stepId),
+            })),
+          };
+      return Promise.resolve({
+        candidate,
+        provider: this.name,
+        model: this.model,
+        durationMs: 0,
+        usage: { inputTokens: 0, outputTokens: 0 },
+      });
+    }
+
     let ownerMessage = input.message;
     let projectName = 'vera';
     let currentTime = '2030-01-01T00:00:00.000Z';
@@ -198,6 +287,14 @@ export class DeterministicModelProvider implements ModelProvider {
     const canExecuteGoal = JSON.stringify(input.outputSchema).includes(
       'execute_goal',
     );
+    const canPursueGoal = JSON.stringify(input.outputSchema).includes(
+      'pursue_goal',
+    );
+    const shouldPursueGoal =
+      canPursueGoal &&
+      requestsResearch &&
+      reminderAction !== undefined &&
+      /\b(if|depending|based on|then)\b/u.test(normalizedMessage);
     const shouldExecuteGoal =
       canExecuteGoal &&
       [
@@ -287,73 +384,119 @@ export class DeterministicModelProvider implements ModelProvider {
       boundedGoalSteps.length >= 2 &&
       boundedGoalSteps.length <= 3;
 
-    const candidate = executeBoundedGoal
+    const candidate = shouldPursueGoal
       ? {
           schemaVersion: 1,
-          kind: 'execute_goal',
+          kind: 'pursue_goal',
           decisionSummary:
-            'The owner requested multiple dependent outcomes that require a bounded capability sequence.',
+            'The owner requested a later action that depends on evidence not available yet.',
           goal: {
             schemaVersion: 1,
             objective: ownerMessage,
-            summary: `Execute ${String(boundedGoalSteps.length)} bounded capability steps and carry approved artifacts forward.`,
-            steps: boundedGoalSteps,
+            summary:
+              'Observe the first capability result before deciding the next bounded action.',
+            completionCriteria:
+              'Use the research evidence to decide whether to create the requested reminder, then explain the outcome.',
+            requirements: [
+              {
+                id: 'requirement_research',
+                description:
+                  'Gather the requested source-backed research evidence.',
+                capability: 'web_research',
+                version: 1,
+                condition: { kind: 'always' },
+              },
+              {
+                id: 'requirement_reminder',
+                description:
+                  'Create the requested reminder when the research condition is satisfied.',
+                capability: 'personal_reminder_management',
+                version: 1,
+                condition: {
+                  kind: 'evidence_dependent',
+                  description:
+                    'The research evidence satisfies the condition stated by the owner.',
+                },
+              },
+            ],
+            firstStep: {
+              id: 'step_1',
+              purpose:
+                'Gather the source-backed evidence needed for the conditional action.',
+              inputStepIds: [],
+              capability: 'web_research',
+              version: 1,
+              arguments: { objective: ownerMessage },
+            },
           },
         }
-      : personalTaskAction !== undefined
+      : executeBoundedGoal
         ? {
             schemaVersion: 1,
-            kind: 'invoke_capability',
+            kind: 'execute_goal',
             decisionSummary:
-              'The owner requested an action against durable personal tasks.',
-            capability: { name: 'personal_task_management', version: 1 },
-            arguments: personalTaskAction,
+              'The owner requested multiple dependent outcomes that require a bounded capability sequence.',
+            goal: {
+              schemaVersion: 1,
+              objective: ownerMessage,
+              summary: `Execute ${String(boundedGoalSteps.length)} bounded capability steps and carry approved artifacts forward.`,
+              steps: boundedGoalSteps,
+            },
           }
-        : reminderAction !== undefined
+        : personalTaskAction !== undefined
           ? {
               schemaVersion: 1,
               kind: 'invoke_capability',
               decisionSummary:
-                'The owner requested an action against durable reminders.',
-              capability: {
-                name: 'personal_reminder_management',
-                version: 1,
-              },
-              arguments: reminderAction,
+                'The owner requested an action against durable personal tasks.',
+              capability: { name: 'personal_task_management', version: 1 },
+              arguments: personalTaskAction,
             }
-          : shouldResearch
+          : reminderAction !== undefined
             ? {
                 schemaVersion: 1,
                 kind: 'invoke_capability',
                 decisionSummary:
-                  'The request asks for current, source-backed public-web research.',
-                capability: { name: 'web_research', version: 1 },
-                arguments: { objective: ownerMessage },
+                  'The owner requested an action against durable reminders.',
+                capability: {
+                  name: 'personal_reminder_management',
+                  version: 1,
+                },
+                arguments: reminderAction,
               }
-            : shouldPlan
+            : shouldResearch
               ? {
                   schemaVersion: 1,
                   kind: 'invoke_capability',
                   decisionSummary:
-                    'The request asks for specialist software planning.',
-                  capability: { name: 'development_planning', version: 1 },
-                  arguments: projectArguments,
+                    'The request asks for current, source-backed public-web research.',
+                  capability: { name: 'web_research', version: 1 },
+                  arguments: { objective: ownerMessage },
                 }
-              : shouldChange
+              : shouldPlan
                 ? {
                     schemaVersion: 1,
                     kind: 'invoke_capability',
                     decisionSummary:
-                      'The request asks for an isolated specialist software change.',
-                    capability: { name: 'software_change', version: 1 },
+                      'The request asks for specialist software planning.',
+                    capability: { name: 'development_planning', version: 1 },
                     arguments: projectArguments,
                   }
-                : {
-                    schemaVersion: 1,
-                    kind: 'respond',
-                    decisionSummary: 'The request can be answered directly.',
-                    message: `Vera received: ${ownerMessage}`,
-                  };
+                : shouldChange
+                  ? {
+                      schemaVersion: 1,
+                      kind: 'invoke_capability',
+                      decisionSummary:
+                        'The request asks for an isolated specialist software change.',
+                      capability: { name: 'software_change', version: 1 },
+                      arguments: projectArguments,
+                    }
+                  : {
+                      schemaVersion: 1,
+                      kind: 'respond',
+                      decisionSummary: 'The request can be answered directly.',
+                      message: `Vera received: ${ownerMessage}`,
+                    };
 
     return Promise.resolve({
       candidate,

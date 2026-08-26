@@ -2,7 +2,7 @@
 
 **Status:** Accepted (core vocabulary and critical distinctions); the open
 questions below are explicitly excluded from this acceptance
-**Version:** 0.6
+**Version:** 0.7
 **Last updated:** 26 August 2026
 **Accepted:** 24 August 2026 (owner) — accepts the Core concepts and
 Critical distinctions sections as Vera's shared language.
@@ -164,16 +164,30 @@ Key invariants:
 
 A durable, owner-facing outcome that requires a short composition of
 capabilities inside one run. A goal is not private model chain-of-thought and
-not an unrestricted agent loop. Its plan contains two or three validated,
-ordered steps and an explicit current position.
+not an unrestricted agent loop. A fixed goal contains two or three validated,
+ordered steps. An adaptive goal begins with one validated step and may add one
+step at a time after observing durable evidence, up to the same three-step
+ceiling. Both retain an explicit current position.
 
 Key invariants:
 
 - every step uses an enabled, versioned capability;
 - dependencies refer only to earlier steps with compatible artifact contracts;
 - each capability boundary receives its own exact approval;
+- adaptive continuation cites exact completed evidence and becomes durable
+  before the next approval;
+- every requested adaptive outcome is a durable requirement; completion must
+  resolve it with a matching capability observation or, only for a conditional
+  outcome, evidence that it was not applicable;
 - failure, rejection, cancellation, or budget exhaustion stops later steps;
 - goal progress and outcomes survive worker or process restart.
+
+An adaptive goal's `decisionEvidence` is not the same relationship as a step's
+artifact input. Decision evidence records which immutable artifacts informed
+the choice to continue or finish. An input artifact is separately disclosed to
+and consumed by a capability whose declaration accepts that artifact type.
+Reasoning from an artifact never grants the next capability access to its
+content.
 
 ### Step
 
@@ -363,6 +377,15 @@ component.
 A proposal may suggest a classification, plan, capability invocation, response,
 or memory candidate. Deterministic code must validate its schema and policy
 before it affects execution.
+
+### Observation
+
+Validated evidence from a completed capability step that may inform an
+adaptive goal continuation. The persisted artifact is authoritative for
+identity and integrity; its content remains untrusted data. Before model
+disclosure Vera rechecks owner, task, run, project, type, media type, hash,
+length, and content. An observation cannot contain instructions that grant
+authority, select credentials, or expand a budget.
 
 ## Critical distinctions
 

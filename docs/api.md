@@ -1,7 +1,7 @@
 # Vera HTTP API
 
 **Status:** Accepted for implemented V1 paths
-**Version:** 1.0
+**Version:** 1.1
 **Last updated:** 26 August 2026
 
 ## Purpose
@@ -72,6 +72,9 @@ stateDiagram-v2
     cancellation_requested --> succeeded: capability finishes first
     executing --> succeeded: validated result recorded
     executing --> awaiting_approval: goal step succeeds; next step disclosed
+    executing --> deciding: adaptive step produces validated observation
+    deciding --> awaiting_approval: adaptive continuation proposes next step
+    deciding --> succeeded: adaptive continuation completes from evidence
     executing --> failed: capability fails
 ```
 
@@ -88,16 +91,31 @@ Task status is a coarser projection:
 Terminal runs are not reopened. Retry as a new run is not implemented yet.
 
 For a compound request, the optional `goal` projection contains the objective,
-authoritative project identity when applicable, current step, and two or three
-ordered step states. `approval` and `invocation` always name the current
-boundary. When a step completes and another begins, its full records move to
-the bounded `approvalHistory` and `invocationHistory`; the next approval gets a
-new identity. Clients must therefore continue polling after approval and must
-handle another `awaiting_approval` before terminal completion.
+authoritative project identity when applicable, current step, and at most three
+ordered step states. Schema version 1 is a fixed two- or three-step plan. Schema
+version 2 has `mode: "adaptive"`, completion criteria, a durable list of
+capability-backed outcome requirements, one initially known step, and a bounded
+continuation history added after validated observations.
+`approval` and `invocation` always name the current boundary. When a step
+completes and another begins, its full records move to the bounded
+`approvalHistory` and `invocationHistory`; the next approval gets a new
+identity. Clients must therefore continue polling after approval and must
+handle `deciding` and another `awaiting_approval` before terminal completion.
 
-The final `goal_result` contains every step's artifact reference. An artifact's
-optional `inputs` field records the exact upstream references that were approved
-for that invocation.
+The fixed final `goal_result` contains every step's artifact reference. The
+adaptive `adaptive_goal_result` contains a natural-language message with a
+code-authored verified-outcome and execution ledger, all artifacts, and the
+exact evidence references supporting that message. Completion resolves every
+outcome requirement as capability-proven or evidence-backed not applicable. An
+artifact's optional `inputs` field records upstream references actually
+approved for and consumed by that invocation.
+
+Adaptive approvals may also contain `decisionEvidence`. These references show
+which prior artifacts informed the continuation but are not capability inputs
+and do not disclose artifact content to that capability. The continuation
+history retains proposal, code-validated decision, model metadata, evidence
+step IDs, and decision time. Internal artifact content is not embedded in the
+task projection.
 
 ## Submit a task
 
@@ -506,6 +524,9 @@ owned by that event type. Current event types are:
 - `task_created`, `run_started`;
 - `budget_assigned`, `budget_consumed`, `budget_exhausted`;
 - `model_decision_recorded`;
+- `goal_planned`, `goal_step_succeeded`;
+- `adaptive_goal_planned`, `adaptive_goal_observation_recorded`,
+  `adaptive_goal_continuation_recorded`, `adaptive_goal_succeeded`;
 - `context_assembled`;
 - `approval_requested`, `approval_approved`, `approval_rejected`;
 - `capability_invocation_started`, `capability_invocation_succeeded`,

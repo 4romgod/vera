@@ -17,6 +17,7 @@ import {
   PersonalReminderManagementGoalStepSchema,
 } from '../goals/goal-plan.ts';
 import type { CapabilityReference } from '../capabilities/capability-registry.ts';
+import { AdaptiveGoalPlanSchema } from '../goals/adaptive-goal.ts';
 
 const DecisionSummarySchema = z.string().trim().min(1).max(500);
 
@@ -110,6 +111,15 @@ const ExecuteGoalProposalSchema = z
   })
   .strict();
 
+const PursueAdaptiveGoalProposalSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    kind: z.literal('pursue_goal'),
+    decisionSummary: DecisionSummarySchema,
+    goal: AdaptiveGoalPlanSchema,
+  })
+  .strict();
+
 export const ModelProposalSchema = z.union([
   RespondProposalSchema,
   DevelopmentPlanningProposalSchema,
@@ -118,12 +128,14 @@ export const ModelProposalSchema = z.union([
   PersonalTaskManagementProposalSchema,
   PersonalReminderManagementProposalSchema,
   ExecuteGoalProposalSchema,
+  PursueAdaptiveGoalProposalSchema,
 ]);
 
 export type ModelProposal = z.infer<typeof ModelProposalSchema>;
 
 export function createModelProposalSchema(options: {
   enabledCapabilities: readonly CapabilityReference[];
+  allowAdaptiveGoals?: boolean;
 }): z.ZodType<ModelProposal> {
   const developmentPlanningEnabled = options.enabledCapabilities.some(
     (capability) =>
@@ -197,6 +209,48 @@ export function createModelProposalSchema(options: {
     schemas.push(
       ExecuteGoalProposalSchema.extend({
         goal: enabledGoalPlanSchema,
+      }),
+    );
+  }
+  if (enabledGoalSteps.length >= 1 && options.allowAdaptiveGoals !== false) {
+    const firstEnabledGoalStep = enabledGoalSteps[0];
+    if (firstEnabledGoalStep === undefined) {
+      throw new Error('Adaptive goals require an enabled capability schema.');
+    }
+    const enabledGoalStepSchema =
+      enabledGoalSteps.length === 1
+        ? firstEnabledGoalStep
+        : z.union(
+            enabledGoalSteps as unknown as [
+              z.ZodType,
+              z.ZodType,
+              ...z.ZodType[],
+            ],
+          );
+    schemas.push(
+      PursueAdaptiveGoalProposalSchema.extend({
+        goal: z
+          .object({
+            schemaVersion: z.literal(1),
+            objective: z.string().trim().min(1).max(10_000),
+            summary: z.string().trim().min(1).max(1_000),
+            completionCriteria: z.string().trim().min(1).max(2_000),
+            requirements: AdaptiveGoalPlanSchema.shape.requirements,
+            firstStep: enabledGoalStepSchema,
+          })
+          .strict()
+          .superRefine((plan, context) => {
+            const validation = AdaptiveGoalPlanSchema.safeParse(plan);
+            if (!validation.success) {
+              for (const issue of validation.error.issues) {
+                context.addIssue({
+                  code: 'custom',
+                  path: issue.path,
+                  message: issue.message,
+                });
+              }
+            }
+          }),
       }),
     );
   }

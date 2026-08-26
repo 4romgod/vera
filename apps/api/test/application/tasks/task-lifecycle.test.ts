@@ -9,6 +9,7 @@ import {
   createTaskLifecycle,
 } from '../../../src/application/tasks/task-lifecycle.ts';
 import type { EvaluateModelDecision } from '../../../src/application/model-decisions/evaluate-model-decision.ts';
+import type { EvaluateGoalContinuation } from '../../../src/application/model-decisions/evaluate-goal-continuation.ts';
 import type { ConversationMessage } from '../../../src/domain/conversations/conversation.ts';
 import type { DecisionResult } from '../../../src/domain/model/execution-decision.ts';
 import type { DevelopmentPlan } from '../../../src/domain/plans/development-plan.ts';
@@ -192,6 +193,54 @@ function goalDecision(): DecisionResult {
   };
 }
 
+function adaptiveGoalDecision(firstStepId = 'step_1'): DecisionResult {
+  const goal = {
+    schemaVersion: 1 as const,
+    objective: 'Research the forecast and conditionally create a reminder.',
+    summary: 'Observe the forecast before choosing the next action.',
+    completionCriteria:
+      'Create a reminder only when the evidence supports it, then explain the outcome.',
+    requirements: [
+      {
+        id: 'requirement_research',
+        description: 'Research the forecast.',
+        capability: 'web_research',
+        version: 1,
+        condition: { kind: 'always' as const },
+      },
+      {
+        id: 'requirement_reminder',
+        description: 'Create the reminder if rain is expected.',
+        capability: 'personal_reminder_management',
+        version: 1,
+        condition: {
+          kind: 'evidence_dependent' as const,
+          description: 'The forecast evidence predicts rain.',
+        },
+      },
+    ],
+    firstStep: {
+      id: firstStepId,
+      purpose: 'Research the forecast.',
+      inputStepIds: [],
+      capability: 'web_research' as const,
+      version: 1 as const,
+      arguments: { objective: 'Check whether rain is expected tomorrow.' },
+    },
+  };
+  return {
+    decisionId: 'decision_adaptive_goal',
+    proposal: {
+      schemaVersion: 1,
+      kind: 'pursue_goal',
+      decisionSummary: 'The next action depends on unseen evidence.',
+      goal,
+    },
+    decision: { kind: 'adaptive_goal_planned', plan: goal },
+    model: { provider: 'fake', model: 'fake-v1', durationMs: 1 },
+  };
+}
+
 class FakePlanningCapability implements DevelopmentPlanningCapability {
   public readonly calls: {
     invocation: DevelopmentPlanningInvocation;
@@ -242,6 +291,26 @@ class FailOnceReplyResourceStore extends InMemoryOwnerResourceStore {
   }
 }
 
+class TamperedArtifactResourceStore extends InMemoryOwnerResourceStore {
+  public tamperReads = false;
+
+  public override async findArtifactById(
+    ...args: Parameters<InMemoryOwnerResourceStore['findArtifactById']>
+  ): ReturnType<InMemoryOwnerResourceStore['findArtifactById']> {
+    const artifact = await super.findArtifactById(...args);
+    if (!this.tamperReads || artifact?.type !== 'research_report') {
+      return artifact;
+    }
+    return {
+      ...artifact,
+      content: {
+        ...artifact.content,
+        report: `${artifact.content.report} tampered`,
+      },
+    };
+  }
+}
+
 function registryFor(
   selected: DevelopmentPlanningCapability,
   capabilities: DevelopmentPlanningCapability[] = [selected],
@@ -258,6 +327,7 @@ function registryFor(
 function harness(options?: {
   decision?: DecisionResult;
   evaluate?: EvaluateModelDecision;
+  evaluateGoalContinuation?: EvaluateGoalContinuation;
   capability?: FakePlanningCapability;
   registry?: DevelopmentPlanningCapabilityRegistry;
   capabilities?: CapabilityRuntimeRegistry;
@@ -314,12 +384,17 @@ function harness(options?: {
         ? (options?.decision ?? responseDecision())
         : options.evaluate(message, context);
     },
+    ...(options?.evaluateGoalContinuation === undefined
+      ? {}
+      : { evaluateGoalContinuation: options.evaluateGoalContinuation }),
     capabilities:
       options?.capabilities ??
       createTestCapabilityRuntime({
         developmentPlanning: options?.registry ?? registryFor(capability),
         softwareChange: createDeterministicSoftwareChangeRegistry(),
+        webResearch: 'deterministic_research',
         personalTaskStore: resources,
+        reminderStore: resources,
       }),
     resources,
     contextAssembler,
@@ -602,6 +677,344 @@ void describe('task lifecycle', () => {
         'goal_step_succeeded',
         'goal_succeeded',
       ],
+    );
+  });
+
+  void it('observes, decides, acts, and completes an adaptive goal across recovery boundaries', async () => {
+    let continuationCalls = 0;
+    const evaluateGoalContinuation: EvaluateGoalContinuation = (input) => {
+      continuationCalls += 1;
+      assert.equal(input.observations.length, continuationCalls);
+      if (continuationCalls === 1) {
+        const proposal = {
+          schemaVersion: 1 as const,
+          kind: 'continue_goal' as const,
+          decisionSummary: 'The evidence supports the conditional reminder.',
+          evidenceStepIds: ['step_1'],
+          step: {
+            id: 'step_2',
+            purpose: 'Create the requested reminder.',
+            inputStepIds: [],
+            capability: 'personal_reminder_management' as const,
+            version: 1 as const,
+            arguments: {
+              action: 'create' as const,
+              message: 'Take an umbrella.',
+              scheduledFor: '2030-01-02T05:00:00.000Z',
+              timeZone: 'UTC',
+            },
+          },
+        };
+        return Promise.resolve({
+          decisionId: 'decision_continue_reminder',
+          proposal,
+          decision: {
+            kind: 'continue_goal',
+            step: proposal.step,
+            evidenceStepIds: proposal.evidenceStepIds,
+          },
+          model: { provider: 'fake', model: 'fake-v1', durationMs: 1 },
+          decidedAt: '2026-08-24T18:00:00.000Z',
+        });
+      }
+      const proposal = {
+        schemaVersion: 1 as const,
+        kind: 'complete_goal' as const,
+        decisionSummary: 'The research and reminder satisfy the request.',
+        message:
+          'The evidence supported the condition, so I created the umbrella reminder.',
+        evidenceStepIds: ['step_1', 'step_2'],
+        requirementResolutions: [
+          {
+            requirementId: 'requirement_research',
+            status: 'satisfied' as const,
+            evidenceStepIds: ['step_1'],
+          },
+          {
+            requirementId: 'requirement_reminder',
+            status: 'satisfied' as const,
+            evidenceStepIds: ['step_2'],
+          },
+        ],
+      };
+      return Promise.resolve({
+        decisionId: 'decision_complete_adaptive_goal',
+        proposal,
+        decision: {
+          kind: 'complete_goal',
+          message: proposal.message,
+          evidenceStepIds: proposal.evidenceStepIds,
+          requirementResolutions: proposal.requirementResolutions,
+        },
+        model: { provider: 'fake', model: 'fake-v1', durationMs: 1 },
+        decidedAt: '2026-08-24T18:00:00.000Z',
+      });
+    };
+    const test = harness({
+      decision: adaptiveGoalDecision(),
+      evaluateGoalContinuation,
+      executionMode: 'worker',
+    });
+    const submitted = await test.lifecycle.submit({
+      message:
+        'Research the forecast and if rain is expected remind me to take an umbrella.',
+      requestKey: 'adaptive-goal-request',
+      principalId: 'owner_v1',
+    });
+
+    const firstApproval = await test.lifecycle.progressTask(
+      'owner_v1',
+      submitted.task.id,
+    );
+    assert.equal(firstApproval.run.status, 'awaiting_approval');
+    assert.equal(firstApproval.run.goal?.schemaVersion, 2);
+    assert.ok(firstApproval.run.approval);
+    await test.lifecycle.decideApproval({
+      approvalId: firstApproval.run.approval.id,
+      decision: 'approved',
+      principalId: 'owner_v1',
+    });
+
+    const observedResearch = await test.lifecycle.progressTask(
+      'owner_v1',
+      submitted.task.id,
+    );
+    assert.equal(observedResearch.run.status, 'deciding');
+    assert.equal(observedResearch.run.goal?.steps[0]?.status, 'succeeded');
+
+    // Startup recovery discovers the durable deciding state and requests the
+    // next exact approval without rerunning the completed research capability.
+    await test.lifecycle.recoverInterrupted();
+    const reminderApproval = await test.lifecycle.getTask(
+      'owner_v1',
+      submitted.task.id,
+    );
+    assert.equal(reminderApproval.run.status, 'awaiting_approval');
+    assert.ok(reminderApproval.run.approval);
+    assert.equal(
+      reminderApproval.run.approval.capability.name,
+      'personal_reminder_management',
+    );
+    assert.equal(reminderApproval.run.approval.inputArtifacts, undefined);
+    const decisionEvidence = reminderApproval.run.approval.decisionEvidence;
+    assert.ok(decisionEvidence);
+    assert.equal(decisionEvidence.length, 1);
+    assert.equal(decisionEvidence[0]?.type, 'research_report');
+    assert.equal(reminderApproval.run.approvalHistory?.length, 1);
+
+    await test.lifecycle.decideApproval({
+      approvalId: reminderApproval.run.approval.id,
+      decision: 'approved',
+      principalId: 'owner_v1',
+    });
+    const observedReminder = await test.lifecycle.progressTask(
+      'owner_v1',
+      submitted.task.id,
+    );
+    assert.equal(observedReminder.run.status, 'deciding');
+
+    await test.lifecycle.recoverInterrupted();
+    const completed = await test.lifecycle.getTask(
+      'owner_v1',
+      submitted.task.id,
+    );
+    assert.equal(completed.run.status, 'succeeded');
+    assert.equal(continuationCalls, 2);
+    const completedBudget = completed.run.budget;
+    assert.ok(completedBudget);
+    assert.equal(completedBudget.consumed.modelCalls, 3);
+    assert.equal(completedBudget.consumed.capabilityInvocations, 2);
+    const completedGoal = completed.run.goal;
+    assert.ok(completedGoal);
+    assert.equal(completedGoal.status, 'succeeded');
+    if (completedGoal.schemaVersion !== 2) {
+      throw new Error('The adaptive goal schema was not preserved.');
+    }
+    assert.equal(completedGoal.continuations.length, 2);
+    assert.equal(completedGoal.finalResponse?.evidence.length, 2);
+    if (completed.run.output?.kind !== 'adaptive_goal_result') {
+      throw new Error('The adaptive goal did not return its grounded result.');
+    }
+    assert.equal(completed.run.output.artifacts.length, 2);
+    assert.equal(completed.run.output.evidence.length, 2);
+    assert.match(
+      completed.run.output.message,
+      /created the umbrella reminder/u,
+    );
+    assert.match(
+      completed.run.output.message,
+      /Verified execution record: web_research@1, personal_reminder_management@1/u,
+    );
+    const reminders = await test.resources.listReminders('owner_v1', {
+      status: 'scheduled',
+      limit: 10,
+    });
+    assert.equal(reminders.length, 1);
+    assert.equal(reminders[0]?.message, 'Take an umbrella.');
+    assert.deepEqual(
+      completed.events
+        .filter((event) => event.type.startsWith('adaptive_goal_'))
+        .map((event) => event.type),
+      [
+        'adaptive_goal_planned',
+        'adaptive_goal_observation_recorded',
+        'adaptive_goal_continuation_recorded',
+        'adaptive_goal_observation_recorded',
+        'adaptive_goal_continuation_recorded',
+        'adaptive_goal_succeeded',
+      ],
+    );
+  });
+
+  void it('keeps a model-authored not-applicable reason out of the owner response', async () => {
+    const rawModelReason =
+      'Rain is expected, so the reminder condition is met and no reminder is needed.';
+    const test = harness({
+      decision: adaptiveGoalDecision('step_2'),
+      executionMode: 'worker',
+      evaluateGoalContinuation: (input) => {
+        assert.equal(input.nextStepId, 'step_3');
+        return Promise.resolve({
+          decisionId: 'decision_complete_without_reminder',
+          proposal: {
+            schemaVersion: 1,
+            kind: 'complete_goal',
+            decisionSummary: 'The conditional action was not applicable.',
+            message: 'I researched the forecast and handled the condition.',
+            evidenceStepIds: ['step_2'],
+            requirementResolutions: [
+              {
+                requirementId: 'requirement_research',
+                status: 'satisfied',
+                evidenceStepIds: ['step_2'],
+              },
+              {
+                requirementId: 'requirement_reminder',
+                status: 'not_applicable',
+                reason: rawModelReason,
+                evidenceStepIds: ['step_2'],
+              },
+            ],
+          },
+          decision: {
+            kind: 'complete_goal',
+            message: 'I researched the forecast and handled the condition.',
+            evidenceStepIds: ['step_2'],
+            requirementResolutions: [
+              {
+                requirementId: 'requirement_research',
+                status: 'satisfied',
+                evidenceStepIds: ['step_2'],
+              },
+              {
+                requirementId: 'requirement_reminder',
+                status: 'not_applicable',
+                reason: rawModelReason,
+                evidenceStepIds: ['step_2'],
+              },
+            ],
+          },
+          model: { provider: 'fake', model: 'fake-v1', durationMs: 1 },
+          decidedAt: '2026-08-24T18:00:00.000Z',
+        });
+      },
+    });
+    const submitted = await test.lifecycle.submit({
+      message:
+        'Research the forecast and if rain is expected remind me to take an umbrella.',
+      requestKey: 'adaptive-not-applicable-response',
+      principalId: 'owner_v1',
+    });
+    const awaitingApproval = await test.lifecycle.progressTask(
+      'owner_v1',
+      submitted.task.id,
+    );
+    assert.ok(awaitingApproval.run.approval);
+    await test.lifecycle.decideApproval({
+      approvalId: awaitingApproval.run.approval.id,
+      decision: 'approved',
+      principalId: 'owner_v1',
+    });
+    await test.lifecycle.progressTask('owner_v1', submitted.task.id);
+    await test.lifecycle.recoverInterrupted();
+
+    const completed = await test.lifecycle.getTask(
+      'owner_v1',
+      submitted.task.id,
+    );
+    if (completed.run.output?.kind !== 'adaptive_goal_result') {
+      throw new Error('The adaptive goal did not return its grounded result.');
+    }
+    assert.doesNotMatch(
+      completed.run.output.message,
+      new RegExp(rawModelReason),
+    );
+    assert.doesNotMatch(
+      completed.run.output.message,
+      /I researched the forecast and handled the condition/u,
+    );
+    assert.match(
+      completed.run.output.message,
+      /The orchestration brain judged its evidence-dependent condition not applicable\./u,
+    );
+    const completedGoal = completed.run.goal;
+    assert.ok(completedGoal);
+    assert.equal(completedGoal.schemaVersion, 2);
+    const continuation = completedGoal.continuations[0];
+    assert.ok(continuation);
+    assert.equal(continuation.decision.kind, 'complete_goal');
+    const reminderResolution = continuation.decision.requirementResolutions[1];
+    assert.ok(reminderResolution);
+    assert.equal(reminderResolution.status, 'not_applicable');
+    assert.equal(reminderResolution.reason, rawModelReason);
+  });
+
+  void it('fails closed before continuation inference when a stored observation is corrupted', async () => {
+    const resources = new TamperedArtifactResourceStore();
+    let continuationCalls = 0;
+    const test = harness({
+      decision: adaptiveGoalDecision(),
+      executionMode: 'worker',
+      resources,
+      evaluateGoalContinuation: () => {
+        continuationCalls += 1;
+        throw new Error('The continuation model must not be called.');
+      },
+    });
+    const submitted = await test.lifecycle.submit({
+      message: 'Research and decide conditionally.',
+      requestKey: 'adaptive-tamper',
+      principalId: 'owner_v1',
+    });
+    const awaitingApproval = await test.lifecycle.progressTask(
+      'owner_v1',
+      submitted.task.id,
+    );
+    assert.ok(awaitingApproval.run.approval);
+    await test.lifecycle.decideApproval({
+      approvalId: awaitingApproval.run.approval.id,
+      decision: 'approved',
+      principalId: 'owner_v1',
+    });
+    const observed = await test.lifecycle.progressTask(
+      'owner_v1',
+      submitted.task.id,
+    );
+    assert.equal(observed.run.status, 'deciding');
+
+    resources.tamperReads = true;
+    const failed = await test.lifecycle.progressTask(
+      'owner_v1',
+      submitted.task.id,
+    );
+
+    assert.equal(continuationCalls, 0);
+    assert.equal(failed.run.status, 'failed');
+    assert.equal(failed.run.failure?.code, 'adaptive_goal_failure');
+    assert.ok(
+      test.warnings.some((warning) =>
+        String(warning).includes('failed integrity or scope validation'),
+      ),
     );
   });
 

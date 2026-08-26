@@ -9,6 +9,7 @@ import { PersonalTaskActionArgumentsSchema } from '../personal-tasks/personal-ta
 import { ReminderActionArgumentsSchema } from '../reminders/reminder.ts';
 import { ModelProposalSchema } from './model-proposal.ts';
 import { GoalPlanSchema } from '../goals/goal-plan.ts';
+import { AdaptiveGoalPlanSchema } from '../goals/adaptive-goal.ts';
 
 const ResponseDecisionSchema = z
   .object({
@@ -107,6 +108,13 @@ const GoalPlannedDecisionSchema = z
   })
   .strict();
 
+const AdaptiveGoalPlannedDecisionSchema = z
+  .object({
+    kind: z.literal('adaptive_goal_planned'),
+    plan: AdaptiveGoalPlanSchema,
+  })
+  .strict();
+
 export const ExecutionDecisionSchema = z.union([
   ResponseDecisionSchema,
   DevelopmentPlanningApprovalDecisionSchema,
@@ -115,6 +123,7 @@ export const ExecutionDecisionSchema = z.union([
   PersonalTaskManagementApprovalDecisionSchema,
   PersonalReminderManagementApprovalDecisionSchema,
   GoalPlannedDecisionSchema,
+  AdaptiveGoalPlannedDecisionSchema,
   RejectedProposalDecisionSchema,
 ]);
 

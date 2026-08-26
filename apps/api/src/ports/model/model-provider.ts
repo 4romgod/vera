@@ -11,6 +11,7 @@ export type ModelGeneration = {
 
 export type StructuredGenerationPurpose =
   | 'orchestration_decision'
+  | 'goal_continuation'
   | 'development_plan';
 
 export type GenerateStructuredInput = {
