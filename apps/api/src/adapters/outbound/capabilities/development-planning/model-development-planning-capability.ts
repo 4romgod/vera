@@ -25,7 +25,6 @@ function buildPlanningPrompt(hasRepositoryEvidence: boolean): string {
     'Call out important missing evidence in unresolvedQuestions instead of inventing it.',
     evidenceRule,
     'State only material risks. Avoid generic filler and speculative architecture.',
-    `Required output schema:\n${JSON.stringify(DevelopmentPlanContentJsonSchema)}`,
   ].join('\n\n');
 }
 

@@ -239,10 +239,14 @@ applicable from evidence.
 Each capability declaration owns conservative explicit-request patterns and a
 generic outcome description. During adaptive-plan validation, these patterns
 restore any plainly requested capability outcome that a model omitted from its
-requirement list. Adding a requirement grants no authority: the continuation
-must still propose schema-valid arguments and the owner must still approve the
-exact invocation. New capabilities extend this safety check through their
-declaration instead of adding provider-specific orchestration branches.
+requirement list. When a structurally valid proposal names a first step but
+omits its matching unconditional requirement, Vera derives that requirement
+from the same step's purpose and capability before authoritative validation.
+Neither normalization invents an invocation or arguments. Adding a requirement
+grants no authority: the continuation must still propose schema-valid arguments
+and the owner must still approve the exact invocation. New capabilities extend
+this safety check through their declaration instead of adding
+provider-specific orchestration branches.
 
 When a provider duplicates a cited reasoning observation into `inputStepIds`
 for a capability that cannot consume it, Vera removes that incompatible input

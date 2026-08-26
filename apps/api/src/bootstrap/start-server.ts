@@ -33,6 +33,9 @@ app.log.info(
       model: {
         provider: config.model.provider,
         model: config.model.model,
+        ...(config.model.provider === 'ollama'
+          ? { think: config.model.think }
+          : {}),
         dataBoundary:
           config.model.provider === 'ollama' ||
           config.model.provider === 'deterministic'

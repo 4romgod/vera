@@ -7,6 +7,7 @@ export default tseslint.config(
       '**/dist/**',
       '**/node_modules/**',
       'eslint.config.js',
+      'scripts/verify-live-model.mjs',
       'scripts/verify-persistent.mjs',
     ],
   },

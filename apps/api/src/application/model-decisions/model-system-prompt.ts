@@ -2,8 +2,6 @@ import {
   modelVisibleCapabilities,
   type CapabilityReference,
 } from '../../domain/capabilities/capability-registry.ts';
-import { createModelProposalSchema } from '../../domain/model/model-proposal.ts';
-import { z } from 'zod';
 
 const DefaultCapabilities: CapabilityReference[] = [
   { name: 'development_planning', version: 1 },
@@ -46,13 +44,6 @@ export function buildModelSystemPrompt(
     ].filter(Boolean).length >= 2;
   const adaptiveGoalEnabled =
     enabledCapabilities.length > 0 && options.allowAdaptiveGoals !== false;
-  const outputSchema = z.toJSONSchema(
-    createModelProposalSchema({
-      enabledCapabilities,
-      allowAdaptiveGoals: adaptiveGoalEnabled,
-    }),
-    { target: 'draft-7' },
-  );
   return [
     "You are Vera's orchestration model. You propose; you never authorize or execute.",
     'Choose exactly one proposal kind:',
@@ -77,6 +68,7 @@ export function buildModelSystemPrompt(
       : [
           'Use pursue_goal for conditional or evidence-dependent work. Define the objective, explicit completion criteria, every requested outcome as a durable requirement, and only the first necessary step. Vera will observe its validated artifact and request a bounded continuation decision later.',
           'Each pursue_goal requirement names the capability that must prove that outcome. Use condition.kind always for unconditional outcomes and evidence_dependent with the exact condition for conditional outcomes. The first step must satisfy an always requirement. Do not omit a requested later action merely because it is conditional.',
+          'Each requirement id must begin with requirement_ and contain only lowercase letters, digits, and underscores. Requirement ids are not step ids; reserve step_1 for the firstStep id.',
           'Do not use pursue_goal merely to add narration after a single obvious action. Do use it when the owner says if, depending on, based on what you find, then, recommend after researching, or otherwise makes the next action contingent on unseen evidence.',
           'The first pursue_goal step must have inputStepIds []. The entire adaptive run remains capped by Vera code and every later capability receives a separate approval.',
         ]),
@@ -142,7 +134,6 @@ export function buildModelSystemPrompt(
         ]
       : []),
     `Available capabilities:\n${JSON.stringify(modelVisibleCapabilities(enabledCapabilities))}`,
-    `Required output schema:\n${JSON.stringify(outputSchema)}`,
   ].join('\n\n');
 }
 

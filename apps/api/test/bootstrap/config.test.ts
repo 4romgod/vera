@@ -10,6 +10,7 @@ void describe('application configuration', () => {
       provider: 'ollama',
       baseUrl: 'http://127.0.0.1:11434',
       model: 'gemma4-12b-64k:latest',
+      think: false,
       timeoutMs: 120_000,
       readinessTimeoutMs: 3_000,
       maxOutputTokens: 8_192,
@@ -23,6 +24,29 @@ void describe('application configuration', () => {
       adapters: { codexCli: { command: 'codex' } },
     });
     assert.deepEqual(config.research, { adapterId: 'disabled' });
+  });
+
+  void it('configures Ollama reasoning without coupling it to a model name', () => {
+    assert.deepEqual(
+      loadConfig({
+        VERA_MODEL_PROVIDER: 'ollama',
+        OLLAMA_MODEL: 'gpt-oss:20b',
+        OLLAMA_THINK: 'medium',
+      }).model,
+      {
+        provider: 'ollama',
+        baseUrl: 'http://127.0.0.1:11434',
+        model: 'gpt-oss:20b',
+        think: 'medium',
+        timeoutMs: 120_000,
+        readinessTimeoutMs: 3_000,
+        maxOutputTokens: 8_192,
+      },
+    );
+    assert.throws(
+      () => loadConfig({ OLLAMA_THINK: 'sometimes' }),
+      /OLLAMA_THINK/u,
+    );
   });
 
   void it('supports an independent software-change adapter and Codex override', () => {

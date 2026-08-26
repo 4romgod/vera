@@ -33,6 +33,16 @@ void describe('model decision boundary', () => {
       provider.inputs[0]?.systemPrompt ?? '',
       /faithfully restate only the requested outcome/u,
     );
+    assert.match(
+      provider.inputs[0]?.systemPrompt ?? '',
+      /requirement id must begin with requirement_/u,
+    );
+    assert.doesNotMatch(
+      provider.inputs[0]?.systemPrompt ?? '',
+      /Required output schema/u,
+    );
+    assert.ok((provider.inputs[0]?.systemPrompt.length ?? Infinity) < 15_000);
+    assert.equal(typeof provider.inputs[0]?.outputSchema, 'object');
     assert.deepEqual(JSON.parse(provider.inputs[0]?.message ?? '{}'), {
       ownerMessage: 'plan request IDs',
       temporalContext,
@@ -361,6 +371,65 @@ void describe('model decision boundary', () => {
       [
         ['web_research', 'always'],
         ['personal_reminder_management', 'evidence_dependent'],
+      ],
+    );
+  });
+
+  void it('derives a missing unconditional requirement from the proposed first step', async () => {
+    const provider = new FakeModelProvider({
+      schemaVersion: 1,
+      kind: 'pursue_goal',
+      decisionSummary: 'Research first, then act on the evidence.',
+      goal: {
+        schemaVersion: 1,
+        objective: 'Research the forecast and conditionally create a reminder.',
+        summary: 'Observe the forecast before creating the reminder.',
+        completionCriteria:
+          'Obtain the forecast and create a reminder only if rain is expected.',
+        requirements: [
+          {
+            id: 'requirement_reminder',
+            description: 'Create a reminder if rain is expected.',
+            capability: 'personal_reminder_management',
+            version: 1,
+            condition: {
+              kind: 'evidence_dependent',
+              description: 'The forecast predicts rain.',
+            },
+          },
+        ],
+        firstStep: {
+          id: 'step_1',
+          purpose: 'Research the forecast.',
+          inputStepIds: [],
+          capability: 'web_research',
+          version: 1,
+          arguments: { objective: 'Check whether rain is expected tomorrow.' },
+        },
+      },
+    });
+
+    const result = await createEvaluateModelDecision(provider, undefined, {
+      enabledCapabilities: [
+        { name: 'web_research', version: 1 },
+        { name: 'personal_reminder_management', version: 1 },
+      ],
+    })('Research the forecast and if it rains remind me.');
+
+    assert.equal(result.decision.kind, 'adaptive_goal_planned');
+    assert.deepEqual(
+      result.decision.plan.requirements.map(({ id, capability, condition }) => [
+        id,
+        capability,
+        condition.kind,
+      ]),
+      [
+        ['requirement_first_step', 'web_research', 'always'],
+        [
+          'requirement_reminder',
+          'personal_reminder_management',
+          'evidence_dependent',
+        ],
       ],
     );
   });

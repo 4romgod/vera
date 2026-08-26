@@ -159,9 +159,21 @@ time.
 Required CI must not download Ollama model weights or invoke a paid or
 third-party model or specialist. Real Ollama, OpenAI, and Gemini conformance,
 real specialist disclosure, and subjective output-quality evaluation are
-separate manual or explicitly triggered evidence classes. A future self-hosted model workflow must
-not become a required pull-request check until its trust boundary, availability,
-and runtime budget are deliberately accepted.
+separate manual or explicitly triggered evidence classes. A future self-hosted
+model workflow must not become a required pull-request check until its trust
+boundary, availability, and runtime budget are deliberately accepted.
+
+Model qualification has two explicit manual tiers. `npm run test:model`
+exercises provider-neutral routing, planning, and adaptive-continuation
+contracts directly; `VERA_MODEL_CONFORMANCE_RUNS` repeats those cases and
+reports every failure plus aggregate pass rate, latency, and token use. After
+that boundary passes, `npm run verify:live-model` runs the selected model
+through compiled production code, HTTP, durable workers, isolated MongoDB and
+Redis state, approval gates, artifacts, conversation projection, and an
+adaptive goal. The latter requires `VERA_PROFILE`, cleans its temporary state,
+uses deterministic specialist adapters, and does not download a model or make
+live public-research calls. Neither check records or reports private reasoning
+content.
 
 ## Context rules for AI builders
 

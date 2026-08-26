@@ -5,10 +5,14 @@ import { z } from 'zod';
 import { ModelProviderError } from '../../../../src/ports/model/model-provider.ts';
 import { OllamaModelProvider } from '../../../../src/adapters/outbound/model/ollama-model-provider.ts';
 
-function providerWith(fetchImplementation: typeof globalThis.fetch) {
+function providerWith(
+  fetchImplementation: typeof globalThis.fetch,
+  think: false | true | 'low' | 'medium' | 'high' = false,
+) {
   return new OllamaModelProvider({
     baseUrl: 'http://ollama.test',
     model: 'test-model',
+    think,
     timeoutMs: 1_000,
     readinessTimeoutMs: 250,
     maxOutputTokens: 2_048,
@@ -143,6 +147,36 @@ void describe('Ollama model adapter', () => {
     assert.equal(containsObjectKey(parsedRequest.format, 'minItems'), true);
   });
 
+  void it('passes through a configured reasoning level without exposing the trace', async () => {
+    let requestBody: unknown;
+    const provider = providerWith((_input, init) => {
+      if (typeof init?.body !== 'string') {
+        throw new TypeError('Expected a string request body');
+      }
+      requestBody = JSON.parse(init.body);
+      return Promise.resolve(
+        Response.json({
+          model: 'test-model',
+          message: {
+            content: JSON.stringify({ schemaVersion: 1 }),
+            thinking: 'private provider reasoning trace',
+          },
+          prompt_eval_count: 12,
+          eval_count: 7,
+        }),
+      );
+    }, 'medium');
+
+    const generation = await generate(provider);
+
+    const parsedRequest = z
+      .object({ think: z.union([z.boolean(), z.string()]) })
+      .parse(requestBody);
+    assert.equal(parsedRequest.think, 'medium');
+    assert.deepEqual(generation.candidate, { schemaVersion: 1 });
+    assert.equal('thinking' in generation, false);
+  });
+
   void it('classifies malformed provider JSON', async () => {
     const provider = providerWith(() =>
       Promise.resolve(
@@ -159,6 +193,54 @@ void describe('Ollama model adapter', () => {
         error instanceof ModelProviderError &&
         error.code === 'provider_response_invalid',
     );
+  });
+
+  void it('reports an empty final response without exposing its reasoning trace', async () => {
+    const provider = providerWith(() =>
+      Promise.resolve(
+        Response.json({
+          model: 'test-model',
+          message: {
+            content: '',
+            thinking: 'private provider reasoning trace',
+          },
+          done: true,
+          done_reason: 'stop',
+          eval_count: 42,
+        }),
+      ),
+    );
+
+    await assert.rejects(generate(provider), (error: unknown) => {
+      assert.ok(error instanceof ModelProviderError);
+      assert.equal(error.code, 'provider_response_invalid');
+      assert.match(error.message, /empty final response/u);
+      assert.match(error.message, /done reason: stop/u);
+      assert.match(error.message, /output tokens: 42/u);
+      assert.doesNotMatch(error.message, /private provider reasoning/u);
+      return true;
+    });
+  });
+
+  void it('reports output-token exhaustion separately from malformed JSON', async () => {
+    const provider = providerWith(() =>
+      Promise.resolve(
+        Response.json({
+          model: 'test-model',
+          message: { content: '' },
+          done: true,
+          done_reason: 'length',
+          eval_count: 2_048,
+        }),
+      ),
+    );
+
+    await assert.rejects(generate(provider), (error: unknown) => {
+      assert.ok(error instanceof ModelProviderError);
+      assert.equal(error.code, 'provider_response_invalid');
+      assert.match(error.message, /output-token ceiling/u);
+      return true;
+    });
   });
 
   void it('retries with same-provider JSON mode when Ollama rejects the schema grammar', async () => {

@@ -21,10 +21,16 @@ import { buildModelSystemPrompt } from './model-system-prompt.ts';
 import type { ModelProvider } from '../../ports/model/model-provider.ts';
 import type { CapabilityReference } from '../../domain/capabilities/capability-registry.ts';
 import { z } from 'zod';
-import { GoalPlanSchema } from '../../domain/goals/goal-plan.ts';
+import {
+  GoalPlanSchema,
+  GoalStepSchema,
+} from '../../domain/goals/goal-plan.ts';
 import { PersonalTaskActionArgumentsSchema } from '../../domain/personal-tasks/personal-task.ts';
 import { ReminderActionArgumentsSchema } from '../../domain/reminders/reminder.ts';
-import { AdaptiveGoalPlanSchema } from '../../domain/goals/adaptive-goal.ts';
+import {
+  AdaptiveGoalPlanSchema,
+  AdaptiveGoalRequirementSchema,
+} from '../../domain/goals/adaptive-goal.ts';
 import type { AdaptiveGoalPlan } from '../../domain/goals/adaptive-goal.ts';
 
 export type EvaluateModelDecision = (
@@ -37,6 +43,61 @@ export type EvaluateModelDecision = (
 ) => Promise<DecisionResult>;
 
 type AdaptiveRequirement = AdaptiveGoalPlan['requirements'][number];
+
+const RepairableAdaptiveGoalCandidateSchema = z
+  .object({
+    kind: z.literal('pursue_goal'),
+    goal: z
+      .object({
+        requirements: z.array(AdaptiveGoalRequirementSchema).max(3),
+        firstStep: GoalStepSchema,
+      })
+      .loose(),
+  })
+  .loose();
+
+function restoreFirstStepRequirement(candidate: unknown): unknown {
+  const parsed = RepairableAdaptiveGoalCandidateSchema.safeParse(candidate);
+  if (!parsed.success) return candidate;
+
+  const { firstStep, requirements } = parsed.data.goal;
+  if (
+    requirements.some(
+      (requirement) =>
+        requirement.capability === firstStep.capability &&
+        requirement.version === firstStep.version &&
+        requirement.condition.kind === 'always',
+    ) ||
+    requirements.length >= 3
+  ) {
+    return candidate;
+  }
+
+  const existingIds = new Set(requirements.map(({ id }) => id));
+  let id = 'requirement_first_step';
+  let suffix = 2;
+  while (existingIds.has(id)) {
+    id = `requirement_first_step_${String(suffix)}`;
+    suffix += 1;
+  }
+
+  return {
+    ...parsed.data,
+    goal: {
+      ...parsed.data.goal,
+      requirements: [
+        {
+          id,
+          description: firstStep.purpose,
+          capability: firstStep.capability,
+          version: firstStep.version,
+          condition: { kind: 'always' as const },
+        },
+        ...requirements,
+      ],
+    },
+  };
+}
 
 function inferExplicitAdaptiveRequirements(
   ownerMessage: string,
@@ -357,7 +418,10 @@ export function createEvaluateModelDecision(
       }),
       outputSchema: generationJsonSchema,
     });
-    const enabledProposal = generationSchema.safeParse(generation.candidate);
+    const normalizedCandidate = restoreFirstStepRequirement(
+      generation.candidate,
+    );
+    const enabledProposal = generationSchema.safeParse(normalizedCandidate);
     const validatedProposal = enabledProposal.success
       ? ModelProposalSchema.safeParse(enabledProposal.data)
       : enabledProposal;
