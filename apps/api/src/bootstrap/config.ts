@@ -13,6 +13,9 @@ const EnvironmentSchema = z.object({
     .default('ollama'),
   OLLAMA_BASE_URL: z.url().default('http://127.0.0.1:11434'),
   OLLAMA_MODEL: z.string().min(1).default('gemma4-12b-64k:latest'),
+  OLLAMA_THINK: z
+    .enum(['false', 'true', 'low', 'medium', 'high'])
+    .default('false'),
   OPENAI_BASE_URL: z.url().default('https://api.openai.com/v1'),
   OPENAI_API_KEY: z.string().trim().min(1).optional(),
   OPENAI_MODEL: z.string().trim().min(1).default('gpt-5-mini'),
@@ -204,6 +207,12 @@ function createModelConfig(
         provider: 'ollama',
         baseUrl: normalizeProviderBaseUrl('ollama', parsed.OLLAMA_BASE_URL),
         model: parsed.OLLAMA_MODEL,
+        think:
+          parsed.OLLAMA_THINK === 'false'
+            ? false
+            : parsed.OLLAMA_THINK === 'true'
+              ? true
+              : parsed.OLLAMA_THINK,
         ...shared,
       };
     case 'openai':

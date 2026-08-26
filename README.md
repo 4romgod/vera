@@ -365,8 +365,15 @@ OPENAI_MODEL=gpt-5-mini VERA_PROFILE=openai npm run dev
 non-production `deterministic` adapter. OpenAI defaults to `gpt-5-mini`; Gemini
 defaults to `gemini-2.5-flash`; both model names remain configurable because
 account access and provider aliases change. `MODEL_MAX_OUTPUT_TOKENS` is sent as
-the provider output ceiling. `GET /ready` verifies the configured credentials
-and model without running inference.
+the provider output ceiling. `OLLAMA_THINK` accepts `false`, `true`, `low`,
+`medium`, or `high` and defaults to `false` for compatibility. Reasoning
+models such as GPT-OSS require a supported reasoning level; Vera consumes only
+their final structured content and does not log, persist, or expose Ollama's
+separate reasoning trace. Use Vera's model conformance command to select the
+level for the exact model and Ollama build; `medium` is the qualified starting
+point for GPT-OSS rather than a model-name rule in application code. `GET
+/ready` verifies the configured credentials and model without running
+inference.
 
 Capability adapters are selected independently. `VERA_RESEARCH_ADAPTER`
 accepts `disabled` (the default), `openai_web_search`, or the non-production
@@ -419,11 +426,38 @@ VERA_PROFILE=gemini npm run test:model
 VERA_PROFILE=ollama npm run test:model
 ```
 
+One successful sample is useful but not enough to qualify a probabilistic
+model. Repeat the same provider-neutral cases without stopping at the first
+failure and emit an aggregate pass rate, latency, and token-usage summary:
+
+```bash
+VERA_MODEL_CONFORMANCE_RUNS=3 \
+VERA_RESEARCH_ADAPTER=deterministic_research \
+VERA_PROFILE=ollama \
+npm run test:model
+```
+
 For an owner-controlled profile with web research enabled, this also verifies
 the adaptive boundary end to end: the brain must plan a conditional
 research-to-reminder goal and select the reminder after positive research
 evidence. Profiles that cannot run adaptive orchestration report that case as
 skipped rather than implying it was tested.
+
+After conformance passes, qualify the same profile through compiled production
+code, the HTTP API, durable worker, MongoDB, Redis, approvals, artifacts,
+conversation reply projection, and an adaptive research-to-reminder goal:
+
+```bash
+VERA_PROFILE=ollama npm run verify:live-model
+```
+
+This command requires an explicit profile, uses a unique temporary MongoDB
+database, removes its Redis scratchpads and database afterward, and never
+downloads model weights. Specialist execution remains deterministic during
+this check, so no public research or coding service is contacted; only the
+selected orchestration model is live. Use `VERA_LIVE_MODEL_TIMEOUT_MS` to raise
+the default four-minute per-operation deadline for slower hardware. This is a
+deliberate local qualification check, not required pull-request CI.
 
 The compatibility command for the default local provider remains:
 

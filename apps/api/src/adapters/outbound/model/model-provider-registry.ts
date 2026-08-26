@@ -2,6 +2,7 @@ import { DeterministicModelProvider } from './deterministic-model-provider.ts';
 import { GeminiModelProvider } from './gemini-model-provider.ts';
 import type { ModelProvider } from '../../../ports/model/model-provider.ts';
 import { OllamaModelProvider } from './ollama-model-provider.ts';
+import type { OllamaThink } from './ollama-model-provider.ts';
 import { OpenAiModelProvider } from './openai-model-provider.ts';
 
 export type ModelProviderId = 'ollama' | 'openai' | 'gemini' | 'deterministic';
@@ -15,7 +16,7 @@ type RemoteModelConfig = {
 };
 
 export type ModelConfig =
-  | ({ provider: 'ollama' } & RemoteModelConfig)
+  | ({ provider: 'ollama'; think: OllamaThink } & RemoteModelConfig)
   | ({ provider: 'openai'; apiKey: string } & RemoteModelConfig)
   | ({ provider: 'gemini'; apiKey: string } & RemoteModelConfig)
   | { provider: 'deterministic'; model: 'deterministic-v1' };

@@ -234,7 +234,13 @@ unsupported validation keywords. If Ollama rejects that grammar, the adapter
 may retry the same request against the same Ollama model in JSON mode; it must
 not select another provider. In every case, the unmodified Vera Zod schema is
 the authoritative post-generation validator, so unsupported provider grammar
-features never become relaxed domain contracts.
+features never become relaxed domain contracts. The schema travels through the
+model-provider port and is not duplicated as prompt prose: the prompt describes
+selection policy and capability semantics, while the separate schema defines
+the machine-readable output contract. Ollama reasoning mode is explicit
+configuration because model families differ: the adapter forwards the selected
+boolean or reasoning level, consumes only final structured content, and
+discards the provider's separate reasoning trace.
 
 The canonical distinction between a model provider such as Ollama and a Vera
 capability is defined in the [Capability Model](capability-model.md#model-providers).
@@ -547,6 +553,15 @@ compiled persistent-mode journey verifies artifact and complete dialogue
 survival across process restart plus Redis projection reconstruction. The owner
 accepted the exact real-cloud-Codex disclosure and resulting artifact
 on 25 August 2026, completing the V1 evidence boundary.
+
+Live model qualification remains outside required CI. Direct conformance can
+repeat the provider-neutral decision, planning, and adaptive-continuation cases
+and reports aggregate reliability, latency, and token use. A separate compiled
+journey then verifies the selected orchestration model through the real HTTP,
+worker, MongoDB, Redis, approval, artifact, conversation, and adaptive-goal
+boundaries while keeping specialist adapters deterministic. Qualification
+summaries may expose final outputs and normalized usage metadata but never the
+provider's private reasoning trace.
 
 The same lifecycle now also implements `software_change@1`. Its Codex adapter
 uses a workspace-write sandbox over a disposable approved snapshot, while the

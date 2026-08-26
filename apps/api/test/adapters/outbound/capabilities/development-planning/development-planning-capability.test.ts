@@ -87,6 +87,12 @@ void describe('development planning capability', () => {
       provider.inputs[0]?.systemPrompt ?? '',
       /MUST return affectedProjectAreas as \[\], assumptions as \[\]/u,
     );
+    assert.doesNotMatch(
+      provider.inputs[0]?.systemPrompt ?? '',
+      /Required output schema/u,
+    );
+    assert.ok((provider.inputs[0]?.systemPrompt.length ?? Infinity) < 5_000);
+    assert.equal(typeof provider.inputs[0]?.outputSchema, 'object');
     assert.deepEqual(JSON.parse(provider.inputs[0]?.message ?? '{}'), {
       invocationId: 'invocation_test',
       project: invocation.project,

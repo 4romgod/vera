@@ -12,6 +12,14 @@ import {
 const OllamaChatResponseSchema = z.looseObject({
   model: z.string().optional(),
   message: z.looseObject({ content: z.string() }),
+  done: z.boolean().optional(),
+  done_reason: z
+    .string()
+    .trim()
+    .min(1)
+    .max(64)
+    .regex(/^[a-z][a-z0-9_-]*$/u)
+    .optional(),
   prompt_eval_count: z.number().int().nonnegative().optional(),
   eval_count: z.number().int().nonnegative().optional(),
 });
@@ -32,11 +40,14 @@ const OllamaTagsResponseSchema = z.looseObject({
 export type OllamaModelProviderOptions = {
   baseUrl: string;
   model: string;
+  think: OllamaThink;
   timeoutMs: number;
   readinessTimeoutMs: number;
   maxOutputTokens?: number;
   fetch?: typeof globalThis.fetch;
 };
+
+export type OllamaThink = boolean | 'low' | 'medium' | 'high';
 
 function isTimeoutError(error: unknown): boolean {
   return (
@@ -103,6 +114,7 @@ export class OllamaModelProvider implements ModelProvider {
   public readonly model: string;
 
   private readonly baseUrl: string;
+  private readonly think: OllamaThink;
   private readonly timeoutMs: number;
   private readonly readinessTimeoutMs: number;
   private readonly maxOutputTokens: number | undefined;
@@ -111,6 +123,7 @@ export class OllamaModelProvider implements ModelProvider {
   public constructor(options: OllamaModelProviderOptions) {
     this.baseUrl = options.baseUrl;
     this.model = options.model;
+    this.think = options.think;
     this.timeoutMs = options.timeoutMs;
     this.readinessTimeoutMs = options.readinessTimeoutMs;
     this.maxOutputTokens = options.maxOutputTokens;
@@ -189,7 +202,7 @@ export class OllamaModelProvider implements ModelProvider {
             ],
             format,
             stream: false,
-            think: false,
+            think: this.think,
             options: {
               temperature: 0,
               ...(this.maxOutputTokens === undefined
@@ -225,15 +238,40 @@ export class OllamaModelProvider implements ModelProvider {
     }
 
     const body = parsedBody.data;
+    if (body.message.content.trim().length === 0) {
+      if (body.done_reason === 'length') {
+        throw new ModelProviderError(
+          `Ollama exhausted the configured output-token ceiling before completing structured JSON${body.eval_count === undefined ? '' : ` (output tokens: ${String(body.eval_count)})`}`,
+          'provider_response_invalid',
+        );
+      }
+      const completion = [
+        body.done_reason === undefined
+          ? undefined
+          : `done reason: ${body.done_reason}`,
+        body.eval_count === undefined
+          ? undefined
+          : `output tokens: ${String(body.eval_count)}`,
+      ]
+        .filter((value) => value !== undefined)
+        .join(', ');
+      throw new ModelProviderError(
+        `Ollama returned an empty final response${completion.length === 0 ? '' : ` (${completion})`}`,
+        'provider_response_invalid',
+      );
+    }
+
     let candidate: unknown;
     try {
       candidate = JSON.parse(body.message.content);
     } catch (error) {
-      throw new ModelProviderError(
-        'Ollama returned malformed JSON despite structured-output mode',
-        'provider_response_invalid',
-        { cause: error },
-      );
+      const message =
+        body.done_reason === 'length'
+          ? 'Ollama exhausted the configured output-token ceiling before completing structured JSON'
+          : 'Ollama returned malformed JSON despite structured-output mode';
+      throw new ModelProviderError(message, 'provider_response_invalid', {
+        cause: error,
+      });
     }
 
     return {
