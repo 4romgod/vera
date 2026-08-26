@@ -1,8 +1,11 @@
+import { Check, ShieldCheck, X } from 'lucide-react-native';
 import { Pressable, Text, View } from 'react-native';
 
 import type { TaskResource } from '@vera/client';
 
 import { StructuredValue } from '@/components/structured-value';
+import { palette, radius, spacing } from '@/design/tokens';
+import { humanizeIdentifier } from '@/components/assistant/presentation';
 
 type Approval = NonNullable<TaskResource['approval']>;
 
@@ -15,34 +18,79 @@ export function ApprovalCard(props: {
   return (
     <View
       style={{
-        gap: 14,
+        gap: spacing.lg,
         borderWidth: 1,
-        borderColor: '#356352',
+        borderColor: palette.accentLine,
         borderCurve: 'continuous',
-        borderRadius: 18,
-        padding: 18,
-        backgroundColor: '#101a17',
+        borderRadius: radius.lg,
+        padding: spacing.lg,
+        backgroundColor: palette.accentSurface,
       }}
     >
-      <View style={{ gap: 4 }}>
-        <Text
-          selectable
-          style={{ color: '#65d6aa', fontSize: 11, fontWeight: '700' }}
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'flex-start',
+          gap: spacing.md,
+        }}
+      >
+        <View
+          style={{
+            width: 42,
+            height: 42,
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: radius.md,
+            backgroundColor: palette.accentSurfaceStrong,
+          }}
         >
-          YOUR APPROVAL IS REQUIRED
-        </Text>
-        <Text selectable style={{ color: '#f1f5f3', fontSize: 20 }}>
-          {props.approval.capability.name.replaceAll('_', ' ')}
-        </Text>
-        <Text selectable style={{ color: '#98a49f', lineHeight: 20 }}>
-          Vera will execute only the exact arguments and authority shown here.
-        </Text>
+          <ShieldCheck color={palette.accent} size={21} strokeWidth={1.9} />
+        </View>
+        <View style={{ minWidth: 0, flex: 1, gap: 4 }}>
+          <Text
+            selectable
+            style={{
+              color: palette.accent,
+              fontSize: 10,
+              fontWeight: '700',
+              letterSpacing: 0.8,
+            }}
+          >
+            YOUR APPROVAL IS REQUIRED
+          </Text>
+          <Text
+            selectable
+            style={{ color: palette.text, fontSize: 20, fontWeight: '700' }}
+          >
+            {humanizeIdentifier(props.approval.capability.name)}
+          </Text>
+          <Text
+            selectable
+            style={{ color: palette.textSoft, fontSize: 13, lineHeight: 20 }}
+          >
+            Review what Vera wants to do. Approval applies only to this exact
+            action.
+          </Text>
+        </View>
       </View>
 
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+      <View
+        style={{
+          flexDirection: 'row',
+          flexWrap: 'wrap',
+          gap: spacing.md,
+          borderWidth: 1,
+          borderColor: palette.lineSoft,
+          borderRadius: radius.md,
+          padding: spacing.md,
+          backgroundColor: palette.canvasRaised,
+        }}
+      >
         <Fact
           label="Destination"
-          value={props.approval.destination?.adapterId ?? 'local'}
+          value={humanizeIdentifier(
+            props.approval.destination?.adapterId ?? 'local',
+          )}
         />
         <Fact
           label="Network"
@@ -50,38 +98,57 @@ export function ApprovalCard(props: {
         />
         <Fact
           label="Effects"
-          value={effects.length === 0 ? 'read only' : effects.join(', ')}
+          value={
+            effects.length === 0
+              ? 'Read only'
+              : effects.map(humanizeIdentifier).join(', ')
+          }
         />
       </View>
 
       <View
         style={{
-          gap: 10,
+          gap: spacing.md,
           borderWidth: 1,
-          borderColor: '#1f2b26',
-          borderRadius: 12,
-          padding: 14,
-          backgroundColor: '#090e0c',
+          borderColor: palette.lineSoft,
+          borderRadius: radius.md,
+          padding: spacing.md,
+          backgroundColor: palette.canvas,
         }}
       >
-        <Text selectable style={{ color: '#6f7d76', fontSize: 9 }}>
+        <Text
+          selectable
+          style={{
+            color: palette.muted,
+            fontSize: 10,
+            fontWeight: '700',
+            letterSpacing: 0.8,
+          }}
+        >
           EXACT ARGUMENTS
         </Text>
         <StructuredValue value={props.approval.proposedArguments} />
       </View>
 
       <View
-        style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 10 }}
+        style={{
+          flexDirection: 'row',
+          justifyContent: 'flex-end',
+          flexWrap: 'wrap',
+          gap: spacing.sm,
+        }}
       >
         <ActionButton
           disabled={props.busy}
           label="Reject"
+          icon={X}
           secondary
           onPress={() => props.onDecision('rejected')}
         />
         <ActionButton
           disabled={props.busy}
           label="Approve exact action"
+          icon={Check}
           onPress={() => props.onDecision('approved')}
         />
       </View>
@@ -91,11 +158,19 @@ export function ApprovalCard(props: {
 
 function Fact(props: { label: string; value: string }) {
   return (
-    <View style={{ minWidth: 120, flexGrow: 1, gap: 3 }}>
-      <Text selectable style={{ color: '#66736e', fontSize: 10 }}>
+    <View style={{ minWidth: 112, flexGrow: 1, gap: 4 }}>
+      <Text
+        selectable
+        style={{
+          color: palette.faint,
+          fontSize: 9,
+          fontWeight: '700',
+          letterSpacing: 0.7,
+        }}
+      >
         {props.label.toUpperCase()}
       </Text>
-      <Text selectable style={{ color: '#d5ddd9', fontSize: 12 }}>
+      <Text selectable style={{ color: palette.textSoft, fontSize: 12 }}>
         {props.value}
       </Text>
     </View>
@@ -104,10 +179,12 @@ function Fact(props: { label: string; value: string }) {
 
 function ActionButton(props: {
   label: string;
+  icon: typeof Check;
   disabled: boolean;
   secondary?: boolean;
   onPress: () => void;
 }) {
+  const Icon = props.icon;
   return (
     <Pressable
       accessibilityRole="button"
@@ -115,19 +192,31 @@ function ActionButton(props: {
       onPress={props.onPress}
       style={({ pressed }) => ({
         borderWidth: 1,
-        borderColor: props.secondary ? '#344039' : '#54c99d',
+        minHeight: 44,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: spacing.sm,
+        borderColor: props.secondary ? palette.line : palette.accent,
         borderCurve: 'continuous',
-        borderRadius: 11,
-        paddingHorizontal: 14,
-        paddingVertical: 10,
+        borderRadius: radius.md,
+        paddingHorizontal: spacing.lg,
+        paddingVertical: spacing.sm,
         opacity: props.disabled ? 0.45 : pressed ? 0.75 : 1,
-        backgroundColor: props.secondary ? 'transparent' : '#173e31',
+        backgroundColor: props.secondary
+          ? 'transparent'
+          : palette.accentSurfaceStrong,
       })}
     >
+      <Icon
+        color={props.secondary ? palette.textSoft : palette.accentStrong}
+        size={17}
+        strokeWidth={1.9}
+      />
       <Text
         selectable
         style={{
-          color: props.secondary ? '#aab4af' : '#dff8ee',
+          color: props.secondary ? palette.textSoft : palette.text,
           fontWeight: '600',
         }}
       >

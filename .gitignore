@@ -5,5 +5,7 @@
 !.env.*.example
 dist/
 .expo/
+apps/frontend/android/
+apps/frontend/ios/
 node_modules/
 *.log

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetch as expoFetch } from 'expo/fetch';
+import { AlertCircle, X } from 'lucide-react-native';
 import {
   ActivityIndicator,
+  FlatList,
+  KeyboardAvoidingView,
   Pressable,
-  ScrollView,
   Text,
-  TextInput,
   View,
   useWindowDimensions,
 } from 'react-native';
@@ -13,7 +14,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
   VeraClient,
+  type ConversationMessageResource,
   type ConversationResource,
+  type ConversationSummaryResource,
   type MemoryResource,
   type NotificationResource,
   type PersonalTaskResource,
@@ -23,13 +26,15 @@ import {
 } from '@vera/client';
 
 import { ApprovalCard } from '@/components/approval-card';
+import { AssistantHeader } from '@/components/assistant/assistant-header';
+import { ConversationSidebar } from '@/components/assistant/conversation-sidebar';
+import { ConversationView } from '@/components/assistant/conversation-view';
+import { MessageComposer } from '@/components/assistant/message-composer';
+import { useTaskDetails } from '@/components/assistant/use-task-details';
 import { ResourcePanel, type ResourceTab } from '@/components/resource-panel';
-
-type ConversationSummary = {
-  id: string;
-  title?: string;
-  messageCount?: number;
-};
+import { layout, palette, radius, shadow, spacing } from '@/design/tokens';
+import { useSpokenReply } from '@/voice/use-spoken-reply';
+import { useVoiceInput } from '@/voice/use-voice-input';
 
 const configuredApiUrl = process.env.EXPO_PUBLIC_VERA_API_URL?.trim();
 const defaultApiUrl =
@@ -40,6 +45,13 @@ const apiUrl =
   configuredApiUrl === undefined || configuredApiUrl.length === 0
     ? defaultApiUrl
     : configuredApiUrl;
+const configuredSpeechLocale =
+  process.env.EXPO_PUBLIC_VERA_SPEECH_LOCALE?.trim();
+const speechLocale =
+  configuredSpeechLocale === undefined || configuredSpeechLocale.length === 0
+    ? 'en-US'
+    : configuredSpeechLocale;
+const EMPTY_MESSAGES: ConversationMessageResource[] = [];
 
 function requestKey(): string {
   return `assistant-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
@@ -48,7 +60,7 @@ function requestKey(): string {
 export function AssistantScreen() {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const compact = width < 880;
+  const compact = width < layout.compactBreakpoint;
   const client = useMemo(
     () =>
       new VeraClient({
@@ -57,7 +69,9 @@ export function AssistantScreen() {
       }),
     [],
   );
-  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [conversations, setConversations] = useState<
+    ConversationSummaryResource[]
+  >([]);
   const [conversation, setConversation] = useState<ConversationResource>();
   const [projects, setProjects] = useState<ProjectResource[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>();
@@ -68,22 +82,43 @@ export function AssistantScreen() {
   const [notifications, setNotifications] = useState<NotificationResource[]>(
     [],
   );
-  const [drawer, setDrawer] = useState<{ open: boolean; tab: ResourceTab }>({
-    open: false,
-    tab: 'memory',
-  });
+  const [resources, setResources] = useState<{
+    open: boolean;
+    tab: ResourceTab;
+  }>({ open: false, tab: 'memory' });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [draft, setDraft] = useState('');
+  const [draftFromVoice, setDraftFromVoice] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-  const messageScroll = useRef<ScrollView>(null);
+  const messageList = useRef<FlatList<ConversationMessageResource>>(null);
   const followGeneration = useRef(0);
+  const followAbort = useRef<AbortController | undefined>(undefined);
+  const voiceRunIds = useRef(new Set<string>());
   const mounted = useRef(true);
+  const spokenReply = useSpokenReply({
+    locale: speechLocale,
+    onError: setError,
+  });
+  const voiceInput = useVoiceInput({
+    locale: speechLocale,
+    onTranscript: (transcript) => {
+      setDraft(transcript);
+      setDraftFromVoice(true);
+    },
+    onError: setError,
+  });
+  const messages = conversation?.messages ?? EMPTY_MESSAGES;
+  const taskDetails = useTaskDetails(client, messages);
+  const unreadNotifications = notifications.filter(
+    (notification) => notification.status === 'unread',
+  ).length;
 
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
+      followAbort.current?.abort();
     };
   }, []);
 
@@ -104,7 +139,7 @@ export function AssistantScreen() {
       client.listNotifications({ limit: 50 }),
     ]);
     if (!mounted.current) return;
-    setConversations(conversationPage.conversations as ConversationSummary[]);
+    setConversations(conversationPage.conversations);
     setProjects(projectPage.projects);
     setMemories(memoryPage.memories);
     setTasks(taskPage.tasks);
@@ -121,21 +156,13 @@ export function AssistantScreen() {
 
   useEffect(() => {
     let active = true;
-    const refresh = async () => {
-      try {
-        await refreshResources();
+    void refreshResources()
+      .then(() => {
         if (active) setError(undefined);
-      } catch (cause) {
-        if (active) {
-          setError(
-            cause instanceof Error
-              ? cause.message
-              : 'Unable to connect to Vera.',
-          );
-        }
-      }
-    };
-    void refresh();
+      })
+      .catch((cause: unknown) => {
+        if (active) setError(errorMessage(cause, 'Unable to connect to Vera.'));
+      });
     return () => {
       active = false;
     };
@@ -145,43 +172,55 @@ export function AssistantScreen() {
     const interval = setInterval(() => {
       void refreshNotifications().catch(() => {
         // The durable inbox remains visible at its last successful snapshot.
-        // Foreground commands and full refreshes surface connection failures.
       });
     }, 5_000);
     return () => clearInterval(interval);
   }, [refreshNotifications]);
 
   useEffect(() => {
-    messageScroll.current?.scrollToEnd({ animated: true });
-  }, [conversation?.messages.length, activeRun?.runStatus]);
+    if (messages.length > 0) {
+      messageList.current?.scrollToEnd({ animated: true });
+    }
+  }, [activeRun?.runStatus, messages.length]);
 
   async function selectConversation(id: string): Promise<void> {
     const generation = followGeneration.current + 1;
     followGeneration.current = generation;
+    followAbort.current?.abort();
+    voiceInput.abort();
+    void spokenReply.stop();
+    voiceRunIds.current.clear();
     try {
       const selected = await client.getConversation(id);
       if (followGeneration.current !== generation) return;
       setConversation(selected);
+      setSelectedProjectId(
+        selected.messages
+          .toReversed()
+          .find((message) => message.projectId !== undefined)?.projectId,
+      );
       setActiveRun(undefined);
       setSidebarOpen(false);
       setError(undefined);
     } catch (cause) {
       if (followGeneration.current === generation) {
-        setError(
-          cause instanceof Error
-            ? cause.message
-            : 'Conversation could not be loaded.',
-        );
+        setError(errorMessage(cause, 'Conversation could not be loaded.'));
       }
     }
   }
 
   function startConversation(): void {
     followGeneration.current += 1;
+    followAbort.current?.abort();
+    voiceInput.abort();
+    void spokenReply.stop();
+    voiceRunIds.current.clear();
     setConversation(undefined);
     setActiveRun(undefined);
     setSelectedProjectId(undefined);
     setSidebarOpen(false);
+    setDraft('');
+    setDraftFromVoice(false);
     setError(undefined);
   }
 
@@ -200,8 +239,12 @@ export function AssistantScreen() {
   async function followRun(run: TaskResource): Promise<void> {
     const generation = followGeneration.current + 1;
     followGeneration.current = generation;
+    followAbort.current?.abort();
+    const controller = new AbortController();
+    followAbort.current = controller;
     try {
       const next = await client.waitForRun(run.runId, {
+        signal: controller.signal,
         until: (task) =>
           task.runStatus === 'awaiting_approval' ||
           (['succeeded', 'rejected', 'failed', 'cancelled'].includes(
@@ -216,28 +259,43 @@ export function AssistantScreen() {
       if (followGeneration.current !== generation) return;
       setActiveRun(next);
       if (next.runStatus !== 'awaiting_approval') {
+        let refreshedConversation: ConversationResource | undefined;
         if (next.conversationId !== undefined) {
-          setConversation(await client.getConversation(next.conversationId));
+          refreshedConversation = await client.getConversation(
+            next.conversationId,
+          );
+          setConversation(refreshedConversation);
+        }
+        if (voiceRunIds.current.delete(next.runId)) {
+          const replyId = next.conversationReply?.messageId;
+          const reply = refreshedConversation?.messages.find(
+            (message) => message.id === replyId && message.role === 'vera',
+          );
+          if (reply !== undefined)
+            void spokenReply.speak(reply.id, reply.content);
         }
         await refreshResources();
       }
     } catch (cause) {
-      if (followGeneration.current === generation) {
-        setError(
-          cause instanceof Error
-            ? cause.message
-            : 'Run progress could not be loaded.',
-        );
+      if (
+        !controller.signal.aborted &&
+        followGeneration.current === generation
+      ) {
+        setError(errorMessage(cause, 'Run progress could not be loaded.'));
       }
+    } finally {
+      if (followAbort.current === controller) followAbort.current = undefined;
     }
   }
 
   async function send(content: string): Promise<void> {
     const normalized = content.trim();
-    if (normalized.length === 0 || busy) return;
+    if (normalized.length === 0 || busy || voiceInput.phase !== 'idle') return;
+    const shouldSpeakReply = draftFromVoice;
     setBusy(true);
     setError(undefined);
     setDraft('');
+    setDraftFromVoice(false);
     try {
       const current = await ensureConversation(normalized);
       const submitted = await client.appendMessage({
@@ -248,16 +306,14 @@ export function AssistantScreen() {
           ? {}
           : { projectId: selectedProjectId }),
       });
+      if (shouldSpeakReply) voiceRunIds.current.add(submitted.runId);
       setActiveRun(submitted);
       setConversation(await client.getConversation(current.id));
       void followRun(submitted);
     } catch (cause) {
       setDraft(normalized);
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : 'Vera could not send the message.',
-      );
+      setDraftFromVoice(shouldSpeakReply);
+      setError(errorMessage(cause, 'Vera could not send the message.'));
     } finally {
       setBusy(false);
     }
@@ -275,9 +331,7 @@ export function AssistantScreen() {
       setActiveRun(decided);
       void followRun(decided);
     } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : 'Approval decision failed.',
-      );
+      setError(errorMessage(cause, 'Approval decision failed.'));
     } finally {
       setBusy(false);
     }
@@ -288,623 +342,281 @@ export function AssistantScreen() {
     setBusy(true);
     try {
       const cancelled = await client.cancelRun(activeRun.runId);
+      followAbort.current?.abort();
       followGeneration.current += 1;
+      voiceRunIds.current.delete(activeRun.runId);
       setActiveRun(cancelled);
       if (cancelled.conversationId !== undefined) {
         setConversation(await client.getConversation(cancelled.conversationId));
       }
       await refreshResources();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Cancellation failed.');
+      setError(errorMessage(cause, 'Cancellation failed.'));
     } finally {
       setBusy(false);
     }
   }
 
-  function openDrawer(tab: ResourceTab): void {
+  function openResources(tab: ResourceTab): void {
     setSidebarOpen(false);
-    setDrawer({ open: true, tab });
+    setResources({ open: true, tab });
   }
 
+  async function toggleVoiceInput(): Promise<void> {
+    setError(undefined);
+    if (voiceInput.phase === 'listening') {
+      voiceInput.stop();
+      return;
+    }
+    await spokenReply.stop();
+    await voiceInput.start(draft);
+  }
+
+  const footer = (
+    <RunFooter
+      activeRun={activeRun}
+      busy={busy}
+      onCancel={() => void cancel()}
+      onDecision={(decision) => void decide(decision)}
+    />
+  );
+
   return (
-    <ScrollView
-      contentContainerStyle={{ minHeight: '100%', backgroundColor: '#0b0e12' }}
-      contentInsetAdjustmentBehavior="automatic"
-      keyboardShouldPersistTaps="handled"
-      scrollEnabled={!compact || !sidebarOpen}
+    <View
+      style={{
+        height: '100%',
+        minHeight: compact ? undefined : 720,
+        paddingTop: compact ? insets.top : 0,
+        backgroundColor: palette.canvas,
+      }}
     >
-      <View
-        style={{
-          minHeight: 720,
-          flexDirection: compact ? 'column' : 'row',
-          paddingTop: compact ? insets.top : 0,
-          backgroundColor: '#0b0e12',
-        }}
-      >
-        {compact ? (
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              borderBottomWidth: 1,
-              borderBottomColor: '#20252c',
-              paddingHorizontal: 16,
-              paddingVertical: 12,
-            }}
-          >
-            <Pressable
-              accessibilityLabel="Toggle conversations"
-              accessibilityRole="button"
-              onPress={() => setSidebarOpen((value) => !value)}
-            >
-              <Text style={{ color: '#d9dfdc', fontSize: 22 }}>☰</Text>
-            </Pressable>
-            <Text
-              selectable
-              style={{ color: '#f0f4f2', fontSize: 18, fontWeight: '700' }}
-            >
-              Vera
-            </Text>
-            <Pressable
-              accessibilityLabel="Open memory"
-              accessibilityRole="button"
-              onPress={() => openDrawer('memory')}
-            >
-              <Text style={{ color: '#69d8ae', fontSize: 20 }}>◫</Text>
-            </Pressable>
-          </View>
-        ) : null}
+      <View style={{ minHeight: 0, flex: 1, flexDirection: 'row' }}>
+        <ConversationSidebar
+          compact={compact}
+          conversationId={conversation?.id}
+          conversations={conversations}
+          memories={memories.length}
+          notifications={unreadNotifications}
+          open={!compact || sidebarOpen}
+          tasks={tasks.length}
+          onClose={() => setSidebarOpen(false)}
+          onNew={startConversation}
+          onOpenResources={openResources}
+          onSelect={(id) => void selectConversation(id)}
+        />
 
-        {!compact ? (
-          <Sidebar
-            compact={false}
-            conversationId={conversation?.id}
-            conversations={conversations}
-            memories={memories.length}
-            notifications={
-              notifications.filter((item) => item.status === 'unread').length
-            }
-            tasks={tasks.length}
-            onNew={startConversation}
-            onOpenDrawer={openDrawer}
-            onSelect={(id) => void selectConversation(id)}
+        <KeyboardAvoidingView
+          behavior={process.env.EXPO_OS === 'ios' ? 'padding' : undefined}
+          style={{ minWidth: 0, flex: 1, backgroundColor: palette.canvas }}
+        >
+          <AssistantHeader
+            compact={compact}
+            projects={projects}
+            selectedProjectId={selectedProjectId}
+            title={conversation?.title}
+            unreadNotifications={unreadNotifications}
+            onMenu={() => setSidebarOpen(true)}
+            onResources={() => openResources('memory')}
+            onSelectProject={setSelectedProjectId}
           />
-        ) : null}
-
-        <View style={{ minWidth: 0, flex: 1 }}>
-          <View
-            style={{
-              flexDirection: compact ? 'column' : 'row',
-              alignItems: compact ? 'stretch' : 'center',
-              justifyContent: 'space-between',
-              gap: 12,
-              borderBottomWidth: 1,
-              borderBottomColor: '#20252c',
-              paddingHorizontal: compact ? 16 : 34,
-              paddingVertical: 18,
-            }}
-          >
-            <View style={{ gap: 4 }}>
-              <Text selectable style={{ color: '#63d1a6', fontSize: 10 }}>
-                CONVERSATION
-              </Text>
-              <Text
-                numberOfLines={1}
-                selectable
-                style={{ color: '#f0f3f2', fontSize: 18, fontWeight: '700' }}
-              >
-                {conversation?.title ?? 'New conversation'}
-              </Text>
-            </View>
-            <ProjectSelector
-              projects={projects}
-              selected={selectedProjectId}
-              onSelect={setSelectedProjectId}
-            />
-          </View>
-
-          <ScrollView
-            ref={messageScroll}
-            contentContainerStyle={{
-              width: '100%',
-              maxWidth: 900,
-              minHeight: compact ? 440 : 550,
-              alignSelf: 'center',
-              gap: 18,
-              padding: compact ? 18 : 36,
-            }}
-            contentInsetAdjustmentBehavior="automatic"
-          >
-            {(conversation?.messages ?? []).length === 0 ? (
-              <View
-                style={{ alignItems: 'center', gap: 12, paddingVertical: 90 }}
-              >
-                <View
-                  style={{
-                    width: 54,
-                    height: 54,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    borderWidth: 1,
-                    borderColor: '#356352',
-                    borderRadius: 18,
-                    backgroundColor: '#102019',
-                  }}
-                >
-                  <Text selectable style={{ color: '#67d7aa', fontSize: 25 }}>
-                    V
-                  </Text>
-                </View>
-                <Text selectable style={{ color: '#65d6aa', fontSize: 10 }}>
-                  READY WHEN YOU ARE
-                </Text>
-                <Text
-                  selectable
-                  style={{
-                    color: '#f3f5f4',
-                    fontSize: 28,
-                    textAlign: 'center',
-                  }}
-                >
-                  What should we get done?
-                </Text>
-                <Text
-                  selectable
-                  style={{
-                    maxWidth: 500,
-                    color: '#87928d',
-                    lineHeight: 22,
-                    textAlign: 'center',
-                  }}
-                >
-                  Ask Vera to remember a preference, research the web, manage a
-                  reminder, or work on one of your projects.
-                </Text>
-              </View>
-            ) : null}
-
-            {conversation?.messages.map((message) => (
-              <View
-                key={message.id}
-                style={{
-                  maxWidth: 760,
-                  alignSelf:
-                    message.role === 'owner' ? 'flex-end' : 'flex-start',
-                  gap: 6,
-                  borderWidth: message.role === 'owner' ? 1 : 0,
-                  borderColor: '#29322e',
-                  borderRadius: 16,
-                  padding: message.role === 'owner' ? 14 : 4,
-                  backgroundColor:
-                    message.role === 'owner' ? '#151b19' : 'transparent',
-                }}
-              >
-                <Text
-                  selectable
-                  style={{ color: '#68d6aa', fontSize: 10, fontWeight: '700' }}
-                >
-                  {message.role === 'vera' ? 'VERA' : 'YOU'}
-                </Text>
-                <Text
-                  selectable
-                  style={{ color: '#dce2df', fontSize: 16, lineHeight: 25 }}
-                >
-                  {message.content}
-                </Text>
-              </View>
-            ))}
-
-            {activeRun?.runStatus === 'awaiting_approval' &&
-            activeRun.approval?.status === 'pending' ? (
-              <ApprovalCard
-                approval={activeRun.approval}
-                busy={busy}
-                onDecision={(decision) => void decide(decision)}
-              />
-            ) : null}
-
-            {activeRun !== undefined &&
-            ![
-              'succeeded',
-              'rejected',
-              'failed',
-              'cancelled',
-              'awaiting_approval',
-            ].includes(activeRun.runStatus) ? (
-              <View
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}
-              >
-                <ActivityIndicator color="#62d0a4" size="small" />
-                <Text selectable style={{ color: '#9da7a2' }}>
-                  Vera is {activeRun.runStatus.replaceAll('_', ' ')}…
-                </Text>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => void cancel()}
-                >
-                  <Text style={{ color: '#d88484' }}>Cancel</Text>
-                </Pressable>
-              </View>
-            ) : null}
-          </ScrollView>
-
-          <View
-            style={{
-              width: '100%',
-              maxWidth: 900,
-              alignSelf: 'center',
-              flexDirection: 'row',
-              alignItems: 'flex-end',
-              gap: 10,
-              paddingHorizontal: compact ? 16 : 32,
-              paddingBottom: Math.max(insets.bottom, 18),
-            }}
-          >
-            <TextInput
-              accessibilityLabel="Message Vera"
-              multiline
-              onChangeText={setDraft}
-              onSubmitEditing={() => void send(draft)}
-              placeholder="Message Vera…"
-              placeholderTextColor="#69736f"
-              style={{
-                minHeight: 58,
-                maxHeight: 150,
-                flex: 1,
-                borderWidth: 1,
-                borderColor: '#303a35',
-                borderRadius: 17,
-                paddingHorizontal: 16,
-                paddingVertical: 14,
-                color: '#edf1ef',
-                fontSize: 16,
-                textAlignVertical: 'top',
-                backgroundColor: '#12171c',
+          <View style={{ minHeight: 0, flex: 1 }}>
+            <ConversationView
+              ref={messageList}
+              compact={compact}
+              footer={footer}
+              messages={messages}
+              speakingMessageId={spokenReply.messageId}
+              taskDetails={taskDetails}
+              onSuggestion={(prompt) => {
+                setDraft(prompt);
+                setDraftFromVoice(false);
               }}
-              value={draft}
+              onSpeak={(message) => {
+                if (spokenReply.messageId === message.id)
+                  void spokenReply.stop();
+                else {
+                  voiceInput.abort();
+                  void spokenReply.speak(message.id, message.content);
+                }
+              }}
             />
-            <Pressable
-              accessibilityLabel="Send message"
-              accessibilityRole="button"
-              disabled={busy || draft.trim().length === 0}
-              onPress={() => void send(draft)}
-              style={({ pressed }) => ({
-                width: 54,
-                height: 54,
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderRadius: 17,
-                opacity:
-                  busy || draft.trim().length === 0 ? 0.35 : pressed ? 0.7 : 1,
-                backgroundColor: '#225b45',
-              })}
-            >
-              <Text style={{ color: '#e8fff6', fontSize: 22 }}>↑</Text>
-            </Pressable>
           </View>
-        </View>
+          <MessageComposer
+            bottomInset={compact ? insets.bottom : 0}
+            busy={busy}
+            compact={compact}
+            draft={draft}
+            draftFromVoice={draftFromVoice}
+            voicePhase={voiceInput.phase}
+            onChange={(value) => {
+              setDraft(value);
+              if (value.trim().length === 0) setDraftFromVoice(false);
+            }}
+            onSend={() => void send(draft)}
+            onVoice={() => void toggleVoiceInput()}
+          />
+        </KeyboardAvoidingView>
 
         <ResourcePanel
           compact={compact}
           memories={memories}
           notifications={notifications}
-          onClose={() => setDrawer((current) => ({ ...current, open: false }))}
+          open={resources.open}
+          reminders={reminders}
+          tab={resources.tab}
+          tasks={tasks}
+          onClose={() =>
+            setResources((current) => ({ ...current, open: false }))
+          }
           onMemoryCommand={(command) => {
-            setDrawer((current) => ({ ...current, open: false }));
+            setResources((current) => ({ ...current, open: false }));
             void send(command);
           }}
-          onTab={(tab) => setDrawer({ open: true, tab })}
-          open={drawer.open}
-          reminders={reminders}
-          tab={drawer.tab}
-          tasks={tasks}
+          onTab={(tab) => setResources({ open: true, tab })}
         />
-
-        {compact && sidebarOpen ? (
-          <View
-            accessibilityViewIsModal
-            style={{
-              position: 'absolute',
-              zIndex: 20,
-              top: 0,
-              right: 0,
-              bottom: 0,
-              left: 0,
-              minHeight: 720,
-              flexDirection: 'row',
-            }}
-          >
-            <Sidebar
-              compact
-              conversationId={conversation?.id}
-              conversations={conversations}
-              memories={memories.length}
-              notifications={
-                notifications.filter((item) => item.status === 'unread').length
-              }
-              tasks={tasks.length}
-              width={Math.min(width - 48, 360)}
-              onClose={() => setSidebarOpen(false)}
-              onNew={startConversation}
-              onOpenDrawer={openDrawer}
-              onSelect={(id) => void selectConversation(id)}
-            />
-            <Pressable
-              accessibilityLabel="Close conversations"
-              accessibilityRole="button"
-              onPress={() => setSidebarOpen(false)}
-              style={{ flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.62)' }}
-            />
-          </View>
-        ) : null}
 
         {error === undefined ? null : (
-          <View
-            accessibilityRole="alert"
-            style={{
-              position: 'absolute',
-              right: 18,
-              bottom: 18,
-              maxWidth: 420,
-              borderWidth: 1,
-              borderColor: '#794848',
-              borderRadius: 12,
-              padding: 14,
-              backgroundColor: '#2c191b',
-            }}
-          >
-            <Text selectable style={{ color: '#ffd2d2' }}>
-              {error}
-            </Text>
-          </View>
+          <ErrorToast
+            error={error}
+            bottom={Math.max(insets.bottom, 18) + 82}
+            onClose={() => setError(undefined)}
+          />
         )}
-      </View>
-    </ScrollView>
-  );
-}
-
-function Sidebar(props: {
-  compact: boolean;
-  width?: number;
-  conversationId?: string;
-  conversations: ConversationSummary[];
-  memories: number;
-  tasks: number;
-  notifications: number;
-  onNew: () => void;
-  onClose?: () => void;
-  onSelect: (id: string) => void;
-  onOpenDrawer: (tab: ResourceTab) => void;
-}) {
-  const insets = useSafeAreaInsets();
-  return (
-    <View
-      style={{
-        width: props.compact ? props.width : 280,
-        minHeight: 720,
-        borderRightWidth: 1,
-        borderColor: '#20252c',
-        padding: 16,
-        paddingTop: props.compact ? Math.max(insets.top, 16) : 16,
-        backgroundColor: '#0d1015',
-        boxShadow: props.compact ? '8px 0 28px rgba(0, 0, 0, 0.36)' : undefined,
-      }}
-    >
-      {props.compact ? (
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: 6,
-            paddingBottom: 18,
-          }}
-        >
-          <View style={{ gap: 3 }}>
-            <Text
-              selectable
-              style={{ color: '#f0f4f2', fontSize: 18, fontWeight: '800' }}
-            >
-              Conversations
-            </Text>
-            <Text selectable style={{ color: '#737d79', fontSize: 11 }}>
-              Personal intelligence
-            </Text>
-          </View>
-          <Pressable
-            accessibilityLabel="Close conversations"
-            accessibilityRole="button"
-            onPress={props.onClose}
-            style={({ pressed }) => ({
-              width: 40,
-              height: 40,
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderRadius: 12,
-              opacity: pressed ? 0.65 : 1,
-              backgroundColor: '#171d22',
-            })}
-          >
-            <Text style={{ color: '#cbd2cf', fontSize: 22 }}>×</Text>
-          </Pressable>
-        </View>
-      ) : (
-        <View style={{ gap: 3, padding: 6, paddingBottom: 18 }}>
-          <Text
-            selectable
-            style={{ color: '#f0f4f2', fontSize: 20, fontWeight: '800' }}
-          >
-            Vera
-          </Text>
-          <Text selectable style={{ color: '#737d79', fontSize: 11 }}>
-            Personal intelligence
-          </Text>
-        </View>
-      )}
-      <Pressable
-        accessibilityRole="button"
-        onPress={props.onNew}
-        style={{
-          borderWidth: 1,
-          borderColor: '#29312e',
-          borderRadius: 13,
-          padding: 13,
-          backgroundColor: '#151a20',
-        }}
-      >
-        <Text style={{ color: '#dce2df' }}>＋ New conversation</Text>
-      </Pressable>
-      <Text
-        selectable
-        style={{
-          paddingTop: 20,
-          paddingBottom: 8,
-          color: '#66706c',
-          fontSize: 10,
-        }}
-      >
-        RECENT
-      </Text>
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: 5 }}>
-        {props.conversations.map((item) => (
-          <Pressable
-            accessibilityRole="button"
-            key={item.id}
-            onPress={() => props.onSelect(item.id)}
-            style={{
-              gap: 3,
-              borderRadius: 10,
-              padding: 10,
-              backgroundColor:
-                props.conversationId === item.id ? '#19211e' : 'transparent',
-            }}
-          >
-            <Text numberOfLines={1} style={{ color: '#d3d9d6', fontSize: 12 }}>
-              {item.title ?? 'Untitled conversation'}
-            </Text>
-            <Text
-              style={{
-                color: '#68726e',
-                fontSize: 10,
-                fontVariant: ['tabular-nums'],
-              }}
-            >
-              {item.messageCount ?? 0} messages
-            </Text>
-          </Pressable>
-        ))}
-      </ScrollView>
-      <View
-        style={{
-          gap: 5,
-          borderTopWidth: 1,
-          borderTopColor: '#20252c',
-          paddingTop: 12,
-        }}
-      >
-        <ResourceButton
-          label="Memory"
-          count={props.memories}
-          onPress={() => props.onOpenDrawer('memory')}
-        />
-        <ResourceButton
-          label="Tasks"
-          count={props.tasks}
-          onPress={() => props.onOpenDrawer('tasks')}
-        />
-        <ResourceButton
-          label="Inbox"
-          count={props.notifications}
-          onPress={() => props.onOpenDrawer('notifications')}
-        />
       </View>
     </View>
   );
 }
 
-function ResourceButton(props: {
-  label: string;
-  count: number;
-  onPress: () => void;
+function RunFooter(props: {
+  activeRun?: TaskResource;
+  busy: boolean;
+  onCancel: () => void;
+  onDecision: (decision: 'approved' | 'rejected') => void;
 }) {
-  return (
-    <Pressable
-      accessibilityLabel={`${props.label} ${String(props.count)}`}
-      accessibilityRole="button"
-      onPress={props.onPress}
-      style={{
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        padding: 10,
-      }}
-    >
-      <Text style={{ color: '#aab3af' }}>{props.label}</Text>
-      <Text style={{ color: '#6f7a75', fontVariant: ['tabular-nums'] }}>
-        {props.count}
-      </Text>
-    </Pressable>
-  );
-}
-
-function ProjectSelector(props: {
-  projects: ProjectResource[];
-  selected?: string;
-  onSelect: (projectId?: string) => void;
-}) {
-  if (props.projects.length === 0) {
+  const run = props.activeRun;
+  if (
+    run?.runStatus === 'awaiting_approval' &&
+    run.approval?.status === 'pending'
+  ) {
     return (
-      <Text selectable style={{ color: '#737e79', fontSize: 11 }}>
-        No project context
-      </Text>
+      <ApprovalCard
+        approval={run.approval}
+        busy={props.busy}
+        onDecision={props.onDecision}
+      />
     );
   }
+  if (
+    run !== undefined &&
+    ![
+      'succeeded',
+      'rejected',
+      'failed',
+      'cancelled',
+      'awaiting_approval',
+    ].includes(run.runStatus)
+  ) {
+    return (
+      <View
+        accessibilityLiveRegion="polite"
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: spacing.md,
+          borderWidth: 1,
+          borderColor: palette.lineSoft,
+          borderRadius: radius.md,
+          padding: spacing.md,
+          backgroundColor: palette.surface,
+        }}
+      >
+        <ActivityIndicator color={palette.accent} size="small" />
+        <Text
+          selectable
+          style={{
+            minWidth: 0,
+            flex: 1,
+            color: palette.textSoft,
+            fontSize: 13,
+          }}
+        >
+          Vera is {run.runStatus.replaceAll('_', ' ')}…
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          disabled={props.busy}
+          onPress={props.onCancel}
+          style={({ pressed }) => ({
+            minHeight: 40,
+            justifyContent: 'center',
+            borderRadius: radius.sm,
+            paddingHorizontal: spacing.md,
+            opacity: props.busy ? 0.4 : pressed ? 0.65 : 1,
+          })}
+        >
+          <Text
+            style={{ color: palette.danger, fontSize: 12, fontWeight: '600' }}
+          >
+            Cancel
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
+  return null;
+}
+
+function ErrorToast(props: {
+  error: string;
+  bottom: number;
+  onClose: () => void;
+}) {
   return (
-    <ScrollView
-      contentContainerStyle={{ flexDirection: 'row', gap: 7 }}
-      horizontal
-      showsHorizontalScrollIndicator={false}
+    <View
+      accessibilityRole="alert"
+      style={{
+        position: 'absolute',
+        right: spacing.lg,
+        bottom: props.bottom,
+        left: spacing.lg,
+        maxWidth: 520,
+        alignSelf: 'center',
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: spacing.md,
+        borderWidth: 1,
+        borderColor: '#714047',
+        borderRadius: radius.md,
+        padding: spacing.md,
+        backgroundColor: palette.dangerSurface,
+        boxShadow: shadow.floating,
+      }}
     >
-      <ProjectButton
-        label="No project"
-        selected={props.selected === undefined}
-        onPress={() => props.onSelect(undefined)}
-      />
-      {props.projects.map((project) => (
-        <ProjectButton
-          key={project.id}
-          label={project.displayName}
-          selected={props.selected === project.id}
-          onPress={() => props.onSelect(project.id)}
-        />
-      ))}
-    </ScrollView>
+      <AlertCircle color={palette.danger} size={19} strokeWidth={1.9} />
+      <Text
+        selectable
+        style={{
+          minWidth: 0,
+          flex: 1,
+          color: '#FFD6D6',
+          fontSize: 13,
+          lineHeight: 19,
+        }}
+      >
+        {props.error}
+      </Text>
+      <Pressable
+        accessibilityLabel="Dismiss error"
+        accessibilityRole="button"
+        hitSlop={8}
+        onPress={props.onClose}
+      >
+        <X color={palette.danger} size={18} />
+      </Pressable>
+    </View>
   );
 }
 
-function ProjectButton(props: {
-  label: string;
-  selected: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={props.onPress}
-      style={{
-        borderWidth: 1,
-        borderColor: props.selected ? '#4e8b72' : '#29322e',
-        borderRadius: 999,
-        paddingHorizontal: 11,
-        paddingVertical: 7,
-        backgroundColor: props.selected ? '#173126' : '#12171c',
-      }}
-    >
-      <Text
-        style={{ color: props.selected ? '#dff8ee' : '#84908a', fontSize: 11 }}
-      >
-        {props.label}
-      </Text>
-    </Pressable>
-  );
+function errorMessage(cause: unknown, fallback: string): string {
+  return cause instanceof Error ? cause.message : fallback;
 }
