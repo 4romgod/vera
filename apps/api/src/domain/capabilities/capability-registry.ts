@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { CapabilityDestinationSchema } from './capability-destination.ts';
+import { PersonalTaskActionArgumentsSchema } from '../personal-tasks/personal-task.ts';
 
 export const DevelopmentPlanningProposalArgumentsSchema = z
   .object({
@@ -54,13 +55,20 @@ export const CapabilityAuthoritySchema = z
     projectContext: z.enum(['required', 'none']),
     networkAccess: z.enum(['none', 'provider_api', 'public_web_via_provider']),
     dataClasses: z.array(
-      z.enum(['owner_request', 'project_context', 'public_web']),
+      z.enum([
+        'owner_request',
+        'project_context',
+        'artifact_content',
+        'personal_task_data',
+        'public_web',
+      ]),
     ),
     sideEffects: z.array(
       z.enum([
         'third_party_disclosure',
         'isolated_workspace_write',
         'public_network_read',
+        'personal_data_write',
       ]),
     ),
     credentials: z.enum(['none', 'server_managed']),
@@ -73,8 +81,9 @@ export type CapabilityDefinition = {
   version: number;
   description: string;
   proposalArgumentsSchema: z.ZodType<Record<string, unknown>>;
-  effect: 'external';
+  effect: 'external' | 'owner_state';
   artifact: { type: string; mediaType: string };
+  acceptedInputArtifacts: string[];
   authority: z.infer<typeof CapabilityAuthoritySchema>;
 };
 
@@ -90,11 +99,12 @@ export const CapabilityDefinitions = [
       type: 'implementation_plan',
       mediaType: 'application/vnd.vera.implementation-plan+json',
     },
+    acceptedInputArtifacts: ['research_report'],
     authority: {
       approval: 'always',
       projectContext: 'required',
       networkAccess: 'provider_api',
-      dataClasses: ['owner_request', 'project_context'],
+      dataClasses: ['owner_request', 'project_context', 'artifact_content'],
       sideEffects: ['third_party_disclosure'],
       credentials: 'server_managed',
     },
@@ -110,13 +120,35 @@ export const CapabilityDefinitions = [
       type: 'software_change',
       mediaType: 'application/vnd.vera.software-change+json',
     },
+    acceptedInputArtifacts: ['implementation_plan', 'research_report'],
     authority: {
       approval: 'always',
       projectContext: 'required',
       networkAccess: 'provider_api',
-      dataClasses: ['owner_request', 'project_context'],
+      dataClasses: ['owner_request', 'project_context', 'artifact_content'],
       sideEffects: ['third_party_disclosure', 'isolated_workspace_write'],
       credentials: 'server_managed',
+    },
+  },
+  {
+    name: 'personal_task_management',
+    version: 1,
+    description:
+      'Create, list, complete, or reopen durable owner-scoped personal tasks.',
+    proposalArgumentsSchema: PersonalTaskActionArgumentsSchema,
+    effect: 'owner_state',
+    artifact: {
+      type: 'personal_task_result',
+      mediaType: 'application/vnd.vera.personal-task-result+json',
+    },
+    acceptedInputArtifacts: [],
+    authority: {
+      approval: 'always',
+      projectContext: 'none',
+      networkAccess: 'none',
+      dataClasses: ['owner_request', 'personal_task_data'],
+      sideEffects: ['personal_data_write'],
+      credentials: 'none',
     },
   },
   {
@@ -130,6 +162,7 @@ export const CapabilityDefinitions = [
       type: 'research_report',
       mediaType: 'application/vnd.vera.research-report+json',
     },
+    acceptedInputArtifacts: [],
     authority: {
       approval: 'always',
       projectContext: 'none',
@@ -163,13 +196,14 @@ export const CapabilityCatalogSchema = z
           name: CapabilityReferenceSchema.shape.name,
           version: CapabilityReferenceSchema.shape.version,
           description: z.string().min(1),
-          effect: z.literal('external'),
+          effect: z.enum(['external', 'owner_state']),
           artifact: z
             .object({
               type: z.string().min(1),
               mediaType: z.string().min(1),
             })
             .strict(),
+          acceptedInputArtifacts: z.array(z.string().min(1)),
           authority: CapabilityAuthoritySchema,
           enabled: z.boolean(),
           destination: CapabilityDestinationSchema.optional(),

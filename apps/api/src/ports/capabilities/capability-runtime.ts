@@ -19,19 +19,31 @@ export type CapabilityArtifactDraft =
   | Pick<
       Extract<Artifact, { type: 'research_report' }>,
       'type' | 'mediaType' | 'content'
+    >
+  | Pick<
+      Extract<Artifact, { type: 'personal_task_result' }>,
+      'type' | 'mediaType' | 'content'
     >;
 
 export type CapabilityRuntime = {
   readonly definition: CapabilityDefinition;
   readonly destination: CapabilityDestination;
   readonly authority: CapabilityAuthority;
+  authorityFor(input: {
+    arguments: Record<string, unknown>;
+    hasInputArtifacts: boolean;
+  }): CapabilityAuthority;
   checkReadiness(): Promise<void>;
   execute(
     invocation: {
       invocationId: string;
+      principalId: string;
+      startedAt: string;
+      recovery: boolean;
       arguments: Record<string, unknown>;
       project?: { id: string; displayName: string };
       context?: ProjectContextBundle;
+      artifacts?: Artifact[];
       limits: {
         maxDurationMs: number;
         maxArtifactBytes: number;

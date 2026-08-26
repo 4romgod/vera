@@ -29,9 +29,15 @@ export function taskResponse(aggregate: TaskAggregate) {
     ...(aggregate.run.approval === undefined
       ? {}
       : { approval: aggregate.run.approval }),
+    ...(aggregate.run.approvalHistory === undefined
+      ? {}
+      : { approvalHistory: aggregate.run.approvalHistory }),
     ...(aggregate.run.invocation === undefined
       ? {}
       : { invocation: aggregate.run.invocation }),
+    ...(aggregate.run.invocationHistory === undefined
+      ? {}
+      : { invocationHistory: aggregate.run.invocationHistory }),
     ...(aggregate.run.output === undefined
       ? {}
       : { output: aggregate.run.output }),
@@ -61,6 +67,7 @@ export function taskResponse(aggregate: TaskAggregate) {
                 }),
           },
         }),
+    ...(aggregate.run.goal === undefined ? {} : { goal: aggregate.run.goal }),
     links: {
       task: `/v1/tasks/${aggregate.task.id}`,
       run: `/v1/runs/${aggregate.run.id}`,

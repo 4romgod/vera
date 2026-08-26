@@ -21,6 +21,7 @@ export function createCapabilityService(options: {
           description: declaration.definition.description,
           effect: declaration.definition.effect,
           artifact: declaration.definition.artifact,
+          acceptedInputArtifacts: declaration.definition.acceptedInputArtifacts,
           authority: declaration.authority,
           enabled: declaration.enabled,
           ...(declaration.destination === undefined

@@ -6,10 +6,12 @@ import { assertConversationContextIntegrity } from '../conversations/validate-co
 import { assertProjectContextIntegrity } from '../projects/validate-project-context.ts';
 import type { DecisionResult } from '../../domain/model/execution-decision.ts';
 import {
+  ArtifactReferenceSchema,
   ArtifactSchema,
   type Artifact,
 } from '../../domain/artifacts/artifact.ts';
 import { sameCapabilityDestination } from '../../domain/capabilities/capability-destination.ts';
+import type { CapabilityAuthority } from '../../domain/capabilities/capability-registry.ts';
 import type {
   ConversationContextBundle,
   ConversationContextLimits,
@@ -137,6 +139,220 @@ export function createTaskLifecycle(options: {
   };
   const activeInvocations = new Map<string, AbortController>();
 
+  function artifactReference(artifact: Artifact) {
+    return ArtifactReferenceSchema.parse({
+      id: artifact.id,
+      version: artifact.version,
+      type: artifact.type,
+      mediaType: artifact.mediaType,
+      sha256: artifact.sha256,
+      byteLength: artifact.byteLength,
+    });
+  }
+
+  function artifactContentIsIntact(artifact: Artifact): boolean {
+    const contentJson = JSON.stringify(artifact.content);
+    return (
+      createHash('sha256').update(contentJson).digest('hex') ===
+        artifact.sha256 &&
+      Buffer.byteLength(contentJson) === artifact.byteLength
+    );
+  }
+
+  function sameArtifactReferences(
+    left: Artifact['inputs'],
+    right: Artifact['inputs'],
+  ): boolean {
+    const leftReferences = left ?? [];
+    const rightReferences = right ?? [];
+    return (
+      leftReferences.length === rightReferences.length &&
+      leftReferences.every((reference, index) => {
+        const other = rightReferences[index];
+        return (
+          reference.id === other?.id &&
+          reference.type === other.type &&
+          reference.mediaType === other.mediaType &&
+          reference.sha256 === other.sha256 &&
+          reference.byteLength === other.byteLength
+        );
+      })
+    );
+  }
+
+  function authorityIsWithin(
+    effective: CapabilityAuthority,
+    maximum: CapabilityAuthority,
+  ): boolean {
+    return (
+      effective.projectContext === maximum.projectContext &&
+      effective.networkAccess === maximum.networkAccess &&
+      effective.credentials === maximum.credentials &&
+      effective.maxWebSearchCalls === maximum.maxWebSearchCalls &&
+      effective.dataClasses.every((value) =>
+        maximum.dataClasses.includes(value),
+      ) &&
+      effective.sideEffects.every((value) =>
+        maximum.sideEffects.includes(value),
+      )
+    );
+  }
+
+  function sameAuthority(
+    left: CapabilityAuthority,
+    right: CapabilityAuthority,
+  ): boolean {
+    return (
+      left.projectContext === right.projectContext &&
+      left.networkAccess === right.networkAccess &&
+      left.credentials === right.credentials &&
+      left.maxWebSearchCalls === right.maxWebSearchCalls &&
+      left.dataClasses.length === right.dataClasses.length &&
+      left.sideEffects.length === right.sideEffects.length &&
+      left.dataClasses.every((value) => right.dataClasses.includes(value)) &&
+      left.sideEffects.every((value) => right.sideEffects.includes(value))
+    );
+  }
+
+  function setCurrentGoalStepStatus(
+    aggregate: TaskAggregate,
+    status: 'rejected' | 'failed' | 'cancelled',
+  ): void {
+    const goal = aggregate.run.goal;
+    const step = goal?.steps[goal.currentStepIndex];
+    if (
+      step !== undefined &&
+      !['succeeded', 'rejected', 'failed', 'cancelled'].includes(step.status)
+    ) {
+      step.status = status;
+    }
+  }
+
+  function archiveCurrentGoalBoundary(aggregate: TaskAggregate): void {
+    if (aggregate.run.approval !== undefined) {
+      aggregate.run.approvalHistory ??= [];
+      if (
+        !aggregate.run.approvalHistory.some(
+          (approval) => approval.id === aggregate.run.approval?.id,
+        )
+      ) {
+        aggregate.run.approvalHistory.push(
+          structuredClone(aggregate.run.approval),
+        );
+      }
+    }
+    if (aggregate.run.invocation !== undefined) {
+      aggregate.run.invocationHistory ??= [];
+      if (
+        !aggregate.run.invocationHistory.some(
+          (invocation) => invocation.id === aggregate.run.invocation?.id,
+        )
+      ) {
+        aggregate.run.invocationHistory.push(
+          structuredClone(aggregate.run.invocation),
+        );
+      }
+    }
+  }
+
+  function prepareGoalStepApproval(
+    aggregate: TaskAggregate,
+    stepIndex: number,
+    requestedAt: string,
+  ): void {
+    const goal = aggregate.run.goal;
+    const step = goal?.steps[stepIndex];
+    if (goal === undefined || step === undefined) {
+      throw new Error('The goal does not contain the requested step.');
+    }
+    const runtime = options.capabilities.selected({
+      name: step.capability,
+      version: step.version,
+    });
+    if (runtime === null) {
+      throw new Error(
+        `Goal capability ${step.capability}@${String(step.version)} is unavailable.`,
+      );
+    }
+    const inputs = step.inputStepIds.map((inputStepId) => {
+      const dependency = goal.steps.find(
+        (candidate) => candidate.id === inputStepId,
+      );
+      if (dependency?.artifact === undefined) {
+        throw new Error(
+          `Goal step ${step.id} is missing completed input ${inputStepId}.`,
+        );
+      }
+      return dependency.artifact;
+    });
+    const requiresProject = runtime.authority.projectContext === 'required';
+    if (
+      requiresProject &&
+      (aggregate.task.projectId === undefined ||
+        aggregate.run.context === undefined ||
+        goal.project === undefined)
+    ) {
+      throw new Error(`Goal step ${step.id} requires project context.`);
+    }
+    const approvalId = createId('approval');
+    const authority = runtime.authorityFor({
+      arguments: step.arguments,
+      hasInputArtifacts: inputs.length > 0,
+    });
+    if (!authorityIsWithin(authority, runtime.authority)) {
+      throw new Error(`Goal step ${step.id} resolved invalid authority.`);
+    }
+    aggregate.run.approval = ApprovalSchema.parse({
+      id: approvalId,
+      status: 'pending',
+      reason: 'specialist_capability_invocation',
+      capability: { name: step.capability, version: step.version },
+      proposedArguments: step.arguments,
+      ...(requiresProject
+        ? {
+            project: {
+              id: goal.project?.id,
+              displayName: goal.project?.displayName,
+            },
+            contextManifest: aggregate.run.context?.manifest,
+          }
+        : {}),
+      ...(inputs.length === 0 ? {} : { inputArtifacts: inputs }),
+      destination: runtime.destination,
+      authority,
+      requestedAt,
+    });
+    step.status = 'awaiting_approval';
+    step.approvalId = approvalId;
+    goal.currentStepIndex = stepIndex;
+    aggregate.run.status = 'awaiting_approval';
+    delete aggregate.run.invocation;
+    delete aggregate.run.output;
+    appendEvent(
+      aggregate,
+      'goal_step_awaiting_approval',
+      requestedAt,
+      {
+        goalStepId: step.id,
+        approvalId,
+        capability: `${step.capability}@${String(step.version)}`,
+        inputArtifactIds: inputs.map((artifact) => artifact.id),
+      },
+      createId,
+    );
+    appendEvent(
+      aggregate,
+      'approval_requested',
+      requestedAt,
+      {
+        approvalId,
+        capability: `${step.capability}@${String(step.version)}`,
+        goalStepId: step.id,
+      },
+      createId,
+    );
+  }
+
   function conversationReplyContent(aggregate: TaskAggregate): string {
     if (aggregate.run.output?.kind === 'response') {
       return aggregate.run.output.message;
@@ -163,6 +379,24 @@ export function createTaskLifecycle(options: {
         `I completed source-backed web research with ${String(aggregate.run.output.report.sources.length)} source(s).`,
         aggregate.run.output.report.report,
         ...(artifactId === undefined ? [] : [`Artifact: ${artifactId}`]),
+      ].join('\n\n');
+    }
+    if (aggregate.run.output?.kind === 'personal_task_result') {
+      const artifactId = aggregate.run.output.artifact?.id;
+      return [
+        aggregate.run.output.result.summary,
+        ...aggregate.run.output.result.tasks.map(
+          (task) =>
+            `${task.status === 'completed' ? '[completed]' : '[open]'} ${task.title} (${task.id})`,
+        ),
+        ...(artifactId === undefined ? [] : [`Artifact: ${artifactId}`]),
+      ].join('\n\n');
+    }
+    if (aggregate.run.output?.kind === 'goal_result') {
+      return [
+        `I completed the goal through ${String(aggregate.run.output.artifacts.length)} approved capability steps.`,
+        aggregate.run.output.summary,
+        `Artifacts: ${aggregate.run.output.artifacts.map((artifact) => artifact.id).join(', ')}`,
       ].join('\n\n');
     }
     if (aggregate.run.failure !== undefined) {
@@ -418,12 +652,41 @@ export function createTaskLifecycle(options: {
       decision.decision.kind === 'approval_required'
         ? options.capabilities.selected(decision.decision.capability)
         : null;
+    const goalRuntimes =
+      decision.decision.kind === 'goal_planned'
+        ? decision.decision.plan.steps.map((step) =>
+            options.capabilities.selected({
+              name: step.capability,
+              version: step.version,
+            }),
+          )
+        : [];
     if (
       decision.decision.kind === 'approval_required' &&
       selectedCapability === null
     ) {
       throw new Error(
         `Capability ${decision.decision.capability.name}@${String(decision.decision.capability.version)} is not enabled.`,
+      );
+    }
+    if (goalRuntimes.some((runtime) => runtime === null)) {
+      throw new Error('The goal contains an unavailable capability runtime.');
+    }
+    const selectedAuthority =
+      decision.decision.kind === 'approval_required' &&
+      selectedCapability !== null
+        ? selectedCapability.authorityFor({
+            arguments: decision.decision.proposedArguments,
+            hasInputArtifacts: false,
+          })
+        : undefined;
+    if (
+      selectedCapability !== null &&
+      selectedAuthority !== undefined &&
+      !authorityIsWithin(selectedAuthority, selectedCapability.authority)
+    ) {
+      throw new Error(
+        'The capability resolved authority outside its declared maximum.',
       );
     }
     const approvalId = createId('approval');
@@ -471,6 +734,68 @@ export function createTaskLifecycle(options: {
           return true;
         }
 
+        if (decision.decision.kind === 'goal_planned') {
+          const requiresProjectContext = goalRuntimes.some(
+            (runtime) => runtime?.authority.projectContext === 'required',
+          );
+          if (requiresProjectContext && approvedContext === undefined) {
+            throw new Error('Goal project context was not assembled.');
+          }
+          if (!requiresProjectContext && approvedContext !== undefined) {
+            throw new Error(
+              'A project-independent goal cannot receive project context.',
+            );
+          }
+          if (approvedContext !== undefined) {
+            candidate.run.context = approvedContext.context;
+            appendEvent(
+              candidate,
+              'context_assembled',
+              now,
+              {
+                projectId: approvedContext.project.id,
+                revision: approvedContext.context.manifest.revision,
+                totalFiles: approvedContext.context.manifest.totalFiles,
+                totalBytes: approvedContext.context.manifest.totalBytes,
+              },
+              createId,
+            );
+          }
+          candidate.run.goal = {
+            schemaVersion: 1,
+            objective: decision.decision.plan.objective,
+            summary: decision.decision.plan.summary,
+            status: 'active',
+            ...(approvedContext === undefined
+              ? {}
+              : {
+                  project: {
+                    id: approvedContext.project.id,
+                    displayName: approvedContext.project.displayName,
+                  },
+                }),
+            currentStepIndex: 0,
+            steps: decision.decision.plan.steps.map((step) => ({
+              ...step,
+              status: 'pending' as const,
+            })),
+          };
+          appendEvent(
+            candidate,
+            'goal_planned',
+            now,
+            {
+              stepCount: candidate.run.goal.steps.length,
+              capabilities: candidate.run.goal.steps.map(
+                (step) => `${step.capability}@${String(step.version)}`,
+              ),
+            },
+            createId,
+          );
+          prepareGoalStepApproval(candidate, 0, now);
+          return true;
+        }
+
         if (selectedCapability === null) {
           throw new Error('The approved capability runtime is unavailable.');
         }
@@ -504,7 +829,7 @@ export function createTaskLifecycle(options: {
                 contextManifest: approvedContext.context.manifest,
               }),
           destination: selectedCapability.destination,
-          authority: selectedCapability.authority,
+          authority: selectedAuthority,
           requestedAt: now,
         });
         if (approvedContext !== undefined) {
@@ -566,6 +891,10 @@ export function createTaskLifecycle(options: {
       aggregate.run.status = 'failed';
       aggregate.task.status = 'failed';
       aggregate.run.failure = { code, message: publicMessage };
+      if (aggregate.run.goal !== undefined) {
+        aggregate.run.goal.status = 'failed';
+        setCurrentGoalStepStatus(aggregate, 'failed');
+      }
       aggregate.run.updatedAt = now;
       aggregate.task.updatedAt = now;
       if (aggregate.run.invocation?.status === 'executing') {
@@ -598,6 +927,10 @@ export function createTaskLifecycle(options: {
         ) {
           candidate.run.status = 'failed';
           candidate.task.status = 'failed';
+          if (candidate.run.goal !== undefined) {
+            candidate.run.goal.status = 'failed';
+            setCurrentGoalStepStatus(candidate, 'failed');
+          }
           candidate.run.failure = {
             code: 'budget_exhausted',
             message: 'The run exhausted its model-call or duration budget.',
@@ -722,18 +1055,38 @@ export function createTaskLifecycle(options: {
                   }),
             },
       );
-      if (decision.decision.kind !== 'approval_required') {
+      if (
+        decision.decision.kind !== 'approval_required' &&
+        decision.decision.kind !== 'goal_planned'
+      ) {
         return await recordDecision(budgetClaim.aggregate, decision);
       }
-      const selectedCapability = options.capabilities.selected(
-        decision.decision.capability,
+      const plannedSteps =
+        decision.decision.kind === 'goal_planned'
+          ? decision.decision.plan.steps
+          : [
+              {
+                capability: decision.decision.capability.name,
+                version: decision.decision.capability.version,
+                arguments: decision.decision.proposedArguments,
+              },
+            ];
+      const plannedRuntimes = plannedSteps.map((step) =>
+        options.capabilities.selected({
+          name: step.capability,
+          version: step.version,
+        }),
       );
-      if (selectedCapability === null) {
+      if (plannedRuntimes.some((runtime) => runtime === null)) {
         throw new Error(
-          `Capability ${decision.decision.capability.name}@${String(decision.decision.capability.version)} is not enabled.`,
+          'The proposed work contains an unavailable capability.',
         );
       }
-      if (selectedCapability.authority.projectContext === 'none') {
+      const firstProjectStep = plannedSteps.find(
+        (_step, index) =>
+          plannedRuntimes[index]?.authority.projectContext === 'required',
+      );
+      if (firstProjectStep === undefined) {
         return await recordDecision(budgetClaim.aggregate, decision);
       }
       if (selectedProjectId === undefined) {
@@ -755,7 +1108,7 @@ export function createTaskLifecycle(options: {
         );
       }
       const runBudget = budgetClaim.aggregate.run.budget ?? budget;
-      if (!('ticket' in decision.decision.proposedArguments)) {
+      if (!('ticket' in firstProjectStep.arguments)) {
         throw new Error(
           'A project capability is missing project-routing arguments.',
         );
@@ -764,8 +1117,8 @@ export function createTaskLifecycle(options: {
       try {
         context = await options.contextAssembler.assemble({
           project: selectedProject,
-          objective: decision.decision.proposedArguments.objective,
-          ticket: decision.decision.proposedArguments.ticket,
+          objective: firstProjectStep.arguments.objective,
+          ticket: firstProjectStep.arguments.ticket,
           limits: {
             maxFiles: runBudget.limits.maxContextFiles,
             maxBytes: runBudget.limits.maxContextBytes,
@@ -837,6 +1190,10 @@ export function createTaskLifecycle(options: {
         ) {
           candidate.run.status = 'failed';
           candidate.task.status = 'failed';
+          if (candidate.run.goal !== undefined) {
+            candidate.run.goal.status = 'failed';
+            setCurrentGoalStepStatus(candidate, 'failed');
+          }
           candidate.run.failure = {
             code: 'budget_exhausted',
             message:
@@ -879,8 +1236,20 @@ export function createTaskLifecycle(options: {
           ...(candidate.run.approval.authority === undefined
             ? {}
             : { authority: candidate.run.approval.authority }),
+          ...(candidate.run.approval.inputArtifacts === undefined
+            ? {}
+            : { inputArtifacts: candidate.run.approval.inputArtifacts }),
           startedAt: now,
         });
+        const goalStep =
+          candidate.run.goal?.steps[candidate.run.goal.currentStepIndex];
+        if (goalStep !== undefined) {
+          if (goalStep.approvalId !== candidate.run.approval.id) {
+            throw new Error('The goal step approval identity changed.');
+          }
+          goalStep.status = 'executing';
+          goalStep.invocationId = invocationId;
+        }
         appendEvent(
           candidate,
           'budget_consumed',
@@ -939,8 +1308,6 @@ export function createTaskLifecycle(options: {
           ) {
             return false;
           }
-          candidate.run.status = 'succeeded';
-          candidate.task.status = 'completed';
           candidate.run.updatedAt = completedAt;
           candidate.task.updatedAt = completedAt;
           candidate.run.invocation.status = 'succeeded';
@@ -949,6 +1316,76 @@ export function createTaskLifecycle(options: {
             artifact.producer;
           void ignoredDestination;
           candidate.run.invocation.model = producerModel;
+          const reference = artifactReference(artifact);
+          appendEvent(
+            candidate,
+            'artifact_created',
+            completedAt,
+            { artifactId: artifact.id, invocationId: claimedInvocation.id },
+            createId,
+          );
+          appendEvent(
+            candidate,
+            'capability_invocation_succeeded',
+            completedAt,
+            { invocationId: claimedInvocation.id },
+            createId,
+          );
+          const goal = candidate.run.goal;
+          if (goal !== undefined) {
+            const step = goal.steps[goal.currentStepIndex];
+            if (step?.invocationId !== claimedInvocation.id) {
+              throw new Error(
+                'The completed invocation is not the active goal step.',
+              );
+            }
+            step.status = 'succeeded';
+            step.artifact = reference;
+            appendEvent(
+              candidate,
+              'goal_step_succeeded',
+              completedAt,
+              {
+                goalStepId: step.id,
+                artifactId: artifact.id,
+                capability: `${step.capability}@${String(step.version)}`,
+              },
+              createId,
+            );
+            const nextStepIndex = goal.currentStepIndex + 1;
+            if (nextStepIndex < goal.steps.length) {
+              archiveCurrentGoalBoundary(candidate);
+              prepareGoalStepApproval(candidate, nextStepIndex, completedAt);
+              return true;
+            }
+            const artifacts = goal.steps.map((goalStep) => {
+              if (goalStep.artifact === undefined) {
+                throw new Error('A completed goal is missing a step artifact.');
+              }
+              return goalStep.artifact;
+            });
+            goal.status = 'succeeded';
+            candidate.run.status = 'succeeded';
+            candidate.task.status = 'completed';
+            candidate.run.output = {
+              kind: 'goal_result',
+              objective: goal.objective,
+              summary: goal.summary,
+              artifacts,
+            };
+            appendEvent(
+              candidate,
+              'goal_succeeded',
+              completedAt,
+              { artifactIds: artifacts.map((value) => value.id) },
+              createId,
+            );
+            appendEvent(candidate, 'run_succeeded', completedAt, {}, createId);
+            return true;
+          }
+
+          candidate.run.status = 'succeeded';
+          candidate.task.status = 'completed';
           candidate.run.output =
             artifact.type === 'implementation_plan'
               ? {
@@ -976,32 +1413,31 @@ export function createTaskLifecycle(options: {
                       byteLength: artifact.byteLength,
                     },
                   }
-                : {
-                    kind: 'research_report',
-                    report: artifact.content,
-                    artifact: {
-                      id: artifact.id,
-                      version: artifact.version,
-                      type: artifact.type,
-                      mediaType: artifact.mediaType,
-                      sha256: artifact.sha256,
-                      byteLength: artifact.byteLength,
-                    },
-                  };
-          appendEvent(
-            candidate,
-            'artifact_created',
-            completedAt,
-            { artifactId: artifact.id, invocationId: claimedInvocation.id },
-            createId,
-          );
-          appendEvent(
-            candidate,
-            'capability_invocation_succeeded',
-            completedAt,
-            { invocationId: claimedInvocation.id },
-            createId,
-          );
+                : artifact.type === 'research_report'
+                  ? {
+                      kind: 'research_report',
+                      report: artifact.content,
+                      artifact: {
+                        id: artifact.id,
+                        version: artifact.version,
+                        type: artifact.type,
+                        mediaType: artifact.mediaType,
+                        sha256: artifact.sha256,
+                        byteLength: artifact.byteLength,
+                      },
+                    }
+                  : {
+                      kind: 'personal_task_result',
+                      result: artifact.content,
+                      artifact: {
+                        id: artifact.id,
+                        version: artifact.version,
+                        type: artifact.type,
+                        mediaType: artifact.mediaType,
+                        sha256: artifact.sha256,
+                        byteLength: artifact.byteLength,
+                      },
+                    };
           appendEvent(candidate, 'run_succeeded', completedAt, {}, createId);
           return true;
         },
@@ -1036,6 +1472,21 @@ export function createTaskLifecycle(options: {
             'The idempotent artifact belongs to a different invocation context.',
           );
         }
+        if (!artifactContentIsIntact(existingArtifact)) {
+          throw new Error(
+            'The idempotent artifact content failed integrity validation.',
+          );
+        }
+        if (
+          !sameArtifactReferences(
+            existingArtifact.inputs,
+            claimedInvocation.inputArtifacts,
+          )
+        ) {
+          throw new Error(
+            'The idempotent artifact lineage differs from the approved inputs.',
+          );
+        }
         return await completeWithArtifact(existingArtifact);
       }
       let executionAggregate = claim.aggregate;
@@ -1058,6 +1509,10 @@ export function createTaskLifecycle(options: {
             ) {
               candidate.run.status = 'failed';
               candidate.task.status = 'failed';
+              if (candidate.run.goal !== undefined) {
+                candidate.run.goal.status = 'failed';
+                setCurrentGoalStepStatus(candidate, 'failed');
+              }
               candidate.run.failure = {
                 code: 'budget_exhausted',
                 message: 'The run exhausted its recovery retry budget.',
@@ -1104,7 +1559,6 @@ export function createTaskLifecycle(options: {
         }
         executionAggregate = retryClaim.aggregate;
       }
-      const context = executionAggregate.run.context;
       const projectReference = claimedInvocation.project;
       const runBudget = executionAggregate.run.budget;
       const approvedDestination = executionAggregate.run.approval?.destination;
@@ -1144,17 +1598,26 @@ export function createTaskLifecycle(options: {
           `The approved capability adapter ${approvedDestination.adapterId} is unavailable or its destination configuration changed.`,
         );
       }
+      const currentAuthority = capabilityRuntime.authorityFor({
+        arguments: claimedInvocation.arguments,
+        hasInputArtifacts: (claimedInvocation.inputArtifacts?.length ?? 0) > 0,
+      });
+      if (!authorityIsWithin(currentAuthority, capabilityRuntime.authority)) {
+        throw new Error(
+          'The capability resolved authority outside its declared maximum.',
+        );
+      }
       if (
         approvedAuthority !== undefined &&
-        JSON.stringify(capabilityRuntime.authority) !==
-          JSON.stringify(approvedAuthority)
+        !sameAuthority(approvedAuthority, currentAuthority)
       ) {
-        throw new Error(
-          'The approved capability authority no longer matches the resolved adapter.',
-        );
+        throw new Error('The capability authority changed after approval.');
       }
       const requiresProjectContext =
         capabilityRuntime.authority.projectContext === 'required';
+      const context = requiresProjectContext
+        ? executionAggregate.run.context
+        : undefined;
       if (
         requiresProjectContext &&
         (context === undefined || projectReference === undefined)
@@ -1163,16 +1626,78 @@ export function createTaskLifecycle(options: {
           'The approved project capability is missing authoritative context.',
         );
       }
-      if (
-        !requiresProjectContext &&
-        (context !== undefined || projectReference !== undefined)
-      ) {
+      if (!requiresProjectContext && projectReference !== undefined) {
         throw new Error(
           'A project-independent capability contains unexpected project context.',
         );
       }
       if (context !== undefined && projectReference !== undefined) {
         assertProjectContextIntegrity(context, projectReference.id);
+      }
+      const activeGoal = executionAggregate.run.goal;
+      if (activeGoal !== undefined) {
+        const activeStep = activeGoal.steps[activeGoal.currentStepIndex];
+        if (activeStep?.invocationId !== claimedInvocation.id) {
+          throw new Error('The invocation is not the active goal step.');
+        }
+        const expectedInputs = activeStep.inputStepIds.map((stepId) => {
+          const dependency = activeGoal.steps.find(
+            (step) => step.id === stepId,
+          );
+          if (dependency?.artifact === undefined) {
+            throw new Error(
+              `The active goal step is missing completed dependency ${stepId}.`,
+            );
+          }
+          return dependency.artifact;
+        });
+        if (
+          !sameArtifactReferences(
+            expectedInputs,
+            claimedInvocation.inputArtifacts,
+          )
+        ) {
+          throw new Error(
+            'The claimed artifact inputs differ from the goal dependencies.',
+          );
+        }
+      } else if (claimedInvocation.inputArtifacts?.length) {
+        throw new Error(
+          'A non-goal invocation cannot consume prior artifacts.',
+        );
+      }
+      const inputArtifacts: Artifact[] = [];
+      for (const reference of claimedInvocation.inputArtifacts ?? []) {
+        const inputArtifact = await options.resources.findArtifactById(
+          executionAggregate.task.principalId,
+          reference.id,
+        );
+        if (inputArtifact === null) {
+          throw new Error(
+            `Approved input artifact ${reference.id} was not found.`,
+          );
+        }
+        const inputProjectId =
+          'projectId' in inputArtifact ? inputArtifact.projectId : undefined;
+        if (
+          inputArtifact.taskId !== executionAggregate.task.id ||
+          inputArtifact.runId !== executionAggregate.run.id ||
+          inputArtifact.type !== reference.type ||
+          inputArtifact.mediaType !== reference.mediaType ||
+          inputArtifact.sha256 !== reference.sha256 ||
+          inputArtifact.byteLength !== reference.byteLength ||
+          !artifactContentIsIntact(inputArtifact) ||
+          (inputProjectId !== undefined &&
+            inputProjectId !== executionAggregate.task.projectId) ||
+          !capabilityRuntime.definition.acceptedInputArtifacts.includes(
+            inputArtifact.type,
+          )
+        ) {
+          throw new Error(
+            `Approved input artifact ${reference.id} failed integrity, scope, or compatibility validation.`,
+          );
+        }
+        inputArtifacts.push(inputArtifact);
       }
       const elapsedBeforeInvocation =
         Date.parse(clock()) - Date.parse(executionAggregate.run.createdAt);
@@ -1192,6 +1717,10 @@ export function createTaskLifecycle(options: {
             }
             candidate.run.status = 'failed';
             candidate.task.status = 'failed';
+            if (candidate.run.goal !== undefined) {
+              candidate.run.goal.status = 'failed';
+              setCurrentGoalStepStatus(candidate, 'failed');
+            }
             candidate.run.failure = {
               code: 'budget_exhausted',
               message: 'The run exhausted its duration budget.',
@@ -1231,17 +1760,20 @@ export function createTaskLifecycle(options: {
       const result = await capabilityRuntime.execute(
         {
           invocationId: claimedInvocation.id,
+          principalId: executionAggregate.task.principalId,
+          startedAt: claimedInvocation.startedAt,
+          recovery: resumingInterruptedInvocation,
           arguments: claimedInvocation.arguments,
           ...(projectReference === undefined
             ? {}
             : { project: projectReference }),
           ...(context === undefined ? {} : { context }),
+          ...(inputArtifacts.length === 0 ? {} : { artifacts: inputArtifacts }),
           limits: {
             maxDurationMs: remainingDurationMs,
             maxArtifactBytes: runBudget.limits.maxArtifactBytes,
             maxChangedFiles: runBudget.limits.maxContextFiles,
-            maxWebSearchCalls:
-              capabilityRuntime.authority.maxWebSearchCalls ?? 1,
+            maxWebSearchCalls: currentAuthority.maxWebSearchCalls ?? 1,
           },
         },
         { signal: controller.signal },
@@ -1249,7 +1781,7 @@ export function createTaskLifecycle(options: {
       const { type: artifactType, mediaType, content } = result.artifact;
       const producerModel = result.model;
       const contentJson = JSON.stringify(content);
-      const artifact = ArtifactSchema.parse({
+      let artifact = ArtifactSchema.parse({
         schemaVersion: 1,
         id: `artifact_${claimedInvocation.id.slice('invocation_'.length)}`,
         version: 1,
@@ -1268,8 +1800,19 @@ export function createTaskLifecycle(options: {
           destination: approvedDestination,
           ...producerModel,
         },
+        ...(claimedInvocation.inputArtifacts === undefined
+          ? {}
+          : { inputs: claimedInvocation.inputArtifacts }),
         content,
         createdAt: clock(),
+      });
+      const normalizedContentJson = JSON.stringify(artifact.content);
+      artifact = ArtifactSchema.parse({
+        ...artifact,
+        sha256: createHash('sha256')
+          .update(normalizedContentJson)
+          .digest('hex'),
+        byteLength: Buffer.byteLength(normalizedContentJson),
       });
       if (artifact.byteLength > runBudget.limits.maxArtifactBytes) {
         throw new Error(
@@ -1296,6 +1839,21 @@ export function createTaskLifecycle(options: {
       ) {
         throw new Error(
           'The stored artifact belongs to a different invocation context.',
+        );
+      }
+      if (!artifactContentIsIntact(storedArtifact.artifact)) {
+        throw new Error(
+          'The stored artifact content failed integrity validation.',
+        );
+      }
+      if (
+        !sameArtifactReferences(
+          storedArtifact.artifact.inputs,
+          claimedInvocation.inputArtifacts,
+        )
+      ) {
+        throw new Error(
+          'The stored artifact lineage differs from the approved inputs.',
         );
       }
       return await completeWithArtifact(storedArtifact.artifact);
@@ -1329,6 +1887,10 @@ export function createTaskLifecycle(options: {
               code: 'cancelled',
               message: 'The run was cancelled before the capability completed.',
             };
+            if (candidate.run.goal !== undefined) {
+              candidate.run.goal.status = 'cancelled';
+              setCurrentGoalStepStatus(candidate, 'cancelled');
+            }
             appendEvent(
               candidate,
               'run_cancelled',
@@ -1376,6 +1938,10 @@ export function createTaskLifecycle(options: {
           code: 'cancelled',
           message: 'The interrupted run was cancelled during recovery.',
         };
+        if (candidate.run.goal !== undefined) {
+          candidate.run.goal.status = 'cancelled';
+          setCurrentGoalStepStatus(candidate, 'cancelled');
+        }
         appendEvent(
           candidate,
           'run_cancelled',
@@ -1577,6 +2143,18 @@ export function createTaskLifecycle(options: {
         );
       }
       const currentStatus = existing.run.approval?.status;
+      const historicalApproval = existing.run.approvalHistory?.find(
+        (approval) => approval.id === input.approvalId,
+      );
+      if (historicalApproval !== undefined) {
+        if (historicalApproval.status !== input.decision) {
+          throw new LifecycleError(
+            `Approval ${input.approvalId} has already been ${historicalApproval.status}.`,
+            'approval_already_decided',
+          );
+        }
+        return finalizeConversationReply(existing);
+      }
       if (currentStatus !== 'pending') {
         if (currentStatus !== input.decision) {
           throw new LifecycleError(
@@ -1616,6 +2194,10 @@ export function createTaskLifecycle(options: {
           if (input.decision === 'rejected') {
             aggregate.run.status = 'rejected';
             aggregate.task.status = 'rejected';
+            if (aggregate.run.goal !== undefined) {
+              aggregate.run.goal.status = 'rejected';
+              setCurrentGoalStepStatus(aggregate, 'rejected');
+            }
             appendEvent(
               aggregate,
               'run_rejected',
@@ -1675,6 +2257,10 @@ export function createTaskLifecycle(options: {
             ? 'cancellation_requested'
             : 'cancelled';
           aggregate.task.status = wasExecuting ? 'active' : 'cancelled';
+          if (!wasExecuting && aggregate.run.goal !== undefined) {
+            aggregate.run.goal.status = 'cancelled';
+            setCurrentGoalStepStatus(aggregate, 'cancelled');
+          }
           aggregate.run.updatedAt = requestedAt;
           aggregate.task.updatedAt = requestedAt;
           if (aggregate.run.approval?.status === 'pending') {

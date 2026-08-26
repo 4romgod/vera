@@ -176,6 +176,136 @@ void describe('model decision boundary', () => {
     });
   });
 
+  void it('accepts a bounded compatible goal plan without authorizing its steps', async () => {
+    const goal = {
+      schemaVersion: 1,
+      objective: 'Plan and implement request tracing.',
+      summary: 'Plan the work, then use that plan to implement it.',
+      steps: [
+        {
+          id: 'step_plan',
+          purpose: 'Prepare the implementation plan.',
+          inputStepIds: [],
+          capability: 'development_planning',
+          version: 1,
+          arguments: {
+            objective: 'Plan request tracing.',
+            ticket: { reference: 'VERA-201', details: 'Add request tracing.' },
+            project: { name: 'Vera' },
+          },
+        },
+        {
+          id: 'step_change',
+          purpose: 'Implement the plan.',
+          inputStepIds: ['step_plan'],
+          capability: 'software_change',
+          version: 1,
+          arguments: {
+            objective: 'Implement request tracing.',
+            ticket: { reference: 'VERA-201', details: 'Add request tracing.' },
+            project: { name: 'Vera' },
+          },
+        },
+      ],
+    };
+    const result = await evaluator({
+      schemaVersion: 1,
+      kind: 'execute_goal',
+      decisionSummary: 'Two dependent specialist outcomes are required.',
+      goal,
+    })('plan and implement this', {
+      selectedProject: { id: 'project_vera', displayName: 'Vera' },
+    });
+
+    assert.deepEqual(result.decision, { kind: 'goal_planned', plan: goal });
+  });
+
+  void it('rejects a goal that rewrites the selected project identity', async () => {
+    const result = await evaluator({
+      schemaVersion: 1,
+      kind: 'execute_goal',
+      decisionSummary: 'Plan and implement in a different project.',
+      goal: {
+        schemaVersion: 1,
+        objective: 'Plan and implement request tracing.',
+        summary: 'Use two project capabilities.',
+        steps: [
+          {
+            id: 'step_plan',
+            purpose: 'Prepare the plan.',
+            inputStepIds: [],
+            capability: 'development_planning',
+            version: 1,
+            arguments: {
+              objective: 'Plan tracing.',
+              ticket: { reference: 'VERA-201', details: 'Add tracing.' },
+              project: { name: 'Another project' },
+            },
+          },
+          {
+            id: 'step_change',
+            purpose: 'Implement the plan.',
+            inputStepIds: ['step_plan'],
+            capability: 'software_change',
+            version: 1,
+            arguments: {
+              objective: 'Implement tracing.',
+              ticket: { reference: 'VERA-201', details: 'Add tracing.' },
+              project: { name: 'Another project' },
+            },
+          },
+        ],
+      },
+    })('plan and implement this', {
+      selectedProject: { id: 'project_vera', displayName: 'Vera' },
+    });
+
+    assert.equal(result.decision.kind, 'rejected');
+    assert.equal(result.decision.code, 'invalid_goal_plan');
+  });
+
+  void it('rejects a goal whose artifact dependency points forward', async () => {
+    const result = await evaluator({
+      schemaVersion: 1,
+      kind: 'execute_goal',
+      decisionSummary: 'Use an invalid sequence.',
+      goal: {
+        schemaVersion: 1,
+        objective: 'Implement and then plan.',
+        summary: 'Invalid dependency order.',
+        steps: [
+          {
+            id: 'step_change',
+            purpose: 'Implement first.',
+            inputStepIds: ['step_plan'],
+            capability: 'software_change',
+            version: 1,
+            arguments: {
+              objective: 'Implement.',
+              ticket: { reference: 'VERA-201', details: 'Implement.' },
+              project: { name: 'Vera' },
+            },
+          },
+          {
+            id: 'step_plan',
+            purpose: 'Plan later.',
+            inputStepIds: [],
+            capability: 'development_planning',
+            version: 1,
+            arguments: {
+              objective: 'Plan.',
+              ticket: { reference: 'VERA-201', details: 'Plan.' },
+              project: { name: 'Vera' },
+            },
+          },
+        ],
+      },
+    })('do this backwards');
+
+    assert.equal(result.decision.kind, 'rejected');
+    assert.equal(result.decision.code, 'invalid_model_output');
+  });
+
   void it('exposes and accepts web research only when its runtime is enabled', async () => {
     const candidate = {
       schemaVersion: 1,
@@ -227,6 +357,63 @@ void describe('model decision boundary', () => {
       ),
       true,
     );
+  });
+
+  void it('accepts only schema-valid owner-scoped personal task actions when enabled', async () => {
+    const candidate = {
+      schemaVersion: 1,
+      kind: 'invoke_capability',
+      decisionSummary: 'The owner asked to create a personal task.',
+      capability: { name: 'personal_task_management', version: 1 },
+      arguments: { action: 'create', title: 'Buy milk' },
+    };
+    const provider = new FakeModelProvider(candidate);
+    const result = await createEvaluateModelDecision(
+      provider,
+      () => 'decision_personal_task',
+      {
+        enabledCapabilities: [{ name: 'personal_task_management', version: 1 }],
+      },
+    )('Add a task to buy milk.');
+
+    assert.deepEqual(result.decision, {
+      kind: 'approval_required',
+      reason: 'specialist_capability_invocation',
+      capability: { name: 'personal_task_management', version: 1 },
+      proposedArguments: { action: 'create', title: 'Buy milk' },
+    });
+    assert.match(
+      provider.inputs[0]?.systemPrompt ?? '',
+      /owner-scoped and project-independent/u,
+    );
+    assert.doesNotMatch(
+      provider.inputs[0]?.systemPrompt ?? '',
+      /execute_goal/u,
+    );
+  });
+
+  void it('advertises only the enabled single-capability contract', async () => {
+    const provider = new FakeModelProvider({
+      schemaVersion: 1,
+      kind: 'respond',
+      decisionSummary: 'No specialist is needed.',
+      message: 'Hello.',
+    });
+
+    await createEvaluateModelDecision(provider, () => 'decision_research', {
+      enabledCapabilities: [{ name: 'web_research', version: 1 }],
+    })('hello');
+
+    const prompt = provider.inputs[0]?.systemPrompt ?? '';
+    const outputSchema = JSON.stringify(provider.inputs[0]?.outputSchema);
+    assert.match(prompt, /invoke_capability/u);
+    assert.match(prompt, /web_research/u);
+    assert.doesNotMatch(prompt, /execute_goal/u);
+    assert.doesNotMatch(prompt, /development_planning/u);
+    assert.doesNotMatch(prompt, /software_change/u);
+    assert.equal(outputSchema.includes('execute_goal'), false);
+    assert.equal(outputSchema.includes('development_planning'), false);
+    assert.equal(outputSchema.includes('software_change'), false);
   });
 
   void it('rejects capabilities outside the model-visible contract', async () => {

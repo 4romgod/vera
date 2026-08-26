@@ -1,12 +1,14 @@
 # Vera Security and Trust Model
 
 **Status:** Accepted
-**Version:** 0.4
-**Last updated:** 25 August 2026
+**Version:** 0.5
+**Last updated:** 26 August 2026
 **Accepted:** 24 August 2026 (owner); V1 perimeter clarified by ADR-0014 and
 cloud-provider policy clarified by ADR-0015 and bounded conversation disclosure
 accepted by ADR-0016 on 25 August 2026
-and managed-worktree application accepted by ADR-0018
+and managed-worktree application accepted by ADR-0018; bounded goal authority
+accepted by ADR-0021 and personal-task integration authority accepted by
+ADR-0022 on 26 August 2026
 
 ## Purpose
 
@@ -151,6 +153,20 @@ principal
 Authorization decisions are deterministic and recorded. A model may explain or
 recommend but cannot produce its own authorization token.
 
+Integration authority is calculated after action arguments are validated and
+before an invocation can execute. A capability's maximum authority is only a
+ceiling: the frozen approval must contain the exact authority for that action.
+For `personal_task_management@1`, listing discloses `personal_task_data` with no
+side effect; create, complete, and reopen additionally require
+`personal_data_write`. Switching a local adapter for a remote provider must not
+silently inherit network, credential, or third-party disclosure authority.
+
+Personal tasks are owner-scoped durable data. Store reads and mutations include
+the principal identity, public HTTP representations omit internal mutation
+identifiers, and invocation-based idempotency cannot cross owner boundaries.
+The V1 read API remains protected only by the accepted loopback owner perimeter;
+it must not be exposed remotely before a stronger identity decision.
+
 ## Resource and delegation budgets
 
 Cost control and loop prevention are authorization responsibilities, not prompt
@@ -190,14 +206,18 @@ Budget rules:
   model failure;
 - capability-local limits may be stricter but cannot weaken Vera's envelope.
 
-The implemented flat V1 envelope allows one initial model decision, one
-capability invocation, one recovery retry, ten minutes of run duration, 40
+The original flat V1 envelope allowed one initial model decision and one
+capability invocation. The accepted bounded-goal increment still allows one
+initial model decision but permits at most three capability invocations, one per
+validated goal step, plus one recovery retry, ten minutes of run duration, 40
 context files, 200,000 total context bytes, 40,000 bytes per context file, and
 a 100,000-byte capability artifact. Context, output, call, invocation, retry, and
-duration limits are enforced in code. Model adapters additionally send a
+duration limits are enforced in code. Each step has its own exact approval; a
+prior artifact adds an explicit `artifact_content` disclosure and is hash-checked
+before use. Model adapters additionally send a
 configured maximum output-token request and record provider token usage when it
-is returned. Because V1 permits only one decision call and one capability
-invocation with bounded input, this provides a finite per-operation boundary.
+is returned. The fixed three-step ceiling provides a finite per-operation
+boundary without allowing a self-extending model loop.
 Cumulative token or monetary accounting is required before increasing those
 call counts or enabling provider fallback/routing; absence of measurable usage
 must remain explicit.

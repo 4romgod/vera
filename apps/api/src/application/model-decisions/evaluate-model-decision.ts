@@ -20,6 +20,8 @@ import { buildModelSystemPrompt } from './model-system-prompt.ts';
 import type { ModelProvider } from '../../ports/model/model-provider.ts';
 import type { CapabilityReference } from '../../domain/capabilities/capability-registry.ts';
 import { z } from 'zod';
+import { GoalPlanSchema } from '../../domain/goals/goal-plan.ts';
+import { PersonalTaskActionArgumentsSchema } from '../../domain/personal-tasks/personal-task.ts';
 
 export type EvaluateModelDecision = (
   message: string,
@@ -29,9 +31,53 @@ export type EvaluateModelDecision = (
   },
 ) => Promise<DecisionResult>;
 
-function decide(proposal: ModelProposal): ExecutionDecision {
+function decide(
+  proposal: ModelProposal,
+  enabledCapabilities: readonly CapabilityReference[],
+  selectedProject?: { id: string; displayName: string },
+): ExecutionDecision {
   if (proposal.kind === 'respond') {
     return { kind: 'respond', message: proposal.message };
+  }
+
+  if (proposal.kind === 'execute_goal') {
+    const plan = GoalPlanSchema.safeParse(proposal.goal);
+    if (!plan.success) {
+      return {
+        kind: 'rejected',
+        code: 'invalid_goal_plan',
+        message:
+          'The proposed goal plan is invalid or cannot carry its artifacts safely.',
+      };
+    }
+    const unavailable = plan.data.steps.find(
+      (step) =>
+        !enabledCapabilities.some(
+          (capability) =>
+            capability.name === step.capability &&
+            capability.version === step.version,
+        ),
+    );
+    if (unavailable !== undefined) {
+      return {
+        kind: 'rejected',
+        code: 'unknown_capability',
+        message: `Goal step ${unavailable.id} selected an unavailable capability.`,
+      };
+    }
+    const mismatchedProjectStep = plan.data.steps.find(
+      (step) =>
+        'project' in step.arguments &&
+        step.arguments.project.name !== selectedProject?.displayName,
+    );
+    if (mismatchedProjectStep !== undefined) {
+      return {
+        kind: 'rejected',
+        code: 'invalid_goal_plan',
+        message: `Goal step ${mismatchedProjectStep.id} does not preserve the selected project identity.`,
+      };
+    }
+    return { kind: 'goal_planned', plan: plan.data };
   }
 
   const capability = findCapability(
@@ -79,6 +125,16 @@ function decide(proposal: ModelProposal): ExecutionDecision {
       ),
     };
   }
+  if (proposal.capability.name === 'personal_task_management') {
+    return {
+      kind: 'approval_required',
+      reason: 'specialist_capability_invocation',
+      capability: proposal.capability,
+      proposedArguments: PersonalTaskActionArgumentsSchema.parse(
+        proposal.arguments,
+      ),
+    };
+  }
   return {
     kind: 'approval_required',
     reason: 'specialist_capability_invocation',
@@ -100,10 +156,7 @@ export function createEvaluateModelDecision(
     { name: 'development_planning', version: 1 },
     { name: 'software_change', version: 1 },
   ];
-  const webResearchEnabled = enabledCapabilities.some(
-    (capability) => capability.name === 'web_research',
-  );
-  const generationSchema = createModelProposalSchema({ webResearchEnabled });
+  const generationSchema = createModelProposalSchema({ enabledCapabilities });
   const generationJsonSchema = z.toJSONSchema(generationSchema, {
     target: 'draft-7',
   });
@@ -159,7 +212,11 @@ export function createEvaluateModelDecision(
     return {
       decisionId: createId(),
       proposal: validatedProposal.data,
-      decision: decide(validatedProposal.data),
+      decision: decide(
+        validatedProposal.data,
+        enabledCapabilities,
+        context?.selectedProject,
+      ),
       model: {
         provider: generation.provider,
         model: generation.model,

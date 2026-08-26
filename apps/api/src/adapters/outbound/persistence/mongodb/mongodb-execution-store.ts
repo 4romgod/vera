@@ -104,7 +104,10 @@ export class MongoDbExecutionStore implements ExecutionStore {
   ): Promise<TaskAggregate | null> {
     return this.findOne({
       'task.principalId': principalId,
-      'run.approval.id': approvalId,
+      $or: [
+        { 'run.approval.id': approvalId },
+        { 'run.approvalHistory.id': approvalId },
+      ],
     });
   }
 

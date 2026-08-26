@@ -2,6 +2,7 @@ export type ResourceErrorCode =
   | 'project_not_found'
   | 'conversation_not_found'
   | 'artifact_not_found'
+  | 'personal_task_not_found'
   | 'idempotency_key_reused'
   | 'invalid_project_source';
 

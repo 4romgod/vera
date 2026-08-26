@@ -1,7 +1,7 @@
 # Vera Architecture Decision Records
 
 **Status:** Active index
-**Last updated:** 25 August 2026
+**Last updated:** 26 August 2026
 
 ## Purpose
 
@@ -42,6 +42,8 @@ erasing why a choice was made.
 | [0018](0018-apply-approved-software-changes-in-managed-git-worktrees.md) | Accepted | Apply exact approved patch artifacts into durable managed Git worktrees without commit or publication authority. |
 | [0019](0019-organize-the-api-as-an-inward-dependent-modular-monolith.md) | Accepted | Organize the growing API by architectural role and cohesive responsibility, enforced by dependency tests. |
 | [0020](0020-use-a-declarative-capability-runtime-and-approval-gated-web-research.md) | Accepted | Route enabled specialists through one declarative runtime and add project-independent, approval-gated web research. |
+| [0021](0021-execute-bounded-goals-with-step-scoped-approvals-and-artifact-lineage.md) | Accepted | Execute two- or three-step goals through separate approvals and integrity-checked artifact handoffs. |
+| [0022](0022-introduce-provider-neutral-integration-actions-with-vera-owned-personal-tasks.md) | Accepted | Add a provider-neutral integration-action boundary and durable, approval-gated personal tasks. |
 
 ADRs 0001–0008 were accepted 24 August 2026 following the owner's review of
 the foundation documentation. ADR-0007 accepted a semantic boundary without
@@ -70,6 +72,11 @@ publication. ADR-0019 makes the API's role-first nested module map explicit and
 executable without prematurely splitting the modular monolith. ADR-0020 makes
 capability availability, authority, routing, and execution one declarative
 runtime fact and proves the boundary with project-independent web research.
+ADR-0021 turns those declarative capabilities into bounded assistant-level goal
+execution without introducing an unbounded model loop or blanket approval.
+ADR-0022 adds the first owner-state integration through per-action authority,
+durable personal tasks, and a provider-neutral adapter port without selecting an
+external task vendor.
 
 ## ADR rules
 

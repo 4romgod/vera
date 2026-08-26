@@ -68,6 +68,50 @@ void describe('Vera HTTP client', () => {
     );
   });
 
+  void it('lists and validates owner-scoped personal tasks', async () => {
+    let requestedUrl = '';
+    const task = {
+      schemaVersion: 1 as const,
+      id: 'personal_task_test',
+      title: 'Buy milk',
+      status: 'open' as const,
+      createdAt: '2026-08-26T10:00:00.000Z',
+      updatedAt: '2026-08-26T10:00:00.000Z',
+    };
+    const client = new VeraClient({
+      baseUrl: 'http://vera.test',
+      fetch: (input) => {
+        requestedUrl =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+        return Promise.resolve(
+          Response.json(
+            requestedUrl.includes('/personal-tasks/personal_task_test')
+              ? task
+              : { schemaVersion: 1, tasks: [task] },
+          ),
+        );
+      },
+    });
+
+    const listed = await client.listPersonalTasks({
+      status: 'open',
+      limit: 10,
+    });
+    assert.equal(
+      requestedUrl,
+      'http://vera.test/v1/personal-tasks?status=open&limit=10',
+    );
+    assert.equal(listed.tasks[0]?.title, 'Buy milk');
+    assert.equal(
+      (await client.getPersonalTask('personal_task_test')).id,
+      'personal_task_test',
+    );
+  });
+
   void it('sends idempotent task submissions and validates task identity', async () => {
     let request:
       | {

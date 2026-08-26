@@ -4,7 +4,10 @@ import { describe, it } from 'node:test';
 import { InMemoryExecutionStore } from '../../../src/adapters/outbound/persistence/memory/in-memory-execution-store.ts';
 import { InMemoryOwnerResourceStore } from '../../../src/adapters/outbound/persistence/memory/in-memory-owner-resource-store.ts';
 import { InMemoryScratchpad } from '../../../src/adapters/outbound/persistence/memory/in-memory-scratchpad.ts';
-import { createTaskLifecycle } from '../../../src/application/tasks/task-lifecycle.ts';
+import {
+  LifecycleError,
+  createTaskLifecycle,
+} from '../../../src/application/tasks/task-lifecycle.ts';
 import type { EvaluateModelDecision } from '../../../src/application/model-decisions/evaluate-model-decision.ts';
 import type { ConversationMessage } from '../../../src/domain/conversations/conversation.ts';
 import type { DecisionResult } from '../../../src/domain/model/execution-decision.ts';
@@ -116,6 +119,79 @@ function softwareChangeDecision(): DecisionResult {
   };
 }
 
+function personalTaskDecision(
+  proposedArguments:
+    | { action: 'create'; title: string }
+    | { action: 'list'; status: 'all' | 'open' | 'completed' }
+    | { action: 'complete' | 'reopen'; taskId: string },
+): DecisionResult {
+  return {
+    decisionId: `decision_personal_task_${proposedArguments.action}`,
+    proposal: {
+      schemaVersion: 1,
+      kind: 'invoke_capability',
+      decisionSummary: 'The owner requested a personal task action.',
+      capability: { name: 'personal_task_management', version: 1 },
+      arguments: proposedArguments,
+    },
+    decision: {
+      kind: 'approval_required',
+      reason: 'specialist_capability_invocation',
+      capability: { name: 'personal_task_management', version: 1 },
+      proposedArguments,
+    },
+    model: { provider: 'fake', model: 'fake-v1', durationMs: 1 },
+  };
+}
+
+function goalDecision(): DecisionResult {
+  const planningArguments = {
+    objective: 'Add request tracing.',
+    ticket: { reference: 'VERA-202', details: 'Trace every API request.' },
+    project: { name: 'Vera' },
+  };
+  const changeArguments = {
+    objective: 'Implement request tracing.',
+    ticket: { reference: 'VERA-203', details: 'Trace every API request.' },
+    project: { name: 'Vera' },
+  };
+  const goal = {
+    schemaVersion: 1 as const,
+    objective: 'Plan and implement request tracing.',
+    summary:
+      'Prepare an evidence-bounded plan and use it to produce an isolated change.',
+    steps: [
+      {
+        id: 'step_plan',
+        purpose: 'Prepare the implementation plan.',
+        inputStepIds: [],
+        capability: 'development_planning' as const,
+        version: 1 as const,
+        arguments: planningArguments,
+      },
+      {
+        id: 'step_change',
+        purpose: 'Implement the approved plan.',
+        inputStepIds: ['step_plan'],
+        capability: 'software_change' as const,
+        version: 1 as const,
+        arguments: changeArguments,
+      },
+    ],
+  };
+  return {
+    decisionId: 'decision_goal_test',
+    proposal: {
+      schemaVersion: 1,
+      kind: 'execute_goal',
+      decisionSummary: 'The owner requested two dependent outcomes.',
+      goal,
+    },
+    decision: { kind: 'goal_planned', plan: goal },
+    model: { provider: 'fake', model: 'fake-v1', durationMs: 1 },
+  };
+}
+
 class FakePlanningCapability implements DevelopmentPlanningCapability {
   public readonly calls: {
     invocation: DevelopmentPlanningInvocation;
@@ -207,6 +283,7 @@ function harness(options?: {
   });
   const scratchpad = new InMemoryScratchpad();
   const capability = options?.capability ?? new FakePlanningCapability();
+  const warnings: unknown[] = [];
   let sequence = 0;
   let evaluations = 0;
   const contextAssembler: ProjectContextAssembler =
@@ -242,9 +319,13 @@ function harness(options?: {
       createTestCapabilityRuntime({
         developmentPlanning: options?.registry ?? registryFor(capability),
         softwareChange: createDeterministicSoftwareChangeRegistry(),
+        personalTaskStore: resources,
       }),
     resources,
     contextAssembler,
+    observer: {
+      warning: (error) => warnings.push(error),
+    },
     ...(options?.executionMode === undefined
       ? {}
       : { executionMode: options.executionMode }),
@@ -263,11 +344,294 @@ function harness(options?: {
     resources,
     scratchpad,
     capability,
+    warnings,
     evaluations: () => evaluations,
   };
 }
 
 void describe('task lifecycle', () => {
+  void it('creates, lists, and completes a durable personal task through exact action authority', async () => {
+    const taskIdentity: { value?: string } = {};
+    const test = harness({
+      evaluate: (message) => {
+        if (message === 'create') {
+          return Promise.resolve(
+            personalTaskDecision({ action: 'create', title: 'Buy milk' }),
+          );
+        }
+        if (message === 'list') {
+          return Promise.resolve(
+            personalTaskDecision({ action: 'list', status: 'open' }),
+          );
+        }
+        if (taskIdentity.value === undefined) {
+          throw new Error('Task identity is missing.');
+        }
+        return Promise.resolve(
+          personalTaskDecision({
+            action: 'complete',
+            taskId: taskIdentity.value,
+          }),
+        );
+      },
+    });
+
+    const create = await test.lifecycle.submit({
+      message: 'create',
+      requestKey: 'personal-task-create',
+      principalId: 'owner_v1',
+    });
+    assert.ok(create.run.approval);
+    const createApproval = create.run.approval;
+    assert.ok(createApproval.authority);
+    assert.equal(createApproval.authority.networkAccess, 'none');
+    assert.deepEqual(createApproval.authority.sideEffects, [
+      'personal_data_write',
+    ]);
+    assert.equal(createApproval.project, undefined);
+    const created = await test.lifecycle.decideApproval({
+      principalId: 'owner_v1',
+      approvalId: createApproval.id,
+      decision: 'approved',
+    });
+    assert.equal(created.run.status, 'succeeded');
+    const createdOutput = created.run.output;
+    assert.ok(createdOutput);
+    assert.equal(createdOutput.kind, 'personal_task_result');
+    const createdTask = createdOutput.result.tasks[0];
+    assert.ok(createdTask);
+    const taskId = createdTask.id;
+    taskIdentity.value = taskId;
+    assert.equal(createdTask.title, 'Buy milk');
+    assert.equal(createdTask.status, 'open');
+    assert.ok(createdOutput.artifact);
+    assert.equal(createdOutput.artifact.type, 'personal_task_result');
+
+    const list = await test.lifecycle.submit({
+      message: 'list',
+      requestKey: 'personal-task-list',
+      principalId: 'owner_v1',
+    });
+    assert.ok(list.run.approval);
+    assert.ok(list.run.approval.authority);
+    assert.deepEqual(list.run.approval.authority.sideEffects, []);
+    const listed = await test.lifecycle.decideApproval({
+      principalId: 'owner_v1',
+      approvalId: list.run.approval.id,
+      decision: 'approved',
+    });
+    const listedOutput = listed.run.output;
+    assert.ok(listedOutput);
+    assert.equal(listedOutput.kind, 'personal_task_result');
+    assert.equal(listedOutput.result.tasks[0]?.id, taskId);
+
+    const complete = await test.lifecycle.submit({
+      message: 'complete',
+      requestKey: 'personal-task-complete',
+      principalId: 'owner_v1',
+    });
+    assert.ok(complete.run.approval);
+    const completed = await test.lifecycle.decideApproval({
+      principalId: 'owner_v1',
+      approvalId: complete.run.approval.id,
+      decision: 'approved',
+    });
+    assert.ok(completed.run.output);
+    assert.equal(completed.run.output.kind, 'personal_task_result');
+    const durable = await test.resources.findPersonalTaskById(
+      'owner_v1',
+      taskId,
+    );
+    assert.equal(durable?.status, 'completed');
+    assert.equal(
+      (
+        await test.resources.listPersonalTasks('another_owner', {
+          status: 'all',
+          limit: 100,
+        })
+      ).length,
+      0,
+    );
+  });
+
+  void it('executes a bounded goal through separate approvals and typed artifact lineage', async () => {
+    const test = harness({ decision: goalDecision() });
+    const submitted = await test.lifecycle.submit({
+      message: 'Plan and implement request tracing.',
+      requestKey: 'goal-request',
+      principalId: 'owner_v1',
+    });
+
+    assert.equal(submitted.run.status, 'awaiting_approval');
+    assert.ok(submitted.run.goal);
+    assert.ok(submitted.run.approval);
+    assert.equal(submitted.run.goal.steps.length, 2);
+    assert.equal(
+      submitted.run.approval.capability.name,
+      'development_planning',
+    );
+    assert.equal(submitted.run.approval.inputArtifacts, undefined);
+
+    const afterPlanning = await test.lifecycle.decideApproval({
+      approvalId: submitted.run.approval.id,
+      decision: 'approved',
+      principalId: 'owner_v1',
+    });
+    assert.equal(afterPlanning.run.status, 'awaiting_approval');
+    assert.ok(afterPlanning.run.goal);
+    assert.ok(afterPlanning.run.goal.steps[0]);
+    assert.ok(afterPlanning.run.goal.steps[1]);
+    assert.ok(afterPlanning.run.approval);
+    assert.ok(afterPlanning.run.approval.inputArtifacts?.[0]);
+    assert.ok(afterPlanning.run.approvalHistory?.[0]);
+    assert.ok(afterPlanning.run.invocationHistory?.[0]);
+    assert.equal(afterPlanning.run.goal.steps[0].status, 'succeeded');
+    assert.equal(afterPlanning.run.goal.steps[1].status, 'awaiting_approval');
+    assert.equal(afterPlanning.run.approval.capability.name, 'software_change');
+    assert.equal(afterPlanning.run.approval.inputArtifacts.length, 1);
+    assert.equal(
+      afterPlanning.run.approval.inputArtifacts[0].type,
+      'implementation_plan',
+    );
+    assert.ok(
+      afterPlanning.run.approval.authority?.dataClasses.includes(
+        'artifact_content',
+      ),
+    );
+    assert.equal(afterPlanning.run.approvalHistory.length, 1);
+    assert.equal(
+      afterPlanning.run.approvalHistory[0].id,
+      submitted.run.approval.id,
+    );
+    assert.equal(afterPlanning.run.approvalHistory[0].status, 'approved');
+    assert.equal(afterPlanning.run.invocationHistory.length, 1);
+    assert.equal(afterPlanning.run.invocationHistory[0].status, 'succeeded');
+
+    const replayedPriorApproval = await test.lifecycle.decideApproval({
+      approvalId: submitted.run.approval.id,
+      decision: 'approved',
+      principalId: 'owner_v1',
+    });
+    assert.ok(replayedPriorApproval.run.approval);
+    assert.equal(
+      replayedPriorApproval.run.approval.id,
+      afterPlanning.run.approval.id,
+    );
+    assert.equal(replayedPriorApproval.run.status, 'awaiting_approval');
+    await assert.rejects(
+      test.lifecycle.decideApproval({
+        approvalId: submitted.run.approval.id,
+        decision: 'rejected',
+        principalId: 'owner_v1',
+      }),
+      (error: unknown) =>
+        error instanceof LifecycleError &&
+        error.code === 'approval_already_decided',
+    );
+
+    const completed = await test.lifecycle.decideApproval({
+      approvalId: afterPlanning.run.approval.id,
+      decision: 'approved',
+      principalId: 'owner_v1',
+    });
+    assert.equal(
+      completed.run.status,
+      'succeeded',
+      JSON.stringify({
+        failure: completed.run.failure,
+        warnings: test.warnings.map(String),
+      }),
+    );
+    assert.ok(completed.run.goal);
+    assert.equal(completed.run.goal.status, 'succeeded');
+    if (completed.run.output?.kind !== 'goal_result') {
+      throw new Error('The completed goal did not return a goal result.');
+    }
+    const goalOutput = completed.run.output;
+    assert.equal(goalOutput.artifacts.length, 2);
+    assert.ok(goalOutput.artifacts[0]);
+    assert.ok(goalOutput.artifacts[1]);
+    const changeArtifact = await test.resources.findArtifactById(
+      'owner_v1',
+      goalOutput.artifacts[1].id,
+    );
+    assert.ok(changeArtifact);
+    assert.equal(changeArtifact.inputs?.length, 1);
+    assert.ok(changeArtifact.inputs[0]);
+    assert.equal(changeArtifact.inputs[0].id, goalOutput.artifacts[0].id);
+    assert.deepEqual(
+      completed.events
+        .filter((event) => event.type.startsWith('goal_'))
+        .map((event) => event.type),
+      [
+        'goal_planned',
+        'goal_step_awaiting_approval',
+        'goal_step_succeeded',
+        'goal_step_awaiting_approval',
+        'goal_step_succeeded',
+        'goal_succeeded',
+      ],
+    );
+  });
+
+  void it('stops a goal when its current step is rejected', async () => {
+    const test = harness({ decision: goalDecision() });
+    const submitted = await test.lifecycle.submit({
+      message: 'Plan and implement request tracing.',
+      requestKey: 'goal-rejected',
+      principalId: 'owner_v1',
+    });
+    assert.ok(submitted.run.approval);
+
+    const rejected = await test.lifecycle.decideApproval({
+      approvalId: submitted.run.approval.id,
+      decision: 'rejected',
+      principalId: 'owner_v1',
+    });
+
+    assert.equal(rejected.run.status, 'rejected');
+    assert.ok(rejected.run.goal);
+    assert.ok(rejected.run.goal.steps[0]);
+    assert.ok(rejected.run.goal.steps[1]);
+    assert.equal(rejected.run.goal.status, 'rejected');
+    assert.equal(rejected.run.goal.steps[0].status, 'rejected');
+    assert.equal(rejected.run.goal.steps[1].status, 'pending');
+    assert.equal(rejected.run.invocation, undefined);
+  });
+
+  void it('cancels a goal at the next approval without undoing completed evidence', async () => {
+    const test = harness({ decision: goalDecision() });
+    const submitted = await test.lifecycle.submit({
+      message: 'Plan and implement request tracing.',
+      requestKey: 'goal-cancelled',
+      principalId: 'owner_v1',
+    });
+    assert.ok(submitted.run.approval);
+    const afterPlanning = await test.lifecycle.decideApproval({
+      approvalId: submitted.run.approval.id,
+      decision: 'approved',
+      principalId: 'owner_v1',
+    });
+    assert.ok(afterPlanning.run.goal);
+    assert.ok(afterPlanning.run.goal.steps[0]);
+
+    const cancelled = await test.lifecycle.cancelRun({
+      runId: submitted.run.id,
+      principalId: 'owner_v1',
+    });
+
+    assert.equal(afterPlanning.run.goal.steps[0].status, 'succeeded');
+    assert.equal(cancelled.run.status, 'cancelled');
+    assert.ok(cancelled.run.goal);
+    assert.ok(cancelled.run.goal.steps[0]);
+    assert.ok(cancelled.run.goal.steps[1]);
+    assert.ok(cancelled.run.approval);
+    assert.equal(cancelled.run.goal.status, 'cancelled');
+    assert.equal(cancelled.run.goal.steps[0].status, 'succeeded');
+    assert.equal(cancelled.run.goal.steps[1].status, 'cancelled');
+    assert.equal(cancelled.run.approval.status, 'rejected');
+  });
+
   void it('freezes completed same-scope turns and projects one durable Vera reply', async () => {
     const evaluations: Parameters<EvaluateModelDecision>[1][] = [];
     let evaluation = 0;

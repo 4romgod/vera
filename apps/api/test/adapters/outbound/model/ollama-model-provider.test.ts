@@ -23,7 +23,17 @@ function generate(provider: OllamaModelProvider) {
     message: 'hello',
     outputSchema: {
       type: 'object',
-      properties: { schemaVersion: { type: 'integer' } },
+      properties: {
+        schemaVersion: { type: 'integer' },
+        prefixOnly: { type: 'string', pattern: '^prefix' },
+        exact: { type: 'string', pattern: '^exact$' },
+        steps: {
+          type: 'array',
+          items: { type: 'string' },
+          minItems: 2,
+          maxItems: 3,
+        },
+      },
       required: ['schemaVersion'],
       additionalProperties: true,
     },
@@ -40,17 +50,40 @@ function requestUrl(input: Parameters<typeof globalThis.fetch>[0]): string {
   return input.url;
 }
 
-function containsGrammarBound(value: unknown): boolean {
+function containsRemovedGrammarConstraint(value: unknown): boolean {
   if (Array.isArray(value)) {
-    return value.some((item) => containsGrammarBound(item));
+    return value.some((item) => containsRemovedGrammarConstraint(item));
   }
   if (typeof value !== 'object' || value === null) {
     return false;
   }
   return Object.entries(value).some(
     ([key, item]) =>
-      ['minLength', 'maxLength', 'minItems', 'maxItems'].includes(key) ||
-      containsGrammarBound(item),
+      ['minLength', 'maxLength', 'maxItems'].includes(key) ||
+      containsRemovedGrammarConstraint(item),
+  );
+}
+
+function patternValues(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => patternValues(item));
+  }
+  if (typeof value !== 'object' || value === null) return [];
+  return Object.entries(value).flatMap(([key, item]) =>
+    key === 'pattern' && typeof item === 'string'
+      ? [item]
+      : patternValues(item),
+  );
+}
+
+function containsObjectKey(value: unknown, expectedKey: string): boolean {
+  if (Array.isArray(value)) {
+    return value.some((item) => containsObjectKey(item, expectedKey));
+  }
+  if (typeof value !== 'object' || value === null) return false;
+  return Object.entries(value).some(
+    ([key, item]) =>
+      key === expectedKey || containsObjectKey(item, expectedKey),
   );
 }
 
@@ -104,7 +137,10 @@ void describe('Ollama model adapter', () => {
     assert.equal(parsedRequest.options.temperature, 0);
     assert.equal(parsedRequest.options.num_predict, 2_048);
     assert.ok(Object.keys(parsedRequest.format).length > 0);
-    assert.equal(containsGrammarBound(parsedRequest.format), false);
+    assert.equal(containsRemovedGrammarConstraint(parsedRequest.format), false);
+    assert.deepEqual(patternValues(parsedRequest.format), []);
+    assert.equal(containsObjectKey(parsedRequest.format, 'oneOf'), false);
+    assert.equal(containsObjectKey(parsedRequest.format, 'minItems'), true);
   });
 
   void it('classifies malformed provider JSON', async () => {
@@ -123,6 +159,45 @@ void describe('Ollama model adapter', () => {
         error instanceof ModelProviderError &&
         error.code === 'provider_response_invalid',
     );
+  });
+
+  void it('retries with same-provider JSON mode when Ollama rejects the schema grammar', async () => {
+    const formats: unknown[] = [];
+    const provider = providerWith((_input, init) => {
+      if (typeof init?.body !== 'string') {
+        throw new TypeError('Expected a string request body');
+      }
+      const body = z
+        .object({ format: z.unknown() })
+        .parse(JSON.parse(init.body));
+      formats.push(body.format);
+      if (formats.length === 1) {
+        return Promise.resolve(
+          new Response('{"error":"failed to parse grammar"}', {
+            status: 400,
+          }),
+        );
+      }
+      return Promise.resolve(
+        Response.json({
+          model: 'test-model',
+          message: {
+            content: JSON.stringify({
+              schemaVersion: 1,
+              kind: 'respond',
+              decisionSummary: 'A direct response is sufficient.',
+              message: 'Hello.',
+            }),
+          },
+        }),
+      );
+    });
+
+    const generation = await generate(provider);
+
+    assert.equal(generation.provider, 'ollama');
+    assert.equal(typeof formats[0], 'object');
+    assert.equal(formats[1], 'json');
   });
 
   void it('classifies non-success provider responses', async () => {

@@ -87,6 +87,16 @@ export class ModelDevelopmentPlanningCapability
         ticket: invocation.arguments.ticket,
         objective: invocation.arguments.objective,
         context: invocation.context,
+        ...(invocation.artifacts === undefined
+          ? {}
+          : {
+              inputArtifacts: invocation.artifacts.map((artifact) => ({
+                id: artifact.id,
+                type: artifact.type,
+                sha256: artifact.sha256,
+                content: artifact.content,
+              })),
+            }),
       }),
       outputSchema: DevelopmentPlanContentJsonSchema,
     });

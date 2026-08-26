@@ -29,7 +29,7 @@ export type RunBudget = z.infer<typeof RunBudgetSchema>;
 export const DefaultRunBudget: RunBudget = {
   limits: {
     modelCalls: 1,
-    capabilityInvocations: 1,
+    capabilityInvocations: 3,
     retries: 1,
     maxDurationMs: 600_000,
     maxContextFiles: 40,

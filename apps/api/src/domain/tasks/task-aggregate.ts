@@ -4,6 +4,8 @@ import {
   ImplementationPlanArtifactReferenceSchema,
   SoftwareChangeArtifactReferenceSchema,
   ResearchReportArtifactReferenceSchema,
+  ArtifactReferenceSchema,
+  PersonalTaskResultArtifactReferenceSchema,
 } from '../artifacts/artifact.ts';
 import { CapabilityDestinationSchema } from '../capabilities/capability-destination.ts';
 import { ConversationContextBundleSchema } from '../conversations/conversation-context.ts';
@@ -13,6 +15,10 @@ import {
   WebResearchProposalArgumentsSchema,
   CapabilityAuthoritySchema,
 } from '../capabilities/capability-registry.ts';
+import {
+  PersonalTaskActionArgumentsSchema,
+  PersonalTaskResultSchema,
+} from '../personal-tasks/personal-task.ts';
 import { DevelopmentPlanSchema } from '../plans/development-plan.ts';
 import { DecisionResultSchema } from '../model/execution-decision.ts';
 import {
@@ -22,6 +28,7 @@ import {
 import { RunBudgetSchema } from './run-budget.ts';
 import { SoftwareChangeSchema } from '../changes/software-change.ts';
 import { ResearchReportSchema } from '../research/research-report.ts';
+import { GoalExecutionSchema } from '../goals/goal-plan.ts';
 
 export const TaskStatusSchema = z.enum([
   'active',
@@ -57,6 +64,7 @@ const ApprovalIdentitySchema = z
     contextManifest: ProjectContextManifestSchema.optional(),
     destination: CapabilityDestinationSchema.optional(),
     authority: CapabilityAuthoritySchema.optional(),
+    inputArtifacts: z.array(ArtifactReferenceSchema).max(2).optional(),
     requestedAt: z.iso.datetime(),
     decidedAt: z.iso.datetime().optional(),
     decidedBy: z.string().optional(),
@@ -64,6 +72,15 @@ const ApprovalIdentitySchema = z
   .strict();
 
 export const ApprovalSchema = z.union([
+  ApprovalIdentitySchema.extend({
+    capability: z
+      .object({
+        name: z.literal('personal_task_management'),
+        version: z.literal(1),
+      })
+      .strict(),
+    proposedArguments: PersonalTaskActionArgumentsSchema,
+  }).strict(),
   ApprovalIdentitySchema.extend({
     capability: z
       .object({
@@ -107,6 +124,7 @@ const CapabilityInvocationIdentitySchema = z
     contextManifest: ProjectContextManifestSchema.optional(),
     destination: CapabilityDestinationSchema.optional(),
     authority: CapabilityAuthoritySchema.optional(),
+    inputArtifacts: z.array(ArtifactReferenceSchema).max(2).optional(),
     startedAt: z.iso.datetime(),
     completedAt: z.iso.datetime().optional(),
     model: z
@@ -128,6 +146,15 @@ const CapabilityInvocationIdentitySchema = z
   .strict();
 
 export const CapabilityInvocationSchema = z.union([
+  CapabilityInvocationIdentitySchema.extend({
+    capability: z
+      .object({
+        name: z.literal('personal_task_management'),
+        version: z.literal(1),
+      })
+      .strict(),
+    arguments: PersonalTaskActionArgumentsSchema,
+  }).strict(),
   CapabilityInvocationIdentitySchema.extend({
     capability: z
       .object({
@@ -160,8 +187,23 @@ export const CapabilityInvocationSchema = z.union([
 export const TaskOutputSchema = z.discriminatedUnion('kind', [
   z
     .object({
+      kind: z.literal('personal_task_result'),
+      result: PersonalTaskResultSchema,
+      artifact: PersonalTaskResultArtifactReferenceSchema.optional(),
+    })
+    .strict(),
+  z
+    .object({
       kind: z.literal('response'),
       message: z.string(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('goal_result'),
+      objective: z.string().min(1).max(10_000),
+      summary: z.string().min(1).max(2_000),
+      artifacts: z.array(ArtifactReferenceSchema).min(2).max(3),
     })
     .strict(),
   z
@@ -238,6 +280,10 @@ export const TaskEventTypeSchema = z.enum([
   'conversation_context_assembled',
   'conversation_reply_pending',
   'conversation_reply_projected',
+  'goal_planned',
+  'goal_step_awaiting_approval',
+  'goal_step_succeeded',
+  'goal_succeeded',
 ]);
 
 export const TaskEventSchema = z
@@ -277,13 +323,19 @@ export const TaskAggregateSchema = z
         updatedAt: z.iso.datetime(),
         decision: DecisionResultSchema.optional(),
         approval: ApprovalSchema.optional(),
+        approvalHistory: z.array(ApprovalSchema).max(2).optional(),
         invocation: CapabilityInvocationSchema.optional(),
+        invocationHistory: z
+          .array(CapabilityInvocationSchema)
+          .max(2)
+          .optional(),
         output: TaskOutputSchema.optional(),
         failure: TaskFailureSchema.optional(),
         budget: RunBudgetSchema.optional(),
         context: ProjectContextBundleSchema.optional(),
         conversationContext: ConversationContextBundleSchema.optional(),
         conversationReply: ConversationReplyProjectionSchema.optional(),
+        goal: GoalExecutionSchema.optional(),
       })
       .strict(),
     events: z.array(TaskEventSchema),

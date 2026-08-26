@@ -2,10 +2,12 @@
 
 **Status:** Accepted (capability declaration shape, invocation lifecycle,
 selection checks, and resource/delegation budget model)
-**Version:** 0.6
-**Last updated:** 25 August 2026
+**Version:** 0.8
+**Last updated:** 26 August 2026
 **Accepted:** 24 August 2026 (owner); declarative runtime, catalog, and
-`web_research@1` accepted by ADR-0020 on 25 August 2026
+`web_research@1` accepted by ADR-0020 on 25 August 2026; bounded composition
+accepted by ADR-0021 on 26 August 2026; provider-neutral integration actions
+and `personal_task_management@1` accepted by ADR-0022 on 26 August 2026
 
 ## Purpose
 
@@ -78,7 +80,7 @@ The owner-visible catalog exposes these non-secret fields through
 orchestration model and its structured-output schema. Credentials and native
 provider payloads never enter the catalog. A disabled declaration exposes its
 maximum authority envelope. An enabled declaration narrows that envelope to
-the selected runtime's effective authority; approval freezes that effective
+the selected runtime's action-specific effective authority; approval freezes that effective
 value and execution fails closed if the runtime later disagrees with it.
 
 Later declaration versions may cover:
@@ -165,6 +167,71 @@ Vera's code must then verify:
 - a safe idempotency identity exists for side effects.
 
 The model does not invent a capability, permission, credential, or contract.
+
+## Capability composition and artifact handoff
+
+An enabled capability declaration also states which artifact types it accepts
+as input. Vera may compose two or three capabilities into one bounded goal only
+when every dependency points backward and the consumer explicitly accepts the
+producer's artifact type.
+
+```mermaid
+flowchart LR
+    R["web_research@1"] -->|"research_report"| P["development_planning@1"]
+    P -->|"implementation_plan"| C["software_change@1"]
+    R -. "also accepted" .-> C
+```
+
+Artifact content is not model-authored authority. Before a handoff, Vera freezes
+the exact artifact references and the `artifact_content` data class in that
+step's approval. At execution and recovery it reloads the owner-scoped artifact,
+recomputes content integrity, verifies project scope and declared compatibility,
+and records the references on the new artifact as lineage. A capability never
+reads another capability's storage directly.
+
+The current accepted compositions are:
+
+| Consumer | Accepted input artifacts |
+|---|---|
+| `development_planning@1` | `research_report` |
+| `software_change@1` | `implementation_plan`, `research_report` |
+| `web_research@1` | none |
+| `personal_task_management@1` | none |
+
+Every step retains a separate destination and authority approval. Completing a
+planning step does not automatically authorize the implementation step.
+
+## Integration actions and owner state
+
+Capabilities that act on an owner service use a provider-neutral integration
+executor beneath the capability runtime. The executor receives only the
+principal identity, durable invocation identity, invocation start time,
+recovery marker, and schema-validated action arguments supplied by Vera code.
+It declares a destination and calculates the exact authority for that action.
+
+```mermaid
+flowchart LR
+    MODEL["Model proposal"] --> VALIDATE["Closed action schema"]
+    VALIDATE --> APPROVAL["Exact action + authority approval"]
+    APPROVAL --> CAP["personal_task_management@1"]
+    CAP --> PORT["IntegrationActionExecutor"]
+    PORT --> LOCAL["Vera personal-task store"]
+    PORT -. "future adapter" .-> REMOTE["External task or calendar provider"]
+    LOCAL --> ART["personal_task_result artifact"]
+```
+
+The first implementation supports `create`, `list`, `complete`, and `reopen`.
+Listing is a read-only action: it discloses `personal_task_data` but carries no
+side-effect class. Mutations additionally carry `personal_data_write`. The
+local adapter has no network or credential authority. Its task resources are
+not conversation memory and do not grant the model permission to read unrelated
+owner data.
+
+The `owner_state` effect class distinguishes a capability that changes Vera's
+authoritative owner resources from an external specialist invocation. Both
+still use the same task, approval, invocation, artifact, budget, and recovery
+lifecycle. See
+[ADR-0022](decisions/0022-introduce-provider-neutral-integration-actions-with-vera-owned-personal-tasks.md).
 
 ### Runtime resolution
 
