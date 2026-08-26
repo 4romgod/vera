@@ -5,8 +5,10 @@ this repository.
 
 ## Repository context
 
-Vera is a TypeScript-first npm-workspaces monorepo. The implemented application
-currently lives in `apps/api`. The architectural source of truth is:
+Vera is a TypeScript-first npm-workspaces monorepo. The implemented system spans
+`apps/api`, `apps/cli`, the universal Expo application in `apps/frontend`, and
+the provider-neutral HTTP client in `packages/client`. The architectural source
+of truth is:
 
 - `README.md` for setup, operation, and manual testing;
 - `docs/README.md` for documentation ownership and reading order;

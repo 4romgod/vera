@@ -1,13 +1,9 @@
 # Vera Memory and Context Architecture
 
-**Status:** Proposed for broader memory and retention policy; the separation of
-durable state, rebuildable execution scratchpad, and disposable model context
-is Accepted through ADR-0007, MongoDB/Redis operational storage is Accepted
-through ADR-0010, and bounded conversation context with durable reply
-projection is Accepted through ADR-0016
-and durable reminders with inbox notifications are Accepted through ADR-0023;
-adaptive observation context is Accepted through ADR-0024
-**Version:** 0.5
+**Status:** Accepted for the implemented information layers, explicit governed
+memory, deterministic retrieval, and provider disclosure boundary; physical
+erasure and third-party-provider memory disclosure remain open
+**Version:** 0.6
 **Last updated:** 26 August 2026
 
 ## Purpose
@@ -188,22 +184,45 @@ long-term memory or automatically disclose them to the next capability.
 Long-term memory answers, "What selected information should Vera be able to use
 again?"
 
-Potential classes include:
+The implemented memory classes are:
 
 | Memory class | Example | Default posture |
 |---|---|---|
 | User-stated fact | "My primary development machine is the Mac Mini." | Retain with provenance if useful. |
 | Preference | "Prefer npm workspaces." | Retain and allow correction. |
-| Project knowledge | "Gatherle uses a particular development workflow." | Scope to the project. |
-| Episodic summary | "A deployment investigation concluded X." | Retain selectively with source links. |
-| Capability knowledge | "Capability version 2 supports cancellation." | Derive from registry, not conversational memory. |
-| Inference | "The owner may prefer local models for private data." | Mark as inferred and require confirmation when consequential. |
+| Project knowledge | "Gatherly uses a particular development workflow." | Scope to the project. |
+| Instruction | "Ask before publishing changes." | Retain only after an exact approval. |
 
-A memory record needs identity, type, subject, scope, provenance, sensitivity,
-confidence where relevant, timestamps, and retention/deletion behaviour.
+Every record has a stable identity, monotonically increasing revision, type,
+subject, content, global or exact-project scope, owner-message provenance,
+sensitivity, timestamps, active/forgotten status, and prior revision history.
+Vera does not silently extract memories from conversation or store model
+inferences. `remember`, `list`, `correct`, and `forget` are closed
+`memory_management@1` actions, and every conversational action receives its own
+approval. Direct owner inspection uses read-only API projections. Correction
+preserves identity and up to 100 prior revisions; a further correction fails
+before persistence so the record cannot become unreadable. Forget creates a
+tombstone, removes the record from active retrieval, and retains the audit
+trail.
+
+Before an owner-controlled orchestration-model call, Vera deterministically
+selects active global and exact-project records, newest first, within 20-record
+and 12,000-character limits. The task freezes a manifest containing identities,
+revisions, hashes, scope, sizes, totals, limits, and exclusion counts. Vera
+reloads and validates the records immediately before disclosure and fails
+closed if any entry is missing, changed, forgotten, tampered, or out of scope.
+Only kind, subject, content, scope, and sensitivity cross the model boundary;
+internal IDs, hashes, provenance, and retrieval metadata stay local.
+
+Third-party orchestration providers receive no long-term memory context. This
+is an intentional data boundary, not a provider failure fallback. A separate
+accepted disclosure policy is required before enabling cloud-memory context.
+See
+[ADR-0025](decisions/0025-use-explicit-versioned-owner-governed-memory.md).
 
 Embeddings or vector indexes are retrieval mechanisms. They are not the memory
-model and do not remove the need for provenance or access control.
+model and do not remove the need for provenance or access control. Vera does
+not add one until deterministic retrieval becomes a measured quality problem.
 
 ## Knowledge sources
 
@@ -312,13 +331,14 @@ flowchart LR
     CORE["Vera core"] -->|"authoritative transitions"| OPS["MongoDB<br/>operational records"]
     CORE <-->|"temporary working state"| WORK["Redis<br/>execution scratchpad"]
     OPS -. "rehydrate after loss" .-> WORK
-    OPS -->|"explicit governed promotion"| MEMORY["Governed future memory store"]
+    CORE -->|"approved memory mutation"| MEMORY["MongoDB<br/>governed memory records"]
 ```
 
 The arrows express authority. MongoDB and Redis are selected for the V1
 single-node deployment by
 [ADR-0010](decisions/0010-use-mongodb-for-operational-truth-and-redis-for-scratchpads.md).
-Long-term memory storage is not selected by that decision.
+ADR-0025 separately selects a governed MongoDB collection and contract for
+long-term memory; Redis never becomes memory authority.
 
 ### Artifact storage
 
@@ -326,32 +346,32 @@ Large files should not necessarily live in the operational database. Vera may
 store content locally or in object storage while retaining durable metadata,
 integrity information, and access rules in the authoritative store.
 
-## Promotion into memory
+## Governed memory mutation
 
 ```mermaid
 flowchart LR
-    E["Message, event, or result"] --> X["Extract memory candidate"]
-    X --> V["Validate type, scope, and provenance"]
-    V --> P{"Policy / approval"}
-    P -->|"reject"| D["Discard candidate"]
-    P -->|"accept"| M["Persist versioned memory record"]
-    M --> R["Review, correct, expire, or delete"]
+    O["Explicit owner request"] --> X["Model proposes closed memory action"]
+    X --> V["Validate action, type, scope, and provenance"]
+    V --> P{"Exact owner approval"}
+    P -->|"reject"| D["Leave memory unchanged"]
+    P -->|"approve"| M["Persist versioned mutation"]
+    M --> R["Inspect, correct, or forget"]
 ```
 
-Vera must distinguish user-stated information from model-derived inference. A
-future user interface should allow the owner to inspect and correct meaningful
-memory.
+Vera does not automatically extract memory candidates from general messages,
+events, or model inferences. The universal frontend and owner CLI let the owner
+inspect memory and request explicit correction or forgetting through the same
+approval-gated capability.
 
 ## Decisions still required
 
-- Which memory classes, if any, are allowed in V1?
 - What operational data retention is required?
 - Will model contexts be retained for debugging, redacted, or discarded?
-- Which data may be sent to each provider?
+- Under what separately accepted policy, if any, may governed memory be sent to
+  third-party model providers?
 - What backup, migration, and deployment procedures will govern the selected
   MongoDB backend?
 - What retention and inspection policy applies to Redis scratchpad projections?
-- When is memory promotion automatic, approval-based, or forbidden?
 - How will deletion propagate to derived indexes and artifacts?
 
 Related persistence reasoning is recorded in

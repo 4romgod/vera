@@ -283,6 +283,7 @@ async function verifyCliJourney(
   client,
   personalTaskId,
   reminderId,
+  memoryId,
 ) {
   const catalog = await client.listCapabilities();
   const researchCapability = catalog.capabilities.find(
@@ -439,6 +440,28 @@ async function verifyCliJourney(
   );
   assert.match(notificationsResult.stdout, new RegExp(reminderId, 'u'));
   assert.match(notificationsResult.stdout, /"channel": "vera_inbox"/u);
+
+  const memoriesResult = await executeFile(
+    process.execPath,
+    [
+      'apps/cli/dist/bin.js',
+      'memory',
+      'list',
+      '--url',
+      baseUrl,
+      '--status',
+      'all',
+    ],
+    {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: operationTimeoutMs,
+      maxBuffer: 2 * 1024 * 1024,
+    },
+  );
+  assert.match(memoriesResult.stdout, new RegExp(memoryId, 'u'));
+  assert.match(memoriesResult.stdout, /"revision": 2/u);
+  assert.match(memoriesResult.stdout, /"status": "forgotten"/u);
 
   const changeResult = await executeFile(
     process.execPath,
@@ -919,6 +942,58 @@ async function verifyScenarios(mongo, redis) {
   assert.ok(reminderId);
   assert.equal((await client.getReminder(reminderId)).status, 'scheduled');
 
+  const memorySubmitted = rememberRun(
+    await client.submitTask({
+      message: 'Remember that I prefer npm workspaces.',
+      idempotencyKey: 'persistent-verification-memory-create',
+    }),
+  );
+  const memoryApproval = await client.waitForRun(memorySubmitted.runId, {
+    until: (task) => task.runStatus === 'awaiting_approval',
+    timeoutMs: operationTimeoutMs,
+    intervalMs: 25,
+  });
+  assert.equal(memoryApproval.approval?.capability.name, 'memory_management');
+  assert.deepEqual(memoryApproval.approval?.authority?.sideEffects, [
+    'personal_data_write',
+  ]);
+  assert.ok(memoryApproval.approval);
+  await client.decideApproval(memoryApproval.approval.id, 'approved');
+  const memoryCreated = await client.waitForRun(memorySubmitted.runId, {
+    timeoutMs: operationTimeoutMs,
+    intervalMs: 25,
+  });
+  assert.equal(memoryCreated.output?.kind, 'memory_result');
+  if (memoryCreated.output?.kind !== 'memory_result') {
+    throw new Error('Persistent memory creation did not return a result.');
+  }
+  const memoryId = memoryCreated.output.result.memories[0]?.id;
+  assert.ok(memoryId);
+  assert.equal((await client.getMemory(memoryId)).revision, 1);
+
+  const memoryConversation = await client.createConversation({
+    title: 'Persistent memory recall',
+    idempotencyKey: 'persistent-verification-memory-conversation',
+  });
+  const memoryRecall = rememberRun(
+    await client.appendMessage({
+      conversationId: memoryConversation.id,
+      content: 'Which workspace package manager do I prefer?',
+      idempotencyKey: 'persistent-verification-memory-recall',
+    }),
+  );
+  const memoryRecalled = await client.waitForRun(memoryRecall.runId, {
+    timeoutMs: operationTimeoutMs,
+    intervalMs: 25,
+  });
+  assert.equal(memoryRecalled.runStatus, 'succeeded');
+  assert.equal(memoryRecalled.conversationReply?.status, 'projected');
+  assert.equal(memoryRecalled.memoryContextManifest?.totalMemories, 1);
+  assert.equal(
+    memoryRecalled.memoryContextManifest?.entries[0]?.memoryId,
+    memoryId,
+  );
+
   const adaptiveSubmitted = rememberRun(
     await client.submitTask({
       message:
@@ -1035,6 +1110,7 @@ async function verifyScenarios(mongo, redis) {
   client = new VeraClient({ baseUrl: started.baseUrl });
   assert.equal((await client.getPersonalTask(personalTaskId)).status, 'open');
   assert.equal((await client.getReminder(reminderId)).status, 'scheduled');
+  assert.equal((await client.getMemory(memoryId)).revision, 1);
 
   const rescheduleSubmitted = rememberRun(
     await client.submitTask({
@@ -1165,6 +1241,53 @@ async function verifyScenarios(mongo, redis) {
     'completed',
   );
 
+  const memoryCorrection = rememberRun(
+    await client.submitTask({
+      message: `Correct memory ${memoryId}: I prefer pnpm workspaces.`,
+      idempotencyKey: 'persistent-verification-memory-correct',
+    }),
+  );
+  const memoryCorrectionApproval = await client.waitForRun(
+    memoryCorrection.runId,
+    {
+      until: (task) => task.runStatus === 'awaiting_approval',
+      timeoutMs: operationTimeoutMs,
+      intervalMs: 25,
+    },
+  );
+  assert.ok(memoryCorrectionApproval.approval);
+  await client.decideApproval(memoryCorrectionApproval.approval.id, 'approved');
+  await client.waitForRun(memoryCorrection.runId, {
+    timeoutMs: operationTimeoutMs,
+    intervalMs: 25,
+  });
+  const correctedMemory = await client.getMemory(memoryId);
+  assert.equal(correctedMemory.revision, 2);
+  assert.equal(correctedMemory.content, 'I prefer pnpm workspaces.');
+  assert.equal(correctedMemory.history[0]?.content, 'I prefer npm workspaces.');
+
+  const memoryForget = rememberRun(
+    await client.submitTask({
+      message: `Forget memory ${memoryId}.`,
+      idempotencyKey: 'persistent-verification-memory-forget',
+    }),
+  );
+  const memoryForgetApproval = await client.waitForRun(memoryForget.runId, {
+    until: (task) => task.runStatus === 'awaiting_approval',
+    timeoutMs: operationTimeoutMs,
+    intervalMs: 25,
+  });
+  assert.ok(memoryForgetApproval.approval);
+  await client.decideApproval(memoryForgetApproval.approval.id, 'approved');
+  await client.waitForRun(memoryForget.runId, {
+    timeoutMs: operationTimeoutMs,
+    intervalMs: 25,
+  });
+  const forgottenMemory = await client.getMemory(memoryId);
+  assert.equal(forgottenMemory.revision, 2);
+  assert.equal(forgottenMemory.status, 'forgotten');
+  assert.deepEqual((await client.listMemories()).memories, []);
+
   const { applicationId, researchArtifactId } = await verifyCliJourney(
     started.baseUrl,
     changeProject.id,
@@ -1172,6 +1295,7 @@ async function verifyScenarios(mongo, redis) {
     client,
     personalTaskId,
     reminderId,
+    memoryId,
   );
   await verifyLeaseExclusion();
   await verifyProjectMutationLeaseExclusion();
@@ -1259,6 +1383,9 @@ async function verifyScenarios(mongo, redis) {
     (await recoveredClient.getReminder(reminderId)).status,
     'acknowledged',
   );
+  const recoveredMemory = await recoveredClient.getMemory(memoryId);
+  assert.equal(recoveredMemory.status, 'forgotten');
+  assert.equal(recoveredMemory.revision, 2);
   const recoveredAdaptiveGoal = await recoveredClient.getRun(
     adaptiveSubmitted.runId,
   );
@@ -1330,8 +1457,13 @@ async function verifyScenarios(mongo, redis) {
     .collection('reminders')
     .find({})
     .toArray();
-  assert.equal(aggregates.length, 20);
-  assert.equal(artifacts.length, 15);
+  const memories = await mongo
+    .db(database)
+    .collection('memories')
+    .find({})
+    .toArray();
+  assert.equal(aggregates.length, 24);
+  assert.equal(artifacts.length, 18);
   assert.equal(personalTasks.length, 1);
   assert.equal(personalTasks[0]?.id, personalTaskId);
   assert.equal(personalTasks[0]?.status, 'completed');
@@ -1345,6 +1477,10 @@ async function verifyScenarios(mongo, redis) {
     (candidate) => candidate.id === adaptiveReminderId,
   );
   assert.equal(adaptiveReminder?.status, 'scheduled');
+  assert.equal(memories.length, 1);
+  assert.equal(memories[0]?.id, memoryId);
+  assert.equal(memories[0]?.status, 'forgotten');
+  assert.equal(memories[0]?.revision, 2);
   assert.equal(applications.length, 1);
   assert.equal(applications[0]?.id, applicationId);
   assert.equal(
@@ -1373,6 +1509,7 @@ async function verifyScenarios(mongo, redis) {
     durableResearchVerified: true,
     durablePersonalTasksVerified: true,
     durableRemindersVerified: true,
+    governedMemoryVerified: true,
     restartSafeNotificationDeliveryVerified: true,
     legacyConversationUpgradeVerified: true,
     roleScopedMessageIdempotencyVerified: true,

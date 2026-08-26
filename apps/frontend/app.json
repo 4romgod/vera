@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "Vera",
+    "slug": "vera-frontend",
+    "version": "0.1.0",
+    "orientation": "default",
+    "scheme": "vera",
+    "userInterfaceStyle": "dark",
+    "plugins": ["expo-router"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "dev.vera.app"
+    },
+    "android": {
+      "package": "dev.vera.app"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { CapabilityDestinationSchema } from './capability-destination.ts';
 import { PersonalTaskActionArgumentsSchema } from '../personal-tasks/personal-task.ts';
 import { ReminderActionArgumentsSchema } from '../reminders/reminder.ts';
+import { MemoryActionArgumentsSchema } from '../memories/memory.ts';
 
 export const DevelopmentPlanningProposalArgumentsSchema = z
   .object({
@@ -62,6 +63,7 @@ export const CapabilityAuthoritySchema = z
         'artifact_content',
         'personal_task_data',
         'personal_reminder_data',
+        'long_term_memory',
         'public_web',
       ]),
     ),
@@ -200,6 +202,34 @@ export const CapabilityDefinitions = [
       networkAccess: 'none',
       dataClasses: ['owner_request', 'personal_reminder_data'],
       sideEffects: ['personal_data_write', 'scheduled_notification'],
+      credentials: 'none',
+    },
+  },
+  {
+    name: 'memory_management',
+    version: 1,
+    description:
+      'Remember, inspect, correct, or forget explicit owner-governed long-term memory.',
+    proposalArgumentsSchema: MemoryActionArgumentsSchema,
+    effect: 'owner_state',
+    artifact: {
+      type: 'memory_result',
+      mediaType: 'application/vnd.vera.memory-result+json',
+    },
+    acceptedInputArtifacts: [],
+    explicitAdaptiveOutcome: {
+      patterns: [
+        /\b(remember|memorize|what do you remember|correct (?:that )?memory|forget)\b/u,
+      ],
+      description:
+        'Complete the governed-memory action requested by the owner.',
+    },
+    authority: {
+      approval: 'always',
+      projectContext: 'none',
+      networkAccess: 'none',
+      dataClasses: ['owner_request', 'long_term_memory'],
+      sideEffects: ['personal_data_write'],
       credentials: 'none',
     },
   },

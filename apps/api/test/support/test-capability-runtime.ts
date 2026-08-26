@@ -8,6 +8,7 @@ import { InMemoryOwnerResourceStore } from '../../src/adapters/outbound/persiste
 import type { PersonalTaskStore } from '../../src/ports/persistence/personal-task-store.ts';
 import { LocalReminderActionExecutor } from '../../src/adapters/outbound/integrations/reminders/local-reminder-action-executor.ts';
 import type { ReminderStore } from '../../src/ports/persistence/reminder-store.ts';
+import { LocalMemoryActionExecutor } from '../../src/adapters/outbound/integrations/memories/local-memory-action-executor.ts';
 
 export function createTestCapabilityRuntime(options: {
   developmentPlanning: DevelopmentPlanningCapabilityRegistry;
@@ -29,5 +30,6 @@ export function createTestCapabilityRuntime(options: {
     reminders: new LocalReminderActionExecutor(
       options.reminderStore ?? defaultStore,
     ),
+    memories: new LocalMemoryActionExecutor(defaultStore),
   });
 }

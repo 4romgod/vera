@@ -4,6 +4,23 @@ import { describe, it } from 'node:test';
 import { VeraApiError, VeraClient } from '../src/index.ts';
 
 void describe('Vera HTTP client', () => {
+  void it('invokes the default fetch with its global receiver in browser runtimes', async () => {
+    const originalFetch = globalThis.fetch;
+    const replacement = function (this: unknown): Promise<Response> {
+      assert.equal(this, globalThis);
+      return Promise.resolve(Response.json({ schemaVersion: 1, memories: [] }));
+    };
+    globalThis.fetch = replacement;
+
+    try {
+      const client = new VeraClient();
+      const result = await client.listMemories();
+      assert.deepEqual(result.memories, []);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   void it('loads and validates the capability catalog', async () => {
     let requestedUrl = '';
     const client = new VeraClient({
@@ -180,6 +197,87 @@ void describe('Vera HTTP client', () => {
         'http://vera.test/v1/notifications?after=prior-cursor&limit=10',
       ),
     );
+  });
+
+  void it('lists and validates governed memory with exact scope filters', async () => {
+    const memory = {
+      schemaVersion: 1 as const,
+      id: 'memory_test',
+      revision: 1,
+      kind: 'preference' as const,
+      subject: 'Package manager',
+      content: 'Use npm workspaces.',
+      scope: { kind: 'project' as const, projectId: 'project_vera' },
+      sensitivity: 'personal' as const,
+      status: 'active' as const,
+      provenance: {
+        source: 'owner_message' as const,
+        taskId: 'task_test',
+        invocationId: 'invocation_test',
+      },
+      history: [],
+      createdAt: '2026-08-26T10:00:00.000Z',
+      updatedAt: '2026-08-26T10:00:00.000Z',
+    };
+    let requestedUrl = '';
+    const client = new VeraClient({
+      baseUrl: 'http://vera.test',
+      fetch: (input) => {
+        requestedUrl =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        return Promise.resolve(
+          Response.json(
+            requestedUrl.endsWith('/memory_test')
+              ? memory
+              : { schemaVersion: 1, memories: [memory] },
+          ),
+        );
+      },
+    });
+    const listed = await client.listMemories({
+      status: 'active',
+      kind: 'preference',
+      scope: { kind: 'project', projectId: 'project_vera' },
+      limit: 10,
+    });
+    assert.equal(listed.memories[0]?.id, memory.id);
+    assert.equal(
+      requestedUrl,
+      'http://vera.test/v1/memories?status=active&kind=preference&scopeKind=project&projectId=project_vera&limit=10',
+    );
+    assert.equal((await client.getMemory(memory.id)).content, memory.content);
+  });
+
+  void it('rejects incomplete governed-memory resources at the client boundary', async () => {
+    const client = new VeraClient({
+      fetch: () =>
+        Promise.resolve(
+          Response.json({
+            schemaVersion: 1,
+            memories: [
+              {
+                schemaVersion: 1,
+                id: 'memory_incomplete',
+                revision: 1,
+                kind: 'fact',
+                subject: 'Incomplete',
+                content: 'Missing provenance and history.',
+                scope: { kind: 'global' },
+                sensitivity: 'personal',
+                status: 'active',
+                createdAt: '2026-08-26T10:00:00.000Z',
+                updatedAt: '2026-08-26T10:00:00.000Z',
+              },
+            ],
+          }),
+        ),
+    });
+
+    await assert.rejects(client.listMemories(), /invalid memory resource/u);
   });
 
   void it('parses chunked notification server-sent events', async () => {

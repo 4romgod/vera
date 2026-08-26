@@ -46,6 +46,9 @@ erasing why a choice was made.
 | [0022](0022-introduce-provider-neutral-integration-actions-with-vera-owned-personal-tasks.md) | Accepted | Add a provider-neutral integration-action boundary and durable, approval-gated personal tasks. |
 | [0023](0023-deliver-durable-reminders-through-a-vera-owned-notification-inbox.md) | Accepted | Schedule restart-safe reminders and atomically deliver them to a durable, cursor-addressable Vera inbox. |
 | [0024](0024-adapt-bounded-goals-from-validated-capability-evidence.md) | Accepted | Let bounded goals choose one next approved step or finish after validating durable capability evidence. |
+| [0025](0025-use-explicit-versioned-owner-governed-memory.md) | Accepted | Retain only explicit, approved, versioned owner memory and disclose bounded verified context only to owner-controlled brains. |
+| [0026](0026-use-one-expo-react-native-frontend-for-web-and-mobile.md) | Accepted | Use one Expo React Native workspace for Vera's web, iOS, and Android experience. |
+| [0027](0027-use-tailscale-serve-for-private-physical-device-access.md) | Accepted | Keep Vera loopback-only and use private Tailscale Serve ingress for physical devices. |
 
 ADRs 0001–0008 were accepted 24 August 2026 following the owner's review of
 the foundation documentation. ADR-0007 accepted a semantic boundary without
@@ -85,6 +88,13 @@ SSE projection without making Redis or a client connection authoritative.
 ADR-0024 adds a durable observe-decide-act boundary for evidence-dependent
 goals while retaining exact approval, finite budgets, provider-neutral
 capabilities, and owner-controlled artifact disclosure.
+ADR-0025 adds explicit long-term personalization through approval-gated,
+versioned memory and integrity-checked provider-bound context. ADR-0026 makes
+the resulting assistant usable through one Expo React Native frontend for web,
+iOS, and Android while preserving the API-first, client-independent core.
+ADR-0027 extends the single-owner deployment perimeter to private physical
+devices through Tailscale Serve without rebinding Vera or enabling public
+Funnel access.
 
 ## ADR rules
 

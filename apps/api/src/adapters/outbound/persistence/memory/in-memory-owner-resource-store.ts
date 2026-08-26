@@ -21,6 +21,15 @@ import {
   reminderMutationOrderKey,
   type ReminderListStatus,
 } from '../../../../ports/persistence/reminder-store.ts';
+import {
+  MEMORY_HISTORY_LIMIT,
+  MemoryRecordSchema,
+  type MemoryRecord,
+} from '../../../../domain/memories/memory.ts';
+import {
+  memoryMutationOrderKey,
+  type MemoryListOptions,
+} from '../../../../ports/persistence/memory-store.ts';
 
 export class InMemoryOwnerResourceStore implements OwnerResourceStore {
   private readonly projects = new Map<string, Project>();
@@ -36,6 +45,8 @@ export class InMemoryOwnerResourceStore implements OwnerResourceStore {
   >();
   private readonly reminders = new Map<string, Reminder>();
   private readonly reminderIdByCreationInvocation = new Map<string, string>();
+  private readonly memories = new Map<string, MemoryRecord>();
+  private readonly memoryIdByInvocation = new Map<string, string>();
 
   public createProject(
     project: Project,
@@ -591,6 +602,204 @@ export class InMemoryOwnerResourceStore implements OwnerResourceStore {
         )
         .slice(0, options.limit)
         .map((notification) => structuredClone(notification)),
+    );
+  }
+
+  public createMemory(memory: MemoryRecord): Promise<MemoryRecord> {
+    const identity = this.identity(
+      memory.principalId,
+      memory.provenance.invocationId,
+    );
+    const existingId = this.memoryIdByInvocation.get(identity);
+    if (existingId !== undefined) {
+      const existing = this.memories.get(existingId);
+      if (existing === undefined) {
+        throw new Error('In-memory memory invocation index is inconsistent.');
+      }
+      return Promise.resolve(structuredClone(existing));
+    }
+    const validated = MemoryRecordSchema.parse(memory);
+    this.memoryIdByInvocation.set(identity, validated.id);
+    this.memories.set(validated.id, structuredClone(validated));
+    return Promise.resolve(structuredClone(validated));
+  }
+
+  public correctMemory(input: {
+    principalId: string;
+    memoryId: string;
+    replacement: Pick<
+      MemoryRecord,
+      'kind' | 'subject' | 'content' | 'scope' | 'sensitivity' | 'provenance'
+    >;
+    invocationId: string;
+    mutationAt: string;
+    recovery: boolean;
+  }): Promise<MemoryRecord | null> {
+    const memory = this.memories.get(input.memoryId);
+    if (memory?.principalId !== input.principalId) return Promise.resolve(null);
+    if (memory.lastMutation.invocationId === input.invocationId) {
+      return Promise.resolve(structuredClone(memory));
+    }
+    const requestedOrderKey = memoryMutationOrderKey(
+      input.mutationAt,
+      input.invocationId,
+    );
+    if (input.recovery && memory.lastMutation.orderKey > requestedOrderKey) {
+      return Promise.resolve(structuredClone(memory));
+    }
+    if (memory.status !== 'active') {
+      throw new Error('Only an active memory can be corrected.');
+    }
+    if (memory.history.length >= MEMORY_HISTORY_LIMIT) {
+      throw new Error(
+        'Memory revision history limit reached; forget it and create a replacement memory.',
+      );
+    }
+    const mutationAt =
+      memory.updatedAt >= input.mutationAt
+        ? new Date(Date.parse(memory.updatedAt) + 1).toISOString()
+        : input.mutationAt;
+    memory.history.push({
+      revision: memory.revision,
+      kind: memory.kind,
+      subject: memory.subject,
+      content: memory.content,
+      scope: structuredClone(memory.scope),
+      sensitivity: memory.sensitivity,
+      provenance: structuredClone(memory.provenance),
+      supersededAt: mutationAt,
+    });
+    memory.revision += 1;
+    memory.kind = input.replacement.kind;
+    memory.subject = input.replacement.subject;
+    memory.content = input.replacement.content;
+    memory.scope = structuredClone(input.replacement.scope);
+    memory.sensitivity = input.replacement.sensitivity;
+    memory.provenance = structuredClone(input.replacement.provenance);
+    memory.updatedAt = mutationAt;
+    memory.lastMutation = {
+      invocationId: input.invocationId,
+      orderKey: memoryMutationOrderKey(mutationAt, input.invocationId),
+    };
+    this.memoryIdByInvocation.set(
+      this.identity(input.principalId, input.invocationId),
+      memory.id,
+    );
+    return Promise.resolve(structuredClone(MemoryRecordSchema.parse(memory)));
+  }
+
+  public forgetMemory(input: {
+    principalId: string;
+    memoryId: string;
+    invocationId: string;
+    mutationAt: string;
+    recovery: boolean;
+  }): Promise<MemoryRecord | null> {
+    const memory = this.memories.get(input.memoryId);
+    if (memory?.principalId !== input.principalId) return Promise.resolve(null);
+    if (memory.lastMutation.invocationId === input.invocationId) {
+      return Promise.resolve(structuredClone(memory));
+    }
+    const requestedOrderKey = memoryMutationOrderKey(
+      input.mutationAt,
+      input.invocationId,
+    );
+    if (input.recovery && memory.lastMutation.orderKey > requestedOrderKey) {
+      return Promise.resolve(structuredClone(memory));
+    }
+    if (memory.status !== 'active')
+      return Promise.resolve(structuredClone(memory));
+    const mutationAt =
+      memory.updatedAt >= input.mutationAt
+        ? new Date(Date.parse(memory.updatedAt) + 1).toISOString()
+        : input.mutationAt;
+    memory.status = 'forgotten';
+    memory.updatedAt = mutationAt;
+    memory.forgottenAt = mutationAt;
+    memory.lastMutation = {
+      invocationId: input.invocationId,
+      orderKey: memoryMutationOrderKey(mutationAt, input.invocationId),
+    };
+    this.memoryIdByInvocation.set(
+      this.identity(input.principalId, input.invocationId),
+      memory.id,
+    );
+    return Promise.resolve(structuredClone(MemoryRecordSchema.parse(memory)));
+  }
+
+  public findMemoryById(
+    principalId: string,
+    memoryId: string,
+  ): Promise<MemoryRecord | null> {
+    const memory = this.memories.get(memoryId);
+    return Promise.resolve(
+      memory?.principalId === principalId ? structuredClone(memory) : null,
+    );
+  }
+
+  public findMemoryByInvocation(
+    principalId: string,
+    invocationId: string,
+  ): Promise<MemoryRecord | null> {
+    const id = this.memoryIdByInvocation.get(
+      this.identity(principalId, invocationId),
+    );
+    return id === undefined
+      ? Promise.resolve(null)
+      : this.findMemoryById(principalId, id);
+  }
+
+  public listMemories(
+    principalId: string,
+    options: MemoryListOptions,
+  ): Promise<MemoryRecord[]> {
+    return Promise.resolve(
+      [...this.memories.values()]
+        .filter(
+          (memory) =>
+            memory.principalId === principalId &&
+            (options.status === 'all' || memory.status === 'active') &&
+            (options.kind === undefined || memory.kind === options.kind) &&
+            (options.scope === undefined ||
+              JSON.stringify(memory.scope) === JSON.stringify(options.scope)),
+        )
+        .sort(
+          (left, right) =>
+            right.updatedAt.localeCompare(left.updatedAt) ||
+            left.id.localeCompare(right.id),
+        )
+        .slice(0, options.limit)
+        .map((memory) => structuredClone(memory)),
+    );
+  }
+
+  public countActiveMemoriesOutsideScope(
+    principalId: string,
+    projectId?: string,
+  ): Promise<number> {
+    return Promise.resolve(
+      [...this.memories.values()].filter(
+        (memory) =>
+          memory.principalId === principalId &&
+          memory.status === 'active' &&
+          memory.scope.kind === 'project' &&
+          memory.scope.projectId !== projectId,
+      ).length,
+    );
+  }
+
+  public countActiveMemoriesInScope(
+    principalId: string,
+    projectId?: string,
+  ): Promise<number> {
+    return Promise.resolve(
+      [...this.memories.values()].filter(
+        (memory) =>
+          memory.principalId === principalId &&
+          memory.status === 'active' &&
+          (memory.scope.kind === 'global' ||
+            memory.scope.projectId === projectId),
+      ).length,
     );
   }
 

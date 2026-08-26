@@ -147,6 +147,7 @@ export class DeterministicModelProvider implements ModelProvider {
 
     let ownerMessage = input.message;
     let projectName = 'vera';
+    let projectId: string | undefined;
     let currentTime = '2030-01-01T00:00:00.000Z';
     let ownerTimeZone = 'UTC';
     try {
@@ -166,6 +167,12 @@ export class DeterministicModelProvider implements ModelProvider {
           typeof context.selectedProject.displayName === 'string'
         ) {
           projectName = context.selectedProject.displayName;
+          if (
+            'id' in context.selectedProject &&
+            typeof context.selectedProject.id === 'string'
+          ) {
+            projectId = context.selectedProject.id;
+          }
         }
         if (
           'temporalContext' in context &&
@@ -275,11 +282,53 @@ export class DeterministicModelProvider implements ModelProvider {
                   } as const)
                 : undefined;
 
+    const canManageMemory = JSON.stringify(input.outputSchema).includes(
+      'memory_management',
+    );
+    const memoryId = /memory_[a-z0-9-]+/u.exec(ownerMessage)?.[0];
+    const memoryContent = ownerMessage.includes(':')
+      ? ownerMessage.slice(ownerMessage.indexOf(':') + 1).trim()
+      : ownerMessage.replace(/^remember(?: that)?\s+/iu, '').trim();
+    const memoryAction =
+      canManageMemory &&
+      memoryId !== undefined &&
+      /\bforget\b/u.test(normalizedMessage)
+        ? ({ action: 'forget', memoryId } as const)
+        : canManageMemory &&
+            memoryId !== undefined &&
+            /\b(correct|update)\b/u.test(normalizedMessage)
+          ? ({ action: 'correct', memoryId, content: memoryContent } as const)
+          : canManageMemory &&
+              /\b(list|show|what)\b.*\b(memories|memory|remember)\b/u.test(
+                normalizedMessage,
+              )
+            ? ({ action: 'list', status: 'active' } as const)
+            : canManageMemory &&
+                /^remember(?: that)?\b/u.test(normalizedMessage) &&
+                personalTaskAction === undefined
+              ? ({
+                  action: 'remember',
+                  kind: /\bprefer\b/u.test(normalizedMessage)
+                    ? ('preference' as const)
+                    : ('fact' as const),
+                  subject: memoryContent.slice(0, 200),
+                  content: memoryContent,
+                  scope:
+                    projectId === undefined ||
+                    !/\b(this|the selected) project\b/u.test(normalizedMessage)
+                      ? ({ kind: 'global' } as const)
+                      : ({ kind: 'project', projectId } as const),
+                  sensitivity: 'personal' as const,
+                } as const)
+              : undefined;
+
     // Management commands commonly contain words such as "fix", "plan", or
     // "verify" in the task/reminder payload. Those words describe the saved
     // subject; they do not authorize Vera to execute that subject now.
     const hasOwnerDataAction =
-      personalTaskAction !== undefined || reminderAction !== undefined;
+      personalTaskAction !== undefined ||
+      reminderAction !== undefined ||
+      memoryAction !== undefined;
     const shouldChange = requestsChange && !hasOwnerDataAction;
     const shouldPlan = requestsPlan && !hasOwnerDataAction;
     const shouldResearch = requestsResearch && !hasOwnerDataAction;
@@ -303,6 +352,7 @@ export class DeterministicModelProvider implements ModelProvider {
         shouldChange,
         personalTaskAction !== undefined,
         reminderAction !== undefined,
+        memoryAction !== undefined,
       ].filter(Boolean).length >= 2;
 
     const projectArguments = {
@@ -375,6 +425,18 @@ export class DeterministicModelProvider implements ModelProvider {
               capability: 'personal_reminder_management' as const,
               version: 1 as const,
               arguments: reminderAction,
+            },
+          ]),
+      ...(memoryAction === undefined
+        ? []
+        : [
+            {
+              id: 'step_memory',
+              purpose: 'Apply the requested governed-memory action.',
+              inputStepIds: [],
+              capability: 'memory_management' as const,
+              version: 1 as const,
+              arguments: memoryAction,
             },
           ]),
     ];
@@ -464,39 +526,49 @@ export class DeterministicModelProvider implements ModelProvider {
                 },
                 arguments: reminderAction,
               }
-            : shouldResearch
+            : memoryAction !== undefined
               ? {
                   schemaVersion: 1,
                   kind: 'invoke_capability',
                   decisionSummary:
-                    'The request asks for current, source-backed public-web research.',
-                  capability: { name: 'web_research', version: 1 },
-                  arguments: { objective: ownerMessage },
+                    'The owner requested an explicit governed-memory action.',
+                  capability: { name: 'memory_management', version: 1 },
+                  arguments: memoryAction,
                 }
-              : shouldPlan
+              : shouldResearch
                 ? {
                     schemaVersion: 1,
                     kind: 'invoke_capability',
                     decisionSummary:
-                      'The request asks for specialist software planning.',
-                    capability: { name: 'development_planning', version: 1 },
-                    arguments: projectArguments,
+                      'The request asks for current, source-backed public-web research.',
+                    capability: { name: 'web_research', version: 1 },
+                    arguments: { objective: ownerMessage },
                   }
-                : shouldChange
+                : shouldPlan
                   ? {
                       schemaVersion: 1,
                       kind: 'invoke_capability',
                       decisionSummary:
-                        'The request asks for an isolated specialist software change.',
-                      capability: { name: 'software_change', version: 1 },
+                        'The request asks for specialist software planning.',
+                      capability: { name: 'development_planning', version: 1 },
                       arguments: projectArguments,
                     }
-                  : {
-                      schemaVersion: 1,
-                      kind: 'respond',
-                      decisionSummary: 'The request can be answered directly.',
-                      message: `Vera received: ${ownerMessage}`,
-                    };
+                  : shouldChange
+                    ? {
+                        schemaVersion: 1,
+                        kind: 'invoke_capability',
+                        decisionSummary:
+                          'The request asks for an isolated specialist software change.',
+                        capability: { name: 'software_change', version: 1 },
+                        arguments: projectArguments,
+                      }
+                    : {
+                        schemaVersion: 1,
+                        kind: 'respond',
+                        decisionSummary:
+                          'The request can be answered directly.',
+                        message: `Vera received: ${ownerMessage}`,
+                      };
 
     return Promise.resolve({
       candidate,

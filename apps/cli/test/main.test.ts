@@ -39,6 +39,8 @@ function fakeApi(overrides: Partial<VeraApi>): VeraApi {
     getPersonalTask: unavailable,
     listReminders: unavailable,
     getReminder: unavailable,
+    listMemories: unavailable,
+    getMemory: unavailable,
     listNotifications: unavailable,
     streamNotifications: unavailable,
     registerProject: unavailable,
@@ -104,6 +106,44 @@ function changeApplication(
 }
 
 void describe('Vera CLI', () => {
+  void it('lists governed memory through the shared client', async () => {
+    const output: string[] = [];
+    let options: Parameters<VeraApi['listMemories']>[0];
+    const exit = await runCli(
+      [
+        'memory',
+        'list',
+        '--kind',
+        'preference',
+        '--project',
+        'project_vera',
+        '--limit',
+        '5',
+      ],
+      {
+        client: fakeApi({
+          listMemories: (input) => {
+            options = input;
+            return Promise.resolve({ schemaVersion: 1, memories: [] });
+          },
+        }),
+        stdout: {
+          write: (value) => {
+            output.push(String(value));
+            return true;
+          },
+        },
+      },
+    );
+    assert.equal(exit, 0);
+    assert.deepEqual(options, {
+      kind: 'preference',
+      scope: { kind: 'project', projectId: 'project_vera' },
+      limit: 5,
+    });
+    assert.match(output.join(''), /"memories"/u);
+  });
+
   void it('lists durable personal tasks through the shared client', async () => {
     const output: string[] = [];
     let options: Parameters<VeraApi['listPersonalTasks']>[0];

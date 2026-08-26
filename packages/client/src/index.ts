@@ -78,6 +78,7 @@ export type Approval = {
       | 'artifact_content'
       | 'personal_task_data'
       | 'personal_reminder_data'
+      | 'long_term_memory'
       | 'public_web'
     )[];
     sideEffects: (
@@ -123,6 +124,10 @@ export type ArtifactReference = ArtifactReferenceIdentity &
     | {
         type: 'personal_reminder_result';
         mediaType: 'application/vnd.vera.personal-reminder-result+json';
+      }
+    | {
+        type: 'memory_result';
+        mediaType: 'application/vnd.vera.memory-result+json';
       }
   );
 
@@ -176,6 +181,63 @@ export type PersonalReminderResultContent = {
   action: 'create' | 'list' | 'reschedule' | 'cancel' | 'acknowledge';
   summary: string;
   reminders: ReminderResource[];
+};
+
+export type MemoryResource = {
+  schemaVersion: 1;
+  id: string;
+  revision: number;
+  kind: 'fact' | 'preference' | 'instruction' | 'project_knowledge';
+  subject: string;
+  content: string;
+  scope: { kind: 'global' } | { kind: 'project'; projectId: string };
+  sensitivity: 'personal' | 'sensitive';
+  status: 'active' | 'forgotten';
+  provenance: {
+    source: 'owner_message';
+    taskId: string;
+    conversationId?: string;
+    messageId?: string;
+    invocationId: string;
+  };
+  history: {
+    revision: number;
+    kind: MemoryResource['kind'];
+    subject: string;
+    content: string;
+    scope: MemoryResource['scope'];
+    sensitivity: MemoryResource['sensitivity'];
+    provenance: MemoryResource['provenance'];
+    supersededAt: string;
+  }[];
+  createdAt: string;
+  updatedAt: string;
+  forgottenAt?: string;
+};
+
+export type MemoryResultContent = {
+  schemaVersion: 1;
+  action: 'remember' | 'list' | 'correct' | 'forget';
+  summary: string;
+  memories: MemoryResource[];
+};
+
+export type MemoryContextManifest = {
+  schemaVersion: 1;
+  principalId: string;
+  projectId?: string;
+  assembledAt: string;
+  entries: {
+    memoryId: string;
+    revision: number;
+    sha256: string;
+    characters: number;
+  }[];
+  totalMemories: number;
+  totalCharacters: number;
+  sha256: string;
+  limits: { maxMemories: number; maxCharacters: number };
+  exclusions: { differentScope: number; limits: number };
 };
 
 export type NotificationPage = {
@@ -287,6 +349,11 @@ export type TaskResource = {
         >;
       }
     | {
+        kind: 'memory_result';
+        result?: MemoryResultContent;
+        artifact?: Extract<ArtifactReference, { type: 'memory_result' }>;
+      }
+    | {
         kind: 'goal_result';
         objective: string;
         summary: string;
@@ -302,6 +369,7 @@ export type TaskResource = {
   failure?: { code: string; message: string };
   budget?: unknown;
   conversationContextManifest?: ConversationContextManifest;
+  memoryContextManifest?: MemoryContextManifest;
   conversationReply?: {
     status: 'pending' | 'projected';
     messageId: string;
@@ -436,6 +504,11 @@ export type ArtifactResource = ArtifactResourceIdentity &
         type: 'personal_reminder_result';
         mediaType: 'application/vnd.vera.personal-reminder-result+json';
         content: PersonalReminderResultContent;
+      }
+    | {
+        type: 'memory_result';
+        mediaType: 'application/vnd.vera.memory-result+json';
+        content: MemoryResultContent;
       }
   );
 
@@ -575,6 +648,13 @@ export type VeraApi = {
     limit?: number;
   }): Promise<{ schemaVersion: 1; reminders: ReminderResource[] }>;
   getReminder(reminderId: string): Promise<ReminderResource>;
+  listMemories(options?: {
+    status?: 'active' | 'all';
+    kind?: MemoryResource['kind'];
+    scope?: MemoryResource['scope'];
+    limit?: number;
+  }): Promise<{ schemaVersion: 1; memories: MemoryResource[] }>;
+  getMemory(memoryId: string): Promise<MemoryResource>;
   listNotifications(options?: {
     after?: string;
     limit?: number;
@@ -774,6 +854,84 @@ function assertReminderResource(
   }
 }
 
+function assertMemoryResource(value: unknown): asserts value is MemoryResource {
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== 1 ||
+    typeof value.id !== 'string' ||
+    !value.id.startsWith('memory_') ||
+    typeof value.revision !== 'number' ||
+    !Number.isInteger(value.revision) ||
+    value.revision < 1 ||
+    typeof value.subject !== 'string' ||
+    typeof value.content !== 'string' ||
+    !['fact', 'preference', 'instruction', 'project_knowledge'].includes(
+      String(value.kind),
+    ) ||
+    !['active', 'forgotten'].includes(String(value.status)) ||
+    !['personal', 'sensitive'].includes(String(value.sensitivity)) ||
+    !isMemoryScope(value.scope) ||
+    !isMemoryProvenance(value.provenance) ||
+    !Array.isArray(value.history) ||
+    value.history.length > 100 ||
+    value.history.some((entry) => !isMemoryHistoryEntry(entry)) ||
+    typeof value.createdAt !== 'string' ||
+    typeof value.updatedAt !== 'string' ||
+    (value.forgottenAt !== undefined && typeof value.forgottenAt !== 'string')
+  ) {
+    throw new Error('Vera returned an invalid memory resource.');
+  }
+}
+
+function isMemoryScope(value: unknown): value is MemoryResource['scope'] {
+  return (
+    isRecord(value) &&
+    (value.kind === 'global' ||
+      (value.kind === 'project' &&
+        typeof value.projectId === 'string' &&
+        value.projectId.startsWith('project_')))
+  );
+}
+
+function isMemoryProvenance(
+  value: unknown,
+): value is MemoryResource['provenance'] {
+  return (
+    isRecord(value) &&
+    value.source === 'owner_message' &&
+    typeof value.taskId === 'string' &&
+    value.taskId.startsWith('task_') &&
+    typeof value.invocationId === 'string' &&
+    value.invocationId.startsWith('invocation_') &&
+    (value.conversationId === undefined ||
+      (typeof value.conversationId === 'string' &&
+        value.conversationId.startsWith('conversation_'))) &&
+    (value.messageId === undefined ||
+      (typeof value.messageId === 'string' &&
+        value.messageId.startsWith('message_')))
+  );
+}
+
+function isMemoryHistoryEntry(
+  value: unknown,
+): value is MemoryResource['history'][number] {
+  return (
+    isRecord(value) &&
+    typeof value.revision === 'number' &&
+    Number.isInteger(value.revision) &&
+    value.revision > 0 &&
+    ['fact', 'preference', 'instruction', 'project_knowledge'].includes(
+      String(value.kind),
+    ) &&
+    typeof value.subject === 'string' &&
+    typeof value.content === 'string' &&
+    isMemoryScope(value.scope) &&
+    ['personal', 'sensitive'].includes(String(value.sensitivity)) &&
+    isMemoryProvenance(value.provenance) &&
+    typeof value.supersededAt === 'string'
+  );
+}
+
 function assertChangeApplicationResource(
   value: unknown,
 ): asserts value is ChangeApplicationResource {
@@ -837,7 +995,8 @@ export class VeraClient implements VeraApi {
       /\/$/u,
       '',
     );
-    this.fetch = options?.fetch ?? globalThis.fetch;
+    this.fetch =
+      options?.fetch ?? ((input, init) => globalThis.fetch(input, init));
   }
 
   public async listCapabilities(): Promise<CapabilityCatalogResource> {
@@ -911,6 +1070,49 @@ export class VeraClient implements VeraApi {
       `/v1/reminders/${encodeURIComponent(reminderId)}`,
     );
     assertReminderResource(value);
+    return value;
+  }
+
+  public async listMemories(
+    options: {
+      status?: 'active' | 'all';
+      kind?: MemoryResource['kind'];
+      scope?: MemoryResource['scope'];
+      limit?: number;
+    } = {},
+  ): Promise<{ schemaVersion: 1; memories: MemoryResource[] }> {
+    const query = new URLSearchParams();
+    if (options.status !== undefined) query.set('status', options.status);
+    if (options.kind !== undefined) query.set('kind', options.kind);
+    if (options.scope !== undefined) {
+      query.set('scopeKind', options.scope.kind);
+      if (options.scope.kind === 'project') {
+        query.set('projectId', options.scope.projectId);
+      }
+    }
+    if (options.limit !== undefined) query.set('limit', String(options.limit));
+    const value = await this.request<unknown>(
+      `/v1/memories${query.size === 0 ? '' : `?${query.toString()}`}`,
+    );
+    if (
+      !isRecord(value) ||
+      value.schemaVersion !== 1 ||
+      !Array.isArray(value.memories)
+    ) {
+      throw new Error('Vera returned an invalid memory collection.');
+    }
+    const memories = value.memories.map((memory): MemoryResource => {
+      assertMemoryResource(memory);
+      return memory;
+    });
+    return { schemaVersion: 1, memories };
+  }
+
+  public async getMemory(memoryId: string): Promise<MemoryResource> {
+    const value = await this.request<unknown>(
+      `/v1/memories/${encodeURIComponent(memoryId)}`,
+    );
+    assertMemoryResource(value);
     return value;
   }
 

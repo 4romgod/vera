@@ -2,6 +2,7 @@ import Fastify, {
   type FastifyInstance,
   type FastifyServerOptions,
 } from 'fastify';
+import cors from '@fastify/cors';
 
 import type { SoftwareChangeApplicationLifecycle } from '../../../application/change-applications/software-change-application-lifecycle.ts';
 import { ChangeApplicationError } from '../../../application/change-applications/software-change-application-lifecycle.ts';
@@ -13,6 +14,7 @@ import type { CapabilityService } from '../../../application/capabilities/capabi
 import type { PersonalTaskService } from '../../../application/personal-tasks/personal-task-service.ts';
 import type { ReminderService } from '../../../application/reminders/reminder-service.ts';
 import type { NotificationService } from '../../../application/reminders/notification-service.ts';
+import type { MemoryService } from '../../../application/memories/memory-service.ts';
 import { ResourceError } from '../../../application/shared/resource-error.ts';
 import {
   LifecycleError,
@@ -34,6 +36,7 @@ import { registerCapabilityRoutes } from './routes/capability-routes.ts';
 import { registerPersonalTaskRoutes } from './routes/personal-task-routes.ts';
 import { registerReminderRoutes } from './routes/reminder-routes.ts';
 import { registerNotificationRoutes } from './routes/notification-routes.ts';
+import { registerMemoryRoutes } from './routes/memory-routes.ts';
 import {
   EvaluateRequestJsonSchema,
   HealthResponseJsonSchema,
@@ -53,6 +56,7 @@ export type BuildAppOptions = {
   personalTasks?: PersonalTaskService;
   reminders?: ReminderService;
   notifications?: NotificationService;
+  memories?: MemoryService;
   changeApplications?: SoftwareChangeApplicationLifecycle & {
     wake(): void;
   };
@@ -73,6 +77,9 @@ class DependencyReadinessError extends Error {
     this.name = 'DependencyReadinessError';
   }
 }
+
+const LoopbackWebOrigin =
+  /^https?:\/\/(?:127\.0\.0\.1|localhost)(?::\d{1,5})?$/u;
 
 function publicProviderMessage(
   code: ModelProviderErrorCode,
@@ -108,7 +115,7 @@ function providerFailureStatus(code: ModelProviderErrorCode): 502 | 503 | 504 {
 export function buildApp(options: BuildAppOptions): FastifyInstance {
   // Authentication is deliberately not exposed yet. Keeping the principal at
   // the HTTP boundary ensures stores and domain contracts are already scoped
-  // correctly when authentication replaces this loopback-only identity.
+  // correctly when authentication replaces this owner identity.
   const principalId = 'owner_v1';
   const app = Fastify({
     logger: options.logger ?? false,
@@ -118,6 +125,15 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       customOptions: {
         removeAdditional: false,
       },
+    },
+  });
+
+  // The API remains bound to loopback. This policy only lets a browser-based
+  // local Vera frontend read it from a different development port. Requests
+  // without an Origin header (native clients, CLI, and curl) are unaffected.
+  void app.register(cors, {
+    origin(origin, callback) {
+      callback(null, origin === undefined || LoopbackWebOrigin.test(origin));
     },
   });
 
@@ -264,6 +280,12 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     registerNotificationRoutes(app, {
       principalId,
       notifications: options.notifications,
+    });
+  }
+  if (options.memories !== undefined) {
+    registerMemoryRoutes(app, {
+      principalId,
+      memories: options.memories,
     });
   }
   if (options.taskLifecycle !== undefined) {

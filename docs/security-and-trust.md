@@ -1,7 +1,7 @@
 # Vera Security and Trust Model
 
 **Status:** Accepted
-**Version:** 0.6
+**Version:** 0.7
 **Last updated:** 26 August 2026
 **Accepted:** 24 August 2026 (owner); V1 perimeter clarified by ADR-0014 and
 cloud-provider policy clarified by ADR-0015 and bounded conversation disclosure
@@ -10,7 +10,8 @@ and managed-worktree application accepted by ADR-0018; bounded goal authority
 accepted by ADR-0021 and personal-task integration authority accepted by
 ADR-0022, with reminder scheduling and inbox authority accepted by ADR-0023 on
 26 August 2026; adaptive evidence disclosure and budget authority accepted by
-ADR-0024
+ADR-0024; governed memory and the universal frontend boundary are accepted by
+ADRs 0025 and 0026; private physical-device ingress is accepted by ADR-0027
 
 ## Purpose
 
@@ -65,9 +66,19 @@ Running a service on the owner's Mac does not automatically make all inputs,
 models, packages, or invoked processes trusted.
 
 For V1 only, the trusted owner perimeter is the owner's Mac Mini account plus
-authenticated SSH access to Vera's code-enforced loopback listener. This is a
-deployment boundary, not a claim that loopback authenticates arbitrary HTTP
-callers. See [ADR-0014](decisions/0014-use-the-host-session-as-the-v1-owner-boundary.md).
+authenticated SSH access or private Tailscale Serve ingress to Vera's
+code-enforced loopback listener. Tailscale mode trusts every device permitted
+by the owner's tailnet policy as `owner_v1`; it is not application-layer caller
+identity. See
+[ADR-0014](decisions/0014-use-the-host-session-as-the-v1-owner-boundary.md) and
+[ADR-0027](decisions/0027-use-tailscale-serve-for-private-physical-device-access.md).
+
+Browser CORS permits only HTTP(S) loopback origins, while native and CLI
+requests may omit an Origin header. CORS is a browser-read restriction, not
+authentication. ADR-0027 gives a physical browser one private same-origin
+Tailscale Serve endpoint for both frontend and API; it does not add a remote
+origin to CORS or permit LAN binding. See
+[ADR-0026](decisions/0026-use-one-expo-react-native-frontend-for-web-and-mobile.md).
 
 ## Threat categories
 
@@ -131,9 +142,16 @@ trust. Versions, origins, permissions, and runtime isolation must be visible.
 
 ### Incorrect durable memory
 
-Model inference may be wrong or overly sensitive. Memory promotion requires
-provenance, scope, and policy. Consequential inferred facts should be confirmed
-rather than silently treated as owner statements.
+Model inference may be wrong or overly sensitive. Vera therefore stores no
+automatically extracted or inferred memory. Remember, list, correct, and forget
+are exact approval-gated actions with owner-message provenance and explicit
+scope. Corrections preserve revision history; forgotten records are excluded
+from retrieval. Frozen memory context is hash- and revision-verified before an
+owner-controlled model call, and no memory is disclosed to a third-party
+orchestration provider without a future separately accepted policy.
+The model boundary enforces that rule again at invocation time, so restarting a
+queued run under a third-party provider cannot disclose memory frozen while an
+owner-controlled provider was active.
 
 ## Authorization model
 
@@ -385,17 +403,19 @@ they describe.
 
 ## V1 security floor
 
-This section remains the accepted security target. V1 establishes its
-authenticated owner boundary at the deployment perimeter: the trusted Mac Mini
-account and authenticated SSH session admit traffic to a listener whose
-configuration permits only loopback. The application uses the explicit
-principal `owner_v1` inside that perimeter. This is sufficient only for the
-single-owner V1 topology and does not authenticate HTTP callers independently.
-Application authentication remains a pre-exposure requirement.
+This section remains the accepted security target. V1 establishes its owner
+boundary at the deployment perimeter: the trusted Mac Mini account,
+authenticated SSH session, and private owner-controlled tailnet admit traffic
+to a listener whose configuration permits only loopback. The application uses
+the explicit principal `owner_v1` inside that perimeter. This is sufficient
+only for the single-owner V1 topology and does not authenticate HTTP callers
+independently. Application authentication remains a precondition for shared or
+multi-user exposure.
 
 V1 must demonstrate:
 
-- an authenticated owner deployment perimeter with code-enforced loopback;
+- an authenticated owner deployment perimeter with code-enforced loopback and
+  optional private Tailscale Serve ingress;
 - one explicit approval-gated external disclosure and capability invocation;
 - scoped capability input and authority;
 - no raw secrets in model context, logs, events, or artifacts;
@@ -415,7 +435,7 @@ them.
 ## Open questions
 
 - How will application-layer principals be issued, authenticated, and revoked
-  before Vera is exposed beyond the V1 host/SSH perimeter?
+  before Vera is exposed beyond the V1 private-device perimeter?
 - Where are credentials stored and how are short-lived credentials obtained?
 - Which additional data classes, if any, may future cloud-model policies
   authorize beyond current messages, minimal selected-project identity, and

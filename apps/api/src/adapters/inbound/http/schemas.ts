@@ -17,6 +17,7 @@ import {
   SoftwareChangeArtifactSchema,
   PersonalTaskResultArtifactSchema,
   PersonalReminderResultArtifactSchema,
+  MemoryResultArtifactSchema,
 } from '../../../domain/artifacts/artifact.ts';
 import {
   ConversationSchema,
@@ -37,6 +38,11 @@ import {
   ReminderResourceSchema,
   ReminderStatusSchema,
 } from '../../../domain/reminders/reminder.ts';
+import {
+  MemoryKindSchema,
+  MemoryResourceSchema,
+} from '../../../domain/memories/memory.ts';
+import { MemoryContextManifestSchema } from '../../../domain/memories/memory-context.ts';
 
 export const EvaluateRequestSchema = z
   .object({
@@ -162,6 +168,7 @@ export const TaskLifecycleResponseSchema = z
     failure: TaskFailureSchema.optional(),
     budget: RunBudgetSchema.optional(),
     conversationContextManifest: ConversationContextManifestSchema.optional(),
+    memoryContextManifest: MemoryContextManifestSchema.optional(),
     conversationReply: z
       .object({
         status: z.enum(['pending', 'projected']),
@@ -228,6 +235,7 @@ export const ArtifactResponseSchema = z.discriminatedUnion('type', [
   ResearchReportArtifactSchema.omit({ principalId: true }),
   PersonalTaskResultArtifactSchema.omit({ principalId: true }),
   PersonalReminderResultArtifactSchema.omit({ principalId: true }),
+  MemoryResultArtifactSchema.omit({ principalId: true }),
 ]);
 
 export const PersonalTaskListQuerySchema = z
@@ -280,6 +288,42 @@ export const NotificationsResponseSchema = z
     schemaVersion: z.literal(1),
     notifications: z.array(NotificationResourceSchema).max(100),
     nextCursor: z.string().min(1).optional(),
+  })
+  .strict();
+
+export const MemoryListQuerySchema = z
+  .object({
+    status: z.enum(['active', 'all']).optional(),
+    kind: MemoryKindSchema.optional(),
+    scopeKind: z.enum(['global', 'project']).optional(),
+    projectId: z.string().startsWith('project_').optional(),
+    limit: z.coerce.number().int().positive().max(100).optional(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.scopeKind === 'project' && value.projectId === undefined) {
+      context.addIssue({
+        code: 'custom',
+        path: ['projectId'],
+        message: 'projectId is required for project memory scope.',
+      });
+    }
+    if (value.scopeKind !== 'project' && value.projectId !== undefined) {
+      context.addIssue({
+        code: 'custom',
+        path: ['projectId'],
+        message: 'projectId requires scopeKind=project.',
+      });
+    }
+  });
+
+export type MemoryListQuery = z.infer<typeof MemoryListQuerySchema>;
+
+export const MemoryResponseSchema = MemoryResourceSchema;
+export const MemoriesResponseSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    memories: z.array(MemoryResourceSchema).max(100),
   })
   .strict();
 
@@ -354,6 +398,16 @@ export const NotificationListQueryJsonSchema = z.toJSONSchema(
 
 export const NotificationsResponseJsonSchema = z.toJSONSchema(
   NotificationsResponseSchema,
+  { target: 'draft-7' },
+);
+export const MemoryListQueryJsonSchema = z.toJSONSchema(MemoryListQuerySchema, {
+  target: 'draft-7',
+});
+export const MemoryResponseJsonSchema = z.toJSONSchema(MemoryResponseSchema, {
+  target: 'draft-7',
+});
+export const MemoriesResponseJsonSchema = z.toJSONSchema(
+  MemoriesResponseSchema,
   { target: 'draft-7' },
 );
 

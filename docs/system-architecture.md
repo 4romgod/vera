@@ -3,7 +3,7 @@
 **Status:** Accepted (logical architecture, component responsibilities,
 request lifecycle, architectural invariants, initial modular API shape, and V1
 operational storage); general progress transport and deployment topology remain open
-**Version:** 1.1
+**Version:** 1.2
 **Last updated:** 26 August 2026
 **Accepted:** 24 August 2026 (owner) — post-V1 progress transport and deployment
 topology are deferred; V1 uses HTTP polling. The initial Fastify/Zod modular API
@@ -18,7 +18,10 @@ Bounded goal execution and typed artifact lineage are accepted by ADR-0021.
 Provider-neutral integration actions and Vera-owned personal tasks are accepted
 by ADR-0022. Durable reminders and the Vera-owned notification inbox are
 accepted by ADR-0023; task progress continues to use polling.
-Evidence-adaptive bounded goals are accepted by ADR-0024.
+Evidence-adaptive bounded goals are accepted by ADR-0024. Explicit governed
+memory and its provider boundary are accepted by ADR-0025. The universal Expo
+React Native frontend is accepted by ADR-0026, and its private physical-device
+ingress through Tailscale Serve is accepted by ADR-0027.
 
 ## Purpose
 
@@ -77,8 +80,8 @@ explanations.
 flowchart TB
     subgraph Experience["Experience plane"]
         CLI["CLI / Postman"]
-        WEB["Future web client"]
-        MOBILE["Future mobile / voice client"]
+        FRONTEND["Universal frontend<br/>(web, iOS, Android)"]
+        VOICE["Future voice / ambient clients"]
     end
 
     subgraph Boundary["External boundary"]
@@ -105,14 +108,14 @@ flowchart TB
         OPS["Durable operational state"]
         WORK["Rebuildable active working set"]
         EVENTS["Event journal and projections"]
-        MEMORY["Long-term memory service"]
+        MEMORY["Governed long-term memory"]
         ART["Artifact metadata and content"]
         OBS["Logs, metrics, traces"]
     end
 
     CLI --> API
-    WEB --> API
-    MOBILE --> API
+    FRONTEND --> API
+    VOICE --> API
     API --> ID --> CONV
     CONV --> TASK --> ORCH
     ORCH --> CONTEXT
@@ -538,21 +541,25 @@ topology. Its port boundaries permit a separate worker process later. Leases
 provide cross-process exclusion; optimistic aggregate transitions and
 idempotent invocation/artifact identities provide recovery safety.
 
-This slice now includes a browser-neutral TypeScript client and owner CLI,
-generic project and conversation resources, selected
+This slice now includes a browser-neutral TypeScript client used by an owner
+CLI and universal Expo React Native frontend, generic project and conversation
+resources, governed owner memory, selected
 read-only Git context, bounded same-scope multi-turn context, recoverable Vera
 reply projection, exact disclosure approval, a provider-neutral specialist
 port with a late-bound adapter registry, the default Codex adapter, artifact
 identity, flat resource ceilings, and best-effort
-cancellation. The model-backed planner remains an explicit provider-neutral
-adapter. Ollama, OpenAI, and Gemini implement the same structured-generation
-port; provider-specific schemas, credentials, readiness, and errors stay behind
-their adapters. Deterministic tests cover interrupted invocation, cancellation
-recovery, conversation-scope isolation, and reply-projection recovery; a
-compiled persistent-mode journey verifies artifact and complete dialogue
-survival across process restart plus Redis projection reconstruction. The owner
-accepted the exact real-cloud-Codex disclosure and resulting artifact
-on 25 August 2026, completing the V1 evidence boundary.
+cancellation. Memory retention and every memory mutation require exact owner
+approval; bounded, integrity-checked memory context is disclosed only to an
+owner-controlled model provider. The model-backed planner remains an explicit
+provider-neutral adapter. Ollama, OpenAI, and Gemini implement the same
+structured-generation port; provider-specific schemas, credentials, readiness,
+and errors stay behind their adapters. Deterministic tests cover interrupted
+invocation, cancellation recovery, conversation-scope isolation, and
+reply-projection recovery; a compiled persistent-mode journey verifies
+artifact, dialogue, and memory survival across process restart plus Redis
+projection reconstruction. The owner accepted the exact real-cloud-Codex
+disclosure and resulting artifact on 25 August 2026, completing the V1 evidence
+boundary.
 
 Live model qualification remains outside required CI. Direct conformance can
 repeat the provider-neutral decision, planning, and adaptive-continuation cases
@@ -693,9 +700,18 @@ missing or changed adapter configuration fails closed instead of redirecting
 approved context.
 
 The app rejects non-loopback bind configuration. V1 trusts the authenticated
-Mac Mini account and SSH session as its owner perimeter, maps admitted requests
-to `owner_v1`, and requires application authentication before broader exposure
-under [ADR-0014](decisions/0014-use-the-host-session-as-the-v1-owner-boundary.md).
+Mac Mini account, SSH session, and optionally the owner's private tailnet as its
+deployment perimeter, maps admitted requests to `owner_v1`, and requires
+application authentication before shared or multi-user exposure under
+[ADR-0014](decisions/0014-use-the-host-session-as-the-v1-owner-boundary.md) and
+[ADR-0027](decisions/0027-use-tailscale-serve-for-private-physical-device-access.md).
+Tailscale Serve terminates HTTPS and proxies to the unchanged loopback listener;
+Funnel and direct LAN/Tailscale binding remain forbidden.
+For physical-browser development, the same Serve origin maps `/` to loopback
+Expo web and `/api` to the API, avoiding a remote CORS exception.
+The API admits browser cross-origin reads only from loopback HTTP(S) origins so
+the Expo web development server can use a separate port without making CORS an
+authentication substitute or exposing Vera to the LAN.
 Health is process liveness.
 Readiness verifies provider connectivity, configured-model availability,
 MongoDB, Redis, worker lease access, lifecycle recovery, and every enabled

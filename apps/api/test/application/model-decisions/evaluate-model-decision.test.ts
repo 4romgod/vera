@@ -171,6 +171,82 @@ void describe('model decision boundary', () => {
     );
   });
 
+  void it('discloses governed memory only to an owner-controlled orchestration provider', async () => {
+    const candidate = {
+      schemaVersion: 1,
+      kind: 'respond',
+      decisionSummary: 'Use the owner preference.',
+      message: 'Use npm.',
+    };
+    const memoryContext = {
+      schemaVersion: 1 as const,
+      memories: [
+        {
+          memoryId: 'memory_preference',
+          revision: 1,
+          kind: 'preference' as const,
+          subject: 'Package manager',
+          content: 'Use npm.',
+          scope: { kind: 'global' as const },
+          sensitivity: 'personal' as const,
+          updatedAt: currentTime,
+          sha256: 'a'.repeat(64),
+          characters: 23,
+        },
+      ],
+      manifest: {
+        schemaVersion: 1 as const,
+        principalId: 'owner_v1',
+        assembledAt: currentTime,
+        entries: [
+          {
+            memoryId: 'memory_preference',
+            revision: 1,
+            sha256: 'a'.repeat(64),
+            characters: 23,
+          },
+        ],
+        totalMemories: 1,
+        totalCharacters: 23,
+        sha256: 'b'.repeat(64),
+        limits: { maxMemories: 20, maxCharacters: 12_000 },
+        exclusions: { differentScope: 0, limits: 0 },
+      },
+    };
+    const ownerProvider = new FakeModelProvider(candidate);
+    const thirdPartyProvider = new FakeModelProvider(
+      candidate,
+      undefined,
+      undefined,
+      'third_party',
+    );
+
+    await createEvaluateModelDecision(ownerProvider)('Which should I use?', {
+      memoryContext,
+    });
+    await createEvaluateModelDecision(thirdPartyProvider)(
+      'Which should I use?',
+      { memoryContext },
+    );
+
+    const ownerInput = JSON.parse(ownerProvider.inputs[0]?.message ?? '{}') as {
+      memoryContext?: unknown;
+    };
+    const thirdPartyInput = JSON.parse(
+      thirdPartyProvider.inputs[0]?.message ?? '{}',
+    ) as { memoryContext?: unknown };
+    assert.deepEqual(ownerInput.memoryContext, [
+      {
+        kind: 'preference',
+        subject: 'Package manager',
+        content: 'Use npm.',
+        scope: { kind: 'global' },
+        sensitivity: 'personal',
+      },
+    ]);
+    assert.equal('memoryContext' in thirdPartyInput, false);
+  });
+
   void it('turns a direct-response proposal into a response decision', async () => {
     const result = await evaluator({
       schemaVersion: 1,

@@ -19,6 +19,11 @@ export type IntegrationActionExecutor<Arguments, Result> = {
       startedAt: string;
       recovery: boolean;
       arguments: Arguments;
+      source?: {
+        taskId: string;
+        conversationId?: string;
+        messageId?: string;
+      };
     },
     options?: { signal?: AbortSignal },
   ): Promise<Result>;

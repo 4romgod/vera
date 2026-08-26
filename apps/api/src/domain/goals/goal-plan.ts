@@ -9,6 +9,7 @@ import {
 } from '../capabilities/capability-registry.ts';
 import { PersonalTaskActionArgumentsSchema } from '../personal-tasks/personal-task.ts';
 import { ReminderActionArgumentsSchema } from '../reminders/reminder.ts';
+import { MemoryActionArgumentsSchema } from '../memories/memory.ts';
 
 export const GoalStepBaseSchema = z.object({
   id: z.string().regex(/^step_[a-z0-9_]+$/u),
@@ -42,6 +43,11 @@ export const PersonalReminderManagementGoalStepSchema =
     version: z.literal(1),
     arguments: ReminderActionArgumentsSchema,
   }).strict();
+export const MemoryManagementGoalStepSchema = GoalStepBaseSchema.extend({
+  capability: z.literal('memory_management'),
+  version: z.literal(1),
+  arguments: MemoryActionArgumentsSchema,
+}).strict();
 
 export const GoalStepSchema = z.discriminatedUnion('capability', [
   DevelopmentPlanningGoalStepSchema,
@@ -49,6 +55,7 @@ export const GoalStepSchema = z.discriminatedUnion('capability', [
   WebResearchGoalStepSchema,
   PersonalTaskManagementGoalStepSchema,
   PersonalReminderManagementGoalStepSchema,
+  MemoryManagementGoalStepSchema,
 ]);
 
 export const GoalPlanSchema = z
@@ -123,6 +130,7 @@ export const GoalExecutionStepSchema = z.discriminatedUnion('capability', [
   WebResearchGoalStepSchema.extend(GoalExecutionFields).strict(),
   PersonalTaskManagementGoalStepSchema.extend(GoalExecutionFields).strict(),
   PersonalReminderManagementGoalStepSchema.extend(GoalExecutionFields).strict(),
+  MemoryManagementGoalStepSchema.extend(GoalExecutionFields).strict(),
 ]);
 
 export const FixedGoalExecutionSchema = z

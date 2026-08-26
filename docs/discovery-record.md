@@ -114,12 +114,12 @@ through ADR-0015. Other entries remain recommendations or explicit deferrals.
 | Initial source layout | Modular monolith in `apps/api` | High | Preserves internal boundaries without speculative packages or services; shared packages wait for a second consumer. |
 | Durable operational store | MongoDB selected for V1 | High | A versioned aggregate and optimistic compare-and-swap preserve transition state and events atomically while matching owner expertise. |
 | Active execution scratchpad | Redis selected for V1 | High | Holds a versioned, TTL-bound projection with stale-write protection and no exclusive authority. |
-| Long-term memory store | MongoDB candidate, later | Medium | Operational records and governed memory may share a deployment but must keep separate semantics, access, and retention. |
+| Long-term memory store | MongoDB, separate governed collection | High | Operational resources and memory share a deployment but keep separate contracts, lifecycle, retrieval, disclosure, and retention semantics through ADR-0025. |
 | PostgreSQL | Fallback, not preferred | Medium | Technically strong, but no longer the leading candidate given owner maintainability and a credible MongoDB design. |
 | DynamoDB | Revisit for AWS-first deployment | Medium | Familiar and capable, but introduces a cloud dependency and early access-pattern commitment into the Mac-Mini-first V1. |
 | Agent framework | Defer | High | Domain and execution semantics must be defined before evaluating frameworks. |
 | Durable workflow engine | Defer | High | Recovery, retry, cancellation, and idempotency requirements must come first. |
-| Mobile client | React Native candidate | Medium | Fits the TypeScript ecosystem, but no client should be scaffolded during foundation design. |
+| Universal frontend | Expo React Native selected | High | ADR-0026 selects one thin-client workspace for web, iOS, and Android without moving authority out of the API. |
 
 ## Working assumptions
 
@@ -127,17 +127,21 @@ These assumptions allow discovery to progress but must not be treated as
 accepted facts:
 
 - Vera begins as a single-owner personal system.
-- The first interface can be an HTTP client or thin CLI rather than a GUI.
-- The initial deployment is Mac-Mini-only. No work executes while that machine
-  is offline, but durable state must survive and be recovered or safely
-  classified after restart. Revisit continuous availability after V1 works
-  once. (Confirmed 24 August 2026 — see Open system questions 1–2.)
+- The implemented universal frontend and CLI remain thin clients of the same
+  versioned API; neither owns orchestration semantics or authority.
+- The initial service deployment remains Mac-Mini-only. Physical owner clients
+  may connect through private Tailscale Serve ingress, but no work executes
+  while the Mac Mini is offline. Durable state must survive and be recovered or
+  safely classified after restart. Revisit continuous availability after V1
+  works once. (Confirmed 24 August 2026; client ingress extended by ADR-0027.)
 - Cloud model providers and local models may both be used.
 - At least one real specialist capability must be delegated to in V1.
 - V1 persistent mode uses MongoDB as durable authority and Redis as a
-  rebuildable execution scratchpad. Memory adapters are test-only.
-- Long-term personal memory can be delayed, but identity, authorization, and
-  durable operational state cannot be deferred entirely.
+  rebuildable execution scratchpad. Governed long-term memory uses a separate
+  MongoDB collection and contract.
+- Long-term personal memory is implemented as explicit, versioned,
+  approval-gated owner state; physical erasure and third-party-provider
+  disclosure remain deliberately unresolved.
 - The initial source layout is resolved by ADR-0009: one modular API app, with
   packages extracted only for real cross-app or cross-process reuse.
 

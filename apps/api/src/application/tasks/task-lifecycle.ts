@@ -45,6 +45,9 @@ import type { ProjectContextAssembler } from '../../ports/projects/project-conte
 import type { OwnerResourceStore } from '../../ports/persistence/owner-resource-store.ts';
 import type { Scratchpad } from '../../ports/persistence/scratchpad.ts';
 import { projectTaskScratchpad } from './project-task-scratchpad.ts';
+import { assembleMemoryContext } from '../memories/assemble-memory-context.ts';
+import { assertMemoryContextIntegrity } from '../memories/validate-memory-context.ts';
+import type { MemoryContextLimits } from '../../domain/memories/memory-context.ts';
 
 export type LifecycleErrorCode =
   | 'task_not_found'
@@ -130,6 +133,10 @@ export function createTaskLifecycle(options: {
   resources: OwnerResourceStore;
   contextAssembler: ProjectContextAssembler;
   conversationContextLimits?: ConversationContextLimits;
+  memoryContext?: {
+    enabled: boolean;
+    limits?: MemoryContextLimits;
+  };
   ownerTimeZone?: string;
   budget?: RunBudget;
   executionMode?: 'inline' | 'worker';
@@ -148,6 +155,11 @@ export function createTaskLifecycle(options: {
     maxCharacters: 40_000,
   };
   const ownerTimeZone = options.ownerTimeZone ?? 'UTC';
+  const memoryContextEnabled = options.memoryContext?.enabled ?? false;
+  const memoryContextLimits = options.memoryContext?.limits ?? {
+    maxMemories: 20,
+    maxCharacters: 12_000,
+  };
   const activeInvocations = new Map<string, AbortController>();
 
   function artifactReference(artifact: Artifact) {
@@ -419,6 +431,17 @@ export function createTaskLifecycle(options: {
         ...(artifactId === undefined ? [] : [`Artifact: ${artifactId}`]),
       ].join('\n\n');
     }
+    if (aggregate.run.output?.kind === 'memory_result') {
+      const artifactId = aggregate.run.output.artifact?.id;
+      return [
+        aggregate.run.output.result.summary,
+        ...aggregate.run.output.result.memories.map(
+          (memory) =>
+            `[${memory.status}] ${memory.subject}: ${memory.content} (${memory.id}, revision ${String(memory.revision)})`,
+        ),
+        ...(artifactId === undefined ? [] : [`Artifact: ${artifactId}`]),
+      ].join('\n\n');
+    }
     if (aggregate.run.output?.kind === 'goal_result') {
       return [
         `I completed the goal through ${String(aggregate.run.output.artifacts.length)} approved capability steps.`,
@@ -580,6 +603,21 @@ export function createTaskLifecycle(options: {
       throughMessageId: currentMessage.id,
       ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
       limits: conversationContextLimits,
+    });
+  }
+
+  async function prepareMemoryContext(input: {
+    principalId: string;
+    projectId?: string;
+    assembledAt: string;
+  }) {
+    if (!memoryContextEnabled) return undefined;
+    return assembleMemoryContext({
+      store: options.resources,
+      principalId: input.principalId,
+      ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
+      assembledAt: input.assembledAt,
+      limits: memoryContextLimits,
     });
   }
 
@@ -973,6 +1011,7 @@ export function createTaskLifecycle(options: {
       | 'project_not_found'
       | 'project_context_failure'
       | 'conversation_context_failure'
+      | 'memory_context_failure'
       | 'adaptive_goal_failure'
       | 'budget_exhausted'
       | 'cancelled',
@@ -1545,6 +1584,32 @@ export function createTaskLifecycle(options: {
           );
         }
       }
+      const memoryContext = budgetClaim.aggregate.run.memoryContext;
+      if (memoryContext !== undefined) {
+        try {
+          await assertMemoryContextIntegrity({
+            context: memoryContext,
+            store: options.resources,
+            principalId: budgetClaim.aggregate.task.principalId,
+            ...(budgetClaim.aggregate.task.projectId === undefined
+              ? {}
+              : { projectId: budgetClaim.aggregate.task.projectId }),
+          });
+        } catch (error) {
+          observer.warning(error, {
+            operation: 'memory_context_validation',
+            taskId: budgetClaim.aggregate.task.id,
+            runId: budgetClaim.aggregate.run.id,
+          });
+          return await recordFailure(
+            budgetClaim.aggregate.task.principalId,
+            budgetClaim.aggregate.task.id,
+            'memory_context_failure',
+            'Vera could not validate the frozen memory context.',
+            'run_failed',
+          );
+        }
+      }
       if (
         budgetClaim.aggregate.run.goal?.schemaVersion === 2 &&
         budgetClaim.aggregate.run.goal.status === 'active'
@@ -1576,6 +1641,7 @@ export function createTaskLifecycle(options: {
                 conversationContext:
                   budgetClaim.aggregate.run.conversationContext,
               }),
+          ...(memoryContext === undefined ? {} : { memoryContext }),
         },
       );
       if (
@@ -1988,18 +2054,31 @@ export function createTaskLifecycle(options: {
                           byteLength: artifact.byteLength,
                         },
                       }
-                    : {
-                        kind: 'personal_reminder_result',
-                        result: artifact.content,
-                        artifact: {
-                          id: artifact.id,
-                          version: artifact.version,
-                          type: artifact.type,
-                          mediaType: artifact.mediaType,
-                          sha256: artifact.sha256,
-                          byteLength: artifact.byteLength,
-                        },
-                      };
+                    : artifact.type === 'personal_reminder_result'
+                      ? {
+                          kind: 'personal_reminder_result',
+                          result: artifact.content,
+                          artifact: {
+                            id: artifact.id,
+                            version: artifact.version,
+                            type: artifact.type,
+                            mediaType: artifact.mediaType,
+                            sha256: artifact.sha256,
+                            byteLength: artifact.byteLength,
+                          },
+                        }
+                      : {
+                          kind: 'memory_result',
+                          result: artifact.content,
+                          artifact: {
+                            id: artifact.id,
+                            version: artifact.version,
+                            type: artifact.type,
+                            mediaType: artifact.mediaType,
+                            sha256: artifact.sha256,
+                            byteLength: artifact.byteLength,
+                          },
+                        };
           appendEvent(candidate, 'run_succeeded', completedAt, {}, createId);
           return true;
         },
@@ -2336,6 +2415,15 @@ export function createTaskLifecycle(options: {
           startedAt: claimedInvocation.startedAt,
           recovery: resumingInterruptedInvocation,
           arguments: claimedInvocation.arguments,
+          source: {
+            taskId: executionAggregate.task.id,
+            ...(executionAggregate.task.conversationId === undefined
+              ? {}
+              : { conversationId: executionAggregate.task.conversationId }),
+            ...(executionAggregate.task.messageId === undefined
+              ? {}
+              : { messageId: executionAggregate.task.messageId }),
+          },
           ...(projectReference === undefined
             ? {}
             : { project: projectReference }),
@@ -2592,6 +2680,13 @@ export function createTaskLifecycle(options: {
       const taskId = createId('task');
       const runId = createId('run');
       const conversationContext = await prepareConversationContext(input);
+      const memoryContext = await prepareMemoryContext({
+        principalId: input.principalId,
+        ...(input.projectId === undefined
+          ? {}
+          : { projectId: input.projectId }),
+        assembledAt: now,
+      });
       const initialEvents: TaskAggregate['events'] = [
         {
           schemaVersion: 1,
@@ -2633,6 +2728,20 @@ export function createTaskLifecycle(options: {
           },
         });
       }
+      if (memoryContext !== undefined) {
+        initialEvents.push({
+          schemaVersion: 1,
+          id: createId('event'),
+          sequence: initialEvents.length + 1,
+          type: 'memory_context_assembled',
+          occurredAt: now,
+          data: {
+            totalMemories: memoryContext.manifest.totalMemories,
+            totalCharacters: memoryContext.manifest.totalCharacters,
+            exclusions: memoryContext.manifest.exclusions,
+          },
+        });
+      }
       const aggregate: TaskAggregate = {
         schemaVersion: 1,
         version: 1,
@@ -2661,6 +2770,7 @@ export function createTaskLifecycle(options: {
           updatedAt: now,
           budget: structuredClone(budget),
           ...(conversationContext === undefined ? {} : { conversationContext }),
+          ...(memoryContext === undefined ? {} : { memoryContext }),
         },
         events: initialEvents,
       };
@@ -2676,6 +2786,15 @@ export function createTaskLifecycle(options: {
         ) {
           throw new LifecycleError(
             `Idempotency key ${input.requestKey} is already associated with different conversation context.`,
+            'idempotency_key_reused',
+          );
+        }
+        if (
+          JSON.stringify(creation.aggregate.run.memoryContext) !==
+          JSON.stringify(memoryContext)
+        ) {
+          throw new LifecycleError(
+            `Idempotency key ${input.requestKey} is already associated with different memory context.`,
             'idempotency_key_reused',
           );
         }

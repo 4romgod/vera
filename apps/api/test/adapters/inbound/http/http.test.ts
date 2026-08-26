@@ -43,6 +43,26 @@ void describe('HTTP API', () => {
     });
   });
 
+  void it('allows the local web frontend without widening the loopback trust boundary', async () => {
+    const app = appFor({});
+    const allowed = await app.inject({
+      method: 'GET',
+      url: '/health',
+      headers: { origin: 'http://127.0.0.1:8081' },
+    });
+    const rejected = await app.inject({
+      method: 'GET',
+      url: '/health',
+      headers: { origin: 'https://untrusted.example' },
+    });
+
+    assert.equal(
+      allowed.headers['access-control-allow-origin'],
+      'http://127.0.0.1:8081',
+    );
+    assert.equal(rejected.headers['access-control-allow-origin'], undefined);
+  });
+
   void it('reports readiness when the configured provider and model are available', async () => {
     const app = appFor({});
     const response = await app.inject({ method: 'GET', url: '/ready' });
