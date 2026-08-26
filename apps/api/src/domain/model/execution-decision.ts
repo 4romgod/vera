@@ -6,6 +6,7 @@ import {
   WebResearchProposalArgumentsSchema,
 } from '../capabilities/capability-registry.ts';
 import { PersonalTaskActionArgumentsSchema } from '../personal-tasks/personal-task.ts';
+import { ReminderActionArgumentsSchema } from '../reminders/reminder.ts';
 import { ModelProposalSchema } from './model-proposal.ts';
 import { GoalPlanSchema } from '../goals/goal-plan.ts';
 
@@ -72,6 +73,20 @@ const PersonalTaskManagementApprovalDecisionSchema = z
   })
   .strict();
 
+const PersonalReminderManagementApprovalDecisionSchema = z
+  .object({
+    kind: z.literal('approval_required'),
+    reason: z.literal('specialist_capability_invocation'),
+    capability: z
+      .object({
+        name: z.literal('personal_reminder_management'),
+        version: z.literal(1),
+      })
+      .strict(),
+    proposedArguments: ReminderActionArgumentsSchema,
+  })
+  .strict();
+
 const RejectedProposalDecisionSchema = z
   .object({
     kind: z.literal('rejected'),
@@ -98,6 +113,7 @@ export const ExecutionDecisionSchema = z.union([
   SoftwareChangeApprovalDecisionSchema,
   WebResearchApprovalDecisionSchema,
   PersonalTaskManagementApprovalDecisionSchema,
+  PersonalReminderManagementApprovalDecisionSchema,
   GoalPlannedDecisionSchema,
   RejectedProposalDecisionSchema,
 ]);

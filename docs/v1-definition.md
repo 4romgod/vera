@@ -1,8 +1,8 @@
 # Vera V1 Definition
 
 **Status:** Accepted and demonstrated
-**Version:** 0.9
-**Last updated:** 25 August 2026
+**Version:** 0.10
+**Last updated:** 26 August 2026
 **Accepted:** 24 August 2026 (owner); V1 perimeter and provider-profile
 decisions accepted 25 August 2026; complete journey demonstrated and accepted
 25 August 2026
@@ -125,8 +125,10 @@ Creating the internal plan artifact is V1's controlled side effect. Its
 idempotency identity is the capability invocation ID: retrying the same
 invocation must return or update the same artifact identity, never create a
 duplicate. The first HTTP response is `202 Accepted` with conversation, task,
-and run identifiers. V1 clients observe state, events, approval requests, and
-the result by polling versioned HTTP resources; streaming is deferred.
+and run identifiers. V1 clients observe task state, events, approval requests,
+and results by polling versioned HTTP resources. A later accepted increment
+adds SSE specifically as a recoverable projection of the durable notification
+inbox; it does not change task-progress polling.
 
 ### Product value under test
 

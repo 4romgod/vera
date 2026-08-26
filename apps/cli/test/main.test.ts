@@ -37,6 +37,10 @@ function fakeApi(overrides: Partial<VeraApi>): VeraApi {
     listCapabilities: unavailable,
     listPersonalTasks: unavailable,
     getPersonalTask: unavailable,
+    listReminders: unavailable,
+    getReminder: unavailable,
+    listNotifications: unavailable,
+    streamNotifications: unavailable,
     registerProject: unavailable,
     listProjects: unavailable,
     getProject: unavailable,
@@ -137,6 +141,72 @@ void describe('Vera CLI', () => {
     assert.equal(exit, 0);
     assert.deepEqual(options, { status: 'completed', limit: 5 });
     assert.match(output.join(''), /personal_task_test/u);
+  });
+
+  void it('lists reminders and watches notification events', async () => {
+    const output: string[] = [];
+    const reminder = {
+      schemaVersion: 1 as const,
+      id: 'reminder_test',
+      message: 'Stand up',
+      scheduledFor: '2026-08-26T10:00:00.000Z',
+      timeZone: 'Africa/Johannesburg',
+      status: 'delivered' as const,
+      createdAt: '2026-08-26T09:00:00.000Z',
+      updatedAt: '2026-08-26T10:00:00.000Z',
+    };
+    const notification = {
+      schemaVersion: 1 as const,
+      id: 'notification_test',
+      reminderId: reminder.id,
+      message: reminder.message,
+      scheduledFor: reminder.scheduledFor,
+      deliveredAt: reminder.updatedAt,
+      status: 'unread' as const,
+      channel: 'vera_inbox' as const,
+    };
+    let reminderOptions: Parameters<VeraApi['listReminders']>[0];
+    const client = fakeApi({
+      listReminders: (options) => {
+        reminderOptions = options;
+        return Promise.resolve({ schemaVersion: 1, reminders: [reminder] });
+      },
+      async *streamNotifications() {
+        await Promise.resolve();
+        yield { cursor: 'opaque-cursor', notification };
+      },
+    });
+
+    assert.equal(
+      await runCli(
+        ['reminder', 'list', '--status', 'delivered', '--limit', '5'],
+        {
+          client,
+          stdout: {
+            write: (value) => {
+              output.push(String(value));
+              return true;
+            },
+          },
+        },
+      ),
+      0,
+    );
+    assert.deepEqual(reminderOptions, { status: 'delivered', limit: 5 });
+    assert.equal(
+      await runCli(['notification', 'watch'], {
+        client,
+        stdout: {
+          write: (value) => {
+            output.push(String(value));
+            return true;
+          },
+        },
+      }),
+      0,
+    );
+    assert.match(output.join(''), /opaque-cursor/u);
+    assert.match(output.join(''), /notification_test/u);
   });
 
   void it('lists the runtime capability catalog', async () => {

@@ -11,6 +11,16 @@ import {
 } from '../../../../domain/personal-tasks/personal-task.ts';
 import type { OwnerResourceStore } from '../../../../ports/persistence/owner-resource-store.ts';
 import { personalTaskMutationOrderKey } from '../../../../ports/persistence/personal-task-store.ts';
+import {
+  ReminderSchema,
+  type NotificationResource,
+  type Reminder,
+} from '../../../../domain/reminders/reminder.ts';
+import {
+  notificationIdForReminder,
+  reminderMutationOrderKey,
+  type ReminderListStatus,
+} from '../../../../ports/persistence/reminder-store.ts';
 
 export class InMemoryOwnerResourceStore implements OwnerResourceStore {
   private readonly projects = new Map<string, Project>();
@@ -24,6 +34,8 @@ export class InMemoryOwnerResourceStore implements OwnerResourceStore {
     string,
     string
   >();
+  private readonly reminders = new Map<string, Reminder>();
+  private readonly reminderIdByCreationInvocation = new Map<string, string>();
 
   public createProject(
     project: Project,
@@ -329,6 +341,256 @@ export class InMemoryOwnerResourceStore implements OwnerResourceStore {
     const task = this.personalTasks.get(taskId);
     return Promise.resolve(
       task?.principalId === principalId ? structuredClone(task) : null,
+    );
+  }
+
+  public createReminder(reminder: Reminder): Promise<Reminder> {
+    const identity = this.identity(
+      reminder.principalId,
+      reminder.creationInvocationId,
+    );
+    const existingId = this.reminderIdByCreationInvocation.get(identity);
+    if (existingId !== undefined) {
+      const existing = this.reminders.get(existingId);
+      if (existing === undefined) {
+        throw new Error('In-memory reminder index is inconsistent.');
+      }
+      return Promise.resolve(structuredClone(existing));
+    }
+    const validated = ReminderSchema.parse(reminder);
+    this.reminderIdByCreationInvocation.set(identity, validated.id);
+    this.reminders.set(validated.id, structuredClone(validated));
+    return Promise.resolve(structuredClone(validated));
+  }
+
+  public findReminderByCreationInvocation(
+    principalId: string,
+    invocationId: string,
+  ): Promise<Reminder | null> {
+    const id = this.reminderIdByCreationInvocation.get(
+      this.identity(principalId, invocationId),
+    );
+    if (id === undefined) return Promise.resolve(null);
+    const reminder = this.reminders.get(id);
+    return Promise.resolve(
+      reminder === undefined ? null : structuredClone(reminder),
+    );
+  }
+
+  public findReminderById(
+    principalId: string,
+    reminderId: string,
+  ): Promise<Reminder | null> {
+    const reminder = this.reminders.get(reminderId);
+    return Promise.resolve(
+      reminder?.principalId === principalId ? structuredClone(reminder) : null,
+    );
+  }
+
+  public listReminders(
+    principalId: string,
+    options: { status: ReminderListStatus; limit: number },
+  ): Promise<Reminder[]> {
+    return Promise.resolve(
+      [...this.reminders.values()]
+        .filter(
+          (reminder) =>
+            reminder.principalId === principalId &&
+            (options.status === 'all' || reminder.status === options.status),
+        )
+        .sort(
+          (left, right) =>
+            left.scheduledFor.localeCompare(right.scheduledFor) ||
+            left.id.localeCompare(right.id),
+        )
+        .slice(0, options.limit)
+        .map((reminder) => structuredClone(reminder)),
+    );
+  }
+
+  public mutateReminder(input: {
+    principalId: string;
+    reminderId: string;
+    action:
+      | {
+          action: 'reschedule';
+          reminderId: string;
+          scheduledFor: string;
+          timeZone: string;
+        }
+      | { action: 'cancel' | 'acknowledge'; reminderId: string };
+    invocationId: string;
+    mutationAt: string;
+    recovery: boolean;
+  }): Promise<Reminder | null> {
+    const reminder = this.reminders.get(input.reminderId);
+    if (reminder?.principalId !== input.principalId)
+      return Promise.resolve(null);
+    if (reminder.lastMutation.invocationId === input.invocationId) {
+      return Promise.resolve(structuredClone(reminder));
+    }
+    const requestedOrderKey = reminderMutationOrderKey(
+      input.mutationAt,
+      input.invocationId,
+    );
+    if (input.recovery && reminder.lastMutation.orderKey > requestedOrderKey) {
+      return Promise.resolve(structuredClone(reminder));
+    }
+    if (input.action.action === 'reschedule') {
+      if (reminder.status !== 'scheduled') {
+        throw new Error('Only a scheduled reminder can be rescheduled.');
+      }
+      reminder.scheduledFor = input.action.scheduledFor;
+      reminder.timeZone = input.action.timeZone;
+      delete reminder.claim;
+    } else if (input.action.action === 'cancel') {
+      if (reminder.status !== 'scheduled') {
+        throw new Error('Only a scheduled reminder can be cancelled.');
+      }
+      reminder.status = 'cancelled';
+      reminder.cancelledAt = input.mutationAt;
+      delete reminder.claim;
+    } else {
+      if (
+        reminder.status !== 'delivered' ||
+        reminder.notification === undefined
+      ) {
+        throw new Error('Only a delivered reminder can be acknowledged.');
+      }
+      reminder.status = 'acknowledged';
+      reminder.acknowledgedAt = input.mutationAt;
+      reminder.notification.status = 'acknowledged';
+      reminder.notification.acknowledgedAt = input.mutationAt;
+    }
+    const mutationAt =
+      reminder.updatedAt >= input.mutationAt
+        ? new Date(Date.parse(reminder.updatedAt) + 1).toISOString()
+        : input.mutationAt;
+    reminder.updatedAt = mutationAt;
+    reminder.lastMutation = {
+      invocationId: input.invocationId,
+      orderKey: reminderMutationOrderKey(mutationAt, input.invocationId),
+    };
+    if (reminder.status === 'cancelled') reminder.cancelledAt = mutationAt;
+    if (reminder.status === 'acknowledged') {
+      reminder.acknowledgedAt = mutationAt;
+      if (reminder.notification !== undefined) {
+        reminder.notification.acknowledgedAt = mutationAt;
+      }
+    }
+    return Promise.resolve(structuredClone(ReminderSchema.parse(reminder)));
+  }
+
+  public claimDueReminder(input: {
+    workerId: string;
+    token: string;
+    now: string;
+    expiresAt: string;
+  }): Promise<Reminder | null> {
+    const reminder = [...this.reminders.values()]
+      .filter(
+        (candidate) =>
+          candidate.status === 'scheduled' &&
+          candidate.scheduledFor <= input.now &&
+          (candidate.claim === undefined ||
+            candidate.claim.expiresAt <= input.now),
+      )
+      .sort(
+        (left, right) =>
+          left.scheduledFor.localeCompare(right.scheduledFor) ||
+          left.id.localeCompare(right.id),
+      )[0];
+    if (reminder === undefined) return Promise.resolve(null);
+    reminder.claim = {
+      workerId: input.workerId,
+      token: input.token,
+      claimedAt: input.now,
+      expiresAt: input.expiresAt,
+    };
+    return Promise.resolve(structuredClone(ReminderSchema.parse(reminder)));
+  }
+
+  public finalizeReminderDelivery(input: {
+    principalId: string;
+    reminderId: string;
+    workerId: string;
+    token: string;
+    deliveredAt: string;
+  }): Promise<Reminder | null> {
+    const reminder = this.reminders.get(input.reminderId);
+    if (reminder?.principalId !== input.principalId)
+      return Promise.resolve(null);
+    if (
+      reminder.status === 'delivered' &&
+      reminder.notification !== undefined
+    ) {
+      return Promise.resolve(structuredClone(reminder));
+    }
+    if (
+      reminder.status !== 'scheduled' ||
+      reminder.claim?.workerId !== input.workerId ||
+      reminder.claim.token !== input.token
+    ) {
+      return Promise.resolve(null);
+    }
+    reminder.status = 'delivered';
+    reminder.updatedAt = input.deliveredAt;
+    reminder.notification = {
+      schemaVersion: 1,
+      id: notificationIdForReminder(reminder.id),
+      reminderId: reminder.id,
+      message: reminder.message,
+      scheduledFor: reminder.scheduledFor,
+      deliveredAt: input.deliveredAt,
+      status: 'unread',
+      channel: 'vera_inbox',
+    };
+    delete reminder.claim;
+    return Promise.resolve(structuredClone(ReminderSchema.parse(reminder)));
+  }
+
+  public releaseReminderClaim(input: {
+    reminderId: string;
+    workerId: string;
+    token: string;
+  }): Promise<void> {
+    const reminder = this.reminders.get(input.reminderId);
+    if (
+      reminder?.claim?.workerId === input.workerId &&
+      reminder.claim.token === input.token
+    ) {
+      delete reminder.claim;
+    }
+    return Promise.resolve();
+  }
+
+  public listNotifications(
+    principalId: string,
+    options: {
+      after?: { deliveredAt: string; id: string };
+      limit: number;
+    },
+  ): Promise<NotificationResource[]> {
+    return Promise.resolve(
+      [...this.reminders.values()]
+        .filter((reminder) => reminder.principalId === principalId)
+        .flatMap((reminder) =>
+          reminder.notification === undefined ? [] : [reminder.notification],
+        )
+        .filter(
+          (notification) =>
+            options.after === undefined ||
+            notification.deliveredAt > options.after.deliveredAt ||
+            (notification.deliveredAt === options.after.deliveredAt &&
+              notification.id > options.after.id),
+        )
+        .sort(
+          (left, right) =>
+            left.deliveredAt.localeCompare(right.deliveredAt) ||
+            left.id.localeCompare(right.id),
+        )
+        .slice(0, options.limit)
+        .map((notification) => structuredClone(notification)),
     );
   }
 

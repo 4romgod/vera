@@ -28,7 +28,7 @@ boundary.
 propose a direct response or one of the capabilities enabled in the runtime
 catalog. The implemented declarations are `development_planning@1`,
 `software_change@1`, project-independent `web_research@1`, and owner-scoped
-`personal_task_management@1`; Vera's code
+`personal_task_management@1`, and `personal_reminder_management@1`; Vera's code
 validates the closed, versioned proposal and routing arguments, then returns a
 direct response, one approval requirement, a validated two- or three-step goal,
 or a rejection. A disabled capability is absent from the model contract. Model
@@ -43,6 +43,16 @@ mutations disclose `personal_data_write`. The provider-neutral integration port
 is the extension point for future calendars, reminders, and external task
 services. See
 [ADR-0022](docs/decisions/0022-introduce-provider-neutral-integration-actions-with-vera-owned-personal-tasks.md).
+
+Vera can also schedule one-shot reminders from ordinary language, recover them
+after restart, and deliver each due reminder into its durable owner inbox. The
+MongoDB reminder document atomically contains both delivery state and its
+notification, while expiring claims prevent concurrent workers from delivering
+the same reminder. Clients can page the inbox with an opaque cursor or watch a
+resumable server-sent-event projection; a disconnected stream never loses the
+durable notification. Creating, rescheduling, cancelling, and acknowledging a
+reminder all remain exact, approval-gated capability actions. See
+[ADR-0023](docs/decisions/0023-deliver-durable-reminders-through-a-vera-owned-notification-inbox.md).
 
 For compound requests such as “research, plan, and implement,” Vera now keeps
 one owner-facing goal while approving and executing each capability boundary
@@ -125,6 +135,9 @@ accepted in
 Provider-neutral integration actions and Vera-owned personal tasks are accepted
 in
 [ADR-0022](docs/decisions/0022-introduce-provider-neutral-integration-actions-with-vera-owned-personal-tasks.md).
+Durable reminders, scheduler claims, and the Vera-owned notification inbox are
+accepted in
+[ADR-0023](docs/decisions/0023-deliver-durable-reminders-through-a-vera-owned-notification-inbox.md).
 Broader long-term-memory and retention policy remain open on purpose; the V1
 operational storage products do not.
 
@@ -206,7 +219,10 @@ again after restart. It also executes a plan-to-change goal, restarts between
 its two approval boundaries, replays the first decision idempotently, and
 verifies the final artifact lineage. It also creates a durable personal task,
 restarts the API, completes the task through another approved action, and reads
-it through the compiled client and CLI. It then removes its own database, Redis
+it through the compiled client and CLI. It also creates a future reminder,
+restarts the API, reschedules it to a due instant, verifies exactly one durable
+inbox notification, acknowledges it, and retrieves it through the compiled
+client and CLI. It then removes its own database, Redis
 scratchpads, managed
 worktrees, and temporary Git fixture.
 
@@ -356,6 +372,10 @@ and cannot contain embedded credentials, query parameters, or fragments.
 
 `WORKER_CONCURRENCY` controls simultaneous run progression and
 `WORKER_POLL_INTERVAL_MS` controls idle discovery latency.
+`VERA_OWNER_TIME_ZONE` selects the IANA zone used to interpret reminder
+requests. `REMINDER_WORKER_CONCURRENCY`, `REMINDER_POLL_INTERVAL_MS`, and
+`REMINDER_LEASE_MS` control due-reminder pickup independently from task runs;
+the defaults are 2, 500 milliseconds, and 30 seconds.
 `CONVERSATION_CONTEXT_MAX_MESSAGES` and
 `CONVERSATION_CONTEXT_MAX_CHARACTERS` bound prior dialogue supplied to one
 orchestration call. Vera selects only whole, completed owner/Vera turn pairs;
@@ -411,6 +431,22 @@ npm run cli -- project add \
   --key register-vera-local
 npm run cli -- project list
 ```
+
+To exercise the personal-assistant path, submit a reminder through `chat` or
+`task submit`, approve the exact action, then inspect or watch the durable
+inbox:
+
+```bash
+npm run cli -- chat --message "Remind me to stretch in five minutes"
+npm run cli -- reminder list --status scheduled
+npm run cli -- notification list
+npm run cli -- notification watch
+```
+
+`notification watch` remains open until interrupted. Each printed event includes
+its opaque `cursor`; resume with `--after <cursor>`. Reminder mutations are
+conversational and approval-gated; the read-only `reminder` and `notification`
+commands never bypass that policy.
 
 Copy the returned project ID, then run the complete planning journey:
 

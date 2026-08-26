@@ -36,6 +36,8 @@ erDiagram
     MESSAGE o|--o{ TASK : requests_or_steers
     PRINCIPAL ||--o{ TASK : owns
     PRINCIPAL ||--o{ PERSONAL_TASK : owns
+    PRINCIPAL ||--o{ REMINDER : owns
+    REMINDER ||--o| NOTIFICATION : delivers_as
     TASK ||--o{ RUN : attempted_by
     RUN o|--|| GOAL : pursues
     GOAL ||--|{ STEP : orders
@@ -235,6 +237,28 @@ A personal task has a stable identity, title, optional notes and due time, an
 `open` or `completed` status, timestamps, and mutation provenance. The first
 contract supports create, list, complete, and reopen. The resource belongs to
 Vera even when a future integration mirrors it into an external task service.
+
+### Reminder
+
+A durable, owner-scoped instruction for Vera to surface a message at one exact
+instant. It is distinct from both an orchestration task and a personal task. A
+reminder remains `scheduled` until it is atomically `delivered`, explicitly
+`cancelled`, or later `acknowledged` by the owner.
+
+A reminder records its stable identity, message, UTC scheduled instant, the IANA
+time zone used to interpret the request, status, timestamps, mutation
+provenance, and an optional expiring delivery claim. Rescheduling and cancelling
+are valid only while scheduled. Acknowledgment is valid only after delivery.
+
+### Notification
+
+A durable owner-visible fact that Vera has surfaced an event. The first
+notification type is the one-to-one inbox projection embedded in a delivered
+reminder. It has a deterministic identity, reminder identity, content,
+scheduled and delivered instants, channel, and unread or acknowledged state.
+
+A server-sent event is only transport for a notification. Losing the connection
+does not delete the notification; clients resume from an opaque ordered cursor.
 
 ### Event
 

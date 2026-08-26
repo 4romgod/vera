@@ -29,6 +29,12 @@ import type { DevelopmentPlanningCapabilityRegistry } from '../../../ports/capab
 import type { SoftwareChangeCapabilityRegistry } from '../../../ports/capabilities/software-change-capability.ts';
 import type { WebResearchCapabilityRegistry } from '../../../ports/capabilities/web-research-capability.ts';
 import type { IntegrationActionExecutor } from '../../../ports/integrations/integration-action-executor.ts';
+import {
+  ReminderActionArgumentsSchema,
+  ReminderResultSchema,
+  type ReminderActionArguments,
+  type ReminderResult,
+} from '../../../domain/reminders/reminder.ts';
 
 function definition(name: string): CapabilityDefinition {
   const value = CapabilityDefinitions.find(
@@ -400,6 +406,66 @@ function personalTaskRegistration(
   };
 }
 
+function reminderRegistration(
+  executor: IntegrationActionExecutor<ReminderActionArguments, ReminderResult>,
+): CapabilityRuntimeRegistration {
+  const capabilityDefinition = definition('personal_reminder_management');
+  const runtime = (): CapabilityRuntime => ({
+    definition: capabilityDefinition,
+    destination: executor.destination,
+    authority: executor.maximumAuthority,
+    authorityFor({ arguments: arguments_ }) {
+      return executor.authorityFor(
+        ReminderActionArgumentsSchema.parse(arguments_),
+      );
+    },
+    checkReadiness: () => executor.checkReadiness(),
+    async execute(invocation, options) {
+      if (
+        invocation.project !== undefined ||
+        invocation.context !== undefined ||
+        invocation.artifacts !== undefined
+      ) {
+        throw new Error(
+          'Reminder management must not receive project context or artifacts.',
+        );
+      }
+      const started = Date.now();
+      const result = await executor.execute(
+        {
+          principalId: invocation.principalId,
+          invocationId: invocation.invocationId,
+          startedAt: invocation.startedAt,
+          recovery: invocation.recovery,
+          arguments: ReminderActionArgumentsSchema.parse(invocation.arguments),
+        },
+        options,
+      );
+      return {
+        artifact: {
+          type: 'personal_reminder_result',
+          mediaType: 'application/vnd.vera.personal-reminder-result+json',
+          content: ReminderResultSchema.parse(result),
+        },
+        model: {
+          provider: 'vera',
+          model: executor.integrationId,
+          durationMs: Date.now() - started,
+        },
+      };
+    },
+  });
+  return {
+    definition: capabilityDefinition,
+    selected: runtime,
+    resolve(destination) {
+      return sameCapabilityDestination(executor.destination, destination)
+        ? runtime()
+        : null;
+    },
+  };
+}
+
 function sameReference(
   definition_: CapabilityDefinition,
   reference: CapabilityReference,
@@ -418,12 +484,14 @@ export function createCapabilityRuntimeRegistry(options: {
     PersonalTaskActionArguments,
     PersonalTaskResult
   >;
+  reminders: IntegrationActionExecutor<ReminderActionArguments, ReminderResult>;
 }): CapabilityRuntimeRegistry {
   const registrations = [
     planningRegistration(options.developmentPlanning),
     softwareChangeRegistration(options.softwareChange),
     webResearchRegistration(options.webResearch),
     personalTaskRegistration(options.personalTasks),
+    reminderRegistration(options.reminders),
   ];
   const registrationFor = (reference: CapabilityReference) =>
     registrations.find((candidate) =>

@@ -43,6 +43,11 @@ import type { ChangeApplicationStore } from '../ports/persistence/change-applica
 import type { ProjectMutationLeaseStore } from '../ports/persistence/project-mutation-lease-store.ts';
 import { LocalPersonalTaskActionExecutor } from '../adapters/outbound/integrations/personal-tasks/local-personal-task-action-executor.ts';
 import { createPersonalTaskService } from '../application/personal-tasks/personal-task-service.ts';
+import { LocalReminderActionExecutor } from '../adapters/outbound/integrations/reminders/local-reminder-action-executor.ts';
+import { VeraInboxReminderDelivery } from '../adapters/outbound/notifications/vera-inbox-reminder-delivery.ts';
+import { createReminderService } from '../application/reminders/reminder-service.ts';
+import { createNotificationService } from '../application/reminders/notification-service.ts';
+import { createReminderWorker } from '../application/reminders/reminder-worker.ts';
 
 export function createApp(
   config: AppConfig,
@@ -124,18 +129,25 @@ export function createApp(
   });
   const webResearch = createWebResearchCapabilityRegistry(config.research);
   const personalTaskExecutor = new LocalPersonalTaskActionExecutor(resources);
+  const reminderExecutor = new LocalReminderActionExecutor(resources);
   const capabilities = createCapabilityRuntimeRegistry({
     developmentPlanning,
     softwareChange,
     webResearch,
     personalTasks: personalTaskExecutor,
+    reminders: reminderExecutor,
   });
   const personalTaskService = createPersonalTaskService({ store: resources });
+  const reminderService = createReminderService({ store: resources });
+  const notificationService = createNotificationService({ store: resources });
   const capabilityService = createCapabilityService({ registry: capabilities });
   const evaluateModelDecision = createEvaluateModelDecision(
     provider,
     undefined,
-    { enabledCapabilities: capabilities.enabledReferences() },
+    {
+      enabledCapabilities: capabilities.enabledReferences(),
+      ownerTimeZone: config.reminders.ownerTimeZone,
+    },
   );
   const changeApplicationExecutor =
     new LocalGitSoftwareChangeApplicationExecutor({
@@ -173,6 +185,15 @@ export function createApp(
     beforeWork: async () => {
       await Promise.all([store.checkReadiness(), resources.checkReadiness()]);
     },
+  });
+  const reminderDelivery = new VeraInboxReminderDelivery(resources);
+  const reminderWorker = createReminderWorker({
+    store: resources,
+    delivery: reminderDelivery,
+    concurrency: config.reminders.concurrency,
+    pollIntervalMs: config.reminders.pollIntervalMs,
+    leaseMs: config.reminders.leaseMs,
+    warning: (error, context) => lifecycleObserver.warning(error, context),
   });
   const changeApplicationLifecycle = createSoftwareChangeApplicationLifecycle({
     store: applicationStore,
@@ -227,6 +248,8 @@ export function createApp(
     projects: projectService,
     capabilities: capabilityService,
     personalTasks: personalTaskService,
+    reminders: reminderService,
+    notifications: notificationService,
     changeApplications: {
       ...changeApplicationLifecycle,
       wake: () => changeApplicationWorker.wake(),
@@ -257,6 +280,10 @@ export function createApp(
       }),
       { name: 'task_worker', check: () => worker.checkReadiness() },
       {
+        name: 'reminder_worker',
+        check: () => reminderWorker.checkReadiness(),
+      },
+      {
         name: 'change_application_store',
         check: () => applicationStore.checkReadiness(),
       },
@@ -271,6 +298,7 @@ export function createApp(
     ],
     close: async () => {
       await worker.stop();
+      await reminderWorker.stop();
       await changeApplicationWorker.stop();
       await Promise.all([
         store.close(),
@@ -285,6 +313,7 @@ export function createApp(
   });
   appReference.current = app;
   worker.start();
+  reminderWorker.start();
   changeApplicationWorker.start();
   return app;
 }

@@ -62,6 +62,27 @@ void describe('application configuration', () => {
     );
   });
 
+  void it('configures a validated owner time zone and independent reminder worker', () => {
+    assert.deepEqual(
+      loadConfig({
+        VERA_OWNER_TIME_ZONE: 'Africa/Johannesburg',
+        REMINDER_WORKER_CONCURRENCY: '3',
+        REMINDER_POLL_INTERVAL_MS: '100',
+        REMINDER_LEASE_MS: '45000',
+      }).reminders,
+      {
+        ownerTimeZone: 'Africa/Johannesburg',
+        concurrency: 3,
+        pollIntervalMs: 100,
+        leaseMs: 45_000,
+      },
+    );
+    assert.throws(
+      () => loadConfig({ VERA_OWNER_TIME_ZONE: 'Not/AZone' }),
+      /VERA_OWNER_TIME_ZONE/u,
+    );
+  });
+
   void it('creates an OpenAI provider configuration only with a key', () => {
     assert.deepEqual(
       loadConfig({

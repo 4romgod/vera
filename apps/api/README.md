@@ -11,7 +11,9 @@ src/
 │   └── outbound/
 │       ├── capabilities/            # Codex/model/deterministic capability implementations
 │       ├── change-applications/     # Managed Git effect implementation
+│       ├── integrations/            # Provider-neutral owner-service actions
 │       ├── model/                   # Ollama/OpenAI/Gemini/deterministic model implementations
+│       ├── notifications/           # Notification delivery implementations
 │       ├── persistence/
 │       │   ├── memory/              # In-process port implementations for tests/local mode
 │       │   ├── mongodb/             # Durable stores, leases, validators, migrations
@@ -24,6 +26,7 @@ src/
 │   ├── conversations/
 │   ├── model-decisions/
 │   ├── projects/
+│   ├── reminders/                   # Reminder queries, inbox, and scheduler
 │   ├── shared/
 │   └── tasks/
 ├── bootstrap/                       # Environment, configuration, composition, process startup

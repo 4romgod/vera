@@ -26,6 +26,10 @@ an untrusted network.
 | `GET /v1/capabilities` | List declared capability contracts, authority, enabled state, and destination | `200` |
 | `GET /v1/personal-tasks` | List owner-scoped personal tasks; filters: `status`, `limit` | `200` |
 | `GET /v1/personal-tasks/{personalTaskId}` | Retrieve one owner-scoped personal task | `200` |
+| `GET /v1/reminders` | List owner-scoped reminders; filters: `status`, `limit` | `200` |
+| `GET /v1/reminders/{reminderId}` | Retrieve one owner-scoped reminder | `200` |
+| `GET /v1/notifications` | Page durable inbox notifications after an opaque cursor | `200` |
+| `GET /v1/notifications/stream` | Watch the durable inbox as resumable server-sent events | `200` |
 | `POST /v1/projects` | Register an owner-controlled project source | `201` |
 | `GET /v1/projects` | List registered projects | `200` |
 | `GET /v1/projects/{projectId}` | Retrieve a registered project | `200` |
@@ -242,6 +246,43 @@ It returns `{ "schemaVersion": 1, "tasks": [...] }`. `GET
 There is deliberately no direct HTTP mutation path in this increment; mutations
 must pass through proposal validation, approval, durable invocation, and
 artifact evidence.
+
+## Reminders and notifications
+
+Reminder mutations are natural-language tasks or conversation messages using a
+closed capability contract:
+
+```text
+create      { message, scheduledFor, timeZone }
+list        { status?: all|scheduled|delivered|acknowledged|cancelled, limit? }
+reschedule  { reminderId, scheduledFor, timeZone }
+cancel      { reminderId }
+acknowledge { reminderId }
+```
+
+`scheduledFor` is an ISO-8601 UTC instant. Temporal context uses the durable
+task-creation instant, so retrying decision-making cannot shift a relative
+request. `timeZone` is the configured owner IANA zone supplied to the model and
+retained as interpretation evidence. The model cannot choose principal, claim,
+worker, notification, or channel identity. Every action is separately approved and returns a
+`personal_reminder_result` artifact.
+
+`GET /v1/reminders?status=scheduled&limit=50` and `GET
+/v1/reminders/{id}` are read-only resource paths. Due reminders are claimed by
+the scheduler and atomically become `delivered` with one embedded durable
+notification.
+
+`GET /v1/notifications?after={cursor}&limit=100` returns notifications ordered
+by delivery instant and identity plus `nextCursor`. The cursor is opaque and an
+invalid cursor returns `400 invalid_notification_cursor`.
+
+`GET /v1/notifications/stream?after={cursor}` returns `text/event-stream`.
+Each `notification` event uses the resumable cursor as its SSE `id` and the
+notification resource as JSON `data`. A standard `Last-Event-ID` header is also
+accepted when `after` is absent. Heartbeats keep idle connections visible. The
+shared client exposes both cursor and notification, so clients can reconnect
+with the last cursor or page the inbox after a disconnect; the stream is a
+projection and does not own delivery state.
 
 The destination is provider-neutral but not anonymous. A future
 `claude_code_cli` adapter would appear as that `adapterId` with provider

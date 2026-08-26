@@ -23,6 +23,10 @@ const usage = `Usage:
   vera capability show <capability-name>
   vera personal-task list [--status <all|open|completed>] [--limit <number>]
   vera personal-task show <personal-task-id>
+  vera reminder list [--status <all|scheduled|delivered|acknowledged|cancelled>] [--limit <number>]
+  vera reminder show <reminder-id>
+  vera notification list [--after <cursor>] [--limit <number>]
+  vera notification watch [--after <cursor>]
   vera project add --name <name> --path <absolute-git-root> [--key <key>]
   vera project list
   vera project show <project-id>
@@ -249,6 +253,64 @@ export async function runCli(
       stdout,
       await client.getPersonalTask(positional(args, 2, 'personal-task-id')),
     );
+    return 0;
+  }
+
+  if (resource === 'reminder' && action === 'list') {
+    const status = option(args, '--status');
+    if (
+      status !== undefined &&
+      !['all', 'scheduled', 'delivered', 'acknowledged', 'cancelled'].includes(
+        status,
+      )
+    ) {
+      throw new Error(
+        '--status must be all, scheduled, delivered, acknowledged, or cancelled.',
+      );
+    }
+    const limit = positiveIntegerOption(args, '--limit');
+    print(
+      stdout,
+      await client.listReminders({
+        ...(status === undefined
+          ? {}
+          : {
+              status: status as
+                | 'all'
+                | 'scheduled'
+                | 'delivered'
+                | 'acknowledged'
+                | 'cancelled',
+            }),
+        ...(limit === undefined ? {} : { limit }),
+      }),
+    );
+    return 0;
+  }
+  if (resource === 'reminder' && action === 'show') {
+    print(stdout, await client.getReminder(positional(args, 2, 'reminder-id')));
+    return 0;
+  }
+
+  if (resource === 'notification' && action === 'list') {
+    const after = option(args, '--after');
+    const limit = positiveIntegerOption(args, '--limit');
+    print(
+      stdout,
+      await client.listNotifications({
+        ...(after === undefined ? {} : { after }),
+        ...(limit === undefined ? {} : { limit }),
+      }),
+    );
+    return 0;
+  }
+  if (resource === 'notification' && action === 'watch') {
+    const after = option(args, '--after');
+    for await (const event of client.streamNotifications({
+      ...(after === undefined ? {} : { after }),
+    })) {
+      print(stdout, event);
+    }
     return 0;
   }
 

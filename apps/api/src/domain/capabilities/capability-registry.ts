@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { CapabilityDestinationSchema } from './capability-destination.ts';
 import { PersonalTaskActionArgumentsSchema } from '../personal-tasks/personal-task.ts';
+import { ReminderActionArgumentsSchema } from '../reminders/reminder.ts';
 
 export const DevelopmentPlanningProposalArgumentsSchema = z
   .object({
@@ -60,6 +61,7 @@ export const CapabilityAuthoritySchema = z
         'project_context',
         'artifact_content',
         'personal_task_data',
+        'personal_reminder_data',
         'public_web',
       ]),
     ),
@@ -69,6 +71,7 @@ export const CapabilityAuthoritySchema = z
         'isolated_workspace_write',
         'public_network_read',
         'personal_data_write',
+        'scheduled_notification',
       ]),
     ),
     credentials: z.enum(['none', 'server_managed']),
@@ -148,6 +151,27 @@ export const CapabilityDefinitions = [
       networkAccess: 'none',
       dataClasses: ['owner_request', 'personal_task_data'],
       sideEffects: ['personal_data_write'],
+      credentials: 'none',
+    },
+  },
+  {
+    name: 'personal_reminder_management',
+    version: 1,
+    description:
+      'Create, list, reschedule, cancel, or acknowledge durable owner reminders.',
+    proposalArgumentsSchema: ReminderActionArgumentsSchema,
+    effect: 'owner_state',
+    artifact: {
+      type: 'personal_reminder_result',
+      mediaType: 'application/vnd.vera.personal-reminder-result+json',
+    },
+    acceptedInputArtifacts: [],
+    authority: {
+      approval: 'always',
+      projectContext: 'none',
+      networkAccess: 'none',
+      dataClasses: ['owner_request', 'personal_reminder_data'],
+      sideEffects: ['personal_data_write', 'scheduled_notification'],
       credentials: 'none',
     },
   },

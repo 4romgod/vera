@@ -58,6 +58,8 @@ export class DeterministicModelProvider implements ModelProvider {
 
     let ownerMessage = input.message;
     let projectName = 'vera';
+    let currentTime = '2030-01-01T00:00:00.000Z';
+    let ownerTimeZone = 'UTC';
     try {
       const context = JSON.parse(input.message) as unknown;
       if (
@@ -76,17 +78,35 @@ export class DeterministicModelProvider implements ModelProvider {
         ) {
           projectName = context.selectedProject.displayName;
         }
+        if (
+          'temporalContext' in context &&
+          typeof context.temporalContext === 'object' &&
+          context.temporalContext !== null
+        ) {
+          if (
+            'currentTime' in context.temporalContext &&
+            typeof context.temporalContext.currentTime === 'string'
+          ) {
+            currentTime = context.temporalContext.currentTime;
+          }
+          if (
+            'ownerTimeZone' in context.temporalContext &&
+            typeof context.temporalContext.ownerTimeZone === 'string'
+          ) {
+            ownerTimeZone = context.temporalContext.ownerTimeZone;
+          }
+        }
       }
     } catch {
       // A plain owner message is the normal input when no project is selected.
     }
 
     const normalizedMessage = ownerMessage.toLowerCase();
-    const shouldChange = /\b(implement|fix|modify|edit|write)\b/u.test(
+    const requestsChange = /\b(implement|fix|modify|edit|write)\b/u.test(
       normalizedMessage,
     );
-    const shouldPlan = normalizedMessage.includes('plan');
-    const shouldResearch =
+    const requestsPlan = normalizedMessage.includes('plan');
+    const requestsResearch =
       /\b(research|investigate|look up|verify|compare)\b/u.test(
         normalizedMessage,
       ) && JSON.stringify(input.outputSchema).includes('web_research');
@@ -125,6 +145,56 @@ export class DeterministicModelProvider implements ModelProvider {
                 } as const)
               : undefined;
 
+    const canManageReminders = JSON.stringify(input.outputSchema).includes(
+      'personal_reminder_management',
+    );
+    const reminderId = /reminder_[a-z0-9-]+/u.exec(ownerMessage)?.[0];
+    const explicitInstant =
+      /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z/u.exec(
+        ownerMessage,
+      )?.[0];
+    const scheduledFor =
+      explicitInstant ??
+      new Date(Date.parse(currentTime) + 60_000).toISOString();
+    const reminderAction =
+      canManageReminders &&
+      reminderId !== undefined &&
+      /\backnowledge\b/u.test(normalizedMessage)
+        ? ({ action: 'acknowledge', reminderId } as const)
+        : canManageReminders &&
+            reminderId !== undefined &&
+            /\bcancel\b/u.test(normalizedMessage)
+          ? ({ action: 'cancel', reminderId } as const)
+          : canManageReminders &&
+              reminderId !== undefined &&
+              /\breschedule\b/u.test(normalizedMessage)
+            ? ({
+                action: 'reschedule',
+                reminderId,
+                scheduledFor,
+                timeZone: ownerTimeZone,
+              } as const)
+            : canManageReminders &&
+                /\b(list|show)\b.*\breminders?\b/u.test(normalizedMessage)
+              ? ({ action: 'list', status: 'scheduled' } as const)
+              : canManageReminders && /\bremind\b/u.test(normalizedMessage)
+                ? ({
+                    action: 'create',
+                    message: ownerMessage,
+                    scheduledFor,
+                    timeZone: ownerTimeZone,
+                  } as const)
+                : undefined;
+
+    // Management commands commonly contain words such as "fix", "plan", or
+    // "verify" in the task/reminder payload. Those words describe the saved
+    // subject; they do not authorize Vera to execute that subject now.
+    const hasOwnerDataAction =
+      personalTaskAction !== undefined || reminderAction !== undefined;
+    const shouldChange = requestsChange && !hasOwnerDataAction;
+    const shouldPlan = requestsPlan && !hasOwnerDataAction;
+    const shouldResearch = requestsResearch && !hasOwnerDataAction;
+
     const canExecuteGoal = JSON.stringify(input.outputSchema).includes(
       'execute_goal',
     );
@@ -135,6 +205,7 @@ export class DeterministicModelProvider implements ModelProvider {
         shouldPlan,
         shouldChange,
         personalTaskAction !== undefined,
+        reminderAction !== undefined,
       ].filter(Boolean).length >= 2;
 
     const projectArguments = {
@@ -197,6 +268,18 @@ export class DeterministicModelProvider implements ModelProvider {
               arguments: personalTaskAction,
             },
           ]),
+      ...(reminderAction === undefined
+        ? []
+        : [
+            {
+              id: 'step_reminder',
+              purpose: 'Apply the requested owner-scoped reminder action.',
+              inputStepIds: [],
+              capability: 'personal_reminder_management' as const,
+              version: 1 as const,
+              arguments: reminderAction,
+            },
+          ]),
     ];
     const boundedGoalSteps = goalSteps.slice(0, 3);
     const executeBoundedGoal =
@@ -226,39 +309,51 @@ export class DeterministicModelProvider implements ModelProvider {
             capability: { name: 'personal_task_management', version: 1 },
             arguments: personalTaskAction,
           }
-        : shouldResearch
+        : reminderAction !== undefined
           ? {
               schemaVersion: 1,
               kind: 'invoke_capability',
               decisionSummary:
-                'The request asks for current, source-backed public-web research.',
-              capability: { name: 'web_research', version: 1 },
-              arguments: { objective: ownerMessage },
+                'The owner requested an action against durable reminders.',
+              capability: {
+                name: 'personal_reminder_management',
+                version: 1,
+              },
+              arguments: reminderAction,
             }
-          : shouldPlan
+          : shouldResearch
             ? {
                 schemaVersion: 1,
                 kind: 'invoke_capability',
                 decisionSummary:
-                  'The request asks for specialist software planning.',
-                capability: { name: 'development_planning', version: 1 },
-                arguments: projectArguments,
+                  'The request asks for current, source-backed public-web research.',
+                capability: { name: 'web_research', version: 1 },
+                arguments: { objective: ownerMessage },
               }
-            : shouldChange
+            : shouldPlan
               ? {
                   schemaVersion: 1,
                   kind: 'invoke_capability',
                   decisionSummary:
-                    'The request asks for an isolated specialist software change.',
-                  capability: { name: 'software_change', version: 1 },
+                    'The request asks for specialist software planning.',
+                  capability: { name: 'development_planning', version: 1 },
                   arguments: projectArguments,
                 }
-              : {
-                  schemaVersion: 1,
-                  kind: 'respond',
-                  decisionSummary: 'The request can be answered directly.',
-                  message: `Vera received: ${ownerMessage}`,
-                };
+              : shouldChange
+                ? {
+                    schemaVersion: 1,
+                    kind: 'invoke_capability',
+                    decisionSummary:
+                      'The request asks for an isolated specialist software change.',
+                    capability: { name: 'software_change', version: 1 },
+                    arguments: projectArguments,
+                  }
+                : {
+                    schemaVersion: 1,
+                    kind: 'respond',
+                    decisionSummary: 'The request can be answered directly.',
+                    message: `Vera received: ${ownerMessage}`,
+                  };
 
     return Promise.resolve({
       candidate,

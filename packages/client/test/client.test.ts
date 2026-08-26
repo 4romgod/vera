@@ -112,6 +112,114 @@ void describe('Vera HTTP client', () => {
     );
   });
 
+  void it('lists reminders and resumes notification delivery from an opaque cursor', async () => {
+    const reminder = {
+      schemaVersion: 1 as const,
+      id: 'reminder_test',
+      message: 'Stand up',
+      scheduledFor: '2026-08-26T10:00:00.000Z',
+      timeZone: 'Africa/Johannesburg',
+      status: 'delivered' as const,
+      createdAt: '2026-08-26T09:00:00.000Z',
+      updatedAt: '2026-08-26T10:00:00.000Z',
+    };
+    const notification = {
+      schemaVersion: 1 as const,
+      id: 'notification_test',
+      reminderId: reminder.id,
+      message: reminder.message,
+      scheduledFor: reminder.scheduledFor,
+      deliveredAt: '2026-08-26T10:00:00.000Z',
+      status: 'unread' as const,
+      channel: 'vera_inbox' as const,
+    };
+    const requestedUrls: string[] = [];
+    const client = new VeraClient({
+      baseUrl: 'http://vera.test',
+      fetch: (input) => {
+        const url =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        requestedUrls.push(url);
+        if (url.includes('/notifications')) {
+          return Promise.resolve(
+            Response.json({
+              schemaVersion: 1,
+              notifications: [notification],
+              nextCursor: 'opaque-cursor',
+            }),
+          );
+        }
+        return Promise.resolve(
+          Response.json(
+            url.includes('/reminders/reminder_test')
+              ? reminder
+              : { schemaVersion: 1, reminders: [reminder] },
+          ),
+        );
+      },
+    });
+
+    assert.equal(
+      (await client.listReminders({ status: 'delivered', limit: 5 }))
+        .reminders[0]?.id,
+      reminder.id,
+    );
+    assert.equal((await client.getReminder(reminder.id)).id, reminder.id);
+    const page = await client.listNotifications({
+      after: 'prior-cursor',
+      limit: 10,
+    });
+    assert.equal(page.notifications[0]?.id, notification.id);
+    assert.equal(page.nextCursor, 'opaque-cursor');
+    assert.ok(
+      requestedUrls.includes(
+        'http://vera.test/v1/notifications?after=prior-cursor&limit=10',
+      ),
+    );
+  });
+
+  void it('parses chunked notification server-sent events', async () => {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(
+            'retry: 1000\n\nevent: notification\nid: cursor\ndata:',
+          ),
+        );
+        controller.enqueue(
+          encoder.encode(
+            ' {"schemaVersion":1,"id":"notification_test","reminderId":"reminder_test","message":"Stand up","scheduledFor":"2026-08-26T10:00:00.000Z","deliveredAt":"2026-08-26T10:00:00.000Z","status":"unread","channel":"vera_inbox"}\n\n',
+          ),
+        );
+        controller.close();
+      },
+    });
+    const client = new VeraClient({
+      fetch: () =>
+        Promise.resolve(
+          new Response(stream, {
+            status: 200,
+            headers: { 'content-type': 'text/event-stream' },
+          }),
+        ),
+    });
+
+    const received = [];
+    for await (const notification of client.streamNotifications()) {
+      received.push(notification);
+    }
+    assert.equal(received.length, 1);
+    const event = received[0];
+    assert.ok(event);
+    assert.equal(event.cursor, 'cursor');
+    assert.equal(event.notification.id, 'notification_test');
+  });
+
   void it('sends idempotent task submissions and validates task identity', async () => {
     let request:
       | {

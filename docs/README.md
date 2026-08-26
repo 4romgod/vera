@@ -189,6 +189,8 @@ Bounded goal execution is accepted in
 Provider-neutral integration actions and Vera-owned personal tasks are accepted
 in
 [ADR-0022](decisions/0022-introduce-provider-neutral-integration-actions-with-vera-owned-personal-tasks.md).
+Restart-safe reminders and the durable Vera notification inbox are accepted in
+[ADR-0023](decisions/0023-deliver-durable-reminders-through-a-vera-owned-notification-inbox.md).
 
 ## Documentation and implementation cadence
 
@@ -222,6 +224,10 @@ plan-to-change sequence.
 The personal-task path has action-specific approval authority, owner isolation,
 idempotent create and mutation recovery, HTTP/client/CLI discovery, durable
 artifacts, and forced-restart MongoDB evidence.
+The reminder path adds model-visible temporal context, action-specific
+authority, expiring scheduler claims, atomic notification delivery,
+cursor-resumable inbox reads and SSE, client/CLI access, and forced-restart
+MongoDB evidence.
 Required CI now runs the compiled CLI-to-artifact journey with real
 ephemeral MongoDB and Redis plus deterministic owner-controlled adapters; it
 does not download models or call a third party. The owner separately approved

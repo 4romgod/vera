@@ -350,6 +350,37 @@ function harness(options?: {
 }
 
 void describe('task lifecycle', () => {
+  void it('anchors temporal context to the durable task creation instant', async () => {
+    let now = '2026-08-26T10:00:00.000Z';
+    let evaluatedContext: Parameters<EvaluateModelDecision>[1];
+    const test = harness({
+      executionMode: 'worker',
+      clock: () => now,
+      evaluate: (_message, context) => {
+        evaluatedContext = context;
+        return Promise.resolve(responseDecision());
+      },
+    });
+    const submitted = await test.lifecycle.submit({
+      principalId: 'owner_v1',
+      requestKey: 'temporal-anchor',
+      message: 'Remind me in five minutes.',
+    });
+
+    now = '2026-08-26T10:00:01.000Z';
+    for (
+      let attempt = 0;
+      attempt < 20 && evaluatedContext === undefined;
+      attempt += 1
+    ) {
+      await test.lifecycle.progressTask('owner_v1', submitted.task.id);
+    }
+
+    assert.deepEqual(evaluatedContext?.temporalContext, {
+      currentTime: '2026-08-26T10:00:00.000Z',
+    });
+  });
+
   void it('creates, lists, and completes a durable personal task through exact action authority', async () => {
     const taskIdentity: { value?: string } = {};
     const test = harness({

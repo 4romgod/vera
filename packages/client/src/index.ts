@@ -76,6 +76,7 @@ export type Approval = {
       | 'project_context'
       | 'artifact_content'
       | 'personal_task_data'
+      | 'personal_reminder_data'
       | 'public_web'
     )[];
     sideEffects: (
@@ -83,6 +84,7 @@ export type Approval = {
       | 'isolated_workspace_write'
       | 'public_network_read'
       | 'personal_data_write'
+      | 'scheduled_notification'
     )[];
     credentials: 'none' | 'server_managed';
     maxWebSearchCalls?: number;
@@ -117,6 +119,10 @@ export type ArtifactReference = ArtifactReferenceIdentity &
         type: 'personal_task_result';
         mediaType: 'application/vnd.vera.personal-task-result+json';
       }
+    | {
+        type: 'personal_reminder_result';
+        mediaType: 'application/vnd.vera.personal-reminder-result+json';
+      }
   );
 
 export type PersonalTaskResource = {
@@ -136,6 +142,50 @@ export type PersonalTaskResultContent = {
   action: 'create' | 'list' | 'complete' | 'reopen';
   summary: string;
   tasks: PersonalTaskResource[];
+};
+
+export type NotificationResource = {
+  schemaVersion: 1;
+  id: string;
+  reminderId: string;
+  message: string;
+  scheduledFor: string;
+  deliveredAt: string;
+  status: 'unread' | 'acknowledged';
+  channel: 'vera_inbox';
+  acknowledgedAt?: string;
+};
+
+export type ReminderResource = {
+  schemaVersion: 1;
+  id: string;
+  message: string;
+  scheduledFor: string;
+  timeZone: string;
+  status: 'scheduled' | 'delivered' | 'acknowledged' | 'cancelled';
+  createdAt: string;
+  updatedAt: string;
+  notification?: NotificationResource;
+  cancelledAt?: string;
+  acknowledgedAt?: string;
+};
+
+export type PersonalReminderResultContent = {
+  schemaVersion: 1;
+  action: 'create' | 'list' | 'reschedule' | 'cancel' | 'acknowledge';
+  summary: string;
+  reminders: ReminderResource[];
+};
+
+export type NotificationPage = {
+  schemaVersion: 1;
+  notifications: NotificationResource[];
+  nextCursor?: string;
+};
+
+export type NotificationStreamEvent = {
+  cursor: string;
+  notification: NotificationResource;
 };
 
 export type SoftwareChangeContent = {
@@ -226,6 +276,14 @@ export type TaskResource = {
         kind: 'personal_task_result';
         result?: PersonalTaskResultContent;
         artifact?: Extract<ArtifactReference, { type: 'personal_task_result' }>;
+      }
+    | {
+        kind: 'personal_reminder_result';
+        result?: PersonalReminderResultContent;
+        artifact?: Extract<
+          ArtifactReference,
+          { type: 'personal_reminder_result' }
+        >;
       }
     | {
         kind: 'goal_result';
@@ -343,6 +401,11 @@ export type ArtifactResource = ArtifactResourceIdentity &
         type: 'personal_task_result';
         mediaType: 'application/vnd.vera.personal-task-result+json';
         content: PersonalTaskResultContent;
+      }
+    | {
+        type: 'personal_reminder_result';
+        mediaType: 'application/vnd.vera.personal-reminder-result+json';
+        content: PersonalReminderResultContent;
       }
   );
 
@@ -477,6 +540,19 @@ export type VeraApi = {
     limit?: number;
   }): Promise<{ schemaVersion: 1; tasks: PersonalTaskResource[] }>;
   getPersonalTask(taskId: string): Promise<PersonalTaskResource>;
+  listReminders(options?: {
+    status?: 'all' | ReminderResource['status'];
+    limit?: number;
+  }): Promise<{ schemaVersion: 1; reminders: ReminderResource[] }>;
+  getReminder(reminderId: string): Promise<ReminderResource>;
+  listNotifications(options?: {
+    after?: string;
+    limit?: number;
+  }): Promise<NotificationPage>;
+  streamNotifications(options?: {
+    after?: string;
+    signal?: AbortSignal;
+  }): AsyncIterable<NotificationStreamEvent>;
   registerProject(input: {
     displayName: string;
     rootPath: string;
@@ -624,6 +700,50 @@ function assertPersonalTaskResource(
   }
 }
 
+function assertNotificationResource(
+  value: unknown,
+): asserts value is NotificationResource {
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== 1 ||
+    typeof value.id !== 'string' ||
+    !value.id.startsWith('notification_') ||
+    typeof value.reminderId !== 'string' ||
+    !value.reminderId.startsWith('reminder_') ||
+    typeof value.message !== 'string' ||
+    typeof value.scheduledFor !== 'string' ||
+    typeof value.deliveredAt !== 'string' ||
+    !['unread', 'acknowledged'].includes(String(value.status)) ||
+    value.channel !== 'vera_inbox'
+  ) {
+    throw new Error('Vera returned an invalid notification resource.');
+  }
+}
+
+function assertReminderResource(
+  value: unknown,
+): asserts value is ReminderResource {
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== 1 ||
+    typeof value.id !== 'string' ||
+    !value.id.startsWith('reminder_') ||
+    typeof value.message !== 'string' ||
+    typeof value.scheduledFor !== 'string' ||
+    typeof value.timeZone !== 'string' ||
+    !['scheduled', 'delivered', 'acknowledged', 'cancelled'].includes(
+      String(value.status),
+    ) ||
+    typeof value.createdAt !== 'string' ||
+    typeof value.updatedAt !== 'string'
+  ) {
+    throw new Error('Vera returned an invalid reminder resource.');
+  }
+  if (value.notification !== undefined) {
+    assertNotificationResource(value.notification);
+  }
+}
+
 function assertChangeApplicationResource(
   value: unknown,
 ): asserts value is ChangeApplicationResource {
@@ -728,6 +848,122 @@ export class VeraClient implements VeraApi {
     );
     assertPersonalTaskResource(value);
     return value;
+  }
+
+  public async listReminders(
+    options: {
+      status?: 'all' | ReminderResource['status'];
+      limit?: number;
+    } = {},
+  ): Promise<{ schemaVersion: 1; reminders: ReminderResource[] }> {
+    const query = new URLSearchParams();
+    if (options.status !== undefined) query.set('status', options.status);
+    if (options.limit !== undefined) query.set('limit', String(options.limit));
+    const value = await this.request<unknown>(
+      `/v1/reminders${query.size === 0 ? '' : `?${query.toString()}`}`,
+    );
+    if (
+      !isRecord(value) ||
+      value.schemaVersion !== 1 ||
+      !Array.isArray(value.reminders)
+    ) {
+      throw new Error('Vera returned an invalid reminder collection.');
+    }
+    const reminders = value.reminders.map((reminder): ReminderResource => {
+      assertReminderResource(reminder);
+      return reminder;
+    });
+    return { schemaVersion: 1, reminders };
+  }
+
+  public async getReminder(reminderId: string): Promise<ReminderResource> {
+    const value = await this.request<unknown>(
+      `/v1/reminders/${encodeURIComponent(reminderId)}`,
+    );
+    assertReminderResource(value);
+    return value;
+  }
+
+  public async listNotifications(
+    options: { after?: string; limit?: number } = {},
+  ): Promise<NotificationPage> {
+    const query = new URLSearchParams();
+    if (options.after !== undefined) query.set('after', options.after);
+    if (options.limit !== undefined) query.set('limit', String(options.limit));
+    const value = await this.request<unknown>(
+      `/v1/notifications${query.size === 0 ? '' : `?${query.toString()}`}`,
+    );
+    if (
+      !isRecord(value) ||
+      value.schemaVersion !== 1 ||
+      !Array.isArray(value.notifications) ||
+      (value.nextCursor !== undefined && typeof value.nextCursor !== 'string')
+    ) {
+      throw new Error('Vera returned an invalid notification collection.');
+    }
+    const notifications = value.notifications.map(
+      (notification): NotificationResource => {
+        assertNotificationResource(notification);
+        return notification;
+      },
+    );
+    return {
+      schemaVersion: 1,
+      notifications,
+      ...(value.nextCursor === undefined
+        ? {}
+        : { nextCursor: value.nextCursor }),
+    };
+  }
+
+  public async *streamNotifications(
+    options: { after?: string; signal?: AbortSignal } = {},
+  ): AsyncGenerator<NotificationStreamEvent> {
+    const query = new URLSearchParams();
+    if (options.after !== undefined) query.set('after', options.after);
+    const response = await this.fetch(
+      `${this.baseUrl}/v1/notifications/stream${query.size === 0 ? '' : `?${query.toString()}`}`,
+      {
+        headers: { accept: 'text/event-stream' },
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+      },
+    );
+    if (!response.ok || response.body === null) {
+      throw await this.apiError(response);
+    }
+    const decoder = new TextDecoder();
+    let buffer = '';
+    for await (const chunk of response.body) {
+      if (!(chunk instanceof Uint8Array)) {
+        throw new Error('Vera returned an invalid notification stream chunk.');
+      }
+      buffer += decoder.decode(chunk, { stream: true }).replace(/\r\n/gu, '\n');
+      for (;;) {
+        const boundary = buffer.indexOf('\n\n');
+        if (boundary === -1) break;
+        const block = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        const lines = block.split('\n');
+        if (!lines.includes('event: notification')) continue;
+        const cursor = lines
+          .find((line) => line.startsWith('id:'))
+          ?.slice(3)
+          .trimStart();
+        if (cursor === undefined || cursor.length === 0) {
+          throw new Error(
+            'Vera returned a notification event without a resume cursor.',
+          );
+        }
+        const data = lines
+          .filter((line) => line.startsWith('data:'))
+          .map((line) => line.slice(5).trimStart())
+          .join('\n');
+        if (data.length === 0) continue;
+        const notification: unknown = JSON.parse(data);
+        assertNotificationResource(notification);
+        yield { cursor, notification };
+      }
+    }
   }
 
   public registerProject(input: {
@@ -1067,19 +1303,33 @@ export class VeraClient implements VeraApi {
     });
     const body: unknown = await response.json();
     if (!response.ok) {
-      const error =
-        isRecord(body) && isRecord(body.error) ? body.error : undefined;
-      const code =
-        error !== undefined && typeof error.code === 'string'
-          ? error.code
-          : 'request_failed';
-      const message =
-        error !== undefined && typeof error.message === 'string'
-          ? error.message
-          : `Vera request failed with HTTP ${String(response.status)}.`;
-      throw new VeraApiError(message, response.status, code, body);
+      throw this.errorFromBody(response.status, body);
     }
     return body as T;
+  }
+
+  private async apiError(response: Response): Promise<VeraApiError> {
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      body = undefined;
+    }
+    return this.errorFromBody(response.status, body);
+  }
+
+  private errorFromBody(status: number, body: unknown): VeraApiError {
+    const error =
+      isRecord(body) && isRecord(body.error) ? body.error : undefined;
+    const code =
+      error !== undefined && typeof error.code === 'string'
+        ? error.code
+        : 'request_failed';
+    const message =
+      error !== undefined && typeof error.message === 'string'
+        ? error.message
+        : `Vera request failed with HTTP ${String(status)}.`;
+    return new VeraApiError(message, status, code, body);
   }
 }
 

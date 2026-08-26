@@ -6,6 +6,7 @@ import {
   ResearchReportArtifactReferenceSchema,
   ArtifactReferenceSchema,
   PersonalTaskResultArtifactReferenceSchema,
+  PersonalReminderResultArtifactReferenceSchema,
 } from '../artifacts/artifact.ts';
 import { CapabilityDestinationSchema } from '../capabilities/capability-destination.ts';
 import { ConversationContextBundleSchema } from '../conversations/conversation-context.ts';
@@ -29,6 +30,10 @@ import { RunBudgetSchema } from './run-budget.ts';
 import { SoftwareChangeSchema } from '../changes/software-change.ts';
 import { ResearchReportSchema } from '../research/research-report.ts';
 import { GoalExecutionSchema } from '../goals/goal-plan.ts';
+import {
+  ReminderActionArgumentsSchema,
+  ReminderResultSchema,
+} from '../reminders/reminder.ts';
 
 export const TaskStatusSchema = z.enum([
   'active',
@@ -72,6 +77,15 @@ const ApprovalIdentitySchema = z
   .strict();
 
 export const ApprovalSchema = z.union([
+  ApprovalIdentitySchema.extend({
+    capability: z
+      .object({
+        name: z.literal('personal_reminder_management'),
+        version: z.literal(1),
+      })
+      .strict(),
+    proposedArguments: ReminderActionArgumentsSchema,
+  }).strict(),
   ApprovalIdentitySchema.extend({
     capability: z
       .object({
@@ -149,6 +163,15 @@ export const CapabilityInvocationSchema = z.union([
   CapabilityInvocationIdentitySchema.extend({
     capability: z
       .object({
+        name: z.literal('personal_reminder_management'),
+        version: z.literal(1),
+      })
+      .strict(),
+    arguments: ReminderActionArgumentsSchema,
+  }).strict(),
+  CapabilityInvocationIdentitySchema.extend({
+    capability: z
+      .object({
         name: z.literal('personal_task_management'),
         version: z.literal(1),
       })
@@ -185,6 +208,13 @@ export const CapabilityInvocationSchema = z.union([
 ]);
 
 export const TaskOutputSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('personal_reminder_result'),
+      result: ReminderResultSchema,
+      artifact: PersonalReminderResultArtifactReferenceSchema.optional(),
+    })
+    .strict(),
   z
     .object({
       kind: z.literal('personal_task_result'),

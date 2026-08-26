@@ -6,6 +6,7 @@ import {
   WebResearchProposalArgumentsSchema,
 } from '../capabilities/capability-registry.ts';
 import { PersonalTaskActionArgumentsSchema } from '../personal-tasks/personal-task.ts';
+import { ReminderActionArgumentsSchema } from '../reminders/reminder.ts';
 import {
   DevelopmentPlanningGoalStepSchema,
   GoalPlanSchema,
@@ -13,6 +14,7 @@ import {
   SoftwareChangeGoalStepSchema,
   WebResearchGoalStepSchema,
   PersonalTaskManagementGoalStepSchema,
+  PersonalReminderManagementGoalStepSchema,
 } from '../goals/goal-plan.ts';
 import type { CapabilityReference } from '../capabilities/capability-registry.ts';
 
@@ -86,6 +88,19 @@ const PersonalTaskManagementProposalSchema = z
   })
   .strict();
 
+const PersonalReminderManagementProposalSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    kind: z.literal('invoke_capability'),
+    decisionSummary: DecisionSummarySchema,
+    capability: CapabilityReferenceSchema.extend({
+      name: z.literal('personal_reminder_management'),
+      version: z.literal(1),
+    }),
+    arguments: ReminderActionArgumentsSchema,
+  })
+  .strict();
+
 const ExecuteGoalProposalSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -101,6 +116,7 @@ export const ModelProposalSchema = z.union([
   SoftwareChangeProposalSchema,
   WebResearchProposalSchema,
   PersonalTaskManagementProposalSchema,
+  PersonalReminderManagementProposalSchema,
   ExecuteGoalProposalSchema,
 ]);
 
@@ -126,12 +142,20 @@ export function createModelProposalSchema(options: {
       capability.name === 'personal_task_management' &&
       capability.version === 1,
   );
+  const personalReminderManagementEnabled = options.enabledCapabilities.some(
+    (capability) =>
+      capability.name === 'personal_reminder_management' &&
+      capability.version === 1,
+  );
   const enabledGoalSteps = [
     ...(developmentPlanningEnabled ? [DevelopmentPlanningGoalStepSchema] : []),
     ...(softwareChangeEnabled ? [SoftwareChangeGoalStepSchema] : []),
     ...(webResearchEnabled ? [WebResearchGoalStepSchema] : []),
     ...(personalTaskManagementEnabled
       ? [PersonalTaskManagementGoalStepSchema]
+      : []),
+    ...(personalReminderManagementEnabled
+      ? [PersonalReminderManagementGoalStepSchema]
       : []),
   ];
   const schemas: z.ZodType[] = [RespondProposalSchema];
@@ -142,6 +166,9 @@ export function createModelProposalSchema(options: {
   if (webResearchEnabled) schemas.push(WebResearchProposalSchema);
   if (personalTaskManagementEnabled) {
     schemas.push(PersonalTaskManagementProposalSchema);
+  }
+  if (personalReminderManagementEnabled) {
+    schemas.push(PersonalReminderManagementProposalSchema);
   }
   if (enabledGoalSteps.length >= 2) {
     const enabledGoalStepSchema = z.union(

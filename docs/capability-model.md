@@ -213,9 +213,9 @@ It declares a destination and calculates the exact authority for that action.
 flowchart LR
     MODEL["Model proposal"] --> VALIDATE["Closed action schema"]
     VALIDATE --> APPROVAL["Exact action + authority approval"]
-    APPROVAL --> CAP["personal_task_management@1"]
+    APPROVAL --> CAP["Owner-state capability"]
     CAP --> PORT["IntegrationActionExecutor"]
-    PORT --> LOCAL["Vera personal-task store"]
+    PORT --> LOCAL["Vera task or reminder store"]
     PORT -. "future adapter" .-> REMOTE["External task or calendar provider"]
     LOCAL --> ART["personal_task_result artifact"]
 ```
@@ -232,6 +232,15 @@ authoritative owner resources from an external specialist invocation. Both
 still use the same task, approval, invocation, artifact, budget, and recovery
 lifecycle. See
 [ADR-0022](decisions/0022-introduce-provider-neutral-integration-actions-with-vera-owned-personal-tasks.md).
+
+`personal_reminder_management@1` reuses the same integration-action boundary
+for `create`, `list`, `reschedule`, `cancel`, and `acknowledge`. Creating and
+rescheduling disclose both `personal_data_write` and
+`scheduled_notification`; cancellation and acknowledgment disclose the write;
+listing has no side effect. Its local adapter stores no timer in memory and has
+no network or credential authority. A separate notification-delivery port turns
+a due, claimed reminder into one durable Vera-inbox notification. See
+[ADR-0023](decisions/0023-deliver-durable-reminders-through-a-vera-owned-notification-inbox.md).
 
 ### Runtime resolution
 

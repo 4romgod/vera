@@ -392,6 +392,17 @@ export function createTaskLifecycle(options: {
         ...(artifactId === undefined ? [] : [`Artifact: ${artifactId}`]),
       ].join('\n\n');
     }
+    if (aggregate.run.output?.kind === 'personal_reminder_result') {
+      const artifactId = aggregate.run.output.artifact?.id;
+      return [
+        aggregate.run.output.result.summary,
+        ...aggregate.run.output.result.reminders.map(
+          (reminder) =>
+            `[${reminder.status}] ${reminder.message} at ${reminder.scheduledFor} (${reminder.id})`,
+        ),
+        ...(artifactId === undefined ? [] : [`Artifact: ${artifactId}`]),
+      ].join('\n\n');
+    }
     if (aggregate.run.output?.kind === 'goal_result') {
       return [
         `I completed the goal through ${String(aggregate.run.output.artifacts.length)} approved capability steps.`,
@@ -1035,25 +1046,27 @@ export function createTaskLifecycle(options: {
       }
       const decision = await options.evaluateModelDecision(
         budgetClaim.aggregate.task.message,
-        selectedProject === undefined &&
-          budgetClaim.aggregate.run.conversationContext === undefined
-          ? undefined
-          : {
-              ...(selectedProject === undefined || selectedProject === null
-                ? {}
-                : {
-                    selectedProject: {
-                      id: selectedProject.id,
-                      displayName: selectedProject.displayName,
-                    },
-                  }),
-              ...(budgetClaim.aggregate.run.conversationContext === undefined
-                ? {}
-                : {
-                    conversationContext:
-                      budgetClaim.aggregate.run.conversationContext,
-                  }),
-            },
+        {
+          temporalContext: {
+            // Relative dates must be stable if decision-making is retried
+            // after a crash, so anchor them to the durable request instant.
+            currentTime: budgetClaim.aggregate.task.createdAt,
+          },
+          ...(selectedProject === undefined || selectedProject === null
+            ? {}
+            : {
+                selectedProject: {
+                  id: selectedProject.id,
+                  displayName: selectedProject.displayName,
+                },
+              }),
+          ...(budgetClaim.aggregate.run.conversationContext === undefined
+            ? {}
+            : {
+                conversationContext:
+                  budgetClaim.aggregate.run.conversationContext,
+              }),
+        },
       );
       if (
         decision.decision.kind !== 'approval_required' &&
@@ -1426,18 +1439,31 @@ export function createTaskLifecycle(options: {
                         byteLength: artifact.byteLength,
                       },
                     }
-                  : {
-                      kind: 'personal_task_result',
-                      result: artifact.content,
-                      artifact: {
-                        id: artifact.id,
-                        version: artifact.version,
-                        type: artifact.type,
-                        mediaType: artifact.mediaType,
-                        sha256: artifact.sha256,
-                        byteLength: artifact.byteLength,
-                      },
-                    };
+                  : artifact.type === 'personal_task_result'
+                    ? {
+                        kind: 'personal_task_result',
+                        result: artifact.content,
+                        artifact: {
+                          id: artifact.id,
+                          version: artifact.version,
+                          type: artifact.type,
+                          mediaType: artifact.mediaType,
+                          sha256: artifact.sha256,
+                          byteLength: artifact.byteLength,
+                        },
+                      }
+                    : {
+                        kind: 'personal_reminder_result',
+                        result: artifact.content,
+                        artifact: {
+                          id: artifact.id,
+                          version: artifact.version,
+                          type: artifact.type,
+                          mediaType: artifact.mediaType,
+                          sha256: artifact.sha256,
+                          byteLength: artifact.byteLength,
+                        },
+                      };
           appendEvent(candidate, 'run_succeeded', completedAt, {}, createId);
           return true;
         },
