@@ -11,8 +11,9 @@ is accepted by ADR-0009. MongoDB operational truth and the Redis scratchpad are
 accepted by ADR-0010. The V1 owner perimeter is accepted by ADR-0014 and the
 startup-selected model-provider registry by ADR-0015. Conversation context and
 reply projection are accepted by ADR-0016.
-Software-change artifacts, controlled application, and the enforced API module
-map are accepted by ADRs 0017–0019.
+Software-change artifacts, controlled application, the enforced API module
+map, and the declarative capability runtime with project-independent web
+research are accepted by ADRs 0017–0020.
 
 ## Purpose
 
@@ -184,10 +185,12 @@ preserving internal boundaries.
 
 ### Capability registry
 
-- describe available capabilities and versions;
-- expose selection metadata without exposing credentials;
-- record health, availability, permissions, and execution mode;
-- resolve a capability declaration to an invocation adapter.
+- declare stable capability identity, proposal schema, artifact, and authority;
+- expose enabled and disabled capabilities without exposing credentials;
+- supply only enabled contracts to model routing;
+- resolve a frozen capability destination to its runtime adapter; and
+- keep capability-specific parsing and validation outside the shared task
+  lifecycle.
 
 ### Context assembler
 
@@ -343,8 +346,8 @@ sequenceDiagram
     participant Redis as "Redis scratchpad"
     participant Model as "Model-provider registry"
     participant Policy as "Schema, registry, and approval policy"
-    participant Source as "Registered project source"
-    participant Capability as "Selected capability adapter"
+    participant Source as "Optional registered project source"
+    participant Capability as "Generic capability runtime"
     participant Artifact as "Versioned artifact store"
 
     Owner->>API: Register project and create conversation
@@ -363,8 +366,10 @@ sequenceDiagram
     Life->>Model: Current message + bounded history + proposal schema
     Model-->>Life: Provider-neutral candidate + usage
     Life->>Policy: Validate proposal and capability arguments
-    Life->>Source: Select bounded tracked context
-    Source-->>Life: Hash-verified manifest and contents
+    opt Capability requires project context
+        Life->>Source: Select bounded tracked context
+        Source-->>Life: Hash-verified manifest and contents
+    end
     Life->>Mongo: Record decision, event, and exact approval request
     Life->>Redis: Project awaiting-approval state
     Worker->>Lease: Release claim
@@ -378,8 +383,8 @@ sequenceDiagram
     Worker->>Lease: Claim run with expiring token
     Worker->>Life: Progress claimed task
     Life->>Mongo: Persist invocation identity
-    Life->>Capability: Ephemeral approved snapshot + bounded authority
-    Capability-->>Life: Plan or isolated change + provider metadata
+    Life->>Capability: Exact arguments + optional context + bounded authority
+    Capability-->>Life: Typed artifact draft + provider metadata
     Life->>Artifact: Idempotent create by invocation ID
     Life->>Mongo: Record result + terminal events + pending Vera reply
     Life->>History: Idempotently append Vera reply by task
@@ -436,8 +441,8 @@ port; provider-specific schemas, credentials, readiness, and errors stay behind
 their adapters. Deterministic tests cover interrupted invocation, cancellation
 recovery, conversation-scope isolation, and reply-projection recovery; a
 compiled persistent-mode journey verifies artifact and complete dialogue
-survival across process restart plus Redis projection reconstruction. Remaining
-The owner accepted the exact real-cloud-Codex disclosure and resulting artifact
+survival across process restart plus Redis projection reconstruction. The owner
+accepted the exact real-cloud-Codex disclosure and resulting artifact
 on 25 August 2026, completing the V1 evidence boundary.
 
 The same lifecycle now also implements `software_change@1`. Its Codex adapter
@@ -448,6 +453,36 @@ patch and file hashes from the snapshot and stores a review-only
 remain outside this capability. The deterministic adapter drives the compiled
 persistent journey without downloads or third-party calls. See
 [ADR-0017](decisions/0017-produce-software-changes-as-isolated-patch-artifacts.md).
+
+The capability gateway now uses one declarative runtime for planning, software
+change, and web research. The registry is the shared source for catalog
+inspection, model-visible contracts, readiness, approval authority, destination
+resolution, and execution. `web_research@1` proves that task execution is not
+coupled to coding or projects: no project context is assembled or persisted for
+that invocation. Its exact owner question, third-party provider destination,
+public-network authority, and four-search ceiling are frozen before execution;
+the result is a durable source-backed `research_report` artifact.
+
+```mermaid
+flowchart TD
+    DECL["Capability declarations"] --> CAT["GET /v1/capabilities"]
+    DECL --> ENABLED["Enabled runtime references"]
+    ENABLED --> SCHEMA["Model proposal schema"]
+    ENABLED --> READY["Readiness checks"]
+    SCHEMA --> APPROVAL["Frozen approval"]
+    APPROVAL --> RESOLVE["Resolve exact destination"]
+    RESOLVE --> PLAN["development_planning adapter"]
+    RESOLVE --> CHANGE["software_change adapter"]
+    RESOLVE --> RESEARCH["web_research adapter"]
+    PLAN --> ARTIFACT["Versioned artifacts"]
+    CHANGE --> ARTIFACT
+    RESEARCH --> ARTIFACT
+```
+
+The initial live research adapter uses OpenAI Responses web search, is selected
+independently from the orchestration model, and is disabled by default. There is
+no automatic fallback. See
+[ADR-0020](decisions/0020-use-a-declarative-capability-runtime-and-approval-gated-web-research.md).
 
 Artifact application is a separate durable lifecycle rather than hidden inside
 that capability. The owner approves an exact artifact hash, immutable base
@@ -484,9 +519,8 @@ to `owner_v1`, and requires application authentication before broader exposure
 under [ADR-0014](decisions/0014-use-the-host-session-as-the-v1-owner-boundary.md).
 Health is process liveness.
 Readiness verifies provider connectivity, configured-model availability,
-MongoDB, Redis, worker lease access, lifecycle recovery, and
-planning- and software-change-specialist availability without running
-inference.
+MongoDB, Redis, worker lease access, lifecycle recovery, and every enabled
+capability runtime without running orchestration inference or a web search.
 
 ## Proposed API resource shape
 
@@ -497,6 +531,7 @@ the user-visible conversation from executable work.
 The implemented V1 lifecycle paths are:
 
 ```text
+GET    /v1/capabilities
 POST   /v1/tasks                         # requires Idempotency-Key
 POST   /v1/projects                      # requires Idempotency-Key
 GET    /v1/projects

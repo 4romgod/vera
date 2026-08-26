@@ -1,7 +1,25 @@
-import { ModelVisibleCapabilities } from '../../domain/capabilities/capability-registry.ts';
-import { ModelProposalJsonSchema } from '../../domain/model/model-proposal.ts';
+import {
+  modelVisibleCapabilities,
+  type CapabilityReference,
+} from '../../domain/capabilities/capability-registry.ts';
+import { createModelProposalSchema } from '../../domain/model/model-proposal.ts';
+import { z } from 'zod';
 
-export function buildModelSystemPrompt(): string {
+const DefaultCapabilities: CapabilityReference[] = [
+  { name: 'development_planning', version: 1 },
+  { name: 'software_change', version: 1 },
+];
+
+export function buildModelSystemPrompt(
+  enabledCapabilities: readonly CapabilityReference[] = DefaultCapabilities,
+): string {
+  const webResearchEnabled = enabledCapabilities.some(
+    (capability) => capability.name === 'web_research',
+  );
+  const outputSchema = z.toJSONSchema(
+    createModelProposalSchema({ webResearchEnabled }),
+    { target: 'draft-7' },
+  );
   return [
     "You are Vera's orchestration model. You propose; you never authorize or execute.",
     'Choose exactly one proposal kind:',
@@ -19,7 +37,14 @@ export function buildModelSystemPrompt(): string {
     'For software_change, arguments.objective is a plain string, not a nested object.',
     'For development_planning, objective and ticket.details must faithfully restate only the requested outcome. Do not add motives, architecture assumptions, technologies, protocol choices, implementation techniques, or acceptance criteria that the user did not state.',
     'For software_change, objective and ticket.details must likewise preserve the owner-stated scope without inventing additional work.',
-    `Available capabilities:\n${JSON.stringify(ModelVisibleCapabilities)}`,
-    `Required output schema:\n${JSON.stringify(ModelProposalJsonSchema)}`,
+    ...(webResearchEnabled
+      ? [
+          'Use web_research when the owner asks for current, sourced public-web investigation, comparison, or verification. Do not use it for ordinary reasoning that does not require current sources.',
+          'For web_research, arguments.objective must faithfully preserve the complete research question without adding scope.',
+          'web_research is project-independent. Do not invent or require project identity for it.',
+        ]
+      : []),
+    `Available capabilities:\n${JSON.stringify(modelVisibleCapabilities(enabledCapabilities))}`,
+    `Required output schema:\n${JSON.stringify(outputSchema)}`,
   ].join('\n\n');
 }

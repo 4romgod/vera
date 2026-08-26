@@ -53,6 +53,16 @@ app.log.info(
             }
           : {}),
       },
+      research:
+        config.research.adapterId === 'openai_web_search'
+          ? {
+              adapterId: config.research.adapterId,
+              provider: 'openai',
+              model: config.research.openai.model,
+              origin: new URL(config.research.openai.baseUrl).origin,
+              searchContextSize: config.research.openai.searchContextSize,
+            }
+          : { adapterId: config.research.adapterId },
       worker: config.worker,
       storage: {
         mode: config.storage.mode,

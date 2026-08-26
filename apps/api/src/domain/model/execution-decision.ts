@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   DevelopmentPlanningProposalArgumentsSchema,
   SoftwareChangeProposalArgumentsSchema,
+  WebResearchProposalArgumentsSchema,
 } from '../capabilities/capability-registry.ts';
 import { ModelProposalSchema } from './model-proposal.ts';
 
@@ -41,6 +42,20 @@ const SoftwareChangeApprovalDecisionSchema = z
   })
   .strict();
 
+const WebResearchApprovalDecisionSchema = z
+  .object({
+    kind: z.literal('approval_required'),
+    reason: z.literal('specialist_capability_invocation'),
+    capability: z
+      .object({
+        name: z.literal('web_research'),
+        version: z.literal(1),
+      })
+      .strict(),
+    proposedArguments: WebResearchProposalArgumentsSchema,
+  })
+  .strict();
+
 const RejectedProposalDecisionSchema = z
   .object({
     kind: z.literal('rejected'),
@@ -57,6 +72,7 @@ export const ExecutionDecisionSchema = z.union([
   ResponseDecisionSchema,
   DevelopmentPlanningApprovalDecisionSchema,
   SoftwareChangeApprovalDecisionSchema,
+  WebResearchApprovalDecisionSchema,
   RejectedProposalDecisionSchema,
 ]);
 

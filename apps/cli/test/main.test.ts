@@ -34,6 +34,7 @@ function fakeApi(overrides: Partial<VeraApi>): VeraApi {
     throw new Error('Unexpected client call.');
   };
   return {
+    listCapabilities: unavailable,
     registerProject: unavailable,
     listProjects: unavailable,
     getProject: unavailable,
@@ -97,6 +98,53 @@ function changeApplication(
 }
 
 void describe('Vera CLI', () => {
+  void it('lists the runtime capability catalog', async () => {
+    const output: string[] = [];
+    const client = fakeApi({
+      listCapabilities: () =>
+        Promise.resolve({
+          schemaVersion: 1,
+          capabilities: [
+            {
+              name: 'web_research',
+              version: 1,
+              description: 'Research public sources.',
+              effect: 'external',
+              artifact: {
+                type: 'research_report',
+                mediaType: 'application/vnd.vera.research-report+json',
+              },
+              authority: {
+                approval: 'always',
+                projectContext: 'none',
+                networkAccess: 'public_web_via_provider',
+                dataClasses: ['owner_request', 'public_web'],
+                sideEffects: ['third_party_disclosure', 'public_network_read'],
+                credentials: 'server_managed',
+                maxWebSearchCalls: 4,
+              },
+              enabled: true,
+            },
+          ],
+        }),
+    });
+
+    const exitCode = await runCli(['capability', 'list'], {
+      client,
+      stdout: {
+        write: (value) => {
+          output.push(String(value));
+          return true;
+        },
+      },
+      stderr: { write: () => true },
+    });
+
+    assert.equal(exitCode, 0);
+    assert.match(output.join(''), /"web_research"/u);
+    assert.match(output.join(''), /"public_web_via_provider"/u);
+  });
+
   void it('shows exact disclosure before explicit plan approval', async () => {
     const output: string[] = [];
     const errors: string[] = [];
@@ -288,6 +336,86 @@ void describe('Vera CLI', () => {
 
     assert.equal(exitCode, 0);
     assert.deepEqual(calls, ['approved']);
+  });
+
+  void it('runs approved research without adding project authority', async () => {
+    const output: string[] = [];
+    let submittedInput: Parameters<VeraApi['submitTask']>[0] | undefined;
+    const pending = task('awaiting_approval', {
+      approval: {
+        id: 'approval_research',
+        status: 'pending',
+        reason: 'specialist_capability_invocation',
+        capability: { name: 'web_research', version: 1 },
+        proposedArguments: { objective: 'research durable execution' },
+        authority: {
+          approval: 'always',
+          projectContext: 'none',
+          networkAccess: 'public_web_via_provider',
+          dataClasses: ['owner_request', 'public_web'],
+          sideEffects: ['third_party_disclosure', 'public_network_read'],
+          credentials: 'server_managed',
+          maxWebSearchCalls: 4,
+        },
+        requestedAt: '2026-08-25T00:00:00.000Z',
+      },
+    });
+    const completed = task('succeeded', {
+      output: {
+        kind: 'research_report',
+        artifact: {
+          id: 'artifact_research',
+          version: 1,
+          type: 'research_report',
+          mediaType: 'application/vnd.vera.research-report+json',
+          sha256: 'c'.repeat(64),
+          byteLength: 30,
+        },
+      },
+    });
+    let waits = 0;
+    const client = fakeApi({
+      submitTask: (input) => {
+        submittedInput = input;
+        return Promise.resolve(task('deciding'));
+      },
+      waitForRun: () => {
+        waits += 1;
+        return Promise.resolve(waits === 1 ? pending : completed);
+      },
+      decideApproval: () => Promise.resolve(task('awaiting_approval')),
+      getArtifact: () =>
+        Promise.resolve({ id: 'artifact_research' } as ArtifactResource),
+    });
+
+    const exitCode = await runCli(
+      [
+        'research',
+        '--message',
+        'research durable execution',
+        '--key',
+        'research-key',
+        '--approve',
+      ],
+      {
+        client,
+        stdout: {
+          write: (value) => {
+            output.push(String(value));
+            return true;
+          },
+        },
+        stderr: { write: () => true },
+      },
+    );
+
+    assert.equal(exitCode, 0);
+    assert.deepEqual(submittedInput, {
+      message: 'research durable execution',
+      idempotencyKey: 'research-key',
+    });
+    assert.match(output.join(''), /"projectContext": "none"/u);
+    assert.match(output.join(''), /"research_report"/u);
   });
 
   void it('discloses and applies an exact software-change artifact through the controlled effect flow', async () => {

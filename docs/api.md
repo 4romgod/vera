@@ -1,7 +1,7 @@
 # Vera HTTP API
 
 **Status:** Accepted for implemented V1 paths
-**Version:** 0.7
+**Version:** 0.8
 **Last updated:** 25 August 2026
 
 ## Purpose
@@ -22,7 +22,8 @@ an untrusted network.
 | Method and path | Purpose | Success |
 |---|---|---:|
 | `GET /health` | Process liveness only | `200` |
-| `GET /ready` | Model, stores, recovery, planning, and software-change readiness | `200` or `503` |
+| `GET /ready` | Model, stores, recovery, and every enabled capability runtime | `200` or `503` |
+| `GET /v1/capabilities` | List declared capability contracts, authority, enabled state, and destination | `200` |
 | `POST /v1/projects` | Register an owner-controlled project source | `201` |
 | `GET /v1/projects` | List registered projects | `200` |
 | `GET /v1/projects/{projectId}` | Retrieve a registered project | `200` |
@@ -183,6 +184,14 @@ authoritative fields added by Vera code. Approval covers this complete
 disclosure. The corresponding hash-verified contents are frozen durably but are
 not echoed in ordinary API responses.
 
+Every new approval also records the selected declaration's `authority`:
+approval mode, project-context requirement, network access, data classes,
+side-effect classes, credential mode, and any capability-specific hard ceiling.
+For `web_research@1`, `projectContext` is `none`, network access is
+`public_web_via_provider`, and the maximum is four search calls. No project or
+context manifest is present. This authority is added by Vera code; it is never
+accepted from the model or caller.
+
 The destination is provider-neutral but not anonymous. A future
 `claude_code_cli` adapter would appear as that `adapterId` with provider
 `anthropic`; it would not require a different task or artifact contract.
@@ -265,6 +274,44 @@ The list endpoint returns bounded summaries instead: identity, title, status,
 timestamps, `messageCount`, and the most recent message without its internal
 idempotency key.
 
+## Capability catalog
+
+`GET /v1/capabilities` returns stable declarations whether enabled or disabled.
+An enabled entry includes the selected provider-neutral destination; a disabled
+entry omits it. Credentials and provider-native configuration are never
+returned. Only enabled capability references are included in the orchestration
+model's prompt and structured proposal schema. A disabled entry reports the
+capability's maximum authority envelope. An enabled entry reports the selected
+runtime's narrower effective authority, which is the value frozen by approval.
+
+```json
+{
+  "schemaVersion": 1,
+  "capabilities": [
+    {
+      "name": "web_research",
+      "version": 1,
+      "description": "Research a project-independent question on the public web and return a source-backed report.",
+      "effect": "external",
+      "artifact": {
+        "type": "research_report",
+        "mediaType": "application/vnd.vera.research-report+json"
+      },
+      "authority": {
+        "approval": "always",
+        "projectContext": "none",
+        "networkAccess": "public_web_via_provider",
+        "dataClasses": ["owner_request", "public_web"],
+        "sideEffects": ["third_party_disclosure", "public_network_read"],
+        "credentials": "server_managed",
+        "maxWebSearchCalls": 4
+      },
+      "enabled": false
+    }
+  ]
+}
+```
+
 ## Artifacts, application, and cancellation
 
 A successful planning invocation stores one `implementation_plan` artifact. A
@@ -272,6 +319,12 @@ successful `software_change@1` invocation stores one `software_change` artifact
 with a reviewable Git patch, file operations, sizes, hashes, verification
 report, and risks. The change is produced in an isolated snapshot and does not
 modify, commit, push, or publish the registered project.
+
+A successful `web_research@1` invocation stores one project-independent
+`research_report` artifact. It preserves the approved objective, Markdown
+report, deduplicated HTTP(S) sources, search timestamp, invocation identity, and
+producer destination. It has no `projectId`. The live adapter fails closed when
+it cannot establish that web search occurred or when the result has no source.
 
 The stable artifact identity is derived from the invocation ID; retry or
 recovery cannot create a second artifact for that invocation. The task output
@@ -400,7 +453,7 @@ Error envelopes use:
 | `409` | `idempotency_key_reused`, `approval_already_decided`, `concurrent_transition_failed`, `conversation_message_mismatch`, `change_application_idempotency_key_reused`, `change_application_approval_already_decided`, `change_application_concurrent_transition_failed`, `change_application_not_cancellable`, `stale_source`, `application_conflict`, `review_required` | The request conflicts with durable or filesystem state. |
 | `422` | `invalid_project_source`, `software_change_artifact_required` | A project source is invalid, or the selected artifact cannot be used for a software-change application. |
 | `502` | `provider_request_rejected`, `provider_response_invalid` | Provider boundary failed while using the diagnostic endpoint. |
-| `503` | `model_not_found`, `provider_unavailable`, `operational_store_unavailable`, `scratchpad_unavailable`, `planning_capability_unavailable`, `software_change_capability_unavailable` | A required runtime dependency is unavailable. |
+| `503` | `model_not_found`, `provider_unavailable`, `operational_store_unavailable`, `scratchpad_unavailable`, `planning_capability_unavailable`, `software_change_capability_unavailable`, `capability_unavailable` | A required runtime dependency is unavailable. The response `dependency` identifies a generic capability runtime. |
 | `504` | `provider_timeout` | The model provider exceeded its deadline. |
 | `500` | `internal_error`, `application_failed` | An unexpected server or managed-effect failure; details remain in structured logs. |
 

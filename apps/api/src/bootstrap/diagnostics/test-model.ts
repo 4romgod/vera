@@ -8,7 +8,16 @@ import { writeDiagnosticResult } from './diagnostic-output.ts';
 loadEnvironmentFiles();
 const config = loadConfig();
 const provider = createModelProvider(config.model);
-const evaluate = createEvaluateModelDecision(provider);
+const researchEnabled = config.research.adapterId !== 'disabled';
+const evaluate = createEvaluateModelDecision(provider, undefined, {
+  enabledCapabilities: [
+    { name: 'development_planning', version: 1 },
+    { name: 'software_change', version: 1 },
+    ...(researchEnabled
+      ? [{ name: 'web_research' as const, version: 1 as const }]
+      : []),
+  ],
+});
 
 const cases = [
   {
@@ -22,6 +31,16 @@ const cases = [
       'For project Vera, create an implementation plan for ticket VERA-101: add request IDs to API logs.',
     expected: 'approval_required',
   },
+  ...(researchEnabled
+    ? [
+        {
+          name: 'web research delegation',
+          message:
+            'Research the current OpenAI Responses API web-search contract and cite public sources.',
+          expected: 'approval_required',
+        },
+      ]
+    : []),
 ] as const;
 
 let failed = false;
@@ -32,13 +51,18 @@ for (const testCase of cases) {
       ? JSON.stringify(result.decision.proposedArguments)
       : '';
   const faithfullyScoped =
-    testCase.name !== 'development delegation' ||
-    (result.decision.kind === 'approval_required' &&
-      result.decision.proposedArguments.ticket.reference === 'VERA-101' &&
-      result.decision.proposedArguments.project.name === 'Vera' &&
-      !/distributed systems|middleware|interceptor|header|UUID/iu.test(
-        proposalText,
-      ));
+    (testCase.name !== 'development delegation' ||
+      (result.decision.kind === 'approval_required' &&
+        'ticket' in result.decision.proposedArguments &&
+        result.decision.proposedArguments.ticket.reference === 'VERA-101' &&
+        result.decision.proposedArguments.project.name === 'Vera' &&
+        !/distributed systems|middleware|interceptor|header|UUID/iu.test(
+          proposalText,
+        ))) &&
+    (testCase.name !== 'web research delegation' ||
+      (result.decision.kind === 'approval_required' &&
+        result.decision.capability.name === 'web_research' &&
+        !('project' in result.decision.proposedArguments)));
   const passed = result.decision.kind === testCase.expected && faithfullyScoped;
   failed ||= !passed;
   writeDiagnosticResult({

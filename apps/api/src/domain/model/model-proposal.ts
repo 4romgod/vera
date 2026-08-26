@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   DevelopmentPlanningProposalArgumentsSchema,
   SoftwareChangeProposalArgumentsSchema,
+  WebResearchProposalArgumentsSchema,
 } from '../capabilities/capability-registry.ts';
 
 const DecisionSummarySchema = z.string().trim().min(1).max(500);
@@ -49,11 +50,37 @@ const SoftwareChangeProposalSchema = z
   })
   .strict();
 
+const WebResearchProposalSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    kind: z.literal('invoke_capability'),
+    decisionSummary: DecisionSummarySchema,
+    capability: CapabilityReferenceSchema.extend({
+      name: z.literal('web_research'),
+      version: z.literal(1),
+    }),
+    arguments: WebResearchProposalArgumentsSchema,
+  })
+  .strict();
+
 export const ModelProposalSchema = z.union([
   RespondProposalSchema,
   DevelopmentPlanningProposalSchema,
   SoftwareChangeProposalSchema,
+  WebResearchProposalSchema,
 ]);
+
+export function createModelProposalSchema(options: {
+  webResearchEnabled: boolean;
+}) {
+  return options.webResearchEnabled
+    ? ModelProposalSchema
+    : z.union([
+        RespondProposalSchema,
+        DevelopmentPlanningProposalSchema,
+        SoftwareChangeProposalSchema,
+      ]);
+}
 
 export type ModelProposal = z.infer<typeof ModelProposalSchema>;
 

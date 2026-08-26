@@ -4,6 +4,70 @@ import { describe, it } from 'node:test';
 import { VeraApiError, VeraClient } from '../src/index.ts';
 
 void describe('Vera HTTP client', () => {
+  void it('loads and validates the capability catalog', async () => {
+    let requestedUrl = '';
+    const client = new VeraClient({
+      baseUrl: 'http://vera.test/',
+      fetch: (input) => {
+        requestedUrl =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        return Promise.resolve(
+          Response.json({
+            schemaVersion: 1,
+            capabilities: [
+              {
+                name: 'web_research',
+                version: 1,
+                description: 'Research public sources.',
+                effect: 'external',
+                artifact: {
+                  type: 'research_report',
+                  mediaType: 'application/vnd.vera.research-report+json',
+                },
+                authority: {
+                  approval: 'always',
+                  projectContext: 'none',
+                  networkAccess: 'public_web_via_provider',
+                  dataClasses: ['owner_request', 'public_web'],
+                  sideEffects: [
+                    'third_party_disclosure',
+                    'public_network_read',
+                  ],
+                  credentials: 'server_managed',
+                  maxWebSearchCalls: 4,
+                },
+                enabled: true,
+              },
+            ],
+          }),
+        );
+      },
+    });
+
+    const catalog = await client.listCapabilities();
+
+    assert.equal(requestedUrl, 'http://vera.test/v1/capabilities');
+    assert.equal(catalog.capabilities[0]?.name, 'web_research');
+  });
+
+  void it('rejects an invalid capability catalog at the client boundary', async () => {
+    const client = new VeraClient({
+      fetch: () =>
+        Promise.resolve(
+          Response.json({ schemaVersion: 1, capabilities: [{ name: 42 }] }),
+        ),
+    });
+
+    await assert.rejects(
+      client.listCapabilities(),
+      /invalid capability catalog/u,
+    );
+  });
+
   void it('sends idempotent task submissions and validates task identity', async () => {
     let request:
       | {

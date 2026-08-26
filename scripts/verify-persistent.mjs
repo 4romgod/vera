@@ -64,6 +64,7 @@ async function startServer(port) {
       VERA_MODEL_PROVIDER: 'deterministic',
       VERA_PLANNING_ADAPTER: 'structured_model',
       VERA_CHANGE_ADAPTER: 'deterministic_change',
+      VERA_RESEARCH_ADAPTER: 'deterministic_research',
       CHANGE_APPLICATION_ROOT: changeApplicationRoot,
       WORKER_CONCURRENCY: '2',
       WORKER_POLL_INTERVAL_MS: '25',
@@ -277,6 +278,37 @@ async function verifyCliJourney(
   changeProjectRoot,
   client,
 ) {
+  const catalog = await client.listCapabilities();
+  const researchCapability = catalog.capabilities.find(
+    (capability) => capability.name === 'web_research',
+  );
+  assert.equal(researchCapability?.enabled, true);
+  assert.equal(
+    researchCapability?.destination?.adapterId,
+    'deterministic_research',
+  );
+  assert.equal(researchCapability?.authority.projectContext, 'none');
+
+  const capabilityResult = await executeFile(
+    process.execPath,
+    [
+      'apps/cli/dist/bin.js',
+      'capability',
+      'show',
+      'web_research',
+      '--url',
+      baseUrl,
+    ],
+    {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: operationTimeoutMs,
+      maxBuffer: 2 * 1024 * 1024,
+    },
+  );
+  assert.match(capabilityResult.stdout, /"enabled": true/u);
+  assert.match(capabilityResult.stdout, /"projectContext": "none"/u);
+
   const planResult = await executeFile(
     process.execPath,
     [
@@ -302,6 +334,42 @@ async function verifyCliJourney(
   assert.match(planResult.stdout, /"contextManifest"/u);
   assert.match(planResult.stdout, /"runStatus": "succeeded"/u);
   assert.match(planResult.stdout, /"type": "implementation_plan"/u);
+
+  const researchResult = await executeFile(
+    process.execPath,
+    [
+      'apps/cli/dist/bin.js',
+      'research',
+      '--url',
+      baseUrl,
+      '--message',
+      'Research deterministic durable execution evidence.',
+      '--key',
+      'persistent-verification-cli-research',
+      '--approve',
+    ],
+    {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: operationTimeoutMs,
+      maxBuffer: 2 * 1024 * 1024,
+    },
+  );
+  assert.match(researchResult.stdout, /"runStatus": "succeeded"/u);
+  assert.match(researchResult.stdout, /"type": "research_report"/u);
+  assert.match(researchResult.stdout, /"projectContext": "none"/u);
+  assert.match(
+    researchResult.stdout,
+    /https:\/\/example\.com\/vera\/research-fixture/u,
+  );
+  const researchArtifactIds = [
+    ...researchResult.stdout.matchAll(/"id": "(artifact_[^"]+)"/gu),
+  ].map((match) => match[1]);
+  const researchArtifactId = researchArtifactIds.at(-1);
+  assert.ok(researchArtifactId);
+  const researchArtifact = await client.getArtifact(researchArtifactId);
+  assert.equal(researchArtifact.type, 'research_report');
+  assert.equal(researchArtifact.projectId, undefined);
 
   const changeResult = await executeFile(
     process.execPath,
@@ -429,13 +497,13 @@ async function verifyCliJourney(
   assert.match(chatResult.stdout, /"role": "vera"/u);
   assert.match(chatResult.stdout, /"conversationId": "conversation_/u);
 
-  for (const match of `${planResult.stdout}\n${changeResult.stdout}\n${chatResult.stdout}`.matchAll(
+  for (const match of `${planResult.stdout}\n${researchResult.stdout}\n${changeResult.stdout}\n${chatResult.stdout}`.matchAll(
     /"runId": "([^"]+)"/gu,
   )) {
     const runId = match[1];
     if (runId !== undefined) runIds.add(runId);
   }
-  return application.id;
+  return { applicationId: application.id, researchArtifactId };
 }
 
 async function verifyScenarios(mongo, redis) {
@@ -711,7 +779,7 @@ async function verifyScenarios(mongo, redis) {
     2,
   );
 
-  const applicationId = await verifyCliJourney(
+  const { applicationId, researchArtifactId } = await verifyCliJourney(
     started.baseUrl,
     changeProject.id,
     changeProjectRoot,
@@ -791,6 +859,10 @@ async function verifyScenarios(mongo, redis) {
     (await recoveredClient.getArtifact(artifact.id)).sha256,
     artifact.sha256,
   );
+  assert.equal(
+    (await recoveredClient.getArtifact(researchArtifactId)).type,
+    'research_report',
+  );
   const upgradedLegacy = await recoveredClient.waitForRun(legacy.runId, {
     timeoutMs: operationTimeoutMs,
     intervalMs: 25,
@@ -843,8 +915,8 @@ async function verifyScenarios(mongo, redis) {
     .collection('change_applications')
     .find({})
     .toArray();
-  assert.equal(aggregates.length, 12);
-  assert.equal(artifacts.length, 5);
+  assert.equal(aggregates.length, 13);
+  assert.equal(artifacts.length, 6);
   assert.equal(applications.length, 1);
   assert.equal(applications[0]?.id, applicationId);
   assert.equal(
@@ -868,6 +940,7 @@ async function verifyScenarios(mongo, redis) {
     projectMutationLeaseExclusionVerified: true,
     cliJourneyVerified: true,
     managedChangeApplicationVerified: true,
+    durableResearchVerified: true,
     legacyConversationUpgradeVerified: true,
     roleScopedMessageIdempotencyVerified: true,
   };
@@ -960,6 +1033,7 @@ process.stdout.write(
       inference: 'deterministic',
       planningAdapter: 'structured_model',
       changeAdapter: 'deterministic_change',
+      researchAdapter: 'deterministic_research',
       externalModelDownloads: false,
       ...evidence,
     },

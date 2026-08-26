@@ -19,6 +19,7 @@ src/
 │       └── project-context/         # Read-only project-source implementation
 ├── application/                     # Use cases and lifecycle coordination
 │   ├── artifacts/
+│   ├── capabilities/                # Owner-visible runtime catalog
 │   ├── change-applications/
 │   ├── conversations/
 │   ├── model-decisions/
@@ -43,6 +44,10 @@ src/
   specialists, Git, and other external mechanisms.
 - `bootstrap` is the composition root. It is the only role allowed to select
   concrete adapters from runtime configuration and wire the complete process.
+- Capability declarations live in `domain/capabilities`, the generic runtime
+  port in `ports/capabilities`, and provider-specific registrations under
+  `adapters/outbound/capabilities`. The shared task lifecycle depends only on
+  the runtime port and must not branch on capability or provider names.
 - Tests mirror source roles where practical. Cross-boundary journeys live in
   `test/journeys`, and reusable test doubles live in `test/support`.
 

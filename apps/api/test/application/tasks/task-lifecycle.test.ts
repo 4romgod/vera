@@ -18,8 +18,10 @@ import type {
   DevelopmentPlanningCapabilityRegistry,
   DevelopmentPlanningInvocation,
 } from '../../../src/ports/capabilities/development-planning-capability.ts';
+import type { CapabilityRuntimeRegistry } from '../../../src/ports/capabilities/capability-runtime.ts';
 import type { ProjectContextAssembler } from '../../../src/ports/projects/project-context-assembler.ts';
 import { createDeterministicSoftwareChangeRegistry } from '../../support/deterministic-software-change-registry.ts';
+import { createTestCapabilityRuntime } from '../../support/test-capability-runtime.ts';
 
 const plan: DevelopmentPlan = {
   schemaVersion: 1,
@@ -182,6 +184,7 @@ function harness(options?: {
   evaluate?: EvaluateModelDecision;
   capability?: FakePlanningCapability;
   registry?: DevelopmentPlanningCapabilityRegistry;
+  capabilities?: CapabilityRuntimeRegistry;
   budget?: RunBudget;
   clock?: () => string;
   contextAssembler?: ProjectContextAssembler;
@@ -234,8 +237,12 @@ function harness(options?: {
         ? (options?.decision ?? responseDecision())
         : options.evaluate(message, context);
     },
-    developmentPlanning: options?.registry ?? registryFor(capability),
-    softwareChange: createDeterministicSoftwareChangeRegistry(),
+    capabilities:
+      options?.capabilities ??
+      createTestCapabilityRuntime({
+        developmentPlanning: options?.registry ?? registryFor(capability),
+        softwareChange: createDeterministicSoftwareChangeRegistry(),
+      }),
     resources,
     contextAssembler,
     ...(options?.executionMode === undefined
@@ -845,6 +852,56 @@ void describe('task lifecycle', () => {
     const approval = pending.run.approval;
     assert.ok(approval);
     available = false;
+
+    const failed = await test.lifecycle.decideApproval({
+      approvalId: approval.id,
+      decision: 'approved',
+      principalId: 'owner_v1',
+    });
+
+    assert.equal(failed.run.status, 'failed');
+    assert.equal(failed.run.approval?.status, 'approved');
+    assert.equal(failed.run.invocation?.status, 'failed');
+    assert.equal(failed.run.failure?.code, 'capability_execution_failure');
+    assert.equal(approvedCapability.calls.length, 0);
+  });
+
+  void it('fails closed when resolved adapter authority changes after approval', async () => {
+    const approvedCapability = new FakePlanningCapability();
+    const baseCapabilities = createTestCapabilityRuntime({
+      developmentPlanning: registryFor(approvedCapability),
+      softwareChange: createDeterministicSoftwareChangeRegistry(),
+    });
+    let authorityChanged = false;
+    const capabilities: CapabilityRuntimeRegistry = {
+      ...baseCapabilities,
+      resolve(reference, destination) {
+        const runtime = baseCapabilities.resolve(reference, destination);
+        if (runtime === null || !authorityChanged) return runtime;
+        return {
+          ...runtime,
+          authority: {
+            ...runtime.authority,
+            networkAccess: 'provider_api',
+            sideEffects: ['third_party_disclosure'],
+            credentials: 'server_managed',
+          },
+        };
+      },
+    };
+    const test = harness({
+      decision: planningDecision(),
+      capability: approvedCapability,
+      capabilities,
+    });
+    const pending = await test.lifecycle.submit({
+      message: 'plan request tracing',
+      requestKey: 'request-approved-authority-drift',
+      principalId: 'owner_v1',
+    });
+    const approval = pending.run.approval;
+    assert.ok(approval);
+    authorityChanged = true;
 
     const failed = await test.lifecycle.decideApproval({
       approvalId: approval.id,

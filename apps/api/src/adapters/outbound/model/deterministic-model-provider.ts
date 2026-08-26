@@ -86,38 +86,52 @@ export class DeterministicModelProvider implements ModelProvider {
       normalizedMessage,
     );
     const shouldPlan = normalizedMessage.includes('plan');
+    const shouldResearch =
+      /\b(research|investigate|look up|verify|compare)\b/u.test(
+        normalizedMessage,
+      ) && JSON.stringify(input.outputSchema).includes('web_research');
 
-    const candidate = shouldPlan
+    const candidate = shouldResearch
       ? {
           schemaVersion: 1,
           kind: 'invoke_capability',
-          decisionSummary: 'The request asks for specialist software planning.',
-          capability: { name: 'development_planning', version: 1 },
-          arguments: {
-            objective: ownerMessage,
-            ticket: { reference: 'untracked', details: ownerMessage },
-            project: { name: projectName },
-          },
+          decisionSummary:
+            'The request asks for current, source-backed public-web research.',
+          capability: { name: 'web_research', version: 1 },
+          arguments: { objective: ownerMessage },
         }
-      : shouldChange
+      : shouldPlan
         ? {
             schemaVersion: 1,
             kind: 'invoke_capability',
             decisionSummary:
-              'The request asks for an isolated specialist software change.',
-            capability: { name: 'software_change', version: 1 },
+              'The request asks for specialist software planning.',
+            capability: { name: 'development_planning', version: 1 },
             arguments: {
               objective: ownerMessage,
               ticket: { reference: 'untracked', details: ownerMessage },
               project: { name: projectName },
             },
           }
-        : {
-            schemaVersion: 1,
-            kind: 'respond',
-            decisionSummary: 'The request can be answered directly.',
-            message: `Vera received: ${ownerMessage}`,
-          };
+        : shouldChange
+          ? {
+              schemaVersion: 1,
+              kind: 'invoke_capability',
+              decisionSummary:
+                'The request asks for an isolated specialist software change.',
+              capability: { name: 'software_change', version: 1 },
+              arguments: {
+                objective: ownerMessage,
+                ticket: { reference: 'untracked', details: ownerMessage },
+                project: { name: projectName },
+              },
+            }
+          : {
+              schemaVersion: 1,
+              kind: 'respond',
+              decisionSummary: 'The request can be answered directly.',
+              message: `Vera received: ${ownerMessage}`,
+            };
 
     return Promise.resolve({
       candidate,

@@ -22,6 +22,7 @@ import { buildApp } from '../../src/adapters/inbound/http/build-app.ts';
 import type { DevelopmentPlanningCapability } from '../../src/ports/capabilities/development-planning-capability.ts';
 import { FakeModelProvider } from '../support/fake-model-provider.ts';
 import { createDeterministicSoftwareChangeRegistry } from '../support/deterministic-software-change-registry.ts';
+import { createTestCapabilityRuntime } from '../support/test-capability-runtime.ts';
 
 const executeFile = promisify(execFile);
 const temporaryDirectories: string[] = [];
@@ -465,11 +466,13 @@ void describe('generic repository-aware planning journey', () => {
       store: new InMemoryExecutionStore(),
       scratchpad: new InMemoryScratchpad(),
       evaluateModelDecision: createEvaluateModelDecision(provider),
-      developmentPlanning: {
-        selected: () => capability,
-        resolve: () => capability,
-      },
-      softwareChange: createDeterministicSoftwareChangeRegistry(),
+      capabilities: createTestCapabilityRuntime({
+        developmentPlanning: {
+          selected: () => capability,
+          resolve: () => capability,
+        },
+        softwareChange: createDeterministicSoftwareChangeRegistry(),
+      }),
       resources,
       contextAssembler: new LocalGitProjectContextAssembler(),
     });
