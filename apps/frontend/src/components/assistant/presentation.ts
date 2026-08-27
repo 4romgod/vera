@@ -1,4 +1,5 @@
 import type {
+  ConversationMessageResource,
   ConversationSummaryResource,
   ProjectResource,
 } from '@vera/client';
@@ -51,9 +52,10 @@ export function groupConversations(
     Earlier: [],
   };
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  for (const conversation of conversations.toSorted((left, right) =>
+  const sortedConversations = [...conversations].sort((left, right) =>
     right.updatedAt.localeCompare(left.updatedAt),
-  )) {
+  );
+  for (const conversation of sortedConversations) {
     const updated = new Date(conversation.updatedAt);
     const updatedDay = new Date(
       updated.getFullYear(),
@@ -68,6 +70,16 @@ export function groupConversations(
   return (['Today', 'Previous 7 days', 'Earlier'] as const)
     .map((label) => ({ label, conversations: groups[label] }))
     .filter((group) => group.conversations.length > 0);
+}
+
+export function latestConversationProjectId(
+  messages: ConversationMessageResource[],
+): string | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const projectId = messages[index]?.projectId;
+    if (projectId !== undefined) return projectId;
+  }
+  return undefined;
 }
 
 export function filterConversations(

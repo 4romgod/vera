@@ -1,8 +1,8 @@
 # Vera Security and Trust Model
 
 **Status:** Accepted
-**Version:** 0.7
-**Last updated:** 26 August 2026
+**Version:** 0.8
+**Last updated:** 27 August 2026
 **Accepted:** 24 August 2026 (owner); V1 perimeter clarified by ADR-0014 and
 cloud-provider policy clarified by ADR-0015 and bounded conversation disclosure
 accepted by ADR-0016 on 25 August 2026
@@ -12,7 +12,8 @@ ADR-0022, with reminder scheduling and inbox authority accepted by ADR-0023 on
 26 August 2026; adaptive evidence disclosure and budget authority accepted by
 ADR-0024; governed memory and the universal frontend boundary are accepted by
 ADRs 0025 and 0026; private physical-device ingress is accepted by ADR-0027;
-reviewed device voice interaction is accepted by ADR-0028
+reviewed device voice interaction is accepted by ADR-0028; and governed
+software-change publication is accepted by ADR-0029 on 27 August 2026.
 
 ## Purpose
 
@@ -82,14 +83,21 @@ origin to CORS or permit LAN binding. See
 [ADR-0026](decisions/0026-use-one-expo-react-native-frontend-for-web-and-mobile.md).
 
 Voice capture is an explicit experience-layer disclosure under
-[ADR-0028](decisions/0028-treat-device-voice-as-a-reviewed-experience-adapter.md).
-The owner must deliberately start the microphone and grant operating-system or
-browser permission. The configured device speech service may process audio on
-device or through its own provider boundary; the UI discloses that fact. Vera's
-API receives only the resulting editable transcript and stores no recording.
-The transcript remains untrusted natural-language input, is never submitted
-automatically, and cannot approve a capability. Spoken output is visible and
-stoppable because it can disclose conversation content to nearby people.
+[ADR-0030](decisions/0030-transcribe-owner-controlled-recordings-through-a-provider-neutral-boundary.md).
+The owner must deliberately start and stop the microphone. The completed
+recording crosses the frontend/API boundary only after Stop and is held only
+for the synchronous transcription call: it is not logged or written to any
+durable Vera store. The configured adapter determines disclosure:
+`whisper_cpp` stays on the loopback owner host; `openai` sends the recording to
+a third-party provider and uses server-held credentials. Configuration logs
+make that boundary visible without exposing credentials.
+
+The returned transcript remains untrusted natural-language input, cannot
+approve a capability, and enters the durable system only through a separate
+owner Send or Stop-and-send action. Provider error bodies are discarded because
+they may echo audio-derived content. Supported content types and a 25 MB limit
+bound memory use before inference. Spoken output is visible and stoppable
+because it can disclose conversation content to nearby people.
 
 ## Threat categories
 
@@ -394,6 +402,33 @@ untouched managed worktree, but it cannot claim to reverse a patch already
 staged. Ambiguous or partial state is quarantined as `review_required` for owner
 inspection. See
 [ADR-0018](decisions/0018-apply-approved-software-changes-in-managed-git-worktrees.md).
+
+### Software-change publication boundary
+
+Publication is a third authority boundary after patch generation and staged
+application. Only a successful, version-frozen application is eligible. Before
+approval Vera verifies and discloses the credential-free GitHub repository,
+remote base-branch revision, Vera-managed head branch, staged tree and complete
+file manifest, Git author, exact commit message, exact pull-request content,
+and draft state. It independently matches the resulting file bytes and SHA-256
+digests to the durable staged-application result before requesting approval.
+
+The server constructs the authority envelope. Callers and models cannot enable
+direct base-branch writes or force pushes. Execution disables repository Git
+hooks and GPG signing, creates at most one commit, creates or verifies only the
+approved `vera/change-*` remote branch, and creates or verifies one exact pull
+request. It never rewrites an incompatible commit, branch, or pull request.
+Movement of the base branch after approval or any ambiguous remote state fails
+closed as `review_required`; the base revision is checked before remote work
+and again after the pull request is verified.
+
+Git and GitHub credentials remain in the host credential mechanisms. Remote
+URLs containing embedded HTTPS credentials, queries, fragments, or unsupported
+hosts are rejected. API resources expose the repository owner/name but not the
+remote URL; lifecycle warnings contain classified failure codes rather than raw
+subprocess output. Cancellation is limited to the period before execution so
+Vera never presents an irreversible remote effect as rolled back. See
+[ADR-0029](decisions/0029-publish-approved-software-changes-through-a-separate-durable-lifecycle.md).
 
 ## Audit and observability
 

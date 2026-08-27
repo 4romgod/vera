@@ -337,6 +337,24 @@ optimistically controlled version, and ordered events. Recovery derives its
 outcome from the actual managed Git state. An ambiguous partial effect becomes
 `review_required` rather than being guessed successful or rolled back.
 
+### Software change publication
+
+A durable, separately approval-gated attempt to publish one successful
+`SoftwareChangeApplication` as an exact commit, remote Vera branch, and pull
+request.
+
+It is not a coding capability or an extension of application authority. It has
+its own principal-scoped idempotency, approval, effect identity, project lease,
+recovery, failure, result, optimistic version, and ordered events. Its frozen
+effect binds the source application version, repository/base/head identities,
+staged tree and files, author, commit message, pull-request content, and
+create-only authority limits.
+
+Publication recovery observes Git and forge state. An exact existing effect is
+reused; a changed base, incompatible remote branch, modified pull request, or
+ambiguous duplicate becomes `review_required`. A successful result records the
+commit revision and stable pull-request identity and URL.
+
 ### Memory record
 
 Durable information that may be useful beyond the immediate run.

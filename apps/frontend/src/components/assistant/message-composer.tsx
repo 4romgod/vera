@@ -15,14 +15,17 @@ export function MessageComposer(props: {
   draftFromVoice: boolean;
   busy: boolean;
   voicePhase: VoiceInputPhase;
+  voiceDurationMs: number;
   onChange: (value: string) => void;
   onSend: () => void;
   onVoice: () => void;
+  onVoiceSend: () => void;
 }) {
+  const recording = props.voicePhase === 'recording';
   const sendDisabled =
     props.busy ||
-    props.voicePhase !== 'idle' ||
-    props.draft.trim().length === 0;
+    (!recording &&
+      (props.voicePhase !== 'idle' || props.draft.trim().length === 0));
   return (
     <View
       style={{
@@ -44,6 +47,7 @@ export function MessageComposer(props: {
       >
         <VoiceInputStatus
           phase={props.voicePhase}
+          durationMs={props.voiceDurationMs}
           transcriptReady={
             props.draftFromVoice && props.draft.trim().length > 0
           }
@@ -56,7 +60,7 @@ export function MessageComposer(props: {
             gap: spacing.sm,
             borderWidth: 1,
             borderColor:
-              props.voicePhase === 'listening' ? '#7B454B' : palette.line,
+              props.voicePhase === 'recording' ? '#7B454B' : palette.line,
             borderCurve: 'continuous',
             borderRadius: radius.lg,
             padding: 7,
@@ -92,11 +96,15 @@ export function MessageComposer(props: {
             onPress={props.onVoice}
           />
           <Pressable
-            accessibilityLabel="Send message"
+            accessibilityLabel={
+              recording
+                ? 'Stop voice recording and send transcript'
+                : 'Send message'
+            }
             accessibilityRole="button"
             accessibilityState={{ disabled: sendDisabled }}
             disabled={sendDisabled}
-            onPress={props.onSend}
+            onPress={recording ? props.onVoiceSend : props.onSend}
             style={({ pressed }) => ({
               width: 44,
               height: 44,

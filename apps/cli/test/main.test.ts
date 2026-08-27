@@ -5,6 +5,7 @@ import type {
   ArtifactResource,
   ChangeApplicationResource,
   ConversationResource,
+  SoftwareChangePublicationResource,
   TaskResource,
   VeraApi,
 } from '@vera/client';
@@ -34,6 +35,7 @@ function fakeApi(overrides: Partial<VeraApi>): VeraApi {
     throw new Error('Unexpected client call.');
   };
   return {
+    transcribeAudio: unavailable,
     listCapabilities: unavailable,
     listPersonalTasks: unavailable,
     getPersonalTask: unavailable,
@@ -63,6 +65,12 @@ function fakeApi(overrides: Partial<VeraApi>): VeraApi {
     decideChangeApplication: unavailable,
     cancelChangeApplication: unavailable,
     waitForChangeApplication: unavailable,
+    createSoftwareChangePublication: unavailable,
+    getSoftwareChangePublication: unavailable,
+    getSoftwareChangePublicationEvents: unavailable,
+    decideSoftwareChangePublication: unavailable,
+    cancelSoftwareChangePublication: unavailable,
+    waitForSoftwareChangePublication: unavailable,
     waitForRun: unavailable,
     ...overrides,
   };
@@ -102,6 +110,57 @@ function changeApplication(
     createdAt: '2026-08-25T00:00:00.000Z',
     updatedAt: '2026-08-25T00:00:00.000Z',
     links: { application: '/application', events: '/events' },
+  };
+}
+
+function publication(
+  status: SoftwareChangePublicationResource['status'],
+): SoftwareChangePublicationResource {
+  return {
+    schemaVersion: 1,
+    version: 1,
+    id: 'publication_test',
+    status,
+    sourceApplication: {
+      id: 'application_test',
+      effectId: 'effect_application',
+      version: 4,
+    },
+    project: { id: 'project_test', displayName: 'Vera' },
+    approval: {
+      id: 'approval_publication',
+      status: status === 'awaiting_approval' ? 'pending' : 'approved',
+      reason: 'software_change_publication',
+      effect: {
+        adapterId: 'github_gh_cli',
+        repository: { remoteName: 'origin', owner: '4romgod', name: 'vera' },
+        baseRevision: 'a'.repeat(40),
+        baseBranch: 'main',
+        baseBranchRevision: 'a'.repeat(40),
+        headBranch: 'vera/change-test',
+        workspacePath: '/managed/application_test',
+        treeRevision: 'b'.repeat(40),
+        files: [],
+        author: { name: 'Vera Test', email: 'vera@example.test' },
+        commitMessage: 'Publish change',
+        pullRequest: { title: 'Publish change', body: 'Body', draft: true },
+        authority: {
+          commit: 'create_one',
+          push: 'create_or_verify_head',
+          pullRequest: 'create_or_verify',
+          directBasePush: false,
+          forcePush: false,
+        },
+      },
+      requestedAt: '2026-08-27T00:00:00.000Z',
+    },
+    effect: {
+      id: 'effect_publication',
+      status: status === 'succeeded' ? 'succeeded' : 'pending',
+    },
+    createdAt: '2026-08-27T00:00:00.000Z',
+    updatedAt: '2026-08-27T00:00:00.000Z',
+    links: { publication: '/publication', events: '/events' },
   };
 }
 
@@ -629,6 +688,64 @@ void describe('Vera CLI', () => {
       errors.join(''),
       /Waiting for change application application_test/u,
     );
+  });
+
+  void it('discloses and approves the exact commit, push, and pull request publication', async () => {
+    const output: string[] = [];
+    const calls: string[] = [];
+    const client = fakeApi({
+      createSoftwareChangePublication: (input) => {
+        calls.push(
+          `create:${input.applicationId}:${String(input.pullRequest.draft)}`,
+        );
+        return Promise.resolve(publication('awaiting_approval'));
+      },
+      decideSoftwareChangePublication: (input) => {
+        assert.match(output.join(''), /directBasePush/u);
+        assert.match(output.join(''), /github_gh_cli/u);
+        calls.push(`decide:${input.decision}`);
+        return Promise.resolve(publication('approved'));
+      },
+      waitForSoftwareChangePublication: () => {
+        calls.push('wait');
+        return Promise.resolve(publication('succeeded'));
+      },
+    });
+
+    const exitCode = await runCli(
+      [
+        'change',
+        'publish',
+        '--application',
+        'application_test',
+        '--commit-message',
+        'Publish change',
+        '--pr-title',
+        'Publish change',
+        '--pr-body',
+        'Body',
+        '--draft',
+        '--approve',
+      ],
+      {
+        client,
+        stdout: {
+          write: (value) => {
+            output.push(String(value));
+            return true;
+          },
+        },
+        stderr: { write: () => true },
+        createIdempotencyKey: () => 'publication-test-key',
+      },
+    );
+
+    assert.equal(exitCode, 0);
+    assert.deepEqual(calls, [
+      'create:application_test:true',
+      'decide:approved',
+      'wait',
+    ]);
   });
 
   void it('never auto-approves a capability that differs from the command', async () => {

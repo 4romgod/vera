@@ -2,6 +2,7 @@ import { Mic, Square, Volume2, VolumeX } from 'lucide-react-native';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 
 import type { VoiceInputPhase } from '@/voice/use-voice-input';
+import { formatVoiceDuration } from '@/voice/voice-recording';
 import { palette, radius, spacing } from '@/design/tokens';
 
 export function VoiceInputButton(props: {
@@ -10,13 +11,15 @@ export function VoiceInputButton(props: {
   onPress: () => void;
 }) {
   const working =
-    props.phase === 'requesting_permission' || props.phase === 'finishing';
-  const listening = props.phase === 'listening';
+    props.phase === 'requesting_permission' || props.phase === 'transcribing';
+  const recording = props.phase === 'recording';
   return (
     <Pressable
-      accessibilityLabel={listening ? 'Stop voice input' : 'Start voice input'}
+      accessibilityLabel={
+        recording ? 'Stop and review voice recording' : 'Start voice recording'
+      }
       accessibilityRole="button"
-      accessibilityState={{ disabled: props.disabled, selected: listening }}
+      accessibilityState={{ disabled: props.disabled, selected: recording }}
       disabled={props.disabled || working}
       onPress={props.onPress}
       style={({ pressed }) => ({
@@ -25,18 +28,18 @@ export function VoiceInputButton(props: {
         alignItems: 'center',
         justifyContent: 'center',
         borderWidth: 1,
-        borderColor: listening ? palette.danger : 'transparent',
+        borderColor: recording ? palette.danger : 'transparent',
         borderCurve: 'continuous',
         borderRadius: radius.md,
         opacity: props.disabled ? 0.35 : pressed ? 0.7 : 1,
-        backgroundColor: listening
+        backgroundColor: recording
           ? palette.dangerSurface
           : palette.surfaceStrong,
       })}
     >
       {working ? (
         <ActivityIndicator color={palette.accent} size="small" />
-      ) : listening ? (
+      ) : recording ? (
         <Square color={palette.danger} fill={palette.danger} size={14} />
       ) : (
         <Mic color={palette.textSoft} size={20} strokeWidth={1.9} />
@@ -47,16 +50,17 @@ export function VoiceInputButton(props: {
 
 export function VoiceInputStatus(props: {
   phase: VoiceInputPhase;
+  durationMs: number;
   transcriptReady: boolean;
 }) {
   if (props.phase === 'idle' && !props.transcriptReady) return null;
   const message =
     props.phase === 'requesting_permission'
       ? 'Preparing the microphone…'
-      : props.phase === 'listening'
-        ? 'Listening… Tap stop when you are finished.'
-        : props.phase === 'finishing'
-          ? 'Finishing the transcript…'
+      : props.phase === 'recording'
+        ? `Recording ${formatVoiceDuration(props.durationMs)} · Quiet pauses are okay. Stop when you are finished.`
+        : props.phase === 'transcribing'
+          ? 'Transcribing the completed recording…'
           : 'Transcript ready. Review or edit it before sending.';
   return (
     <View
@@ -69,7 +73,7 @@ export function VoiceInputStatus(props: {
           height: 7,
           borderRadius: 999,
           backgroundColor:
-            props.phase === 'listening' ? palette.danger : palette.accent,
+            props.phase === 'recording' ? palette.danger : palette.accent,
         }}
       />
       <Text
@@ -82,7 +86,10 @@ export function VoiceInputStatus(props: {
           lineHeight: 16,
         }}
       >
-        {message} Audio stays with your device speech service.
+        {message}{' '}
+        {props.phase === 'recording'
+          ? 'Audio is sent only after you stop.'
+          : null}
       </Text>
     </View>
   );

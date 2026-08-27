@@ -14,7 +14,7 @@ export const ChangeApplicationStatusSchema = z.enum([
   'cancelled',
 ]);
 
-const ChangeApplicationFileSchema = z.discriminatedUnion('operation', [
+export const ChangeApplicationFileSchema = z.discriminatedUnion('operation', [
   z
     .object({
       relativePath: z.string().min(1).max(1_000),

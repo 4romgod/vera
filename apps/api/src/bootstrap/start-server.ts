@@ -56,6 +56,11 @@ app.log.info(
             }
           : {}),
       },
+      publication: {
+        adapterId: config.publication.adapterId,
+        gitCommand: config.publication.gitCommand,
+        ghCommand: config.publication.ghCommand,
+      },
       research:
         config.research.adapterId === 'openai_web_search'
           ? {
@@ -66,6 +71,24 @@ app.log.info(
               searchContextSize: config.research.openai.searchContextSize,
             }
           : { adapterId: config.research.adapterId },
+      transcription: {
+        provider: config.transcription.provider,
+        model:
+          config.transcription.provider === 'disabled'
+            ? 'none'
+            : config.transcription.model,
+        dataBoundary:
+          config.transcription.provider === 'openai'
+            ? 'third_party'
+            : 'owner_controlled',
+        maxAudioBytes: config.transcription.maxAudioBytes,
+        ...(config.transcription.provider === 'disabled'
+          ? {}
+          : {
+              origin: new URL(config.transcription.baseUrl).origin,
+              timeoutMs: config.transcription.timeoutMs,
+            }),
+      },
       worker: config.worker,
       reminders: config.reminders,
       storage: {

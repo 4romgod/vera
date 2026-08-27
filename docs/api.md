@@ -1,8 +1,8 @@
 # Vera HTTP API
 
 **Status:** Accepted for implemented V1 paths
-**Version:** 1.2
-**Last updated:** 26 August 2026
+**Version:** 1.3
+**Last updated:** 27 August 2026
 
 ## Purpose
 
@@ -22,8 +22,9 @@ must not be exposed to an untrusted or shared network.
 | Method and path | Purpose | Success |
 |---|---|---:|
 | `GET /health` | Process liveness only | `200` |
-| `GET /ready` | Model, stores, recovery, and every enabled capability runtime | `200` or `503` |
+| `GET /ready` | Model, stores, recovery, workers, and every enabled task-capability runtime | `200` or `503` |
 | `GET /v1/capabilities` | List declared capability contracts, authority, enabled state, and destination | `200` |
+| `POST /v1/audio/transcriptions` | Transcribe one completed bounded audio recording without persisting it | `200` |
 | `GET /v1/personal-tasks` | List owner-scoped personal tasks; filters: `status`, `limit` | `200` |
 | `GET /v1/personal-tasks/{personalTaskId}` | Retrieve one owner-scoped personal task | `200` |
 | `GET /v1/reminders` | List owner-scoped reminders; filters: `status`, `limit` | `200` |
@@ -51,11 +52,50 @@ must not be exposed to an untrusted or shared network.
 | `GET /v1/change-applications/{applicationId}/events` | Retrieve immutable ordered application events | `200` |
 | `POST /v1/change-applications/{applicationId}/decision` | Approve or reject the disclosed managed-worktree effect | `202` |
 | `POST /v1/change-applications/{applicationId}/cancellation` | Request cancellation and reconciliation | `202` |
+| `POST /v1/change-applications/{applicationId}/publications` | Create an exact commit/branch/pull-request publication request | `202` |
+| `GET /v1/software-change-publications/{publicationId}` | Retrieve publication approval, effect, and result state | `200` |
+| `GET /v1/software-change-publications/{publicationId}/events` | Retrieve immutable ordered publication events | `200` |
+| `POST /v1/software-change-publications/{publicationId}/decision` | Approve or reject the disclosed publication effect | `202` |
+| `POST /v1/software-change-publications/{publicationId}/cancellation` | Cancel publication before execution begins | `202` |
 | `POST /v1/model-decisions` | Exercise the lower-level model decision boundary | `200` |
 
 The model-decision path is useful for provider and proposal diagnostics. New
 owner-facing clients should submit tasks so accepted work has durable identity,
 events, approval, and recovery semantics.
+
+## Speech transcription
+
+`POST /v1/audio/transcriptions` is deliberately not a task-creation endpoint.
+It is a synchronous, ephemeral experience adapter used to turn one completed
+recording into editable text before the owner submits anything.
+
+Send the binary recording as the request body with one of these content types:
+`audio/webm`, `audio/mp4`, `audio/mpeg`, `audio/wav`, or `audio/x-wav`. The
+default and maximum body limit is 25,000,000 bytes. Empty audio returns
+`422 audio_empty`, unsupported media returns `415 audio_type_unsupported`, and
+oversized input returns `413 audio_too_large`.
+
+```http
+POST /v1/audio/transcriptions
+Content-Type: audio/webm
+
+<binary recording>
+```
+
+```json
+{
+  "schemaVersion": 1,
+  "text": "Please show my open tasks.",
+  "provider": "openai",
+  "model": "gpt-transcribe",
+  "durationMs": 842
+}
+```
+
+The response metadata describes transcription only. Raw audio and this response
+are not stored by the endpoint. If the owner sends the returned text, the
+ordinary conversation/task contract governs that separate request. Provider
+credentials never enter the public client.
 
 ## Task lifecycle
 
@@ -512,6 +552,71 @@ different artifact returns a conflict. Persistent workers serialize effects per
 project, and restart reconciliation classifies the actual managed worktree as
 before, after, or mixed before recording an outcome.
 
+### Software-change publication
+
+Only a successful staged application can be published. The caller supplies
+human-authored delivery metadata; it cannot supply or widen authority:
+
+```http
+POST /v1/change-applications/application_.../publications
+Idempotency-Key: publish-vera-101-v1
+Content-Type: application/json
+
+{
+  "baseBranch": "main",
+  "commitMessage": "Implement VERA-101 health monitoring",
+  "pullRequest": {
+    "title": "Implement VERA-101 health monitoring",
+    "body": "Publishes the separately approved VERA-101 change.",
+    "draft": true
+  }
+}
+```
+
+The `awaiting_approval` response freezes the source application version,
+credential-free GitHub repository identity, current remote base-branch
+revision, Vera head branch, staged tree and complete file manifest, Git author,
+commit message, and exact pull-request metadata. Its server-defined authority
+is `create_one` commit, `create_or_verify_head` push, and
+`create_or_verify` pull request, with `directBasePush` and `forcePush` both
+false. Before returning that approval, Vera independently verifies the current
+file byte counts and SHA-256 digests against the durable application result.
+
+```http
+POST /v1/software-change-publications/publication_.../decision
+Content-Type: application/json
+
+{ "decision": "approved" }
+```
+
+The worker takes the project-mutation lease and executes create-or-verify
+steps. On restart it accepts only an exact existing commit, remote branch, and
+pull request. A different remote commit, duplicate or modified pull request,
+changed staged tree, or moved base branch becomes `review_required`; Vera does
+not rewrite the remote state. The base revision is checked before the remote
+effects and after the pull request is verified. Cancellation is accepted only
+before the worker enters `publishing`, because later cancellation could falsely
+imply that an external effect was rolled back.
+
+Git and GitHub CLI availability is checked synchronously while preparing a
+publication, before any approval resource is created. It is not part of the
+global readiness result because publication is an optional owner-initiated
+delivery effect rather than an enabled task capability; an unavailable tool or
+login returns `503 publication_unavailable` from the create request.
+
+```mermaid
+stateDiagram-v2
+    [*] --> awaiting_approval: exact publication prepared
+    awaiting_approval --> rejected: owner rejects
+    awaiting_approval --> cancelled: owner cancels
+    awaiting_approval --> approved: owner approves exact effect
+    approved --> cancelled: owner cancels before pickup
+    approved --> publishing: project lease acquired
+    publishing --> succeeded: commit, branch, and PR verified
+    publishing --> failed: clean transport or command failure
+    publishing --> review_required: source or remote ambiguity
+```
+
 `POST /v1/runs/{runId}/cancellation` records a stop request. Before capability
 execution it terminally cancels the run and rejects a pending approval. During
 execution it asks the adapter to abort. Cancellation is best effort: a
@@ -586,13 +691,13 @@ Error envelopes use:
 | Status | Codes | Meaning |
 |---:|---|---|
 | `400` | `invalid_request` | Missing, malformed, too large, or unknown request input. |
-| `404` | `task_not_found`, `run_not_found`, `approval_not_found`, `project_not_found`, `conversation_not_found`, `conversation_message_not_found`, `artifact_not_found`, `change_application_not_found` | The addressed resource does not exist. |
-| `409` | `idempotency_key_reused`, `approval_already_decided`, `concurrent_transition_failed`, `conversation_message_mismatch`, `change_application_idempotency_key_reused`, `change_application_approval_already_decided`, `change_application_concurrent_transition_failed`, `change_application_not_cancellable`, `stale_source`, `application_conflict`, `review_required` | The request conflicts with durable or filesystem state. |
-| `422` | `invalid_project_source`, `software_change_artifact_required` | A project source is invalid, or the selected artifact cannot be used for a software-change application. |
+| `404` | `task_not_found`, `run_not_found`, `approval_not_found`, `project_not_found`, `conversation_not_found`, `conversation_message_not_found`, `artifact_not_found`, `change_application_not_found`, `software_change_publication_not_found` | The addressed resource does not exist. |
+| `409` | `idempotency_key_reused`, `approval_already_decided`, `concurrent_transition_failed`, `conversation_message_mismatch`, `change_application_idempotency_key_reused`, `change_application_approval_already_decided`, `change_application_concurrent_transition_failed`, `change_application_not_cancellable`, `software_change_publication_idempotency_key_reused`, `software_change_publication_approval_already_decided`, `software_change_publication_concurrent_transition_failed`, `software_change_publication_not_cancellable`, `stale_source`, `application_conflict`, `publication_conflict`, `review_required` | The request conflicts with durable, filesystem, or remote state. |
+| `422` | `invalid_project_source`, `software_change_artifact_required`, `software_change_publication_source_required` | A project source is invalid, or the selected artifact/application cannot be used for the requested effect. |
 | `502` | `provider_request_rejected`, `provider_response_invalid` | Provider boundary failed while using the diagnostic endpoint. |
-| `503` | `model_not_found`, `provider_unavailable`, `operational_store_unavailable`, `scratchpad_unavailable`, `planning_capability_unavailable`, `software_change_capability_unavailable`, `capability_unavailable` | A required runtime dependency is unavailable. The response `dependency` identifies a generic capability runtime. |
+| `503` | `model_not_found`, `provider_unavailable`, `publication_unavailable`, `operational_store_unavailable`, `scratchpad_unavailable`, `planning_capability_unavailable`, `software_change_capability_unavailable`, `capability_unavailable` | A required runtime dependency is unavailable. The response `dependency` identifies a generic capability runtime when applicable. |
 | `504` | `provider_timeout` | The model provider exceeded its deadline. |
-| `500` | `internal_error`, `application_failed` | An unexpected server or managed-effect failure; details remain in structured logs. |
+| `500` | `internal_error`, `application_failed`, `publication_failed` | An unexpected server or managed-effect failure; details remain in structured logs. |
 
 ## Current security boundary
 

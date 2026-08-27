@@ -24,6 +24,15 @@ void describe('application configuration', () => {
       adapters: { codexCli: { command: 'codex' } },
     });
     assert.deepEqual(config.research, { adapterId: 'disabled' });
+    assert.deepEqual(config.transcription, {
+      provider: 'disabled',
+      maxAudioBytes: 25_000_000,
+    });
+    assert.deepEqual(config.publication, {
+      adapterId: 'github_gh_cli',
+      gitCommand: 'git',
+      ghCommand: 'gh',
+    });
   });
 
   void it('configures Ollama reasoning without coupling it to a model name', () => {
@@ -215,6 +224,51 @@ void describe('application configuration', () => {
           RESEARCH_OPENAI_BASE_URL: 'http://openai.test/v1',
         }),
       /OPENAI_BASE_URL must use HTTPS/u,
+    );
+  });
+
+  void it('configures speech transcription independently from the orchestration model', () => {
+    assert.deepEqual(
+      loadConfig({
+        VERA_MODEL_PROVIDER: 'ollama',
+        VERA_TRANSCRIPTION_PROVIDER: 'openai',
+        TRANSCRIPTION_OPENAI_API_KEY: 'transcription-key',
+        TRANSCRIPTION_OPENAI_MODEL: 'gpt-transcribe-test',
+      }).transcription,
+      {
+        provider: 'openai',
+        baseUrl: 'https://api.openai.com/v1',
+        apiKey: 'transcription-key',
+        model: 'gpt-transcribe-test',
+        timeoutMs: 120_000,
+        maxAudioBytes: 25_000_000,
+      },
+    );
+    assert.deepEqual(
+      loadConfig({
+        VERA_TRANSCRIPTION_PROVIDER: 'whisper_cpp',
+        WHISPER_CPP_BASE_URL: 'http://localhost:8080/',
+        WHISPER_CPP_MODEL: 'large-v3-turbo',
+      }).transcription,
+      {
+        provider: 'whisper_cpp',
+        baseUrl: 'http://localhost:8080',
+        model: 'large-v3-turbo',
+        timeoutMs: 120_000,
+        maxAudioBytes: 25_000_000,
+      },
+    );
+    assert.throws(
+      () => loadConfig({ VERA_TRANSCRIPTION_PROVIDER: 'openai' }),
+      /TRANSCRIPTION_OPENAI_API_KEY or OPENAI_API_KEY is required/u,
+    );
+    assert.throws(
+      () =>
+        loadConfig({
+          VERA_TRANSCRIPTION_PROVIDER: 'whisper_cpp',
+          WHISPER_CPP_BASE_URL: 'http://remote.example:8080',
+        }),
+      /loopback host/u,
     );
   });
 });

@@ -5,6 +5,7 @@ import {
   VeraClient,
   type Approval,
   type ChangeApplicationResource,
+  type SoftwareChangePublicationResource,
   type TaskResource,
   type VeraApi,
 } from '@vera/client';
@@ -49,10 +50,15 @@ const usage = `Usage:
   vera application wait <application-id> [--timeout-ms <milliseconds>]
   vera application events <application-id>
   vera application cancel <application-id>
+  vera publication show <publication-id>
+  vera publication wait <publication-id> [--timeout-ms <milliseconds>]
+  vera publication events <publication-id>
+  vera publication cancel <publication-id>
   vera plan --project <project-id> --message <message> [--key <key>] [--approve]
   vera change --project <project-id> --message <message> [--key <key>] [--approve]
   vera research --message <message> [--key <key>] [--approve]
   vera change apply --artifact <artifact-id> [--key <key>] [--approve]
+  vera change publish --application <application-id> --commit-message <message> --pr-title <title> --pr-body <body> [--base <branch>] [--draft] [--key <key>] [--approve]
 
 Global options:
   --url <base-url>   Defaults to VERA_API_URL or http://127.0.0.1:4310
@@ -137,6 +143,18 @@ function isApplicationTerminal(
     'review_required',
     'cancelled',
   ].includes(application.status);
+}
+
+function isPublicationTerminal(
+  publication: SoftwareChangePublicationResource,
+): boolean {
+  return [
+    'succeeded',
+    'rejected',
+    'failed',
+    'review_required',
+    'cancelled',
+  ].includes(publication.status);
 }
 
 async function resolveApproval(input: {
@@ -572,6 +590,45 @@ export async function runCli(
     return 0;
   }
 
+  if (resource === 'publication' && action === 'show') {
+    print(
+      stdout,
+      await client.getSoftwareChangePublication(
+        positional(args, 2, 'publication-id'),
+      ),
+    );
+    return 0;
+  }
+  if (resource === 'publication' && action === 'wait') {
+    const timeout = positiveIntegerOption(args, '--timeout-ms');
+    print(
+      stdout,
+      await client.waitForSoftwareChangePublication(
+        positional(args, 2, 'publication-id'),
+        timeout === undefined ? undefined : { timeoutMs: timeout },
+      ),
+    );
+    return 0;
+  }
+  if (resource === 'publication' && action === 'events') {
+    print(
+      stdout,
+      await client.getSoftwareChangePublicationEvents(
+        positional(args, 2, 'publication-id'),
+      ),
+    );
+    return 0;
+  }
+  if (resource === 'publication' && action === 'cancel') {
+    print(
+      stdout,
+      await client.cancelSoftwareChangePublication(
+        positional(args, 2, 'publication-id'),
+      ),
+    );
+    return 0;
+  }
+
   if (resource === 'change' && action === 'apply') {
     const application = await client.createChangeApplication({
       artifactId: requiredOption(args, '--artifact'),
@@ -600,6 +657,45 @@ export async function runCli(
         `Approval recorded. Waiting for change application ${current.id} to finish...\n`,
       );
       current = await client.waitForChangeApplication(current.id);
+    }
+    print(stdout, current);
+    return current.status === 'succeeded' ? 0 : 2;
+  }
+
+  if (resource === 'change' && action === 'publish') {
+    const publication = await client.createSoftwareChangePublication({
+      applicationId: requiredOption(args, '--application'),
+      baseBranch: option(args, '--base') ?? 'main',
+      commitMessage: requiredOption(args, '--commit-message'),
+      pullRequest: {
+        title: requiredOption(args, '--pr-title'),
+        body: requiredOption(args, '--pr-body'),
+        draft: args.includes('--draft'),
+      },
+      idempotencyKey: option(args, '--key') ?? createKey(),
+    });
+    print(stdout, {
+      approval: {
+        approvalId: publication.approval.id,
+        reason: publication.approval.reason,
+        project: publication.project,
+        effect: publication.approval.effect,
+      },
+    });
+    const approved =
+      args.includes('--approve') ||
+      (await confirm(
+        'Create this exact commit, create or verify its Vera branch, and create or verify this pull request?',
+      ));
+    let current = await client.decideSoftwareChangePublication({
+      publicationId: publication.id,
+      decision: approved ? 'approved' : 'rejected',
+    });
+    if (!isPublicationTerminal(current)) {
+      stderr.write(
+        `Approval recorded. Waiting for publication ${current.id} to finish...\n`,
+      );
+      current = await client.waitForSoftwareChangePublication(current.id);
     }
     print(stdout, current);
     return current.status === 'succeeded' ? 0 : 2;

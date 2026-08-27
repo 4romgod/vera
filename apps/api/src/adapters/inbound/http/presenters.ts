@@ -2,6 +2,7 @@ import type { ArtifactService } from '../../../application/artifacts/artifact-se
 import type { ConversationService } from '../../../application/conversations/conversation-service.ts';
 import type { ProjectService } from '../../../application/projects/project-service.ts';
 import type { SoftwareChangeApplication } from '../../../domain/changes/software-change-application.ts';
+import type { SoftwareChangePublication } from '../../../domain/changes/software-change-publication.ts';
 import type { TaskAggregate } from '../../../domain/tasks/task-aggregate.ts';
 
 export function taskResponse(aggregate: TaskAggregate) {
@@ -157,6 +158,44 @@ export function changeApplicationResponse(
         ? {}
         : {
             cancellation: `/v1/change-applications/${application.id}/cancellation`,
+          }),
+    },
+  };
+}
+
+export function softwareChangePublicationResponse(
+  publication: SoftwareChangePublication,
+) {
+  const {
+    principalId: ignoredPrincipal,
+    requestKey: ignoredRequestKey,
+    events: ignoredEvents,
+    ...value
+  } = publication;
+  void ignoredPrincipal;
+  void ignoredRequestKey;
+  void ignoredEvents;
+  const terminal = [
+    'succeeded',
+    'rejected',
+    'failed',
+    'review_required',
+    'cancelled',
+  ].includes(publication.status);
+  return {
+    ...value,
+    links: {
+      publication: `/v1/software-change-publications/${publication.id}`,
+      events: `/v1/software-change-publications/${publication.id}/events`,
+      ...(publication.status === 'awaiting_approval'
+        ? {
+            decision: `/v1/software-change-publications/${publication.id}/decision`,
+          }
+        : {}),
+      ...(terminal
+        ? {}
+        : {
+            cancellation: `/v1/software-change-publications/${publication.id}/cancellation`,
           }),
     },
   };

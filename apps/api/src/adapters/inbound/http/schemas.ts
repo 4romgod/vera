@@ -30,6 +30,10 @@ import {
   ChangeApplicationEventSchema,
   SoftwareChangeApplicationSchema,
 } from '../../../domain/changes/software-change-application.ts';
+import {
+  SoftwareChangePublicationEventSchema,
+  SoftwareChangePublicationSchema,
+} from '../../../domain/changes/software-change-publication.ts';
 import { GoalExecutionSchema } from '../../../domain/goals/goal-plan.ts';
 import { AdaptiveGoalExecutionSchema } from '../../../domain/goals/adaptive-goal.ts';
 import { PersonalTaskResourceSchema } from '../../../domain/personal-tasks/personal-task.ts';
@@ -122,6 +126,24 @@ export type ApprovalDecisionRequest = z.infer<
   typeof ApprovalDecisionRequestSchema
 >;
 
+export const CreateSoftwareChangePublicationRequestSchema = z
+  .object({
+    baseBranch: z.string().trim().min(1).max(200).default('main'),
+    commitMessage: z.string().trim().min(1).max(5_000),
+    pullRequest: z
+      .object({
+        title: z.string().trim().min(1).max(256),
+        body: z.string().max(50_000),
+        draft: z.boolean().default(false),
+      })
+      .strict(),
+  })
+  .strict();
+
+export type CreateSoftwareChangePublicationRequest = z.infer<
+  typeof CreateSoftwareChangePublicationRequestSchema
+>;
+
 export const ChangeApplicationResponseSchema =
   SoftwareChangeApplicationSchema.omit({
     principalId: true,
@@ -143,6 +165,30 @@ export const ChangeApplicationEventsResponseSchema = z
     schemaVersion: z.literal(1),
     applicationId: z.string().startsWith('application_'),
     events: z.array(ChangeApplicationEventSchema),
+  })
+  .strict();
+
+export const SoftwareChangePublicationResponseSchema =
+  SoftwareChangePublicationSchema.omit({
+    principalId: true,
+    requestKey: true,
+    events: true,
+  }).extend({
+    links: z
+      .object({
+        publication: z.string(),
+        events: z.string(),
+        decision: z.string().optional(),
+        cancellation: z.string().optional(),
+      })
+      .strict(),
+  });
+
+export const SoftwareChangePublicationEventsResponseSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    publicationId: z.string().startsWith('publication_'),
+    events: z.array(SoftwareChangePublicationEventSchema),
   })
   .strict();
 
@@ -426,6 +472,21 @@ export const ChangeApplicationEventsResponseJsonSchema = z.toJSONSchema(
   { target: 'draft-7' },
 );
 
+export const CreateSoftwareChangePublicationRequestJsonSchema = z.toJSONSchema(
+  CreateSoftwareChangePublicationRequestSchema,
+  { target: 'draft-7' },
+);
+
+export const SoftwareChangePublicationResponseJsonSchema = z.toJSONSchema(
+  SoftwareChangePublicationResponseSchema,
+  { target: 'draft-7' },
+);
+
+export const SoftwareChangePublicationEventsResponseJsonSchema = z.toJSONSchema(
+  SoftwareChangePublicationEventsResponseSchema,
+  { target: 'draft-7' },
+);
+
 export const TaskLifecycleResponseJsonSchema = z.toJSONSchema(
   TaskLifecycleResponseSchema,
   { target: 'draft-7' },
@@ -527,5 +588,20 @@ export const ReadyResponseJsonSchema = z.toJSONSchema(ReadyResponseSchema, {
 
 export const NotReadyResponseJsonSchema = z.toJSONSchema(
   NotReadyResponseSchema,
+  { target: 'draft-7' },
+);
+
+export const SpeechTranscriptionResponseSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    text: z.string().trim().min(1).max(100_000),
+    provider: z.string().min(1),
+    model: z.string().min(1),
+    durationMs: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export const SpeechTranscriptionResponseJsonSchema = z.toJSONSchema(
+  SpeechTranscriptionResponseSchema,
   { target: 'draft-7' },
 );

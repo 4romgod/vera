@@ -591,7 +591,7 @@ flowchart LR
     W --> V["Vera inspects Git effect and computes hashes + patch"]
     V --> R["Review-only software_change artifact"]
     R -. "separate exact approval" .-> X["Managed worktree application"]
-    X -. "separate future authority" .-> Y["Commit / push / PR"]
+    X -. "third exact approval" .-> Y["Commit / create-only push / PR"]
 ```
 
 The initial adapters are `codex_cli` for production and
@@ -604,12 +604,44 @@ filesystem.
 Approval authorizes the exact context disclosure and bounded write inside the
 disposable workspace. It does not authorize mutation of the registered project,
 a commit, a push, a pull request, credential access, or another network effect.
-Those require distinct future capabilities. See
+Those require distinct effects and approvals. See
 [ADR-0017](decisions/0017-produce-software-changes-as-isolated-patch-artifacts.md).
 
 The first of those distinct effects is now implemented as a durable
 `SoftwareChangeApplication` lifecycle, not as added authority inside
 `software_change@1`. It applies and stages an exact approved artifact in a
 managed Git worktree, verifies the filesystem and index independently, and
-leaves commit and publication unimplemented. See
+does not itself gain commit or publication authority. See
 [ADR-0018](decisions/0018-apply-approved-software-changes-in-managed-git-worktrees.md).
+
+The next distinct effect is implemented as
+`SoftwareChangePublication`. It is deliberately not a model-visible coding
+capability: it consumes only a successful staged application and explicit
+owner-supplied delivery metadata. Before its own approval, Vera freezes the
+source version, repository and branch identities, current base-branch commit,
+staged Git tree and files, author, commit message, pull-request content, and a
+create-only authority envelope. Its provider-neutral executor port currently
+has one `github_gh_cli` adapter. The adapter receives server-managed credentials
+only at transport time; the coding specialist and orchestration model never do.
+
+```mermaid
+sequenceDiagram
+    participant Owner
+    participant Vera
+    participant Git as Managed Git worktree
+    participant Forge as GitHub adapter
+    Owner->>Vera: Request publication metadata
+    Vera->>Git: Verify staged tree and Vera branch
+    Vera->>Forge: Read repository and base ref
+    Vera-->>Owner: Disclose exact publication authority
+    Owner->>Vera: Approve
+    Vera->>Git: Create or verify exact commit
+    Vera->>Forge: Create or verify Vera branch
+    Vera->>Forge: Create or verify exact pull request
+    Forge-->>Vera: Commit and pull-request identities
+    Vera-->>Owner: Durable publication result
+```
+
+Retries reconcile existing effects; they do not update or force remote state
+to make it match. See
+[ADR-0029](decisions/0029-publish-approved-software-changes-through-a-separate-durable-lifecycle.md).
