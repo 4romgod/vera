@@ -62,6 +62,8 @@ async function waitForRun(
         id: string;
         capability: { name: string };
         attachments?: { id: string; sha256: string }[];
+        inputArtifacts?: { id: string; type: string; sha256: string }[];
+        decisionEvidence?: { id: string; type: string; sha256: string }[];
         authority?: { dataClasses: string[]; sideEffects: string[] };
       };
       output?: {
@@ -75,14 +77,35 @@ async function waitForRun(
           }[];
         };
         artifact?: { id: string };
+        evidence?: { id: string; type: string; sha256: string }[];
+        artifacts?: { id: string; type: string; sha256: string }[];
+      };
+      goal?: {
+        steps: {
+          capability: string;
+          status: string;
+          artifact?: { id: string; type: string; sha256: string };
+        }[];
       };
       conversationReply?: { status: string };
     }>();
     if (
       body.runStatus === status &&
-      (status !== 'succeeded' || body.conversationReply?.status === 'projected')
+      (status !== 'succeeded' ||
+        body.conversationReply === undefined ||
+        body.conversationReply.status === 'projected')
     ) {
       return body;
+    }
+    if (
+      ['succeeded', 'rejected', 'failed', 'cancelled'].includes(
+        body.runStatus,
+      ) &&
+      body.runStatus !== status
+    ) {
+      throw new Error(
+        `Run ${runId} reached ${body.runStatus} instead of ${status}: ${response.body}`,
+      );
     }
     await new Promise<void>((resolve) => setTimeout(resolve, 5));
   }
@@ -268,6 +291,106 @@ void describe('attachment intelligence HTTP journey', () => {
       payload: Buffer.from('{bad'),
     });
     assert.equal(malformed.statusCode, 422, malformed.body);
+  });
+
+  void it('understands an attachment and creates a separately approved task from its evidence', async () => {
+    app = createApp(config());
+    const source = Buffer.from(
+      'Prepare the release checklist before Friday. Confirm the API and mobile smoke tests.',
+    );
+    const upload = await app.inject({
+      method: 'POST',
+      url: '/v1/attachments',
+      headers: {
+        'content-type': 'application/octet-stream',
+        'x-vera-media-type': 'text/plain',
+        'x-vera-filename': encodeURIComponent('release-note.txt'),
+      },
+      payload: source,
+    });
+    assert.equal(upload.statusCode, 201, upload.body);
+    const attachment = upload.json<{ id: string }>();
+
+    const submitted = await app.inject({
+      method: 'POST',
+      url: '/v1/tasks',
+      headers: { 'idempotency-key': 'attachment-derived-task' },
+      payload: {
+        message:
+          'Analyze the attached note and create a task from its most important finding.',
+        attachmentIds: [attachment.id],
+      },
+    });
+    assert.equal(submitted.statusCode, 202, submitted.body);
+    const runId = submitted.json<{ runId: string }>().runId;
+
+    const analysisApproval = await waitForRun(app, runId, 'awaiting_approval');
+    assert.ok(analysisApproval.approval);
+    assert.equal(
+      analysisApproval.approval.capability.name,
+      'attachment_analysis',
+    );
+    const analysisDecision = await app.inject({
+      method: 'POST',
+      url: `/v1/approvals/${analysisApproval.approval.id}/decision`,
+      payload: { decision: 'approved' },
+    });
+    assert.equal(analysisDecision.statusCode, 202, analysisDecision.body);
+
+    const taskApproval = await waitForRun(app, runId, 'awaiting_approval');
+    assert.ok(taskApproval.approval);
+    assert.equal(
+      taskApproval.approval.capability.name,
+      'personal_task_management',
+    );
+    assert.equal(taskApproval.approval.inputArtifacts, undefined);
+    assert.equal(taskApproval.approval.decisionEvidence?.length, 1);
+    const evidence = taskApproval.approval.decisionEvidence[0];
+    assert.ok(evidence);
+    assert.equal(evidence.type, 'attachment_analysis');
+    assert.equal(
+      taskApproval.goal?.steps[0]?.artifact?.sha256,
+      evidence.sha256,
+    );
+    assert.ok(
+      taskApproval.approval.authority?.dataClasses.includes('artifact_content'),
+    );
+
+    const taskDecision = await app.inject({
+      method: 'POST',
+      url: `/v1/approvals/${taskApproval.approval.id}/decision`,
+      payload: { decision: 'approved' },
+    });
+    assert.equal(taskDecision.statusCode, 202, taskDecision.body);
+    const completed = await waitForRun(app, runId, 'succeeded');
+    assert.ok(completed.output);
+    assert.ok(completed.goal);
+    assert.equal(completed.output.kind, 'adaptive_goal_result');
+    assert.deepEqual(
+      completed.goal.steps.map(({ capability, status }) => ({
+        capability,
+        status,
+      })),
+      [
+        { capability: 'attachment_analysis', status: 'succeeded' },
+        { capability: 'personal_task_management', status: 'succeeded' },
+      ],
+    );
+    assert.equal(completed.output.evidence?.[0]?.type, 'attachment_analysis');
+    assert.deepEqual(
+      completed.output.artifacts?.map(({ type }) => type),
+      ['attachment_analysis', 'personal_task_result'],
+    );
+
+    const tasks = await app.inject({
+      method: 'GET',
+      url: '/v1/personal-tasks',
+    });
+    assert.equal(tasks.statusCode, 200, tasks.body);
+    assert.match(
+      tasks.json<{ tasks: { title: string }[] }>().tasks[0]?.title ?? '',
+      /Prepare the release checklist/u,
+    );
   });
 
   void it('uploads, previews, approves, analyzes, and cites an image', async () => {

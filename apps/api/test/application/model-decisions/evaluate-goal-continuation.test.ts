@@ -38,6 +38,56 @@ function researchArtifact() {
   });
 }
 
+function attachmentAnalysisArtifact() {
+  const content = {
+    schemaVersion: 1 as const,
+    objective: 'Review the supplied issue report.',
+    summary: 'The report describes a broken save button.',
+    findings: ['The save button does not persist the edited title.'],
+    citations: [
+      {
+        kind: 'document' as const,
+        attachmentId: 'attachment_issue',
+        filename: 'issue.txt',
+        locator: 'lines 1-2',
+        excerpt: 'The save button does not persist the edited title.',
+      },
+    ],
+    limitations: [],
+    attachments: [
+      {
+        id: 'attachment_issue',
+        kind: 'document' as const,
+        filename: 'issue.txt',
+        mediaType: 'text/plain',
+        sha256: 'b'.repeat(64),
+      },
+    ],
+    analyzedAt: '2030-01-01T00:00:00.000Z',
+  };
+  const serialized = JSON.stringify(content);
+  return ArtifactSchema.parse({
+    schemaVersion: 1,
+    id: 'artifact_attachment_analysis',
+    version: 1,
+    principalId: 'owner_v1',
+    taskId: 'task_adaptive',
+    runId: 'run_adaptive',
+    invocationId: 'invocation_attachment_analysis',
+    type: 'attachment_analysis',
+    mediaType: 'application/vnd.vera.attachment-analysis+json',
+    sha256: createHash('sha256').update(serialized).digest('hex'),
+    byteLength: Buffer.byteLength(serialized),
+    producer: {
+      provider: 'deterministic',
+      model: 'deterministic-v1',
+      durationMs: 0,
+    },
+    content,
+    createdAt: '2030-01-01T00:00:00.000Z',
+  });
+}
+
 const baseInput = {
   ownerMessage:
     'Research the forecast and if it will rain remind me at 2030-01-02T05:00:00.000Z.',
@@ -292,5 +342,148 @@ void describe('adaptive goal continuation decision', () => {
         error.code === 'provider_request_rejected',
     );
     assert.equal(provider.inputs.length, 0);
+  });
+
+  void it('requires explicit attachment-artifact disclosure when planning consumes cited evidence', async () => {
+    const continuation = (inputStepIds: string[]) =>
+      createEvaluateGoalContinuation(
+        new FakeModelProvider({
+          schemaVersion: 1,
+          kind: 'continue_goal',
+          decisionSummary: 'Plan the fix from the validated issue evidence.',
+          evidenceStepIds: ['step_1'],
+          step: {
+            id: 'step_2',
+            purpose: 'Plan the evidence-backed fix.',
+            inputStepIds,
+            capability: 'development_planning',
+            version: 1,
+            arguments: {
+              objective: 'Plan a fix for the save button.',
+              ticket: {
+                reference: 'untracked',
+                details: 'Plan a fix for the save button.',
+              },
+              project: { name: 'Vera' },
+            },
+          },
+        }),
+        {
+          enabledCapabilities: [
+            { name: 'attachment_analysis', version: 1 },
+            { name: 'development_planning', version: 1 },
+          ],
+        },
+      )({
+        ownerMessage: 'Review this issue and plan the fix.',
+        objective: 'Review the issue and plan the fix.',
+        completionCriteria: 'Analyze the issue and produce a plan.',
+        requirements: [
+          {
+            id: 'requirement_attachment',
+            description: 'Analyze the issue.',
+            capability: 'attachment_analysis',
+            version: 1,
+            condition: { kind: 'always' },
+          },
+          {
+            id: 'requirement_plan',
+            description: 'Plan the fix.',
+            capability: 'development_planning',
+            version: 1,
+            condition: { kind: 'always' },
+          },
+        ],
+        observations: [
+          {
+            stepId: 'step_1',
+            purpose: 'Analyze the issue.',
+            capability: { name: 'attachment_analysis', version: 1 },
+            artifact: attachmentAnalysisArtifact(),
+          },
+        ],
+        nextStepId: 'step_2',
+        remainingCapabilityInvocations: 2,
+        selectedProject: { id: 'project_vera', displayName: 'Vera' },
+        temporalContext: baseInput.temporalContext,
+      });
+
+    const undisclosed = await continuation([]);
+    assert.deepEqual(undisclosed.decision, {
+      kind: 'rejected',
+      code: 'invalid_continuation',
+      message:
+        'The continuation used attachment evidence without explicitly binding its analysis artifact as an approved capability input.',
+    });
+    const disclosed = await continuation(['step_1']);
+    assert.equal(disclosed.decision.kind, 'continue_goal');
+    assert.deepEqual(disclosed.decision.step.inputStepIds, ['step_1']);
+  });
+
+  void it('allows governed memory as a bounded attachment-derived continuation', async () => {
+    const evaluate = createEvaluateGoalContinuation(
+      new FakeModelProvider({
+        schemaVersion: 1,
+        kind: 'continue_goal',
+        decisionSummary: 'Remember the approved finding.',
+        evidenceStepIds: ['step_1'],
+        step: {
+          id: 'step_2',
+          purpose: 'Remember the approved finding.',
+          inputStepIds: [],
+          capability: 'memory_management',
+          version: 1,
+          arguments: {
+            action: 'remember',
+            kind: 'fact',
+            subject: 'Save button issue',
+            content: 'The save button does not persist the edited title.',
+            scope: { kind: 'global' },
+            sensitivity: 'personal',
+          },
+        },
+      }),
+      {
+        enabledCapabilities: [
+          { name: 'attachment_analysis', version: 1 },
+          { name: 'memory_management', version: 1 },
+        ],
+      },
+    );
+    const result = await evaluate({
+      ownerMessage: 'Review this issue and remember the finding.',
+      objective: 'Review and remember the issue.',
+      completionCriteria: 'Analyze and remember the finding.',
+      requirements: [
+        {
+          id: 'requirement_attachment',
+          description: 'Analyze the issue.',
+          capability: 'attachment_analysis',
+          version: 1,
+          condition: { kind: 'always' },
+        },
+        {
+          id: 'requirement_memory',
+          description: 'Remember the finding.',
+          capability: 'memory_management',
+          version: 1,
+          condition: { kind: 'always' },
+        },
+      ],
+      observations: [
+        {
+          stepId: 'step_1',
+          purpose: 'Analyze the issue.',
+          capability: { name: 'attachment_analysis', version: 1 },
+          artifact: attachmentAnalysisArtifact(),
+        },
+      ],
+      nextStepId: 'step_2',
+      remainingCapabilityInvocations: 2,
+      temporalContext: baseInput.temporalContext,
+    });
+
+    assert.equal(result.decision.kind, 'continue_goal');
+    assert.deepEqual(result.decision.step.inputStepIds, []);
   });
 });

@@ -800,7 +800,29 @@ void describe('task lifecycle', () => {
     assert.ok(decisionEvidence);
     assert.equal(decisionEvidence.length, 1);
     assert.equal(decisionEvidence[0]?.type, 'research_report');
+    assert.ok(
+      reminderApproval.run.approval.authority?.dataClasses.includes(
+        'artifact_content',
+      ),
+    );
     assert.equal(reminderApproval.run.approvalHistory?.length, 1);
+
+    // Aggregates written before ADR-0032 displayed decision evidence but did
+    // not classify the derived arguments as artifact content. Preserve that
+    // already-issued approval across a rolling upgrade without broadening it.
+    const legacyAggregate = await test.store.findByTaskId(
+      'owner_v1',
+      submitted.task.id,
+    );
+    assert.ok(legacyAggregate?.run.approval?.authority);
+    legacyAggregate.run.approval.authority.dataClasses =
+      legacyAggregate.run.approval.authority.dataClasses.filter(
+        (dataClass) => dataClass !== 'artifact_content',
+      );
+    assert.equal(
+      await test.store.replace(legacyAggregate, legacyAggregate.version),
+      true,
+    );
 
     await test.lifecycle.decideApproval({
       approvalId: reminderApproval.run.approval.id,

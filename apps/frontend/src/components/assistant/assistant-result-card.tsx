@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   BellRing,
   Brain,
@@ -13,11 +13,12 @@ import {
 } from 'lucide-react-native';
 import { Pressable, Text, View } from 'react-native';
 
-import type { TaskResource, VeraApi } from '@vera/client';
+import type { ArtifactResource, TaskResource, VeraApi } from '@vera/client';
 
 import { StructuredValue } from '@/components/structured-value';
 import { palette, radius, spacing } from '@/design/tokens';
 import { humanizeIdentifier } from './presentation';
+import { GoalProgressCard } from './goal-progress-card';
 import { SoftwareDeliveryCard } from './software-delivery/software-delivery-card';
 import { softwareChangeArtifactReference } from './software-delivery/model';
 
@@ -32,6 +33,7 @@ export function AssistantResultCard(props: {
   client: VeraApi;
 }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const attachmentEvidence = useAttachmentEvidence(props.task, props.client);
   const output = props.task.output;
   if (output === undefined || output.kind === 'response') return null;
 
@@ -86,6 +88,26 @@ export function AssistantResultCard(props: {
         </View>
       </View>
 
+      {output.kind !== 'adaptive_goal_result' ||
+      props.task.goal === undefined ? null : (
+        <GoalProgressCard goal={props.task.goal} />
+      )}
+
+      {attachmentEvidence.artifacts.map((artifact) => (
+        <AttachmentEvidence key={artifact.id} analysis={artifact.content} />
+      ))}
+
+      {attachmentEvidence.failed ? (
+        <Text
+          accessibilityRole="alert"
+          selectable
+          style={{ color: palette.warning, fontSize: 12, lineHeight: 18 }}
+        >
+          Vera could not reload the evidence details. The immutable artifact
+          references remain available in Technical details.
+        </Text>
+      ) : null}
+
       {softwareChange === undefined ? (
         presentation.content
       ) : (
@@ -139,6 +161,124 @@ export function AssistantResultCard(props: {
           />
         </View>
       ) : null}
+    </View>
+  );
+}
+
+function useAttachmentEvidence(
+  task: TaskResource,
+  client: VeraApi,
+): {
+  artifacts: Extract<ArtifactResource, { type: 'attachment_analysis' }>[];
+  failed: boolean;
+} {
+  const [state, setState] = useState<{
+    artifacts: Extract<ArtifactResource, { type: 'attachment_analysis' }>[];
+    failed: boolean;
+  }>({ artifacts: [], failed: false });
+  const references =
+    task.output?.kind === 'adaptive_goal_result'
+      ? task.output.evidence.filter(
+          (reference) => reference.type === 'attachment_analysis',
+        )
+      : [];
+  const identity = references.map(({ id, sha256 }) => `${id}:${sha256}`).join();
+
+  useEffect(() => {
+    const artifactIds = identity
+      .split(',')
+      .filter((value) => value.length > 0)
+      .map((value) => value.slice(0, value.indexOf(':')));
+    if (artifactIds.length === 0) {
+      setState({ artifacts: [], failed: false });
+      return;
+    }
+    setState({ artifacts: [], failed: false });
+    const controller = new AbortController();
+    void Promise.all(
+      artifactIds.map((artifactId) =>
+        client.getArtifact(artifactId, { signal: controller.signal }),
+      ),
+    )
+      .then((loaded) => {
+        const analyses = loaded.filter(
+          (
+            artifact,
+          ): artifact is Extract<
+            ArtifactResource,
+            { type: 'attachment_analysis' }
+          > => artifact.type === 'attachment_analysis',
+        );
+        if (!controller.signal.aborted) {
+          setState({ artifacts: analyses, failed: false });
+        }
+      })
+      .catch((cause: unknown) => {
+        if (
+          !controller.signal.aborted &&
+          (!(cause instanceof DOMException) || cause.name !== 'AbortError')
+        ) {
+          setState({ artifacts: [], failed: true });
+        }
+      });
+    return () => controller.abort();
+  }, [client, identity]);
+
+  return state;
+}
+
+function AttachmentEvidence(props: {
+  analysis: Extract<
+    ArtifactResource,
+    { type: 'attachment_analysis' }
+  >['content'];
+}) {
+  return (
+    <View
+      style={{
+        gap: spacing.md,
+        borderLeftWidth: 2,
+        borderLeftColor: palette.accentLine,
+        paddingLeft: spacing.md,
+      }}
+    >
+      <View style={{ gap: 4 }}>
+        <Text
+          style={{
+            color: palette.accent,
+            fontSize: 10,
+            fontWeight: '700',
+            letterSpacing: 0.8,
+          }}
+        >
+          UNDERSTOOD FROM YOUR FILES
+        </Text>
+        <Text selectable style={{ color: palette.textSoft, lineHeight: 20 }}>
+          {props.analysis.summary}
+        </Text>
+      </View>
+      {props.analysis.citations.map((citation, index) => (
+        <View
+          key={`${citation.attachmentId}-${citation.kind === 'document' ? citation.locator : 'image'}-${String(index)}`}
+          style={{ gap: 3 }}
+        >
+          <Text
+            style={{ color: palette.accent, fontSize: 11, fontWeight: '700' }}
+          >
+            {citation.kind === 'document'
+              ? `${citation.filename} · ${citation.locator}`
+              : `${citation.filename} · image`}
+          </Text>
+          {citation.kind === 'document' ? (
+            <Text
+              selectable
+              style={{ color: palette.muted, fontSize: 12, lineHeight: 18 }}
+            >
+              “{citation.excerpt}”
+            </Text>
+          ) : null}
+        </View>
+      ))}
     </View>
   );
 }

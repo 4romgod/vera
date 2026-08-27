@@ -850,4 +850,26 @@ void describe('Vera HTTP client', () => {
       clearTimeout(keepEventLoopAlive);
     }
   });
+
+  void it('forwards cancellation when loading adaptive-goal evidence', async () => {
+    const controller = new AbortController();
+    let observedSignal: AbortSignal | null = null;
+    const client = new VeraClient({
+      baseUrl: 'http://vera.test',
+      fetch: (input, init) => {
+        assert.equal(
+          input,
+          'http://vera.test/v1/artifacts/artifact_attachment_analysis',
+        );
+        observedSignal = init?.signal ?? null;
+        return Promise.resolve(Response.json({ type: 'attachment_analysis' }));
+      },
+    });
+
+    await client.getArtifact('artifact_attachment_analysis', {
+      signal: controller.signal,
+    });
+
+    assert.equal(observedSignal, controller.signal);
+  });
 });

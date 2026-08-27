@@ -224,6 +224,14 @@ source IDs; application code materializes citations from those exact approved
 sources. This keeps provider selection replaceable and prevents ordinary
 routing from becoming implicit attachment disclosure.
 
+Attachment-derived actions continue through the bounded adaptive-goal path.
+The owner-controlled brain may inspect the validated analysis to derive one
+next typed action, but application code persists that reference as decision
+evidence and creates a new approval. A downstream specialist receives the
+analysis itself only when its declared artifact contract accepts the type and
+the approval also freezes it as an input artifact. This separation is enforced
+again during recovery and execution.
+
 ### Active working-set service
 
 - maintain one isolated, versioned execution scratchpad per active run;

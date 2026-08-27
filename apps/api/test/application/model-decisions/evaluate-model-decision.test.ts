@@ -889,4 +889,117 @@ void describe('model decision boundary', () => {
     assert.equal(result.decision.kind, 'rejected');
     assert.equal(result.decision.code, 'invalid_model_output');
   });
+
+  void it('turns attachment-derived actions into an adaptive understand-then-act contract', async () => {
+    const result = await createEvaluateModelDecision(
+      new FakeModelProvider({
+        schemaVersion: 1,
+        kind: 'invoke_capability',
+        decisionSummary: 'Create the task requested by the owner.',
+        capability: { name: 'personal_task_management', version: 1 },
+        arguments: { action: 'create', title: 'Draft release checklist' },
+      }),
+      () => 'decision_attachment_action',
+      {
+        enabledCapabilities: [
+          { name: 'attachment_analysis', version: 1 },
+          { name: 'personal_task_management', version: 1 },
+        ],
+      },
+    )('Analyze this file and create a task from its most important finding.', {
+      attachments: [
+        {
+          id: 'attachment_brief',
+          kind: 'document',
+          filename: 'brief.txt',
+          mediaType: 'text/plain',
+          byteLength: 42,
+          sha256: 'a'.repeat(64),
+        },
+      ],
+    });
+
+    assert.equal(result.proposal?.kind, 'pursue_goal');
+    assert.equal(result.decision.kind, 'adaptive_goal_planned');
+    assert.equal(
+      result.decision.plan.firstStep.capability,
+      'attachment_analysis',
+    );
+    assert.deepEqual(
+      result.decision.plan.requirements.map(({ capability }) => capability),
+      ['attachment_analysis', 'personal_task_management'],
+    );
+  });
+
+  void it('keeps a pure attachment-analysis request as one separately approved action', async () => {
+    const result = await createEvaluateModelDecision(
+      new FakeModelProvider({
+        schemaVersion: 1,
+        kind: 'invoke_capability',
+        decisionSummary: 'Analyze the supplied file.',
+        capability: { name: 'attachment_analysis', version: 1 },
+        arguments: { objective: 'Summarize the supplied file.' },
+      }),
+      () => 'decision_attachment_only',
+      {
+        enabledCapabilities: [{ name: 'attachment_analysis', version: 1 }],
+      },
+    )('Summarize this file.', {
+      attachments: [
+        {
+          id: 'attachment_brief',
+          kind: 'document',
+          filename: 'brief.txt',
+          mediaType: 'text/plain',
+          byteLength: 42,
+          sha256: 'a'.repeat(64),
+        },
+      ],
+    });
+
+    assert.equal(result.proposal?.kind, 'invoke_capability');
+    assert.equal(result.decision.kind, 'approval_required');
+  });
+
+  void it('rejects attachment action bundles that exceed the bounded goal instead of dropping outcomes', async () => {
+    const result = await createEvaluateModelDecision(
+      new FakeModelProvider({
+        schemaVersion: 1,
+        kind: 'invoke_capability',
+        decisionSummary: 'Analyze the supplied file.',
+        capability: { name: 'attachment_analysis', version: 1 },
+        arguments: { objective: 'Analyze the supplied file.' },
+      }),
+      () => 'decision_attachment_overflow',
+      {
+        enabledCapabilities: [
+          { name: 'attachment_analysis', version: 1 },
+          { name: 'personal_task_management', version: 1 },
+          { name: 'personal_reminder_management', version: 1 },
+          { name: 'memory_management', version: 1 },
+        ],
+      },
+    )(
+      'Analyze this file, create a task, set a reminder, and remember the key finding.',
+      {
+        attachments: [
+          {
+            id: 'attachment_overflow',
+            kind: 'document',
+            filename: 'brief.txt',
+            mediaType: 'text/plain',
+            byteLength: 42,
+            sha256: 'a'.repeat(64),
+          },
+        ],
+      },
+    );
+
+    assert.deepEqual(result.decision, {
+      kind: 'rejected',
+      code: 'invalid_goal_plan',
+      message:
+        'The attachment request contains more downstream outcomes than Vera can preserve in one bounded goal.',
+    });
+  });
 });

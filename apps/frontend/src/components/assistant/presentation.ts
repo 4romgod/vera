@@ -2,6 +2,7 @@ import type {
   ConversationMessageResource,
   ConversationSummaryResource,
   ProjectResource,
+  TaskResource,
 } from '@vera/client';
 
 export type ConversationGroup = {
@@ -110,4 +111,33 @@ export function humanizeIdentifier(value: string): string {
   return value
     .replaceAll('_', ' ')
     .replace(/\b\w/gu, (character) => character.toUpperCase());
+}
+
+export function goalProgressStages(goal: NonNullable<TaskResource['goal']>): {
+  label: 'Understand' | 'Decide' | 'Act';
+  state: 'done' | 'active' | 'pending';
+}[] {
+  const analysis = goal.steps.find(
+    ({ capability }) => capability === 'attachment_analysis',
+  );
+  const actions = goal.steps.filter(
+    ({ capability }) => capability !== 'attachment_analysis',
+  );
+  const understood = analysis?.status === 'succeeded' || analysis === undefined;
+  const decided =
+    understood &&
+    ((goal.continuations?.length ?? 0) > 0 || goal.mode !== 'adaptive');
+  const acted =
+    actions.length > 0 && actions.every(({ status }) => status === 'succeeded');
+  return [
+    { label: 'Understand', state: understood ? 'done' : 'active' },
+    {
+      label: 'Decide',
+      state: decided ? 'done' : understood ? 'active' : 'pending',
+    },
+    {
+      label: 'Act',
+      state: acted ? 'done' : decided ? 'active' : 'pending',
+    },
+  ];
 }

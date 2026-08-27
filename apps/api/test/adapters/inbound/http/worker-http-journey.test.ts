@@ -373,7 +373,7 @@ void describe('production worker HTTP journey', () => {
         approval: 'always',
         projectContext: 'none',
         networkAccess: 'none',
-        dataClasses: ['owner_request', 'public_web'],
+        dataClasses: ['owner_request', 'artifact_content', 'public_web'],
         sideEffects: [],
         credentials: 'none',
         maxWebSearchCalls: 4,

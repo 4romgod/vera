@@ -45,6 +45,7 @@ export type CapabilityRuntime = {
   authorityFor(input: {
     arguments: Record<string, unknown>;
     hasInputArtifacts: boolean;
+    hasDecisionEvidence: boolean;
   }): CapabilityAuthority;
   checkReadiness(): Promise<void>;
   execute(
