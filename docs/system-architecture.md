@@ -82,7 +82,7 @@ flowchart TB
     subgraph Experience["Experience plane"]
         CLI["CLI / Postman"]
         FRONTEND["Universal frontend<br/>(web, iOS, Android)"]
-        VOICE["Device speech services<br/>(recognition and playback)"]
+        VOICE["Voice experience adapters<br/>(recording, transcription, playback)"]
     end
 
     subgraph Boundary["External boundary"]
@@ -677,7 +677,7 @@ commit, patch hash, file manifest, deterministic branch, workspace path, and
 staged effect. A change-application worker holds a project-scoped MongoDB lease
 while the `local_git_worktree` adapter materializes and verifies the effect. The
 registered checkout remains untouched, and commit/publication authority remains
-absent. Recovery inspects before/after/mixed filesystem state; it never infers
+absent from this lifecycle. Recovery inspects before/after/mixed filesystem state; it never infers
 completion from an interrupted process claim. See
 [ADR-0018](decisions/0018-apply-approved-software-changes-in-managed-git-worktrees.md).
 
@@ -694,6 +694,37 @@ flowchart LR
     VERIFY -->|"exact before + cancellation"| CANCELLED["Cancelled and removed"]
     VERIFY -->|"mixed or unexpected"| REVIEW["Review required"]
 ```
+
+Publication is another durable lifecycle, not a post-success callback. It
+references one successful application by immutable version, takes the same
+project mutation lease, and persists its own approval, effect, ordered events,
+failure, and result in MongoDB. The `github_gh_cli` outbound adapter is the
+first implementation of a provider-neutral publication executor port.
+
+```mermaid
+flowchart LR
+    STAGED["Succeeded staged application"] --> PREPARE["Verify Git tree, files, remote, base ref"]
+    PREPARE --> REVIEW["Disclose exact commit + PR authority"]
+    REVIEW --> DECISION{"Owner decision"}
+    DECISION -->|"reject / cancel"| STOP["No publication effect"]
+    DECISION -->|"approve"| LEASE2["Project mutation lease"]
+    LEASE2 --> COMMIT["Create or verify one commit"]
+    COMMIT --> PUSH["Create or verify Vera remote branch"]
+    PUSH --> PR["Create or verify one pull request"]
+    PR --> RESULT["Durable commit + PR result"]
+    COMMIT -->|"incompatible"| REVIEW2["Review required"]
+    PUSH -->|"incompatible"| REVIEW2
+    PR -->|"incompatible / ambiguous"| REVIEW2
+```
+
+The worker may restart after any external effect. Re-execution inspects the
+commit parent/tree/message/author, remote branch revision, and pull-request
+identity/content. Exact state is reused; incompatible state is never overwritten.
+The approved remote base-branch revision is rechecked before execution and
+again after the pull request is verified. Preparation also hashes the resulting
+worktree files against the durable application result before approval.
+See
+[ADR-0029](decisions/0029-publish-approved-software-changes-through-a-separate-durable-lifecycle.md).
 
 Approval freezes the complete specialist destination. Execution and recovery
 resolve that persisted descriptor rather than the currently selected adapter;
@@ -714,14 +745,27 @@ The API admits browser cross-origin reads only from loopback HTTP(S) origins so
 the Expo web development server can use a separate port without making CORS an
 authentication substitute or exposing Vera to the LAN.
 
-Voice remains inside the experience plane under
-[ADR-0028](decisions/0028-treat-device-voice-as-a-reviewed-experience-adapter.md).
-The device speech service turns deliberately captured audio into an editable
-composer draft; only an explicit Send enters the existing conversation API.
-The API receives text, never microphone audio. A voice-originated terminal
-reply is played only after its durable Vera message has been projected, and
-playback or run polling can be interrupted without creating a second execution
-path.
+Voice remains an experience-plane adapter under
+[ADR-0030](decisions/0030-transcribe-owner-controlled-recordings-through-a-provider-neutral-boundary.md).
+The frontend records continuously until an explicit Stop, then uploads one
+completed compressed recording to the ephemeral transcription endpoint. The
+API validates and buffers the bounded body for one selected transcription
+adapter call, returns final text, and persists no audio. Only a later explicit
+message submission enters conversations and tasks. A voice-originated terminal
+reply is played only after durable projection, so neither transcription nor
+playback creates a second execution path.
+
+```mermaid
+flowchart LR
+    MIC["Owner-controlled recorder"] -->|"completed audio, max 25 MB"| TX["Transcription API"]
+    TX --> SELECT{"Configured adapter"}
+    SELECT -->|"owner-controlled"| LOCAL["Loopback whisper.cpp"]
+    SELECT -->|"third-party"| OPENAI["OpenAI transcription"]
+    LOCAL --> TEXT["Editable text"]
+    OPENAI --> TEXT
+    TEXT -->|"explicit Send"| CONV["Conversation and task lifecycle"]
+    TX -. "no durable audio write" .-> STORES["MongoDB / Redis"]
+```
 
 Health is process liveness.
 Readiness verifies provider connectivity, configured-model availability,
@@ -757,6 +801,11 @@ GET    /v1/change-applications/{application_id}
 GET    /v1/change-applications/{application_id}/events
 POST   /v1/change-applications/{application_id}/decision
 POST   /v1/change-applications/{application_id}/cancellation
+POST   /v1/change-applications/{application_id}/publications   # requires Idempotency-Key
+GET    /v1/software-change-publications/{publication_id}
+GET    /v1/software-change-publications/{publication_id}/events
+POST   /v1/software-change-publications/{publication_id}/decision
+POST   /v1/software-change-publications/{publication_id}/cancellation
 POST   /v1/model-decisions               # low-level decision diagnostic
 GET    /health
 GET    /ready

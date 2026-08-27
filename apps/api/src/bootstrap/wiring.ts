@@ -10,9 +10,12 @@ import { InMemoryScratchpad } from '../adapters/outbound/persistence/memory/in-m
 import { InMemoryWorkLeaseStore } from '../adapters/outbound/persistence/memory/in-memory-work-lease-store.ts';
 import { InMemoryChangeApplicationStore } from '../adapters/outbound/persistence/memory/in-memory-change-application-store.ts';
 import { MongoDbChangeApplicationStore } from '../adapters/outbound/persistence/mongodb/mongodb-change-application-store.ts';
+import { InMemorySoftwareChangePublicationStore } from '../adapters/outbound/persistence/memory/in-memory-software-change-publication-store.ts';
+import { MongoDbSoftwareChangePublicationStore } from '../adapters/outbound/persistence/mongodb/mongodb-software-change-publication-store.ts';
 import { InMemoryProjectMutationLeaseStore } from '../adapters/outbound/persistence/memory/in-memory-project-mutation-lease-store.ts';
 import { MongoDbProjectMutationLeaseStore } from '../adapters/outbound/persistence/mongodb/mongodb-project-mutation-lease-store.ts';
 import { LocalGitSoftwareChangeApplicationExecutor } from '../adapters/outbound/change-applications/local-git-software-change-application-executor.ts';
+import { GitHubSoftwareChangePublicationExecutor } from '../adapters/outbound/change-applications/github-software-change-publication-executor.ts';
 import {
   LocalGitProjectContextAssembler,
   resolveLocalGitRoot,
@@ -31,6 +34,8 @@ import { createProjectService } from '../application/projects/project-service.ts
 import { createTaskWorker } from '../application/tasks/task-worker.ts';
 import { createSoftwareChangeApplicationLifecycle } from '../application/change-applications/software-change-application-lifecycle.ts';
 import { createSoftwareChangeApplicationWorker } from '../application/change-applications/software-change-application-worker.ts';
+import { createSoftwareChangePublicationLifecycle } from '../application/change-applications/software-change-publication-lifecycle.ts';
+import { createSoftwareChangePublicationWorker } from '../application/change-applications/software-change-publication-worker.ts';
 import { createCapabilityService } from '../application/capabilities/capability-service.ts';
 import type { AppConfig } from './config.ts';
 import { DefaultRunBudget } from '../domain/tasks/run-budget.ts';
@@ -41,6 +46,7 @@ import type { Scratchpad } from '../ports/persistence/scratchpad.ts';
 import type { OwnerResourceStore } from '../ports/persistence/owner-resource-store.ts';
 import type { WorkLeaseStore } from '../ports/persistence/work-lease-store.ts';
 import type { ChangeApplicationStore } from '../ports/persistence/change-application-store.ts';
+import type { SoftwareChangePublicationStore } from '../ports/persistence/software-change-publication-store.ts';
 import type { ProjectMutationLeaseStore } from '../ports/persistence/project-mutation-lease-store.ts';
 import { LocalPersonalTaskActionExecutor } from '../adapters/outbound/integrations/personal-tasks/local-personal-task-action-executor.ts';
 import { createPersonalTaskService } from '../application/personal-tasks/personal-task-service.ts';
@@ -51,6 +57,8 @@ import { createNotificationService } from '../application/reminders/notification
 import { createReminderWorker } from '../application/reminders/reminder-worker.ts';
 import { LocalMemoryActionExecutor } from '../adapters/outbound/integrations/memories/local-memory-action-executor.ts';
 import { createMemoryService } from '../application/memories/memory-service.ts';
+import { createTranscriptionService } from '../application/transcriptions/transcription-service.ts';
+import { createSpeechTranscriptionProvider } from '../adapters/outbound/transcription/speech-transcription-provider-registry.ts';
 
 export function createApp(
   config: AppConfig,
@@ -102,6 +110,14 @@ export function createApp(
           database: config.storage.mongodbDatabase,
           timeoutMs: config.storage.dependencyTimeoutMs,
         });
+  const publicationStore: SoftwareChangePublicationStore =
+    config.storage.mode === 'memory'
+      ? new InMemorySoftwareChangePublicationStore()
+      : new MongoDbSoftwareChangePublicationStore({
+          uri: config.storage.mongodbUri,
+          database: config.storage.mongodbDatabase,
+          timeoutMs: config.storage.dependencyTimeoutMs,
+        });
   const projectMutationLeases: ProjectMutationLeaseStore =
     config.storage.mode === 'memory'
       ? new InMemoryProjectMutationLeaseStore()
@@ -146,6 +162,13 @@ export function createApp(
   const reminderService = createReminderService({ store: resources });
   const notificationService = createNotificationService({ store: resources });
   const memoryService = createMemoryService({ store: resources });
+  const transcriptionProvider = createSpeechTranscriptionProvider(
+    config.transcription,
+  );
+  const transcriptionService = createTranscriptionService({
+    provider: transcriptionProvider,
+    maxAudioBytes: config.transcription.maxAudioBytes,
+  });
   const capabilityService = createCapabilityService({ registry: capabilities });
   const evaluateModelDecision = createEvaluateModelDecision(
     provider,
@@ -162,6 +185,11 @@ export function createApp(
   const changeApplicationExecutor =
     new LocalGitSoftwareChangeApplicationExecutor({
       workspacesRoot: config.application.workspacesRoot,
+    });
+  const softwareChangePublicationExecutor =
+    new GitHubSoftwareChangePublicationExecutor({
+      gitCommand: config.publication.gitCommand,
+      ghCommand: config.publication.ghCommand,
     });
 
   const appReference: { current?: ReturnType<typeof buildApp> } = {};
@@ -229,6 +257,31 @@ export function createApp(
       ]);
     },
   });
+  const softwareChangePublicationLifecycle =
+    createSoftwareChangePublicationLifecycle({
+      store: publicationStore,
+      applications: applicationStore,
+      projects: resources,
+      executor: softwareChangePublicationExecutor,
+      observer: lifecycleObserver,
+    });
+  const softwareChangePublicationWorker = createSoftwareChangePublicationWorker(
+    {
+      store: publicationStore,
+      leases: projectMutationLeases,
+      lifecycle: softwareChangePublicationLifecycle,
+      concurrency: config.worker.concurrency,
+      pollIntervalMs: config.worker.pollIntervalMs,
+      leaseMs: config.worker.leaseMs,
+      observer: lifecycleObserver,
+      beforeWork: async () => {
+        await Promise.all([
+          publicationStore.checkReadiness(),
+          resources.checkReadiness(),
+        ]);
+      },
+    },
+  );
   const dispatchedLifecycle: TaskLifecycle = {
     async submit(input) {
       const aggregate = await lifecycle.submit(input);
@@ -264,9 +317,14 @@ export function createApp(
     reminders: reminderService,
     notifications: notificationService,
     memories: memoryService,
+    transcriptions: transcriptionService,
     changeApplications: {
       ...changeApplicationLifecycle,
       wake: () => changeApplicationWorker.wake(),
+    },
+    softwareChangePublications: {
+      ...softwareChangePublicationLifecycle,
+      wake: () => softwareChangePublicationWorker.wake(),
     },
     readinessChecks: [
       {
@@ -309,17 +367,27 @@ export function createApp(
         name: 'change_application_worker',
         check: () => changeApplicationWorker.checkReadiness(),
       },
+      {
+        name: 'software_change_publication_store',
+        check: () => publicationStore.checkReadiness(),
+      },
+      {
+        name: 'software_change_publication_worker',
+        check: () => softwareChangePublicationWorker.checkReadiness(),
+      },
     ],
     close: async () => {
       await worker.stop();
       await reminderWorker.stop();
       await changeApplicationWorker.stop();
+      await softwareChangePublicationWorker.stop();
       await Promise.all([
         store.close(),
         scratchpad.close(),
         resources.close(),
         leases.close(),
         applicationStore.close(),
+        publicationStore.close(),
         projectMutationLeases.close(),
       ]);
     },
@@ -329,5 +397,6 @@ export function createApp(
   worker.start();
   reminderWorker.start();
   changeApplicationWorker.start();
+  softwareChangePublicationWorker.start();
   return app;
 }

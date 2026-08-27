@@ -1,7 +1,12 @@
 # ADR-0028: Treat device voice as a reviewed experience adapter
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0030](0030-transcribe-owner-controlled-recordings-through-a-provider-neutral-boundary.md)
 **Date:** 26 August 2026
+
+> This record preserves the original device-recognition decision. Physical
+> testing exposed platform-controlled timeouts, duplicate result streams, and
+> audible recognizer restarts. ADR-0030 replaces capture and transcription while
+> retaining reviewed submission and durable reply playback.
 
 ## Context
 
@@ -23,8 +28,17 @@ Implement voice as two replaceable device experience adapters inside
 
 - speech recognition writes an editable transcript into the existing message
   composer;
-- Vera never submits a transcript automatically—the owner reviews or edits it
-  and explicitly presses Send;
+- recognition is continuous while the owner keeps the session active, survives
+  provider-imposed end events by resuming once per confirmed end, and stops
+  defensively after two minutes without a recognized interim or final result;
+- transient errors do not trigger teardown because mobile speech services can
+  report them while the microphone session is still active; reconnecting is
+  driven only by the definitive end event, preventing audible restart loops;
+- while listening, `Stop` ends recognition and leaves the transcript editable,
+  while `Stop and send` is a separate explicit owner action that ends
+  recognition and submits the completed transcript through the ordinary path;
+- Vera never submits merely because recognition produced a final result, timed
+  out, or ended unexpectedly;
 - the submitted text follows the same conversation, project-scope, run,
   approval, and cancellation paths as typed input;
 - a reply to a voice-originated message is spoken with device text-to-speech
@@ -48,10 +62,11 @@ selection or authority.
 ## Rationale
 
 Keeping voice in the experience plane preserves one authoritative execution
-path. Review-before-send protects against transcription errors, background
-speech, and accidental commands. Waiting for durable reply projection before
-playback prevents the spoken experience from claiming an answer that the
-conversation cannot recover after restart.
+path. A visible live transcript plus distinct review and deliberate atomic-send
+actions protect against transcription errors, background speech, and accidental
+commands. Waiting for durable reply projection before playback prevents the
+spoken experience from claiming an answer that the conversation cannot recover
+after restart.
 
 Device recognition provides useful web and native behavior without coupling
 the Vera server to one transcription vendor, uploading recordings to the Mac
@@ -67,6 +82,9 @@ conversation or task contracts.
   by explicit microphone permission and a deliberate start action.
 - Recognition quality and availability vary by device, installed language, and
   browser. Typing remains the reliable fallback.
+- Long speech is not constrained by a fixed session duration. Recognition
+  remains owner-controlled, while two minutes without any recognized result is
+  the inactivity safety boundary; ordinary thinking pauses do not stop it.
 - Native developers must use a development build for speech recognition;
   Expo Go remains useful for the rest of the frontend but reports voice input
   as unavailable.
@@ -83,8 +101,9 @@ conversation or task contracts.
 - **Upload every recording for server-side transcription:** rejected because
   it adds sensitive binary retention and a transcription-provider dependency
   before either is necessary.
-- **Submit immediately when recognition ends:** rejected because a plausible
-  but incorrect transcript could trigger work before the owner sees it.
+- **Submit automatically when recognition ends:** rejected because a plausible
+  but incorrect transcript could trigger work without a deliberate owner
+  action. `Stop and send` remains explicit and visible.
 - **Depend only on browser speech APIs:** rejected because it abandons the
   accepted universal native frontend.
 - **Implement wake-word listening now:** rejected because background capture,

@@ -4,6 +4,76 @@ import { describe, it } from 'node:test';
 import { VeraApiError, VeraClient } from '../src/index.ts';
 
 void describe('Vera HTTP client', () => {
+  void it('uploads a completed audio recording and validates its transcript', async () => {
+    const audio = new Blob([Uint8Array.of(1, 2, 3)], {
+      type: 'audio/webm',
+    });
+    const client = new VeraClient({
+      baseUrl: 'http://vera.test',
+      fetch: (input, init) => {
+        assert.equal(input, 'http://vera.test/v1/audio/transcriptions');
+        assert.ok(init);
+        assert.equal(init.method, 'POST');
+        assert.equal(
+          new Headers(init.headers).get('content-type'),
+          'audio/webm',
+        );
+        assert.equal(init.body, audio);
+        return Promise.resolve(
+          Response.json({
+            schemaVersion: 1,
+            text: 'Hello Vera.',
+            provider: 'openai',
+            model: 'gpt-transcribe',
+            durationMs: 42,
+          }),
+        );
+      },
+    });
+
+    assert.deepEqual(
+      await client.transcribeAudio({ audio, contentType: 'audio/webm' }),
+      {
+        schemaVersion: 1,
+        text: 'Hello Vera.',
+        provider: 'openai',
+        model: 'gpt-transcribe',
+        durationMs: 42,
+      },
+    );
+  });
+
+  void it('uploads native recording bytes without changing their media type', async () => {
+    const audio = Uint8Array.of(4, 5, 6).buffer;
+    const client = new VeraClient({
+      baseUrl: 'http://vera.test',
+      fetch: (_input, init) => {
+        assert.ok(init);
+        assert.equal(
+          new Headers(init.headers).get('content-type'),
+          'audio/mp4',
+        );
+        assert.equal(init.body, audio);
+        return Promise.resolve(
+          Response.json({
+            schemaVersion: 1,
+            text: 'Native recording.',
+            provider: 'whisper_cpp',
+            model: 'large-v3-turbo-q5_0',
+            durationMs: 20,
+          }),
+        );
+      },
+    });
+
+    const result = await client.transcribeAudio({
+      audio,
+      contentType: 'audio/mp4',
+    });
+
+    assert.equal(result.text, 'Native recording.');
+  });
+
   void it('invokes the default fetch with its global receiver in browser runtimes', async () => {
     const originalFetch = globalThis.fetch;
     const replacement = function (this: unknown): Promise<Response> {
@@ -516,6 +586,93 @@ void describe('Vera HTTP client', () => {
       requests[0] ?? '',
       /POST .*\/v1\/artifacts\/artifact_test\/applications/u,
     );
+  });
+
+  void it('creates and polls a separately approved software-change publication', async () => {
+    let polls = 0;
+    const publication = (
+      status: 'awaiting_approval' | 'publishing' | 'succeeded',
+    ) => ({
+      schemaVersion: 1,
+      version: 1,
+      id: 'publication_test',
+      status,
+      sourceApplication: {
+        id: 'application_test',
+        effectId: 'effect_test',
+        version: 4,
+      },
+      project: { id: 'project_test', displayName: 'Test' },
+      approval: {
+        id: 'approval_publication',
+        status: status === 'awaiting_approval' ? 'pending' : 'approved',
+        reason: 'software_change_publication',
+        effect: {},
+        requestedAt: '2026-08-27T00:00:00.000Z',
+      },
+      effect: {
+        id: 'effect_publication',
+        status: status === 'succeeded' ? 'succeeded' : 'pending',
+      },
+      createdAt: '2026-08-27T00:00:00.000Z',
+      updatedAt: '2026-08-27T00:00:00.000Z',
+      links: { publication: '/publication', events: '/events' },
+    });
+    const client = new VeraClient({
+      baseUrl: 'http://vera.test',
+      fetch: (input, init) => {
+        const url =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        const isCreate = url.includes('/change-applications/');
+        if (!isCreate) polls += 1;
+        if (isCreate) {
+          assert.equal(init?.method, 'POST');
+          const requestBody = init.body;
+          assert.equal(typeof requestBody, 'string');
+          if (typeof requestBody !== 'string') {
+            throw new Error('Expected a JSON request body.');
+          }
+          assert.doesNotMatch(
+            requestBody,
+            /"directBasePush"/u,
+            'the server, not the caller, defines publication authority',
+          );
+        }
+        return Promise.resolve(
+          new Response(
+            JSON.stringify(
+              isCreate
+                ? publication('awaiting_approval')
+                : publication(polls === 1 ? 'publishing' : 'succeeded'),
+            ),
+            {
+              status: isCreate ? 202 : 200,
+              headers: { 'content-type': 'application/json' },
+            },
+          ),
+        );
+      },
+    });
+
+    const created = await client.createSoftwareChangePublication({
+      applicationId: 'application_test',
+      baseBranch: 'main',
+      commitMessage: 'Publish test',
+      pullRequest: { title: 'Publish test', body: 'Body', draft: true },
+      idempotencyKey: 'publication-key',
+    });
+    const completed = await client.waitForSoftwareChangePublication(
+      created.id,
+      { intervalMs: 1 },
+    );
+
+    assert.equal(created.status, 'awaiting_approval');
+    assert.equal(completed.status, 'succeeded');
+    assert.equal(polls, 2);
   });
 
   void it('waits for a terminal conversation reply to be projected', async () => {

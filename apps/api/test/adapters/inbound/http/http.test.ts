@@ -4,6 +4,7 @@ import { afterEach, describe, it } from 'node:test';
 import { createEvaluateModelDecision } from '../../../../src/application/model-decisions/evaluate-model-decision.ts';
 import { buildApp } from '../../../../src/adapters/inbound/http/build-app.ts';
 import { ModelProviderError } from '../../../../src/ports/model/model-provider.ts';
+import { SoftwareChangePublicationSchema } from '../../../../src/domain/changes/software-change-publication.ts';
 import { FakeModelProvider } from '../../../support/fake-model-provider.ts';
 
 const apps: ReturnType<typeof buildApp>[] = [];
@@ -31,6 +32,121 @@ afterEach(async () => {
 });
 
 void describe('HTTP API', () => {
+  void it('creates and approves a separately governed software-change publication', async () => {
+    const provider = new FakeModelProvider({});
+    const base = SoftwareChangePublicationSchema.parse({
+      schemaVersion: 1,
+      version: 1,
+      id: 'publication_test',
+      requestKey: 'publication-http-key',
+      principalId: 'owner_v1',
+      status: 'awaiting_approval',
+      sourceApplication: {
+        id: 'application_test',
+        effectId: 'effect_application',
+        version: 4,
+      },
+      project: { id: 'project_test', displayName: 'Test' },
+      approval: {
+        id: 'approval_publication',
+        status: 'pending',
+        reason: 'software_change_publication',
+        effect: {
+          adapterId: 'github_gh_cli',
+          repository: { remoteName: 'origin', owner: 'owner', name: 'test' },
+          baseRevision: 'a'.repeat(40),
+          baseBranch: 'main',
+          baseBranchRevision: 'a'.repeat(40),
+          headBranch: 'vera/change-test',
+          workspacePath: '/managed/test',
+          treeRevision: 'b'.repeat(40),
+          files: [
+            {
+              relativePath: 'README.md',
+              operation: 'create',
+              afterSha256: 'c'.repeat(64),
+              bytes: 1,
+            },
+          ],
+          author: { name: 'Vera Test', email: 'vera@example.test' },
+          commitMessage: 'Publish test',
+          pullRequest: { title: 'Publish test', body: 'Body', draft: true },
+          authority: {
+            commit: 'create_one',
+            push: 'create_or_verify_head',
+            pullRequest: 'create_or_verify',
+            directBasePush: false,
+            forcePush: false,
+          },
+        },
+        requestedAt: '2026-08-27T00:00:00.000Z',
+      },
+      effect: { id: 'effect_publication', status: 'pending' },
+      events: [],
+      createdAt: '2026-08-27T00:00:00.000Z',
+      updatedAt: '2026-08-27T00:00:00.000Z',
+    });
+    let wakes = 0;
+    const app = buildApp({
+      evaluateModelDecision: createEvaluateModelDecision(provider),
+      provider,
+      softwareChangePublications: {
+        create: (input) => {
+          assert.equal(input.applicationId, 'application_test');
+          assert.equal(input.pullRequest.draft, true);
+          return Promise.resolve(base);
+        },
+        get: () => Promise.resolve(base),
+        decideApproval: (input) => {
+          assert.equal(input.decision, 'approved');
+          return Promise.resolve({
+            ...base,
+            version: 2,
+            status: 'approved',
+            approval: { ...base.approval, status: 'approved' },
+          });
+        },
+        cancel: () => Promise.resolve({ ...base, status: 'cancelled' }),
+        progress: () => Promise.resolve(base),
+        wake: () => {
+          wakes += 1;
+        },
+      },
+    });
+    apps.push(app);
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/change-applications/application_test/publications',
+      headers: { 'idempotency-key': 'publication-http-key' },
+      payload: {
+        baseBranch: 'main',
+        commitMessage: 'Publish test',
+        pullRequest: { title: 'Publish test', body: 'Body', draft: true },
+      },
+    });
+    assert.equal(created.statusCode, 202, created.body);
+    assert.equal(
+      created.headers.location,
+      '/v1/software-change-publications/publication_test',
+    );
+    assert.equal(
+      created.json<{
+        approval: { effect: { authority: { forcePush: boolean } } };
+      }>().approval.effect.authority.forcePush,
+      false,
+    );
+
+    const decided = await app.inject({
+      method: 'POST',
+      url: '/v1/software-change-publications/publication_test/decision',
+      payload: { decision: 'approved' },
+    });
+    assert.equal(decided.statusCode, 202, decided.body);
+    assert.equal(decided.json<{ status: string }>().status, 'approved');
+    assert.equal(wakes, 1);
+  });
+
   void it('reports health and active model adapter', async () => {
     const app = appFor({});
     const response = await app.inject({ method: 'GET', url: '/health' });

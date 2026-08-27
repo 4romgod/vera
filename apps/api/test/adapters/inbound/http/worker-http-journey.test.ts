@@ -35,7 +35,13 @@ function config(workspacesRoot = '/tmp/vera-test-applications'): AppConfig {
       adapters: { codexCli: { command: 'codex' } },
     },
     research: { adapterId: 'disabled' },
+    transcription: { provider: 'disabled', maxAudioBytes: 25_000_000 },
     application: { workspacesRoot },
+    publication: {
+      adapterId: 'github_gh_cli',
+      gitCommand: 'git',
+      ghCommand: 'gh',
+    },
     worker: { concurrency: 2, pollIntervalMs: 25, leaseMs: 900_000 },
     reminders: {
       ownerTimeZone: 'Africa/Johannesburg',

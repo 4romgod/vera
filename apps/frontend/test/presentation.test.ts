@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import type {
+  ConversationMessageResource,
   ConversationSummaryResource,
   ProjectResource,
 } from '@vera/client';
@@ -10,6 +11,7 @@ import {
   displayConversationTitle,
   filterConversations,
   groupConversations,
+  latestConversationProjectId,
   projectContextLabel,
 } from '../src/components/assistant/presentation';
 
@@ -70,8 +72,9 @@ void describe('assistant presentation', () => {
       new Date(2026, 6, 1, 9).toISOString(),
     );
 
+    const conversations = [earlier, recent, today];
     assert.deepEqual(
-      groupConversations([earlier, recent, today], now).map((group) => [
+      groupConversations(conversations, now).map((group) => [
         group.label,
         group.conversations.map((conversation) => conversation.id),
       ]),
@@ -81,6 +84,19 @@ void describe('assistant presentation', () => {
         ['Earlier', ['conversation_earlier']],
       ],
     );
+    assert.deepEqual(conversations, [earlier, recent, today]);
+  });
+
+  void it('finds the latest project context without modern array helpers', () => {
+    const messages = [
+      { projectId: 'project_earlier' },
+      {},
+      { projectId: 'project_latest' },
+      {},
+    ] as ConversationMessageResource[];
+
+    assert.equal(latestConversationProjectId(messages), 'project_latest');
+    assert.equal(latestConversationProjectId([]), undefined);
   });
 
   void it('searches titles and last-message previews case-insensitively', () => {

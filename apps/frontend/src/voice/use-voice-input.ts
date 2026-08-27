@@ -1,221 +1,248 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  useAudioRecorder,
+  useAudioRecorderState,
+} from 'expo-audio';
+import { fetch as expoFetch } from 'expo/fetch';
+import { File } from 'expo-file-system';
 
-type RecognitionModule =
-  (typeof import('expo-speech-recognition'))['ExpoSpeechRecognitionModule'];
+import {
+  MAX_VOICE_RECORDING_BYTES,
+  mergeVoiceTranscript,
+  VOICE_RECORDING_BIT_RATE,
+  VOICE_RECORDING_CHANNELS,
+  VOICE_RECORDING_SAMPLE_RATE,
+  voiceRecordingContentType,
+} from '@/voice/voice-recording';
 
-type EventSubscription = { remove: () => void };
-
-type PermissionDecision = {
-  granted: boolean;
-  canAskAgain: boolean;
+const VoiceRecordingOptions = {
+  ...RecordingPresets.HIGH_QUALITY,
+  sampleRate: VOICE_RECORDING_SAMPLE_RATE,
+  numberOfChannels: VOICE_RECORDING_CHANNELS,
+  bitRate: VOICE_RECORDING_BIT_RATE,
+  web: {
+    mimeType: 'audio/webm',
+    bitsPerSecond: VOICE_RECORDING_BIT_RATE,
+  },
 };
 
 export type VoiceInputPhase =
   | 'idle'
   | 'requesting_permission'
-  | 'listening'
-  | 'finishing';
+  | 'recording'
+  | 'transcribing';
+
+export type VoiceStopAction = 'review' | 'submit';
 
 export type VoiceInput = {
   phase: VoiceInputPhase;
+  durationMs: number;
   start: (existingDraft: string) => Promise<void>;
-  stop: () => void;
+  stop: (action: VoiceStopAction) => void;
   abort: () => void;
 };
 
-function recognitionFailureMessage(): string {
-  return process.env.EXPO_OS === 'web'
-    ? 'Speech recognition is unavailable in this browser. You can keep typing to Vera.'
-    : 'Voice input requires a Vera development build with speech recognition installed. You can keep typing to Vera.';
-}
-
 function permissionFailureMessage(canAskAgain: boolean): string {
   return canAskAgain
-    ? 'Microphone and speech-recognition permission are required for voice input.'
-    : 'Voice input is blocked. Allow microphone and speech recognition for Vera in device settings.';
+    ? 'Microphone permission is required for voice input.'
+    : 'Voice input is blocked. Allow microphone access for Vera in device settings.';
 }
 
-function normalizePermissionDecision(value: unknown): PermissionDecision {
-  if (typeof value !== 'object' || value === null) {
-    throw new Error('Voice input returned an invalid permission response.');
+function voiceFailureMessage(cause: unknown): string {
+  if (cause instanceof Error && cause.message.trim().length > 0) {
+    return cause.message;
   }
-
-  const candidate = value as Record<string, unknown>;
-  if (
-    typeof candidate.granted !== 'boolean' ||
-    typeof candidate.canAskAgain !== 'boolean'
-  ) {
-    throw new Error('Voice input returned an invalid permission response.');
-  }
-
-  return {
-    granted: candidate.granted,
-    canAskAgain: candidate.canAskAgain,
-  };
-}
-
-function recognitionEventFailureMessage(input: {
-  error: string;
-  message: string;
-}): string {
-  switch (input.error) {
-    case 'no-speech':
-    case 'speech-timeout':
-      return 'No speech was detected. Try again when you are ready.';
-    case 'not-allowed':
-      return 'Microphone or speech-recognition permission was not granted. Allow it in browser or device settings, then try again.';
-    case 'service-not-allowed':
-      return recognitionFailureMessage();
-    case 'language-not-supported':
-      return 'The configured speech language is unavailable on this device.';
-    case 'network':
-      return 'The device speech service could not connect. Check its network access and try again.';
-    case 'audio-capture':
-      return 'The device could not start its microphone. Check whether another app is using it.';
-    default:
-      return `Voice input failed: ${input.message || input.error}.`;
-  }
+  return 'Vera could not process that recording. Please try again.';
 }
 
 export function useVoiceInput(options: {
-  locale: string;
-  onTranscript: (transcript: string) => void;
+  transcribe: (input: {
+    audio: Blob | ArrayBuffer;
+    contentType: string;
+    signal: AbortSignal;
+  }) => Promise<string>;
+  onFinish: (transcript: string, action: VoiceStopAction) => void;
   onError: (message: string) => void;
 }): VoiceInput {
+  const recorder = useAudioRecorder(VoiceRecordingOptions);
+  const recorderState = useAudioRecorderState(recorder, 250);
   const [phase, setPhase] = useState<VoiceInputPhase>('idle');
-  const module = useRef<RecognitionModule | undefined>(undefined);
-  const subscriptions = useRef<EventSubscription[]>([]);
+  const phaseRef = useRef<VoiceInputPhase>('idle');
   const draftPrefix = useRef('');
-  const aborting = useRef(false);
   const session = useRef(0);
+  const recording = useRef(false);
+  const stopInFlight = useRef(false);
+  const transcriptionAbort = useRef<AbortController | undefined>(undefined);
   const mounted = useRef(true);
-  const onTranscript = useRef(options.onTranscript);
+  const transcribe = useRef(options.transcribe);
+  const onFinish = useRef(options.onFinish);
   const onError = useRef(options.onError);
 
-  onTranscript.current = options.onTranscript;
+  transcribe.current = options.transcribe;
+  onFinish.current = options.onFinish;
   onError.current = options.onError;
-
-  const removeListeners = useCallback(() => {
-    for (const subscription of subscriptions.current) subscription.remove();
-    subscriptions.current = [];
-  }, []);
 
   const sessionIsActive = useCallback(
     (candidate: number) => mounted.current && session.current === candidate,
     [],
   );
 
+  const transition = useCallback((next: VoiceInputPhase) => {
+    phaseRef.current = next;
+    if (mounted.current) setPhase(next);
+  }, []);
+
   const abort = useCallback(() => {
     session.current += 1;
-    aborting.current = true;
-    module.current?.abort();
-    removeListeners();
-    if (mounted.current) setPhase('idle');
-  }, [removeListeners]);
+    transcriptionAbort.current?.abort();
+    transcriptionAbort.current = undefined;
+    stopInFlight.current = false;
+    if (recording.current) {
+      recording.current = false;
+      void recorder.stop().catch(() => undefined);
+    }
+    void setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
+    transition('idle');
+  }, [recorder, transition]);
 
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
       session.current += 1;
-      aborting.current = true;
-      removeListeners();
-      module.current?.abort();
+      transcriptionAbort.current?.abort();
+      if (recording.current) {
+        recording.current = false;
+        void recorder.stop().catch(() => undefined);
+      }
+      void setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
     };
-  }, [removeListeners]);
+  }, [recorder]);
 
   const start = useCallback(
     async (existingDraft: string) => {
-      if (phase !== 'idle') return;
+      if (phaseRef.current !== 'idle' || stopInFlight.current) return;
       const currentSession = session.current + 1;
       session.current = currentSession;
-      setPhase('requesting_permission');
-      aborting.current = false;
-      draftPrefix.current = existingDraft.trim();
-      removeListeners();
-
+      draftPrefix.current = existingDraft;
+      transition('requesting_permission');
       try {
-        const speechRecognition = await import('expo-speech-recognition');
+        const permission = await requestRecordingPermissionsAsync();
         if (!sessionIsActive(currentSession)) return;
-        const recognition = speechRecognition.ExpoSpeechRecognitionModule;
-        module.current = recognition;
-        if (!recognition.isRecognitionAvailable()) {
-          throw new Error(recognitionFailureMessage());
-        }
-
-        const permissionResponse: unknown =
-          await recognition.requestPermissionsAsync();
-        if (!sessionIsActive(currentSession)) return;
-        const permission = normalizePermissionDecision(permissionResponse);
         if (!permission.granted) {
           throw new Error(permissionFailureMessage(permission.canAskAgain));
         }
-
-        subscriptions.current = [
-          recognition.addListener('start', () => {
-            if (!sessionIsActive(currentSession)) return;
-            setPhase('listening');
-          }),
-          recognition.addListener('result', (event) => {
-            if (!sessionIsActive(currentSession)) return;
-            const recognized = event.results.at(0)?.transcript.trim();
-            if (recognized === undefined || recognized.length === 0) return;
-            onTranscript.current(
-              draftPrefix.current.length === 0
-                ? recognized
-                : `${draftPrefix.current} ${recognized}`,
-            );
-            if (event.isFinal) setPhase('finishing');
-          }),
-          recognition.addListener('nomatch', () => {
-            if (!sessionIsActive(currentSession)) return;
-            if (!aborting.current) {
-              onError.current(
-                'Vera could not recognize any speech. Try again.',
-              );
-            }
-          }),
-          recognition.addListener('error', (event) => {
-            if (!sessionIsActive(currentSession)) return;
-            if (event.error !== 'aborted' && !aborting.current) {
-              onError.current(recognitionEventFailureMessage(event));
-            }
-          }),
-          recognition.addListener('end', () => {
-            if (!sessionIsActive(currentSession)) return;
-            removeListeners();
-            aborting.current = false;
-            setPhase('idle');
-          }),
-        ];
-
-        recognition.start({
-          lang: options.locale,
-          interimResults: true,
-          maxAlternatives: 1,
-          continuous: false,
-          addsPunctuation: true,
+        await setAudioModeAsync({
+          allowsRecording: true,
+          playsInSilentMode: true,
+          interruptionMode: 'doNotMix',
         });
+        if (!sessionIsActive(currentSession)) {
+          await setAudioModeAsync({ allowsRecording: false });
+          return;
+        }
+        await recorder.prepareToRecordAsync();
+        if (!sessionIsActive(currentSession)) {
+          await setAudioModeAsync({ allowsRecording: false });
+          return;
+        }
+        recorder.record();
+        recording.current = true;
+        transition('recording');
       } catch (cause) {
         if (!sessionIsActive(currentSession)) return;
-        removeListeners();
-        setPhase('idle');
-        const message = cause instanceof Error ? cause.message : '';
-        onError.current(
-          message.length > 0 && !message.toLowerCase().includes('native module')
-            ? message
-            : recognitionFailureMessage(),
+        recording.current = false;
+        await setAudioModeAsync({ allowsRecording: false }).catch(
+          () => undefined,
         );
+        transition('idle');
+        onError.current(voiceFailureMessage(cause));
       }
     },
-    [options.locale, phase, removeListeners, sessionIsActive],
+    [recorder, sessionIsActive, transition],
   );
 
-  const stop = useCallback(() => {
-    if (phase !== 'listening') return;
-    setPhase('finishing');
-    module.current?.stop();
-  }, [phase]);
+  const stop = useCallback(
+    (action: VoiceStopAction) => {
+      if (phaseRef.current !== 'recording' || stopInFlight.current) return;
+      stopInFlight.current = true;
+      recording.current = false;
+      const currentSession = session.current;
+      transition('transcribing');
+      void (async () => {
+        try {
+          await recorder.stop();
+          await setAudioModeAsync({ allowsRecording: false });
+          if (!sessionIsActive(currentSession)) return;
+          const uri = recorder.uri;
+          if (uri === null) {
+            throw new Error('The device did not produce an audio recording.');
+          }
+          const audio =
+            process.env.EXPO_OS === 'web'
+              ? await readWebRecording(uri)
+              : await readNativeRecording(uri);
+          const audioBytes =
+            audio instanceof ArrayBuffer ? audio.byteLength : audio.size;
+          if (audioBytes === 0) {
+            throw new Error('The recording was empty. Please try again.');
+          }
+          if (audioBytes > MAX_VOICE_RECORDING_BYTES) {
+            throw new Error(
+              'That recording is too large to transcribe. Please send a shorter recording.',
+            );
+          }
+          const controller = new AbortController();
+          transcriptionAbort.current = controller;
+          const text = await transcribe.current({
+            audio,
+            contentType: voiceRecordingContentType(uri),
+            signal: controller.signal,
+          });
+          if (!sessionIsActive(currentSession)) return;
+          onFinish.current(
+            mergeVoiceTranscript(draftPrefix.current, text),
+            action,
+          );
+        } catch (cause) {
+          if (!sessionIsActive(currentSession)) return;
+          onError.current(voiceFailureMessage(cause));
+        } finally {
+          if (session.current === currentSession) {
+            transcriptionAbort.current = undefined;
+            stopInFlight.current = false;
+            transition('idle');
+          }
+        }
+      })();
+    },
+    [recorder, sessionIsActive, transition],
+  );
 
-  return { phase, start, stop, abort };
+  return {
+    phase,
+    durationMs: phase === 'recording' ? recorderState.durationMillis : 0,
+    start,
+    stop,
+    abort,
+  };
+}
+
+async function readWebRecording(uri: string): Promise<Blob> {
+  const response = await expoFetch(uri);
+  if (!response.ok) {
+    throw new Error('Vera could not read the completed recording.');
+  }
+  return response.blob();
+}
+
+async function readNativeRecording(uri: string): Promise<ArrayBuffer> {
+  const file = new File(uri);
+  if (!file.exists) {
+    throw new Error('Vera could not find the completed recording.');
+  }
+  return file.arrayBuffer();
 }

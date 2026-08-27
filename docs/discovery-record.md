@@ -299,6 +299,30 @@ shared client and CLI expose create, inspect, wait, events, decision, and
 cancellation paths. See
 [ADR-0018](decisions/0018-apply-approved-software-changes-in-managed-git-worktrees.md).
 
+### Controlled software-change publication — implemented
+
+A third, separately approved resource now completes the delivery path from a
+successful staged application to one verified commit, create-only Vera branch,
+and exact GitHub pull request. Approval freezes the source application version,
+repository and branch identities, current remote base revision, staged Git tree
+and file manifest, author, commit message, pull-request content, and explicit
+prohibitions on direct and force pushes. MongoDB stores the publication
+aggregate; the existing project mutation lease serializes it with application.
+Retries reconcile existing external effects and quarantine incompatible state
+instead of rewriting it. The shared client and CLI expose create, review,
+decision, wait, inspect, event, and cancellation paths. See
+[ADR-0029](decisions/0029-publish-approved-software-changes-through-a-separate-durable-lifecycle.md).
+
+### Deferred calendar integration — explicit backlog
+
+Calendar connection, availability reasoning, event creation, rescheduling, and
+calendar-specific UI are intentionally deferred. The owner already has an
+effective calendar workflow and wants the next increments to produce more
+tangible assistant value elsewhere. Existing provider-neutral integration and
+approval boundaries remain suitable extension points; no calendar provider,
+schema, or synchronization policy should be selected until this item is
+reactivated with a concrete owner journey.
+
 ### API source organization — implemented
 
 The growing modular monolith now uses role-first nested modules: domain, ports,
@@ -422,7 +446,8 @@ The project has not selected:
 - an ORM;
 - a general task-progress streaming or WebSocket protocol;
 - an authentication provider;
-- a mobile or web framework;
+- a general website framework outside the accepted Expo React Native universal
+  frontend;
 - a monorepo task runner;
 - a model provider as Vera's permanent default.
 

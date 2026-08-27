@@ -6,6 +6,10 @@ import cors from '@fastify/cors';
 
 import type { SoftwareChangeApplicationLifecycle } from '../../../application/change-applications/software-change-application-lifecycle.ts';
 import { ChangeApplicationError } from '../../../application/change-applications/software-change-application-lifecycle.ts';
+import {
+  SoftwareChangePublicationError,
+  type SoftwareChangePublicationLifecycle,
+} from '../../../application/change-applications/software-change-publication-lifecycle.ts';
 import type { ArtifactService } from '../../../application/artifacts/artifact-service.ts';
 import type { ConversationService } from '../../../application/conversations/conversation-service.ts';
 import type { EvaluateModelDecision } from '../../../application/model-decisions/evaluate-model-decision.ts';
@@ -17,18 +21,28 @@ import type { NotificationService } from '../../../application/reminders/notific
 import type { MemoryService } from '../../../application/memories/memory-service.ts';
 import { ResourceError } from '../../../application/shared/resource-error.ts';
 import {
+  TranscriptionRequestError,
+  type TranscriptionService,
+} from '../../../application/transcriptions/transcription-service.ts';
+import {
   LifecycleError,
   type TaskLifecycle,
 } from '../../../application/tasks/task-lifecycle.ts';
 import { DecisionResultJsonSchema } from '../../../domain/model/execution-decision.ts';
 import { ChangeApplicationExecutionError } from '../../../ports/change-applications/software-change-application-executor.ts';
+import { SoftwareChangePublicationExecutionError } from '../../../ports/change-applications/software-change-publication-executor.ts';
 import {
   ModelProviderError,
   type ModelProvider,
   type ModelProviderErrorCode,
 } from '../../../ports/model/model-provider.ts';
+import {
+  SpeechTranscriptionProviderError,
+  type SpeechTranscriptionErrorCode,
+} from '../../../ports/transcription/speech-transcription-provider.ts';
 import { registerArtifactRoutes } from './routes/artifact-routes.ts';
 import { registerChangeApplicationRoutes } from './routes/change-application-routes.ts';
+import { registerSoftwareChangePublicationRoutes } from './routes/software-change-publication-routes.ts';
 import { registerConversationRoutes } from './routes/conversation-routes.ts';
 import { registerProjectRoutes } from './routes/project-routes.ts';
 import { registerTaskRoutes } from './routes/task-routes.ts';
@@ -37,6 +51,7 @@ import { registerPersonalTaskRoutes } from './routes/personal-task-routes.ts';
 import { registerReminderRoutes } from './routes/reminder-routes.ts';
 import { registerNotificationRoutes } from './routes/notification-routes.ts';
 import { registerMemoryRoutes } from './routes/memory-routes.ts';
+import { registerTranscriptionRoutes } from './routes/transcription-routes.ts';
 import {
   EvaluateRequestJsonSchema,
   HealthResponseJsonSchema,
@@ -57,7 +72,11 @@ export type BuildAppOptions = {
   reminders?: ReminderService;
   notifications?: NotificationService;
   memories?: MemoryService;
+  transcriptions?: TranscriptionService;
   changeApplications?: SoftwareChangeApplicationLifecycle & {
+    wake(): void;
+  };
+  softwareChangePublications?: SoftwareChangePublicationLifecycle & {
     wake(): void;
   };
   readinessChecks?: {
@@ -109,6 +128,36 @@ function providerFailureStatus(code: ModelProviderErrorCode): 502 | 503 | 504 {
     case 'provider_request_rejected':
     case 'provider_response_invalid':
       return 502;
+  }
+}
+
+function transcriptionFailureStatus(
+  code: SpeechTranscriptionErrorCode,
+): 502 | 503 | 504 {
+  switch (code) {
+    case 'transcription_timeout':
+      return 504;
+    case 'transcription_not_configured':
+    case 'transcription_unavailable':
+      return 503;
+    case 'transcription_rejected':
+    case 'transcription_response_invalid':
+      return 502;
+  }
+}
+
+function publicTranscriptionMessage(code: SpeechTranscriptionErrorCode) {
+  switch (code) {
+    case 'transcription_not_configured':
+      return 'Voice transcription is not configured on this Vera server.';
+    case 'transcription_rejected':
+      return 'The transcription provider rejected the recording.';
+    case 'transcription_response_invalid':
+      return 'The transcription provider returned an invalid response.';
+    case 'transcription_timeout':
+      return 'Voice transcription timed out.';
+    case 'transcription_unavailable':
+      return 'The transcription provider is unavailable.';
   }
 }
 
@@ -288,6 +337,9 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       memories: options.memories,
     });
   }
+  if (options.transcriptions !== undefined) {
+    registerTranscriptionRoutes(app, options.transcriptions);
+  }
   if (options.taskLifecycle !== undefined) {
     registerTaskRoutes(app, {
       principalId,
@@ -298,6 +350,12 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     registerChangeApplicationRoutes(app, {
       principalId,
       changeApplications: options.changeApplications,
+    });
+  }
+  if (options.softwareChangePublications !== undefined) {
+    registerSoftwareChangePublicationRoutes(app, {
+      principalId,
+      publications: options.softwareChangePublications,
     });
   }
 
@@ -353,6 +411,30 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       });
       return;
     }
+    if (error instanceof SoftwareChangePublicationError) {
+      const statusCode =
+        error.code === 'software_change_publication_source_required'
+          ? 422
+          : error.code === 'software_change_publication_not_found'
+            ? 404
+            : 409;
+      void reply.status(statusCode).send({
+        error: { code: error.code, message: error.message },
+      });
+      return;
+    }
+    if (error instanceof SoftwareChangePublicationExecutionError) {
+      const statusCode =
+        error.code === 'publication_unavailable'
+          ? 503
+          : error.code === 'publication_failed'
+            ? 500
+            : 409;
+      void reply.status(statusCode).send({
+        error: { code: error.code, message: error.message },
+      });
+      return;
+    }
     if (error instanceof ModelProviderError) {
       const statusCode = providerFailureStatus(error.code);
       request.log.error(
@@ -363,6 +445,56 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
         error: {
           code: error.code,
           message: publicProviderMessage(error.code, options.provider.model),
+        },
+      });
+      return;
+    }
+    if (error instanceof TranscriptionRequestError) {
+      const statusCode = error.code === 'audio_too_large' ? 413 : 422;
+      void reply.status(statusCode).send({
+        error: { code: error.code, message: error.message },
+      });
+      return;
+    }
+    if (error instanceof SpeechTranscriptionProviderError) {
+      request.log.error(
+        { err: error, errorCode: error.code },
+        'Speech transcription provider request failed',
+      );
+      void reply.status(transcriptionFailureStatus(error.code)).send({
+        error: {
+          code: error.code,
+          message: publicTranscriptionMessage(error.code),
+        },
+      });
+      return;
+    }
+    if (
+      request.url === '/v1/audio/transcriptions' &&
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      error.code === 'FST_ERR_CTP_INVALID_MEDIA_TYPE'
+    ) {
+      void reply.status(415).send({
+        error: {
+          code: 'audio_type_unsupported',
+          message: 'The uploaded audio type is not supported.',
+        },
+      });
+      return;
+    }
+    if (
+      request.url === '/v1/audio/transcriptions' &&
+      typeof error === 'object' &&
+      error !== null &&
+      'statusCode' in error &&
+      error.statusCode === 413
+    ) {
+      void reply.status(413).send({
+        error: {
+          code: 'audio_too_large',
+          message: "The audio recording exceeds Vera's upload limit.",
         },
       });
       return;

@@ -251,6 +251,16 @@ export type NotificationStreamEvent = {
   notification: NotificationResource;
 };
 
+export type SpeechTranscriptionResource = {
+  schemaVersion: 1;
+  text: string;
+  provider: string;
+  model: string;
+  durationMs: number;
+};
+
+export type SpeechTranscriptionAudio = Blob | ArrayBuffer;
+
 export type SoftwareChangeContent = {
   schemaVersion: 1;
   project: { id: string; name: string; revision: string };
@@ -635,6 +645,101 @@ export type ChangeApplicationEventsResource = {
   }[];
 };
 
+export type SoftwareChangePublicationStatus =
+  | 'awaiting_approval'
+  | 'approved'
+  | 'publishing'
+  | 'succeeded'
+  | 'rejected'
+  | 'failed'
+  | 'review_required'
+  | 'cancelled';
+
+export type SoftwareChangePublicationResource = {
+  schemaVersion: 1;
+  version: number;
+  id: string;
+  status: SoftwareChangePublicationStatus;
+  sourceApplication: { id: string; effectId: string; version: number };
+  project: { id: string; displayName: string };
+  approval: {
+    id: string;
+    status: 'pending' | 'approved' | 'rejected';
+    reason: 'software_change_publication';
+    effect: {
+      adapterId: 'github_gh_cli';
+      repository: { remoteName: 'origin'; owner: string; name: string };
+      baseRevision: string;
+      baseBranch: string;
+      baseBranchRevision: string;
+      headBranch: string;
+      workspacePath: string;
+      treeRevision: string;
+      files: SoftwareChangeContent['files'];
+      author: { name: string; email: string };
+      commitMessage: string;
+      pullRequest: { title: string; body: string; draft: boolean };
+      authority: {
+        commit: 'create_one';
+        push: 'create_or_verify_head';
+        pullRequest: 'create_or_verify';
+        directBasePush: false;
+        forcePush: false;
+      };
+    };
+    requestedAt: string;
+    decidedAt?: string;
+    decidedBy?: string;
+  };
+  effect: {
+    id: string;
+    status:
+      | 'pending'
+      | 'executing'
+      | 'succeeded'
+      | 'failed'
+      | 'review_required'
+      | 'cancelled';
+    startedAt?: string;
+    completedAt?: string;
+  };
+  result?: {
+    adapterId: 'github_gh_cli';
+    commitRevision: string;
+    remoteBranch: string;
+    pullRequest: {
+      number: number;
+      url: string;
+      baseBranch: string;
+      headBranch: string;
+      draft: boolean;
+    };
+    publishedAt: string;
+  };
+  failure?: { code: string; message: string };
+  createdAt: string;
+  updatedAt: string;
+  links: {
+    publication: string;
+    events: string;
+    decision?: string;
+    cancellation?: string;
+  };
+};
+
+export type SoftwareChangePublicationEventsResource = {
+  schemaVersion: 1;
+  publicationId: string;
+  events: {
+    schemaVersion: 1;
+    id: string;
+    sequence: number;
+    type: string;
+    occurredAt: string;
+    data: Record<string, unknown>;
+  }[];
+};
+
 export class VeraApiError extends Error {
   public constructor(
     message: string,
@@ -648,6 +753,11 @@ export class VeraApiError extends Error {
 }
 
 export type VeraApi = {
+  transcribeAudio(input: {
+    audio: SpeechTranscriptionAudio;
+    contentType: string;
+    signal?: AbortSignal;
+  }): Promise<SpeechTranscriptionResource>;
   listCapabilities(): Promise<CapabilityCatalogResource>;
   listPersonalTasks(options?: {
     status?: 'all' | 'open' | 'completed';
@@ -731,6 +841,30 @@ export type VeraApi = {
     applicationId: string,
     options?: WaitForChangeApplicationOptions,
   ): Promise<ChangeApplicationResource>;
+  createSoftwareChangePublication(input: {
+    applicationId: string;
+    baseBranch: string;
+    commitMessage: string;
+    pullRequest: { title: string; body: string; draft: boolean };
+    idempotencyKey: string;
+  }): Promise<SoftwareChangePublicationResource>;
+  getSoftwareChangePublication(
+    publicationId: string,
+  ): Promise<SoftwareChangePublicationResource>;
+  getSoftwareChangePublicationEvents(
+    publicationId: string,
+  ): Promise<SoftwareChangePublicationEventsResource>;
+  decideSoftwareChangePublication(input: {
+    publicationId: string;
+    decision: 'approved' | 'rejected';
+  }): Promise<SoftwareChangePublicationResource>;
+  cancelSoftwareChangePublication(
+    publicationId: string,
+  ): Promise<SoftwareChangePublicationResource>;
+  waitForSoftwareChangePublication(
+    publicationId: string,
+    options?: WaitForSoftwareChangePublicationOptions,
+  ): Promise<SoftwareChangePublicationResource>;
   waitForRun(runId: string, options?: WaitForRunOptions): Promise<TaskResource>;
 };
 
@@ -745,6 +879,14 @@ export type WaitForRunOptions = {
 export type WaitForChangeApplicationOptions = {
   until?: (application: ChangeApplicationResource) => boolean;
   onUpdate?: (application: ChangeApplicationResource) => void;
+  intervalMs?: number;
+  timeoutMs?: number;
+  signal?: AbortSignal;
+};
+
+export type WaitForSoftwareChangePublicationOptions = {
+  until?: (publication: SoftwareChangePublicationResource) => boolean;
+  onUpdate?: (publication: SoftwareChangePublicationResource) => void;
   intervalMs?: number;
   timeoutMs?: number;
   signal?: AbortSignal;
@@ -801,6 +943,24 @@ function assertCapabilityCatalogResource(
     )
   ) {
     throw new Error('Vera returned an invalid capability catalog.');
+  }
+}
+
+function assertSpeechTranscriptionResource(
+  value: unknown,
+): asserts value is SpeechTranscriptionResource {
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== 1 ||
+    typeof value.text !== 'string' ||
+    value.text.trim().length === 0 ||
+    typeof value.provider !== 'string' ||
+    typeof value.model !== 'string' ||
+    typeof value.durationMs !== 'number' ||
+    !Number.isFinite(value.durationMs) ||
+    value.durationMs < 0
+  ) {
+    throw new Error('Vera returned an invalid speech transcription.');
   }
 }
 
@@ -969,6 +1129,33 @@ function assertChangeApplicationResource(
   }
 }
 
+function assertSoftwareChangePublicationResource(
+  value: unknown,
+): asserts value is SoftwareChangePublicationResource {
+  const statuses: readonly string[] = [
+    'awaiting_approval',
+    'approved',
+    'publishing',
+    'succeeded',
+    'rejected',
+    'failed',
+    'review_required',
+    'cancelled',
+  ];
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== 1 ||
+    typeof value.id !== 'string' ||
+    !value.id.startsWith('publication_') ||
+    typeof value.status !== 'string' ||
+    !statuses.includes(value.status)
+  ) {
+    throw new Error(
+      'Vera returned an invalid software-change publication resource.',
+    );
+  }
+}
+
 async function delay(
   milliseconds: number,
   signal?: AbortSignal,
@@ -1014,6 +1201,31 @@ export class VeraClient implements VeraApi {
     const catalog = await this.request<unknown>('/v1/capabilities');
     assertCapabilityCatalogResource(catalog);
     return catalog;
+  }
+
+  public async transcribeAudio(input: {
+    audio: SpeechTranscriptionAudio;
+    contentType: string;
+    signal?: AbortSignal;
+  }): Promise<SpeechTranscriptionResource> {
+    const response = await this.fetch(
+      `${this.baseUrl}/v1/audio/transcriptions`,
+      {
+        method: 'POST',
+        headers: { 'content-type': input.contentType },
+        body: input.audio,
+        ...(input.signal === undefined ? {} : { signal: input.signal }),
+      },
+    );
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      body = undefined;
+    }
+    if (!response.ok) throw this.errorFromBody(response.status, body);
+    assertSpeechTranscriptionResource(body);
+    return body;
   }
 
   public async listPersonalTasks(
@@ -1446,6 +1658,104 @@ export class VeraClient implements VeraApi {
     }
   }
 
+  public createSoftwareChangePublication(input: {
+    applicationId: string;
+    baseBranch: string;
+    commitMessage: string;
+    pullRequest: { title: string; body: string; draft: boolean };
+    idempotencyKey: string;
+  }): Promise<SoftwareChangePublicationResource> {
+    return this.softwareChangePublicationRequest(
+      `/v1/change-applications/${encodeURIComponent(input.applicationId)}/publications`,
+      {
+        method: 'POST',
+        idempotencyKey: input.idempotencyKey,
+        body: {
+          baseBranch: input.baseBranch,
+          commitMessage: input.commitMessage,
+          pullRequest: input.pullRequest,
+        },
+      },
+    );
+  }
+
+  public getSoftwareChangePublication(publicationId: string) {
+    return this.softwareChangePublicationRequest(
+      `/v1/software-change-publications/${encodeURIComponent(publicationId)}`,
+    );
+  }
+
+  public getSoftwareChangePublicationEvents(
+    publicationId: string,
+  ): Promise<SoftwareChangePublicationEventsResource> {
+    return this.request(
+      `/v1/software-change-publications/${encodeURIComponent(publicationId)}/events`,
+    );
+  }
+
+  public decideSoftwareChangePublication(input: {
+    publicationId: string;
+    decision: 'approved' | 'rejected';
+  }) {
+    return this.softwareChangePublicationRequest(
+      `/v1/software-change-publications/${encodeURIComponent(input.publicationId)}/decision`,
+      { method: 'POST', body: { decision: input.decision } },
+    );
+  }
+
+  public cancelSoftwareChangePublication(publicationId: string) {
+    return this.softwareChangePublicationRequest(
+      `/v1/software-change-publications/${encodeURIComponent(publicationId)}/cancellation`,
+      { method: 'POST' },
+    );
+  }
+
+  public async waitForSoftwareChangePublication(
+    publicationId: string,
+    options?: WaitForSoftwareChangePublicationOptions,
+  ): Promise<SoftwareChangePublicationResource> {
+    const startedAt = Date.now();
+    const timeoutMs = options?.timeoutMs ?? 600_000;
+    const intervalMs = options?.intervalMs ?? 250;
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      throw new Error(
+        'waitForSoftwareChangePublication timeoutMs must be a positive number.',
+      );
+    }
+    if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
+      throw new Error(
+        'waitForSoftwareChangePublication intervalMs must be a positive number.',
+      );
+    }
+    const terminal = new Set<SoftwareChangePublicationStatus>([
+      'succeeded',
+      'rejected',
+      'failed',
+      'review_required',
+      'cancelled',
+    ]);
+    for (;;) {
+      const elapsedMs = Date.now() - startedAt;
+      if (elapsedMs >= timeoutMs) {
+        throw new Error(`Timed out waiting for publication ${publicationId}.`);
+      }
+      const publication =
+        await this.getSoftwareChangePublication(publicationId);
+      options?.onUpdate?.(publication);
+      if (
+        (options?.until ?? ((current) => terminal.has(current.status)))(
+          publication,
+        )
+      ) {
+        return publication;
+      }
+      await delay(
+        Math.min(intervalMs, Math.max(1, timeoutMs - (Date.now() - startedAt))),
+        options?.signal,
+      );
+    }
+  }
+
   public async waitForRun(
     runId: string,
     options?: WaitForRunOptions,
@@ -1525,6 +1835,15 @@ export class VeraClient implements VeraApi {
   ): Promise<ChangeApplicationResource> {
     const value: unknown = await this.request(path, options);
     assertChangeApplicationResource(value);
+    return value;
+  }
+
+  private async softwareChangePublicationRequest(
+    path: string,
+    options?: RequestOptions,
+  ): Promise<SoftwareChangePublicationResource> {
+    const value: unknown = await this.request(path, options);
+    assertSoftwareChangePublicationResource(value);
     return value;
   }
 

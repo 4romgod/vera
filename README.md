@@ -99,7 +99,11 @@ file hashes. It never mutates, commits, pushes, or opens a pull request against
 the registered project. A separate, exactly approved change-application
 resource can then stage that artifact on a deterministic branch in a durable
 managed Git worktree while leaving the owner's active checkout unchanged. It
-does not commit, push, or open a pull request. Both capability results are
+does not itself commit, push, or open a pull request. A third, separately
+approved publication resource can freeze the staged tree, Git author, commit
+message, GitHub repository and branch identities, and exact pull-request
+metadata; its worker then creates or verifies one commit, a non-force Vera
+branch push, and one pull request. Both capability results are
 stored as versioned artifacts keyed by invocation identity. Task,
 conversation, project, and artifact idempotency are principal-scoped. The same
 generic runtime can execute an explicitly approved public-web research request
@@ -129,6 +133,10 @@ queue. See
 Approved change applications use their own MongoDB aggregate, per-project
 mutation lease, ordered events, and recovery rules; see
 [ADR-0018](docs/decisions/0018-apply-approved-software-changes-in-managed-git-worktrees.md).
+Approved publications use a separate MongoDB aggregate and the same
+per-project mutation lease. They reconcile exact existing commits, remote
+branches, and pull requests after retry; see
+[ADR-0029](docs/decisions/0029-publish-approved-software-changes-through-a-separate-durable-lifecycle.md).
 The accepted V1 journey, including an exact owner-reviewed third-party Codex
 disclosure and real artifact, was demonstrated on 25 August 2026. Additional
 cloud-brain profiles remain optional conformance targets, not V1 blockers or
@@ -167,8 +175,10 @@ and the universal frontend's thin-client boundary is accepted in
 [ADR-0026](docs/decisions/0026-use-one-expo-react-native-frontend-for-web-and-mobile.md).
 Private physical-device ingress through Tailscale Serve is accepted in
 [ADR-0027](docs/decisions/0027-use-tailscale-serve-for-private-physical-device-access.md).
-Reviewed device speech recognition and reply playback are accepted in
-[ADR-0028](docs/decisions/0028-treat-device-voice-as-a-reviewed-experience-adapter.md).
+Owner-controlled recording, provider-neutral transcription, and reviewed reply
+playback are accepted in
+[ADR-0030](docs/decisions/0030-transcribe-owner-controlled-recordings-through-a-provider-neutral-boundary.md),
+which supersedes ADR-0028's platform speech recognizer.
 Explicit owner-governed long-term memory is now implemented through ADR-0025.
 Physical erasure, retention beyond tombstones, and third-party-provider memory
 disclosure remain deliberately open.
@@ -240,6 +250,24 @@ VERA_PROFILE=ollama npm run dev
 npm run dev:web
 ```
 
+For owner-controlled local voice transcription, install `whisper-cpp` and
+`ffmpeg`, place `ggml-large-v3-turbo-q5_0.bin` at
+`~/.vera/models/whisper/`, set
+`VERA_TRANSCRIPTION_PROVIDER=whisper_cpp` in the selected API profile, and run a
+third process before the API:
+
+```bash
+npm run dev:transcription
+```
+
+The helper binds whisper.cpp to loopback only, enables compressed-audio
+conversion and Metal acceleration, and never exposes the service directly to
+the tailnet. Override its command, model file, or loopback origin with
+`WHISPER_CPP_COMMAND`, `WHISPER_CPP_MODEL_PATH`, or
+`WHISPER_CPP_BASE_URL`. Alternatively, an OpenAI profile can set
+`VERA_TRANSCRIPTION_PROVIDER=openai`; it reuses `OPENAI_API_KEY` unless a
+transcription-only key is provided.
+
 Open the URL printed by Expo (normally `http://localhost:8081`). The frontend
 uses the public client/API contract
 for conversations, exact approvals, cancellation, memory inspection and
@@ -256,21 +284,30 @@ as human-readable cards with exact technical data available on demand. Its
 visual and interaction contract is documented in
 [Interface Design](docs/interface-design.md).
 
-Press the microphone control to dictate into the composer. Vera shows interim
-speech as an editable draft and does not submit it until you press Send. A
-reply to a voice-originated message is read aloud after the durable Vera message
-appears; every Vera reply also has explicit Read aloud and Stop audio controls.
-The browser or operating-system speech service handles microphone audio—Vera's
-API receives only the reviewed transcript and stores no recording. Override the
-default `en-US` recognition and playback locale with, for example,
+Use the refresh control in the conversation header—or pull down from the top
+of the conversation—to synchronize Vera without reloading the page or losing
+an in-progress message draft.
+
+Press the microphone control to begin one continuous recording. Silence and
+thinking pauses do not stop it. The square control stops, transcribes exactly
+once, and leaves an editable draft; the send control stops, transcribes once,
+and submits that exact text through the ordinary conversation path. The UI
+shows elapsed recording time and a separate transcription phase. There is no
+interim recognizer stream, automatic restart, or silence timeout.
+
+The API handles completed audio only in memory for the synchronous
+transcription request and never writes it to MongoDB, Redis, artifacts, events,
+or logs. Select transcription independently of Vera's orchestration brain with
+`VERA_TRANSCRIPTION_PROVIDER=openai` or `whisper_cpp`; see
+[ADR-0030](docs/decisions/0030-transcribe-owner-controlled-recordings-through-a-provider-neutral-boundary.md).
+A reply to a voice-originated message is read aloud after the durable Vera
+message appears, and every reply has explicit Read aloud and Stop audio
+controls. Override the default `en-US` playback locale with, for example,
 `EXPO_PUBLIC_VERA_SPEECH_LOCALE=en-ZA npm run dev:web`.
 
 Run `npm run dev:frontend` to open Expo's interactive launcher for web, iOS, or
-Android simulators. Device speech recognition is a native module and is not
-included in Expo Go. Use the web build for immediate voice testing, or create a
-Vera development build with `npx expo run:ios` or `npx expo run:android` from
-`apps/frontend`; typed interaction and reply speech remain available in Expo
-Go.
+Android simulators. `expo-audio` is included in Expo Go, so recording works
+without a custom development build when the API has a transcription adapter.
 
 To use a physical phone already enrolled in the same private tailnet as the Mac
 Mini, keep the API running above and start the private phone frontend:
@@ -625,10 +662,35 @@ npm run cli -- application show application_...
 npm run cli -- application events application_...
 ```
 
-The active registered checkout remains unchanged. Committing, pushing, or
-opening a pull request remains a separate owner action. The `plan` and `change`
-commands refuse to auto-approve a capability other than the one named by the
-command.
+The active registered checkout remains unchanged. To publish the successful
+staged application through a third, exact approval:
+
+```bash
+npm run cli -- change publish \
+  --application application_... \
+  --commit-message "Implement VERA-101 health monitoring" \
+  --pr-title "Implement VERA-101 health monitoring" \
+  --pr-body "Implements the approved and staged VERA-101 change." \
+  --base main \
+  --draft
+```
+
+The CLI discloses the repository, current base-branch revision, Vera head
+branch, staged tree and files, Git author, commit message, pull-request content,
+and the explicit prohibition on direct and force pushes before asking for a
+third approval. The durable worker uses `git` plus the authenticated GitHub CLI
+to create or verify the exact effects. It never updates an incompatible remote
+state; ambiguity becomes `review_required`.
+
+Inspect a publication with:
+
+```bash
+npm run cli -- publication show publication_...
+npm run cli -- publication events publication_...
+```
+
+The `plan` and `change` commands refuse to auto-approve a capability other than
+the one named by the command.
 
 Inspect the complete capability catalog, including disabled declarations and
 their authority, then run project-independent research:
@@ -695,6 +757,11 @@ enabled capability runtime. For Codex this verifies the CLI, non-interactive
 execution grammar, and login status. For OpenAI web research it checks exact
 model access but does not perform a search. The readiness checks do not run
 orchestration inference or web-search calls.
+
+The optional publication path checks `git`, Git author configuration, GitHub
+repository access, and authenticated `gh` availability when a publication is
+prepared. Those owner-initiated delivery dependencies do not make the core API
+globally unready when no publication is requested.
 
 The initial submission normally returns in `deciding`; the worker later moves
 it to `awaiting_approval`. Inspect

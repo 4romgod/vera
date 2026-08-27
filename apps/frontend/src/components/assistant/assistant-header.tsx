@@ -1,4 +1,4 @@
-import { Menu, Sparkles } from 'lucide-react-native';
+import { Menu, RefreshCw, Sparkles } from 'lucide-react-native';
 import { Text, View } from 'react-native';
 
 import type { ProjectResource } from '@vera/client';
@@ -14,7 +14,9 @@ export function AssistantHeader(props: {
   projects: ProjectResource[];
   selectedProjectId?: string;
   unreadNotifications: number;
+  refreshing: boolean;
   onMenu: () => void;
+  onRefresh: () => void;
   onResources: () => void;
   onSelectProject: (projectId?: string) => void;
 }) {
@@ -147,11 +149,25 @@ export function AssistantHeader(props: {
             {displayConversationTitle(props.title)}
           </Text>
         </View>
-        <ProjectContextMenu
-          projects={props.projects}
-          selected={props.selectedProjectId}
-          onSelect={props.onSelectProject}
-        />
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: spacing.sm,
+          }}
+        >
+          <ProjectContextMenu
+            projects={props.projects}
+            selected={props.selectedProjectId}
+            onSelect={props.onSelectProject}
+          />
+          <IconButton
+            disabled={props.refreshing}
+            icon={RefreshCw}
+            label={props.refreshing ? 'Refreshing Vera' : 'Refresh Vera'}
+            onPress={props.onRefresh}
+          />
+        </View>
       </View>
     </View>
   );

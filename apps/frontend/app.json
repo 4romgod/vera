@@ -9,10 +9,9 @@
     "plugins": [
       "expo-router",
       [
-        "expo-speech-recognition",
+        "expo-audio",
         {
-          "microphonePermission": "Allow Vera to listen while you hold a voice conversation.",
-          "speechRecognitionPermission": "Allow Vera to turn your speech into a transcript for your review."
+          "microphonePermission": "Allow Vera to record your voice until you choose to stop."
         }
       ]
     ],

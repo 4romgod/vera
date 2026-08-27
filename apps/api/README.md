@@ -10,7 +10,7 @@ src/
 │   │   └── http/                    # Fastify transport and HTTP schemas
 │   └── outbound/
 │       ├── capabilities/            # Codex/model/deterministic capability implementations
-│       ├── change-applications/     # Managed Git effect implementation
+│       ├── change-applications/     # Managed Git application and publication implementations
 │       ├── integrations/            # Provider-neutral owner-service actions
 │       ├── model/                   # Ollama/OpenAI/Gemini/deterministic model implementations
 │       ├── notifications/           # Notification delivery implementations
@@ -48,6 +48,11 @@ src/
   specialists, Git, and other external mechanisms.
 - `bootstrap` is the composition root. It is the only role allowed to select
   concrete adapters from runtime configuration and wire the complete process.
+- Speech capture enters through `adapters/inbound/http/routes/transcription-routes.ts`,
+  application validation lives under `application/transcriptions`, the stable
+  port lives under `ports/transcription`, and OpenAI/whisper.cpp implementations
+  live under `adapters/outbound/transcription`. The route never writes raw audio
+  to a persistence port.
 - Capability declarations live in `domain/capabilities`, the generic runtime
   port in `ports/capabilities`, and provider-specific registrations under
   `adapters/outbound/capabilities`. The shared task lifecycle depends only on
@@ -72,3 +77,19 @@ that Vera already needs microservices.
 
 Avoid barrel files whose only purpose is to shorten imports. Direct imports
 make dependencies and ownership visible during refactoring.
+
+## Voice transcription runtime
+
+`VERA_TRANSCRIPTION_PROVIDER` is independent from `VERA_MODEL_PROVIDER`:
+
+- `disabled` exposes a sanitized not-configured response;
+- `openai` uses `TRANSCRIPTION_OPENAI_API_KEY` or falls back to
+  `OPENAI_API_KEY`, with `gpt-transcribe` as the default model; and
+- `whisper_cpp` calls only the configured loopback origin. Run the repository's
+  `npm run dev:transcription` helper after installing whisper.cpp, ffmpeg, and
+  the documented GGML model.
+
+`TRANSCRIPTION_TIMEOUT_MS` defaults to 120 seconds and
+`TRANSCRIPTION_MAX_AUDIO_BYTES` defaults to, and cannot exceed, 25,000,000.
+The upload endpoint buffers one request for inference and does not call a
+persistence port.

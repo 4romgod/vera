@@ -1,7 +1,7 @@
 # Vera Interface Design
 
 **Status:** Implemented design language
-**Last updated:** 26 August 2026
+**Last updated:** 27 August 2026
 
 ## Purpose
 
@@ -64,8 +64,15 @@ destinations.
 - All primary controls have at least a 44 by 44 point target and an accessible
   name.
 - Prompt starters populate an editable draft and never submit automatically.
-- Voice transcripts remain editable and use the same explicit Send control as
-  typed text.
+- The owner can refresh Vera without reloading the browser: the header exposes
+  an always-available refresh action, and pulling down from the top of the
+  conversation refreshes on native and web surfaces. Refresh preserves the
+  message draft while synchronizing the active conversation, active run,
+  projects, conversation history, memory, tasks, reminders, and inbox.
+- Voice capture is one continuous recording with elapsed time and no silence
+  cutoff. While recording, two distinct controls stop into an editable
+  transcript or stop, transcribe, and send through the typed-message path.
+  Transcription runs once after capture and never submits on its own.
 - Run progress, cancellation, and approval remain inside the conversation where
   the relevant intent was expressed.
 - Approval cards keep the action, target, network authority, side effects, and

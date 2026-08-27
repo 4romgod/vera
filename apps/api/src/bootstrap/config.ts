@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 
 import type { ModelConfig } from '../adapters/outbound/model/model-provider-registry.ts';
 import type { WebResearchAdapterConfig } from '../adapters/outbound/capabilities/web-research/web-research-adapter-registry.ts';
+import type { SpeechTranscriptionConfig } from '../adapters/outbound/transcription/speech-transcription-provider-registry.ts';
 
 const EnvironmentSchema = z.object({
   HOST: z.enum(['127.0.0.1', '::1', 'localhost']).default('127.0.0.1'),
@@ -72,7 +73,28 @@ const EnvironmentSchema = z.object({
   RESEARCH_SEARCH_CONTEXT_SIZE: z
     .enum(['low', 'medium', 'high'])
     .default('medium'),
+  VERA_TRANSCRIPTION_PROVIDER: z
+    .enum(['disabled', 'openai', 'whisper_cpp'])
+    .default('disabled'),
+  TRANSCRIPTION_OPENAI_BASE_URL: z.url().optional(),
+  TRANSCRIPTION_OPENAI_API_KEY: z.string().trim().min(1).optional(),
+  TRANSCRIPTION_OPENAI_MODEL: z
+    .string()
+    .trim()
+    .min(1)
+    .default('gpt-transcribe'),
+  WHISPER_CPP_BASE_URL: z.url().default('http://127.0.0.1:8080'),
+  WHISPER_CPP_MODEL: z.string().trim().min(1).default('whisper.cpp'),
+  TRANSCRIPTION_TIMEOUT_MS: z.coerce.number().int().min(1_000).default(120_000),
+  TRANSCRIPTION_MAX_AUDIO_BYTES: z.coerce
+    .number()
+    .int()
+    .min(1_024)
+    .max(25_000_000)
+    .default(25_000_000),
   CHANGE_APPLICATION_ROOT: z.string().min(1).optional(),
+  GIT_COMMAND: z.string().min(1).default('git'),
+  GH_COMMAND: z.string().min(1).default('gh'),
   WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(2),
   WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(25).default(250),
   WORKER_LEASE_MS: z.coerce.number().int().min(1_000).default(900_000),
@@ -126,8 +148,14 @@ export type AppConfig = {
     };
   };
   research: WebResearchAdapterConfig;
+  transcription: SpeechTranscriptionConfig;
   application: {
     workspacesRoot: string;
+  };
+  publication: {
+    adapterId: 'github_gh_cli';
+    gitCommand: string;
+    ghCommand: string;
   };
   worker: {
     concurrency: number;
@@ -266,6 +294,51 @@ function createResearchConfig(
   };
 }
 
+function createTranscriptionConfig(
+  parsed: z.infer<typeof EnvironmentSchema>,
+): SpeechTranscriptionConfig {
+  const shared = { maxAudioBytes: parsed.TRANSCRIPTION_MAX_AUDIO_BYTES };
+  if (parsed.VERA_TRANSCRIPTION_PROVIDER === 'disabled') {
+    return { provider: 'disabled', ...shared };
+  }
+  if (parsed.VERA_TRANSCRIPTION_PROVIDER === 'whisper_cpp') {
+    const baseUrl = normalizeProviderBaseUrl(
+      'ollama',
+      parsed.WHISPER_CPP_BASE_URL,
+    );
+    const url = new URL(baseUrl);
+    if (!['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) {
+      throw new Error(
+        'WHISPER_CPP_BASE_URL must use a loopback host because this adapter is owner-controlled.',
+      );
+    }
+    return {
+      provider: 'whisper_cpp',
+      baseUrl,
+      model: parsed.WHISPER_CPP_MODEL,
+      timeoutMs: parsed.TRANSCRIPTION_TIMEOUT_MS,
+      ...shared,
+    };
+  }
+  const apiKey = parsed.TRANSCRIPTION_OPENAI_API_KEY ?? parsed.OPENAI_API_KEY;
+  if (apiKey === undefined) {
+    throw new Error(
+      'TRANSCRIPTION_OPENAI_API_KEY or OPENAI_API_KEY is required when VERA_TRANSCRIPTION_PROVIDER=openai.',
+    );
+  }
+  return {
+    provider: 'openai',
+    baseUrl: normalizeProviderBaseUrl(
+      'openai',
+      parsed.TRANSCRIPTION_OPENAI_BASE_URL ?? parsed.OPENAI_BASE_URL,
+    ),
+    apiKey,
+    model: parsed.TRANSCRIPTION_OPENAI_MODEL,
+    timeoutMs: parsed.TRANSCRIPTION_TIMEOUT_MS,
+    ...shared,
+  };
+}
+
 export function loadConfig(
   environment: NodeJS.ProcessEnv = process.env,
 ): AppConfig {
@@ -312,11 +385,17 @@ export function loadConfig(
       },
     },
     research: createResearchConfig(parsed),
+    transcription: createTranscriptionConfig(parsed),
     application: {
       workspacesRoot: resolve(
         parsed.CHANGE_APPLICATION_ROOT ??
           join(homedir(), '.vera', 'change-applications'),
       ),
+    },
+    publication: {
+      adapterId: 'github_gh_cli',
+      gitCommand: parsed.GIT_COMMAND,
+      ghCommand: parsed.GH_COMMAND,
     },
     worker: {
       concurrency: parsed.WORKER_CONCURRENCY,

@@ -30,6 +30,7 @@ import { AssistantHeader } from '@/components/assistant/assistant-header';
 import { ConversationSidebar } from '@/components/assistant/conversation-sidebar';
 import { ConversationView } from '@/components/assistant/conversation-view';
 import { MessageComposer } from '@/components/assistant/message-composer';
+import { latestConversationProjectId } from '@/components/assistant/presentation';
 import { useTaskDetails } from '@/components/assistant/use-task-details';
 import { ResourcePanel, type ResourceTab } from '@/components/resource-panel';
 import { layout, palette, radius, shadow, spacing } from '@/design/tokens';
@@ -90,21 +91,40 @@ export function AssistantScreen() {
   const [draft, setDraft] = useState('');
   const [draftFromVoice, setDraftFromVoice] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string>();
   const messageList = useRef<FlatList<ConversationMessageResource>>(null);
   const followGeneration = useRef(0);
   const followAbort = useRef<AbortController | undefined>(undefined);
   const voiceRunIds = useRef(new Set<string>());
   const mounted = useRef(true);
+  const refreshInFlight = useRef(false);
   const spokenReply = useSpokenReply({
     locale: speechLocale,
     onError: setError,
   });
   const voiceInput = useVoiceInput({
-    locale: speechLocale,
-    onTranscript: (transcript) => {
+    transcribe: async ({ audio, contentType, signal }) => {
+      const result = await client.transcribeAudio({
+        audio,
+        contentType,
+        signal,
+      });
+      return result.text;
+    },
+    onFinish: (transcript, action) => {
       setDraft(transcript);
-      setDraftFromVoice(true);
+      setDraftFromVoice(transcript.trim().length > 0);
+      if (action === 'submit') {
+        if (transcript.trim().length === 0) {
+          setError('No speech was recognized, so Vera did not send a message.');
+        } else {
+          void send(transcript, {
+            fromVoice: true,
+            allowDuringVoiceFinish: true,
+          });
+        }
+      }
     },
     onError: setError,
   });
@@ -154,6 +174,43 @@ export function AssistantScreen() {
     }
   }, [client]);
 
+  const refreshAssistant = useCallback(async () => {
+    if (refreshInFlight.current) return;
+    const conversationId = conversation?.id;
+    const runId = activeRun?.runId;
+    refreshInFlight.current = true;
+    setRefreshing(true);
+    try {
+      const [, refreshedConversation, refreshedRun] = await Promise.all([
+        refreshResources(),
+        conversationId === undefined
+          ? Promise.resolve(undefined)
+          : client.getConversation(conversationId),
+        runId === undefined ? Promise.resolve(undefined) : client.getRun(runId),
+      ]);
+      if (!mounted.current) return;
+      if (refreshedConversation !== undefined) {
+        setConversation((current) =>
+          current?.id === refreshedConversation.id
+            ? refreshedConversation
+            : current,
+        );
+      }
+      if (refreshedRun !== undefined) {
+        setActiveRun((current) =>
+          current?.runId === refreshedRun.runId ? refreshedRun : current,
+        );
+      }
+      setError(undefined);
+    } catch (cause) {
+      if (mounted.current)
+        setError(errorMessage(cause, 'Vera could not refresh.'));
+    } finally {
+      refreshInFlight.current = false;
+      if (mounted.current) setRefreshing(false);
+    }
+  }, [activeRun?.runId, client, conversation?.id, refreshResources]);
+
   useEffect(() => {
     let active = true;
     void refreshResources()
@@ -194,11 +251,7 @@ export function AssistantScreen() {
       const selected = await client.getConversation(id);
       if (followGeneration.current !== generation) return;
       setConversation(selected);
-      setSelectedProjectId(
-        selected.messages
-          .toReversed()
-          .find((message) => message.projectId !== undefined)?.projectId,
-      );
+      setSelectedProjectId(latestConversationProjectId(selected.messages));
       setActiveRun(undefined);
       setSidebarOpen(false);
       setError(undefined);
@@ -288,10 +341,18 @@ export function AssistantScreen() {
     }
   }
 
-  async function send(content: string): Promise<void> {
+  async function send(
+    content: string,
+    options: { fromVoice?: boolean; allowDuringVoiceFinish?: boolean } = {},
+  ): Promise<void> {
     const normalized = content.trim();
-    if (normalized.length === 0 || busy || voiceInput.phase !== 'idle') return;
-    const shouldSpeakReply = draftFromVoice;
+    if (
+      normalized.length === 0 ||
+      busy ||
+      (!options.allowDuringVoiceFinish && voiceInput.phase !== 'idle')
+    )
+      return;
+    const shouldSpeakReply = options.fromVoice ?? draftFromVoice;
     setBusy(true);
     setError(undefined);
     setDraft('');
@@ -364,8 +425,8 @@ export function AssistantScreen() {
 
   async function toggleVoiceInput(): Promise<void> {
     setError(undefined);
-    if (voiceInput.phase === 'listening') {
-      voiceInput.stop();
+    if (voiceInput.phase === 'recording') {
+      voiceInput.stop('review');
       return;
     }
     await spokenReply.stop();
@@ -415,7 +476,9 @@ export function AssistantScreen() {
             selectedProjectId={selectedProjectId}
             title={conversation?.title}
             unreadNotifications={unreadNotifications}
+            refreshing={refreshing}
             onMenu={() => setSidebarOpen(true)}
+            onRefresh={() => void refreshAssistant()}
             onResources={() => openResources('memory')}
             onSelectProject={setSelectedProjectId}
           />
@@ -425,6 +488,7 @@ export function AssistantScreen() {
               compact={compact}
               footer={footer}
               messages={messages}
+              refreshing={refreshing}
               speakingMessageId={spokenReply.messageId}
               taskDetails={taskDetails}
               onSuggestion={(prompt) => {
@@ -439,6 +503,7 @@ export function AssistantScreen() {
                   void spokenReply.speak(message.id, message.content);
                 }
               }}
+              onRefresh={() => void refreshAssistant()}
             />
           </View>
           <MessageComposer
@@ -448,12 +513,14 @@ export function AssistantScreen() {
             draft={draft}
             draftFromVoice={draftFromVoice}
             voicePhase={voiceInput.phase}
+            voiceDurationMs={voiceInput.durationMs}
             onChange={(value) => {
               setDraft(value);
               if (value.trim().length === 0) setDraftFromVoice(false);
             }}
             onSend={() => void send(draft)}
             onVoice={() => void toggleVoiceInput()}
+            onVoiceSend={() => voiceInput.stop('submit')}
           />
         </KeyboardAvoidingView>
 

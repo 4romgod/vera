@@ -1,7 +1,7 @@
 # Vera Documentation Guide
 
 **Status:** Active index
-**Last updated:** 26 August 2026
+**Last updated:** 27 August 2026
 
 ## Purpose
 
@@ -52,8 +52,16 @@ retrieval and an owner-controlled-provider disclosure boundary. ADR-0026 adds
 one Expo React Native frontend for web, iOS, and Android as a thin client of the
 existing API. ADR-0027 permits physical owner devices through private
 Tailscale Serve ingress while keeping Vera's listener on loopback. ADR-0028
-adds reviewed device speech input and durable-reply playback without creating a
-second execution path or sending microphone audio to Vera's API.
+originally added reviewed device speech input and durable-reply playback.
+ADR-0030 replaces its unreliable recognizer with owner-controlled recording and
+an ephemeral provider-neutral transcription API without creating a second
+execution path or durable audio store.
+ADR-0029 adds a separately approved, durable publication lifecycle that can
+commit a staged application, create its Vera branch, and open one exact GitHub
+pull request without granting the coding specialist repository credentials.
+ADR-0030 supersedes the unreliable device-recognition portion of ADR-0028 with
+owner-controlled recording and an ephemeral provider-neutral transcription
+boundary; review and durable reply playback remain unchanged.
 
 Implementation began on the same date. ADR-0009 accepts the first production
 source layout and model decision boundary. ADR-0010 accepts the durable
@@ -214,8 +222,11 @@ the thin-client universal frontend boundary is accepted in
 [ADR-0026](decisions/0026-use-one-expo-react-native-frontend-for-web-and-mobile.md).
 Private tailnet ingress for physical owner devices is accepted in
 [ADR-0027](decisions/0027-use-tailscale-serve-for-private-physical-device-access.md).
-Reviewed voice interaction in the universal frontend is accepted in
-[ADR-0028](decisions/0028-treat-device-voice-as-a-reviewed-experience-adapter.md).
+Separately governed software publication is accepted in
+[ADR-0029](decisions/0029-publish-approved-software-changes-through-a-separate-durable-lifecycle.md).
+Owner-controlled recording and provider-neutral transcription are accepted in
+[ADR-0030](decisions/0030-transcribe-owner-controlled-recordings-through-a-provider-neutral-boundary.md),
+which supersedes ADR-0028's device-recognition approach.
 
 ## Documentation and implementation cadence
 
