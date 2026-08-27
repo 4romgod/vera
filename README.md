@@ -165,6 +165,13 @@ Approved publications use a separate MongoDB aggregate and the same
 per-project mutation lease. They reconcile exact existing commits, remote
 branches, and pull requests after retry; see
 [ADR-0029](docs/decisions/0029-publish-approved-software-changes-through-a-separate-durable-lifecycle.md).
+One approved development campaign can now compose those boundaries across a
+single objective: bounded implementation, managed staging, operator-configured
+local gates, exact pull-request publication, GitHub checks/review observation,
+policy-gated merge, and local-base synchronization. The campaign cannot alter
+its own policy or control-plane code, and remote CI/review failure stops for
+owner review. See
+[ADR-0034](docs/decisions/0034-delegate-bounded-development-campaigns-through-one-owner-approval.md).
 The accepted V1 journey, including an exact owner-reviewed third-party Codex
 disclosure and real artifact, was demonstrated on 25 August 2026. Additional
 cloud-brain profiles remain optional conformance targets, not V1 blockers or
@@ -766,6 +773,24 @@ macmini,” or “Check Redis on macmini and if it is unhealthy then restart it.
 The conditional form pauses once for read-only inspection and again for the
 exact mutation. Never copy the example unchanged: the catalog is executable
 operator policy, not sample data.
+
+To enable bounded development campaigns, copy and tailor the separate ignored
+operator policy:
+
+```bash
+cp config/development-campaigns.example.json config/development-campaigns.json
+command -v npm
+# Replace every /absolute/path/to/npm in the copied file.
+VERA_DEVELOPMENT_CAMPAIGN_CATALOG_FILE=config/development-campaigns.json npm run dev
+```
+
+The selected project must be registered, clean, on the configured base branch,
+and synchronized with `origin`. From the frontend Campaigns tab, prepare one
+objective, inspect the frozen base, gates, limits, delivery metadata, and merge
+policy, then approve the complete envelope. Vera may merge only this campaign's
+exact non-draft pull request after the configured local and GitHub evidence is
+green. The example includes `npm ci` because each managed worktree starts
+without shared `node_modules`.
 
 For a multi-turn conversation, use `chat`. The first command creates a
 conversation and returns its ID with Vera's durable reply:

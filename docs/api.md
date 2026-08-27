@@ -61,6 +61,12 @@ must not be exposed to an untrusted or shared network.
 | `GET /v1/software-change-publications/{publicationId}/events` | Retrieve immutable ordered publication events | `200` |
 | `POST /v1/software-change-publications/{publicationId}/decision` | Approve or reject the disclosed publication effect | `202` |
 | `POST /v1/software-change-publications/{publicationId}/cancellation` | Cancel publication before execution begins | `202` |
+| `POST /v1/development-campaigns` | Prepare one policy-bounded development campaign for approval | `202` |
+| `GET /v1/development-campaign-policies` | List safe campaign-policy summaries for registered projects | `200` |
+| `GET /v1/development-campaigns` | List the latest owner-scoped campaigns | `200` |
+| `GET /v1/development-campaigns/{campaignId}` | Retrieve frozen authority, attempts, PR observation, and result | `200` |
+| `POST /v1/development-campaigns/{campaignId}/decision` | Approve or reject the complete campaign envelope | `202` |
+| `POST /v1/development-campaigns/{campaignId}/cancellation` | Cancel a campaign before publication begins | `202` |
 | `POST /v1/model-decisions` | Exercise the lower-level model decision boundary | `200` |
 
 The model-decision path is useful for provider and proposal diagnostics. New
@@ -743,6 +749,83 @@ the exact approved patch is already staged, the application succeeds because
 the effect cannot truthfully be reported as reversed. Mixed state becomes
 `review_required` and is never overwritten automatically.
 
+### Development campaigns
+
+A development campaign composes the existing task, staged-application, and
+publication resources without bypassing them. The operator first configures
+`VERA_DEVELOPMENT_CAMPAIGN_CATALOG_FILE`. The selected policy, not the request
+body or a model, supplies the project root, base branch, exact quality-gate
+commands, protected paths, attempt and change ceilings, duration, minimum check
+count, and merge policy.
+
+```http
+POST /v1/development-campaigns
+Idempotency-Key: campaign-vera-401
+Content-Type: application/json
+
+{
+  "projectId": "project_...",
+  "policyId": "vera-supervised-autonomy",
+  "objective": "Add a visible status endpoint.",
+  "ticket": {
+    "reference": "VERA-401",
+    "details": "Add a visible status endpoint."
+  },
+  "delivery": {
+    "commitMessage": "feat: add a visible status endpoint",
+    "pullRequest": {
+      "title": "feat: add a visible status endpoint",
+      "body": "Implements VERA-401 under the configured campaign policy.",
+      "draft": false
+    }
+  }
+}
+```
+
+Creation is read-only but strict: the registered checkout must be clean, on the
+configured base branch, and exactly synchronized with the remote. The response
+freezes that base revision, repository, exact enabled specialist destination
+and authority, complete gate definitions, protected paths, limits, delivery
+metadata, and explicit prohibitions on direct base pushes, force pushes, and
+policy mutation. The owner approves that one complete effect through the
+campaign decision route.
+
+After approval, the campaign worker owns the project-mutation lease for each
+transition and may approve only matching internal specialist, application, and
+publication effects. A failed local gate records bounded output, retires that
+attempt from the campaign, and starts a complete replacement from the same base
+while attempts remain. Its managed worktree remains immutable evidence and is
+never reused by the replacement. Successful local verification creates one
+non-draft pull request. Vera
+then polls GitHub and merges only when the exact approved head/base, minimum
+check count, zero pending/failed checks, configured review decision, and clean
+merge state all hold.
+
+Remote CI failure, reviewer change request, moved refs, or ambiguous remote
+state becomes `review_required`. V1 does not update an already published branch
+or re-run implementation after remote review. Campaign cancellation is truthful
+only through `verifying`; after publication begins the owner handles the pull
+request and any external state directly.
+
+```mermaid
+flowchart LR
+    A["One campaign approval"] --> I["Bounded implementation"]
+    I --> L{"Local gates"}
+    L -->|"fail; attempts remain"| I
+    L -->|pass| P["Exact PR publication"]
+    P --> C{"Checks and review"}
+    C -->|pending| C
+    C -->|failed or changed| R["review_required"]
+    C -->|policy satisfied| M["Exact-head merge"]
+    M --> S["Fast-forward local base"]
+```
+
+The example catalog at `config/development-campaigns.example.json`
+intentionally uses `/absolute/path/to/npm`; the operator replaces it with the
+result of `command -v npm` on the host. Its first gate installs the
+lockfile-defined dependencies in each fresh managed worktree before repository
+checks and build run.
+
 ## Events
 
 `GET /v1/runs/{runId}/events` returns:
@@ -801,13 +884,13 @@ Error envelopes use:
 | Status | Codes | Meaning |
 |---:|---|---|
 | `400` | `invalid_request` | Missing, malformed, too large, or unknown request input. |
-| `404` | `task_not_found`, `run_not_found`, `approval_not_found`, `project_not_found`, `conversation_not_found`, `conversation_message_not_found`, `artifact_not_found`, `change_application_not_found`, `software_change_publication_not_found` | The addressed resource does not exist. |
-| `409` | `idempotency_key_reused`, `approval_already_decided`, `concurrent_transition_failed`, `conversation_message_mismatch`, `change_application_idempotency_key_reused`, `change_application_approval_already_decided`, `change_application_concurrent_transition_failed`, `change_application_not_cancellable`, `software_change_publication_idempotency_key_reused`, `software_change_publication_approval_already_decided`, `software_change_publication_concurrent_transition_failed`, `software_change_publication_not_cancellable`, `stale_source`, `application_conflict`, `publication_conflict`, `review_required` | The request conflicts with durable, filesystem, or remote state. |
+| `404` | `task_not_found`, `run_not_found`, `approval_not_found`, `project_not_found`, `conversation_not_found`, `conversation_message_not_found`, `artifact_not_found`, `change_application_not_found`, `software_change_publication_not_found`, `development_campaign_not_found`, `development_campaign_project_not_found` | The addressed resource does not exist. |
+| `409` | `idempotency_key_reused`, `approval_already_decided`, `concurrent_transition_failed`, `conversation_message_mismatch`, `change_application_idempotency_key_reused`, `change_application_approval_already_decided`, `change_application_concurrent_transition_failed`, `change_application_not_cancellable`, `software_change_publication_idempotency_key_reused`, `software_change_publication_approval_already_decided`, `software_change_publication_concurrent_transition_failed`, `software_change_publication_not_cancellable`, `development_campaign_idempotency_key_reused`, `development_campaign_approval_already_decided`, `development_campaign_concurrent_transition_failed`, `development_campaign_not_cancellable`, `stale_source`, `application_conflict`, `publication_conflict`, `campaign_conflict`, `review_required` | The request conflicts with durable, filesystem, or remote state. |
 | `422` | `invalid_project_source`, `software_change_artifact_required`, `software_change_publication_source_required` | A project source is invalid, or the selected artifact/application cannot be used for the requested effect. |
 | `502` | `provider_request_rejected`, `provider_response_invalid` | Provider boundary failed while using the diagnostic endpoint. |
-| `503` | `model_not_found`, `provider_unavailable`, `publication_unavailable`, `operational_store_unavailable`, `scratchpad_unavailable`, `planning_capability_unavailable`, `software_change_capability_unavailable`, `capability_unavailable` | A required runtime dependency is unavailable. The response `dependency` identifies a generic capability runtime when applicable. |
+| `503` | `model_not_found`, `provider_unavailable`, `publication_unavailable`, `operational_store_unavailable`, `scratchpad_unavailable`, `planning_capability_unavailable`, `software_change_capability_unavailable`, `development_campaign_capability_unavailable`, `capability_unavailable` | A required runtime dependency is unavailable. The response `dependency` identifies a generic capability runtime when applicable. |
 | `504` | `provider_timeout` | The model provider exceeded its deadline. |
-| `500` | `internal_error`, `application_failed`, `publication_failed` | An unexpected server or managed-effect failure; details remain in structured logs. |
+| `500` | `internal_error`, `application_failed`, `publication_failed`, `merge_failed`, `synchronization_failed` | An unexpected server or managed-effect failure; details remain in structured logs. |
 
 ## Current security boundary
 

@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "policies": [
+    {
+      "id": "vera-supervised-autonomy",
+      "projectRoot": ".",
+      "baseBranch": "main",
+      "qualityGates": [
+        {
+          "id": "install",
+          "label": "Install locked dependencies",
+          "executable": "/absolute/path/to/npm",
+          "arguments": ["ci"],
+          "timeoutMs": 600000
+        },
+        {
+          "id": "quality",
+          "label": "Formatting, lint, types, and tests",
+          "executable": "/absolute/path/to/npm",
+          "arguments": ["run", "check"],
+          "timeoutMs": 600000
+        },
+        {
+          "id": "build",
+          "label": "Production build",
+          "executable": "/absolute/path/to/npm",
+          "arguments": ["run", "build"],
+          "timeoutMs": 600000
+        }
+      ],
+      "protectedPathPrefixes": [
+        ".github/",
+        ".env",
+        "config/",
+        "apps/api/src/application/development-campaigns/",
+        "apps/api/src/domain/development-campaigns/",
+        "apps/api/src/ports/development-campaigns/"
+      ],
+      "limits": {
+        "maxAttempts": 2,
+        "maxChangedFiles": 40,
+        "maxChangedBytes": 1000000,
+        "maxDurationMinutes": 240,
+        "minimumRequiredChecks": 1
+      },
+      "merge": {
+        "method": "squash",
+        "requireReviewApproval": false,
+        "synchronizeLocalBase": true
+      }
+    }
+  ]
+}

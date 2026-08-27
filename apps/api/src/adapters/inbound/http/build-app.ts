@@ -55,6 +55,12 @@ import { registerMemoryRoutes } from './routes/memory-routes.ts';
 import { registerTranscriptionRoutes } from './routes/transcription-routes.ts';
 import { registerAttachmentRoutes } from './routes/attachment-routes.ts';
 import { registerMachineRoutes } from './routes/machine-routes.ts';
+import { registerDevelopmentCampaignRoutes } from './routes/development-campaign-routes.ts';
+import {
+  DevelopmentCampaignError,
+  type DevelopmentCampaignLifecycle,
+} from '../../../application/development-campaigns/development-campaign-lifecycle.ts';
+import { DevelopmentCampaignOperationError } from '../../../ports/development-campaigns/development-campaign-operations.ts';
 import {
   AttachmentRequestError,
   type AttachmentService,
@@ -88,6 +94,7 @@ export type BuildAppOptions = {
   softwareChangePublications?: SoftwareChangePublicationLifecycle & {
     wake(): void;
   };
+  developmentCampaigns?: DevelopmentCampaignLifecycle & { wake(): void };
   readinessChecks?: {
     name: string;
     check(): Promise<void>;
@@ -382,6 +389,12 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       publications: options.softwareChangePublications,
     });
   }
+  if (options.developmentCampaigns !== undefined) {
+    registerDevelopmentCampaignRoutes(app, {
+      principalId,
+      campaigns: options.developmentCampaigns,
+    });
+  }
 
   if (options.close !== undefined) app.addHook('onClose', options.close);
 
@@ -454,6 +467,33 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
           : error.code === 'publication_failed'
             ? 500
             : 409;
+      void reply.status(statusCode).send({
+        error: { code: error.code, message: error.message },
+      });
+      return;
+    }
+    if (error instanceof DevelopmentCampaignError) {
+      const statusCode =
+        error.code === 'development_campaign_not_found' ||
+        error.code === 'development_campaign_project_not_found'
+          ? 404
+          : error.code === 'development_campaign_capability_unavailable'
+            ? 503
+            : 409;
+      void reply.status(statusCode).send({
+        error: { code: error.code, message: error.message },
+      });
+      return;
+    }
+    if (error instanceof DevelopmentCampaignOperationError) {
+      const statusCode =
+        error.code === 'verification_failed'
+          ? 422
+          : ['campaign_conflict', 'checks_failed', 'review_required'].includes(
+                error.code,
+              )
+            ? 409
+            : 500;
       void reply.status(statusCode).send({
         error: { code: error.code, message: error.message },
       });

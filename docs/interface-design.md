@@ -140,6 +140,26 @@ flowchart LR
   URL as an external action. Full aggregates remain available under Delivery
   evidence and Technical details.
 
+## Delegated development campaigns
+
+The Campaigns resource tab is the control surface for outcome-level software
+delegation. It is intentionally separate from ordinary conversation so the
+owner sees policy and effect before granting authority.
+
+- Creation selects one registered project and operator policy and states one
+  objective. Vera derives ticket and delivery metadata, then the API returns
+  the complete frozen envelope.
+- Approval is labelled “Approve bounded campaign,” never a vague “Continue.”
+- Cards keep objective, repository/base, merge method, gate names, file, byte,
+  duration ceilings, attempts, PR checks, and terminal failure visible.
+- Cancellation appears only while the server can truthfully prevent remote
+  publication.
+- `review_required` is terminal for automation and tells the owner why the PR
+  needs intervention; the interface does not imply that Vera will silently
+  rewrite reviewed remote work.
+- Refresh and periodic inbox refresh rediscover campaigns from the API. The
+  frontend is a projection, never campaign execution authority.
+
 ## Accessibility and quality
 
 - Text and controls must retain readable contrast against every surface.

@@ -888,6 +888,34 @@ artifact resources. Live steering is deferred; changed intent creates a new
 task after best-effort cancellation where necessary. The implemented paths and
 schemas are owned by the [HTTP API](api.md).
 
+## Bounded development-campaign coordination
+
+The first higher-autonomy development path is a durable coordinator over the
+existing task, software-change application, and publication lifecycles. It does
+not create a privileged coding path.
+
+```mermaid
+flowchart TB
+    OWNER["Owner approves one objective and envelope"] --> CAMPAIGN["Development campaign aggregate"]
+    POLICY["Operator policy catalog"] --> CAMPAIGN
+    CAMPAIGN --> TASK["Task and capability lifecycle"]
+    TASK --> APP["Managed-worktree application"]
+    APP --> GATES["Independent configured gates"]
+    GATES --> PUB["Exact publication lifecycle"]
+    PUB --> OBS["GitHub checks and review observation"]
+    OBS --> MERGE["Policy-gated exact-head merge"]
+    MERGE --> SYNC["Registered base synchronization"]
+    CAMPAIGN --> OPS["MongoDB aggregate and project lease"]
+```
+
+The campaign aggregate is the durable orchestration truth. Each subordinate
+resource keeps its own approval, events, effect identity, and recovery
+semantics. The shared project-mutation lease serializes campaign verification,
+publication, and synchronization with ordinary repository operations. Provider
+selection remains late-bound in the capability runtime; test, merge, and policy
+authority remain deterministic code. See
+[ADR-0034](decisions/0034-delegate-bounded-development-campaigns-through-one-owner-approval.md).
+
 ## Initial deployment hypothesis
 
 ```mermaid

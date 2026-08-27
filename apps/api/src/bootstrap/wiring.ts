@@ -12,10 +12,13 @@ import { InMemoryChangeApplicationStore } from '../adapters/outbound/persistence
 import { MongoDbChangeApplicationStore } from '../adapters/outbound/persistence/mongodb/mongodb-change-application-store.ts';
 import { InMemorySoftwareChangePublicationStore } from '../adapters/outbound/persistence/memory/in-memory-software-change-publication-store.ts';
 import { MongoDbSoftwareChangePublicationStore } from '../adapters/outbound/persistence/mongodb/mongodb-software-change-publication-store.ts';
+import { InMemoryDevelopmentCampaignStore } from '../adapters/outbound/persistence/memory/in-memory-development-campaign-store.ts';
+import { MongoDbDevelopmentCampaignStore } from '../adapters/outbound/persistence/mongodb/mongodb-development-campaign-store.ts';
 import { InMemoryProjectMutationLeaseStore } from '../adapters/outbound/persistence/memory/in-memory-project-mutation-lease-store.ts';
 import { MongoDbProjectMutationLeaseStore } from '../adapters/outbound/persistence/mongodb/mongodb-project-mutation-lease-store.ts';
 import { LocalGitSoftwareChangeApplicationExecutor } from '../adapters/outbound/change-applications/local-git-software-change-application-executor.ts';
 import { GitHubSoftwareChangePublicationExecutor } from '../adapters/outbound/change-applications/github-software-change-publication-executor.ts';
+import { LocalGitGitHubDevelopmentCampaignOperations } from '../adapters/outbound/development-campaigns/local-git-github-development-campaign-operations.ts';
 import {
   LocalGitProjectContextAssembler,
   resolveLocalGitRoot,
@@ -36,6 +39,8 @@ import { createSoftwareChangeApplicationLifecycle } from '../application/change-
 import { createSoftwareChangeApplicationWorker } from '../application/change-applications/software-change-application-worker.ts';
 import { createSoftwareChangePublicationLifecycle } from '../application/change-applications/software-change-publication-lifecycle.ts';
 import { createSoftwareChangePublicationWorker } from '../application/change-applications/software-change-publication-worker.ts';
+import { createDevelopmentCampaignLifecycle } from '../application/development-campaigns/development-campaign-lifecycle.ts';
+import { createDevelopmentCampaignWorker } from '../application/development-campaigns/development-campaign-worker.ts';
 import { createCapabilityService } from '../application/capabilities/capability-service.ts';
 import type { AppConfig } from './config.ts';
 import { DefaultRunBudget } from '../domain/tasks/run-budget.ts';
@@ -47,6 +52,7 @@ import type { OwnerResourceStore } from '../ports/persistence/owner-resource-sto
 import type { WorkLeaseStore } from '../ports/persistence/work-lease-store.ts';
 import type { ChangeApplicationStore } from '../ports/persistence/change-application-store.ts';
 import type { SoftwareChangePublicationStore } from '../ports/persistence/software-change-publication-store.ts';
+import type { DevelopmentCampaignStore } from '../ports/persistence/development-campaign-store.ts';
 import type { ProjectMutationLeaseStore } from '../ports/persistence/project-mutation-lease-store.ts';
 import { LocalPersonalTaskActionExecutor } from '../adapters/outbound/integrations/personal-tasks/local-personal-task-action-executor.ts';
 import { createPersonalTaskService } from '../application/personal-tasks/personal-task-service.ts';
@@ -133,6 +139,14 @@ export function createApp(
           database: config.storage.mongodbDatabase,
           timeoutMs: config.storage.dependencyTimeoutMs,
         });
+  const campaignStore: DevelopmentCampaignStore =
+    config.storage.mode === 'memory'
+      ? new InMemoryDevelopmentCampaignStore()
+      : new MongoDbDevelopmentCampaignStore({
+          uri: config.storage.mongodbUri,
+          database: config.storage.mongodbDatabase,
+          timeoutMs: config.storage.dependencyTimeoutMs,
+        });
   const projectMutationLeases: ProjectMutationLeaseStore =
     config.storage.mode === 'memory'
       ? new InMemoryProjectMutationLeaseStore()
@@ -215,6 +229,27 @@ export function createApp(
       gitCommand: config.publication.gitCommand,
       ghCommand: config.publication.ghCommand,
     });
+  const developmentCampaignOperations =
+    new LocalGitGitHubDevelopmentCampaignOperations({
+      catalog: config.developmentCampaigns ?? {
+        schemaVersion: 1,
+        policies: [],
+      },
+      gitCommand: config.publication.gitCommand,
+      ghCommand: config.publication.ghCommand,
+    });
+  const maximumCampaignVerificationMs = Math.max(
+    0,
+    ...(config.developmentCampaigns?.policies.map((policy) =>
+      policy.qualityGates.reduce((total, gate) => total + gate.timeoutMs, 0),
+    ) ?? []),
+  );
+  // A campaign owns the shared project-mutation lease while all configured
+  // gates execute. Keep the lease valid beyond the longest possible gate run.
+  const developmentCampaignLeaseMs = Math.max(
+    config.worker.leaseMs,
+    maximumCampaignVerificationMs + 60_000,
+  );
 
   const appReference: { current?: ReturnType<typeof buildApp> } = {};
   const lifecycleObserver = {
@@ -306,6 +341,25 @@ export function createApp(
       },
     },
   );
+  const developmentCampaignLifecycle = createDevelopmentCampaignLifecycle({
+    store: campaignStore,
+    projects: resources,
+    tasks: lifecycle,
+    applications: changeApplicationLifecycle,
+    publications: softwareChangePublicationLifecycle,
+    capabilities,
+    operations: developmentCampaignOperations,
+    observer: lifecycleObserver,
+  });
+  const developmentCampaignWorker = createDevelopmentCampaignWorker({
+    store: campaignStore,
+    leases: projectMutationLeases,
+    lifecycle: developmentCampaignLifecycle,
+    concurrency: 1,
+    pollIntervalMs: Math.max(config.worker.pollIntervalMs, 5_000),
+    leaseMs: developmentCampaignLeaseMs,
+    observer: lifecycleObserver,
+  });
   const dispatchedLifecycle: TaskLifecycle = {
     async submit(input) {
       const aggregate = await lifecycle.submit(input);
@@ -351,6 +405,10 @@ export function createApp(
     softwareChangePublications: {
       ...softwareChangePublicationLifecycle,
       wake: () => softwareChangePublicationWorker.wake(),
+    },
+    developmentCampaigns: {
+      ...developmentCampaignLifecycle,
+      wake: () => developmentCampaignWorker.wake(),
     },
     readinessChecks: [
       {
@@ -405,8 +463,25 @@ export function createApp(
         name: 'software_change_publication_worker',
         check: () => softwareChangePublicationWorker.checkReadiness(),
       },
+      {
+        name: 'development_campaign_store',
+        check: () => campaignStore.checkReadiness(),
+      },
+      ...((config.developmentCampaigns?.policies.length ?? 0) === 0
+        ? []
+        : [
+            {
+              name: 'development_campaign_operations',
+              check: () => developmentCampaignOperations.checkReadiness(),
+            },
+          ]),
+      {
+        name: 'development_campaign_worker',
+        check: () => developmentCampaignWorker.checkReadiness(),
+      },
     ],
     close: async () => {
+      await developmentCampaignWorker.stop();
       await worker.stop();
       await reminderWorker.stop();
       await changeApplicationWorker.stop();
@@ -418,6 +493,7 @@ export function createApp(
         leases.close(),
         applicationStore.close(),
         publicationStore.close(),
+        campaignStore.close(),
         projectMutationLeases.close(),
         attachmentStore.close(),
       ]);
@@ -429,5 +505,6 @@ export function createApp(
   reminderWorker.start();
   changeApplicationWorker.start();
   softwareChangePublicationWorker.start();
+  developmentCampaignWorker.start();
   return app;
 }
