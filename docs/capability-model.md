@@ -12,6 +12,7 @@ evidence-adaptive bounded orchestration accepted by ADR-0024 on 26 August 2026;
 and `memory_management@1` accepted by ADR-0025 on 26 August 2026;
 `attachment_analysis@1` is accepted by ADR-0031 on 27 August 2026; actionable
 attachment composition is accepted by ADR-0032 on 27 August 2026
+and registered machine operations are accepted by ADR-0033 on 27 August 2026
 
 ## Purpose
 
@@ -148,6 +149,19 @@ effective authority always includes `attachment_content` and adds
 boundary. Output is an `attachment_analysis` artifact whose citations are
 checked against the exact approved document segments or images. See
 [ADR-0031](decisions/0031-store-owner-attachments-and-analyze-them-through-exact-approval.md).
+
+`machine_inspection@1` and `machine_service_management@1` are the first
+physical-host operation contracts. Their arguments contain only registered
+machine, service, and action IDs. Exact commands, SSH targets, probes, and
+credentials remain operator configuration outside model proposals and public
+clients. Inspection is read-only. Service management always declares
+`machine_service_control`, requires an exact approval, and verifies a configured
+postcondition before producing its action-result artifact. Because one
+capability spans multiple registered destinations, the capability catalog shows
+its conservative authority envelope without a single destination; the machine
+catalog and each approval expose the concrete target. A diagnostic may be
+bound as immutable evidence for a separately approved conditional action. See
+[ADR-0033](decisions/0033-govern-machine-operations-through-registered-actions.md).
 
 ## Capability invocation lifecycle
 

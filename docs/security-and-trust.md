@@ -155,6 +155,15 @@ Capabilities should be narrow, typed, scoped to an environment, and explicit
 about effect. Generic execution should occur only in a sandbox with a declared
 manifest and policy.
 
+Machine operations follow this rule concretely: the owner-operated catalog
+contains the only executable paths and argument vectors Vera may use. The model
+receives public IDs and allowed action names, never commands. Inspection and
+service mutation use separate exact approvals; mutation must produce a matching
+postcondition observation. Public machine IDs and labels may reach the selected
+orchestration provider, so they must not contain secrets. Registered diagnostic
+output becomes owner-visible artifact data and must not print credentials.
+There is no generic shell capability.
+
 ### Credential exposure
 
 Raw credentials must not appear in:

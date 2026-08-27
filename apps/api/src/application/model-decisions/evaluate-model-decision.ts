@@ -35,6 +35,12 @@ import {
 } from '../../domain/goals/adaptive-goal.ts';
 import type { AdaptiveGoalPlan } from '../../domain/goals/adaptive-goal.ts';
 import type { AttachmentReference } from '../../domain/attachments/attachment.ts';
+import {
+  MachineInspectionArgumentsSchema,
+  MachineServiceActionArgumentsSchema,
+  publicMachineCatalog,
+  type MachineCatalog,
+} from '../../domain/machines/machine.ts';
 
 export type EvaluateModelDecision = (
   message: string,
@@ -263,7 +269,40 @@ function decide(
   ownerTimeZone = 'UTC',
   ownerMessage = '',
   attachments: readonly AttachmentReference[] = [],
+  machines?: MachineCatalog,
 ): ExecutionDecision {
+  const machineArgumentsAreRegistered = (
+    capability: string,
+    arguments_: Record<string, unknown>,
+  ) => {
+    if (
+      capability !== 'machine_inspection' &&
+      capability !== 'machine_service_management'
+    ) {
+      return true;
+    }
+    const machine = machines?.machines.find(
+      ({ id }) => id === arguments_.machineId,
+    );
+    if (machine === undefined) return false;
+    if (capability === 'machine_inspection') {
+      return (
+        !Array.isArray(arguments_.serviceIds) ||
+        arguments_.serviceIds.every((id) =>
+          machine.services.some((service) => service.id === id),
+        )
+      );
+    }
+    const service = machine.services.find(
+      ({ id }) => id === arguments_.serviceId,
+    );
+    const action = arguments_.action;
+    return (
+      service !== undefined &&
+      (action === 'start' || action === 'stop' || action === 'restart') &&
+      service.actions[action] !== undefined
+    );
+  };
   if (attachments.length > 0) {
     const firstCapability =
       proposal.kind === 'invoke_capability'
@@ -330,6 +369,16 @@ function decide(
         'timeZone' in step.arguments &&
         step.arguments.timeZone !== ownerTimeZone,
     );
+    const invalidMachineStep = plan.data.steps.find(
+      (step) => !machineArgumentsAreRegistered(step.capability, step.arguments),
+    );
+    if (invalidMachineStep !== undefined) {
+      return {
+        kind: 'rejected',
+        code: 'invalid_goal_plan',
+        message: `Goal step ${invalidMachineStep.id} selected an unregistered machine operation.`,
+      };
+    }
     if (
       plan.data.steps.some(
         (step) => step.capability === 'attachment_analysis',
@@ -453,6 +502,14 @@ function decide(
         message: 'Attachment analysis requires a current attachment.',
       };
     }
+    if (!machineArgumentsAreRegistered(step.capability, step.arguments)) {
+      return {
+        kind: 'rejected',
+        code: 'invalid_goal_plan',
+        message:
+          'The adaptive goal selected an unregistered machine operation.',
+      };
+    }
     return { kind: 'adaptive_goal_planned', plan: enrichedPlan.data };
   }
 
@@ -566,6 +623,44 @@ function decide(
       ),
     };
   }
+  if (proposal.capability.name === 'machine_inspection') {
+    const arguments_ = MachineInspectionArgumentsSchema.parse(
+      proposal.arguments,
+    );
+    if (!machineArgumentsAreRegistered(proposal.capability.name, arguments_)) {
+      return {
+        kind: 'rejected',
+        code: 'invalid_capability_arguments',
+        message:
+          'The proposed inspection targets an unregistered machine or service.',
+      };
+    }
+    return {
+      kind: 'approval_required',
+      reason: 'specialist_capability_invocation',
+      capability: proposal.capability,
+      proposedArguments: arguments_,
+    };
+  }
+  if (proposal.capability.name === 'machine_service_management') {
+    const arguments_ = MachineServiceActionArgumentsSchema.parse(
+      proposal.arguments,
+    );
+    if (!machineArgumentsAreRegistered(proposal.capability.name, arguments_)) {
+      return {
+        kind: 'rejected',
+        code: 'invalid_capability_arguments',
+        message:
+          'The proposed service action is not registered for that machine.',
+      };
+    }
+    return {
+      kind: 'approval_required',
+      reason: 'specialist_capability_invocation',
+      capability: proposal.capability,
+      proposedArguments: arguments_,
+    };
+  }
   return {
     kind: 'approval_required',
     reason: 'specialist_capability_invocation',
@@ -583,6 +678,7 @@ export function createEvaluateModelDecision(
     enabledCapabilities?: readonly CapabilityReference[];
     ownerTimeZone?: string;
     clock?: () => string;
+    machines?: MachineCatalog;
   } = {},
 ): EvaluateModelDecision {
   const enabledCapabilities = options.enabledCapabilities ?? [
@@ -650,6 +746,12 @@ export function createEvaluateModelDecision(
                 }),
               ),
             }),
+        ...(options.machines === undefined
+          ? {}
+          : {
+              registeredMachines: publicMachineCatalog(options.machines)
+                .machines,
+            }),
       }),
       outputSchema: generationJsonSchema,
     });
@@ -706,6 +808,7 @@ export function createEvaluateModelDecision(
             temporalContext.ownerTimeZone,
             message,
             context?.attachments ?? [],
+            options.machines,
           ),
       model: {
         provider: generation.provider,

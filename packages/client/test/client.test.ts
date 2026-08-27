@@ -204,6 +204,83 @@ void describe('Vera HTTP client', () => {
     );
   });
 
+  void it('lists the public command-free machine catalog', async () => {
+    let requestedUrl = '';
+    const client = new VeraClient({
+      baseUrl: 'http://vera.test',
+      fetch: (input) => {
+        requestedUrl =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        return Promise.resolve(
+          Response.json({
+            schemaVersion: 1,
+            machines: [
+              {
+                id: 'macmini',
+                displayName: 'Mac Mini',
+                adapter: 'local',
+                diagnostics: [{ id: 'disk', label: 'Disk' }],
+                services: [
+                  {
+                    id: 'redis',
+                    displayName: 'Redis',
+                    actions: ['start', 'stop', 'restart'],
+                  },
+                ],
+              },
+            ],
+          }),
+        );
+      },
+    });
+
+    const catalog = await client.listMachines();
+
+    assert.equal(requestedUrl, 'http://vera.test/v1/machines');
+    assert.equal(catalog.machines[0]?.services[0]?.id, 'redis');
+    const machine = catalog.machines[0];
+    assert.ok(machine);
+    assert.equal('command' in machine, false);
+  });
+
+  void it('rejects an invalid machine catalog at the client boundary', async () => {
+    const client = new VeraClient({
+      fetch: () =>
+        Promise.resolve(
+          Response.json({ schemaVersion: 1, machines: [{ id: 42 }] }),
+        ),
+    });
+
+    await assert.rejects(client.listMachines(), /invalid machine catalog/u);
+  });
+
+  void it('rejects operator-only machine commands at the client boundary', async () => {
+    const client = new VeraClient({
+      fetch: () =>
+        Promise.resolve(
+          Response.json({
+            schemaVersion: 1,
+            machines: [
+              {
+                id: 'macmini',
+                displayName: 'Mac Mini',
+                adapter: 'local',
+                diagnostics: [],
+                services: [],
+                command: { executable: '/usr/bin/true', arguments: [] },
+              },
+            ],
+          }),
+        ),
+    });
+
+    await assert.rejects(client.listMachines(), /invalid machine catalog/u);
+  });
+
   void it('lists and validates owner-scoped personal tasks', async () => {
     let requestedUrl = '';
     const task = {

@@ -102,6 +102,10 @@ destinations.
 - Completed adaptive results retain the analysis summary and citations beside
   the action ledger, so the owner can inspect what Vera understood and what it
   ultimately did without opening raw JSON.
+- The Machines resource tab shows only registered machines, services, and
+  allowed actions. Inspect creates a read-only approval; start, stop, and
+  restart create a distinct mutation approval. Completed cards show service
+  health or the before/after postcondition rather than raw command output.
 
 ## Software delivery in conversation
 

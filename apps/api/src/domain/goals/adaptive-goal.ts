@@ -10,6 +10,8 @@ import {
   MemoryManagementGoalStepSchema,
   SoftwareChangeGoalStepSchema,
   WebResearchGoalStepSchema,
+  MachineInspectionGoalStepSchema,
+  MachineServiceManagementGoalStepSchema,
 } from './goal-plan.ts';
 import type { CapabilityReference } from '../capabilities/capability-registry.ts';
 
@@ -197,6 +199,17 @@ export function createAdaptiveGoalContinuationProposalSchema(options: {
       ({ name, version }) => name === 'memory_management' && version === 1,
     )
       ? [constrainStepId(MemoryManagementGoalStepSchema)]
+      : []),
+    ...(options.enabledCapabilities.some(
+      ({ name, version }) => name === 'machine_inspection' && version === 1,
+    )
+      ? [constrainStepId(MachineInspectionGoalStepSchema)]
+      : []),
+    ...(options.enabledCapabilities.some(
+      ({ name, version }) =>
+        name === 'machine_service_management' && version === 1,
+    )
+      ? [constrainStepId(MachineServiceManagementGoalStepSchema)]
       : []),
   ];
   const requirementResolutionSchemas = options.requirements?.map(

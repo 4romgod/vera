@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "machines": [
+    {
+      "id": "macmini",
+      "displayName": "Mac Mini",
+      "adapter": { "kind": "local" },
+      "diagnostics": [
+        {
+          "id": "root-disk",
+          "label": "Root disk usage",
+          "command": {
+            "executable": "/bin/df",
+            "arguments": ["-h", "/"],
+            "timeoutMs": 3000
+          }
+        }
+      ],
+      "services": [
+        {
+          "id": "redis",
+          "displayName": "Redis",
+          "probe": {
+            "kind": "command",
+            "command": {
+              "executable": "/opt/homebrew/bin/redis-cli",
+              "arguments": ["ping"],
+              "timeoutMs": 3000
+            },
+            "healthyExitCodes": [0]
+          },
+          "actions": {
+            "start": {
+              "executable": "/opt/homebrew/bin/brew",
+              "arguments": ["services", "start", "redis"],
+              "timeoutMs": 30000
+            },
+            "stop": {
+              "executable": "/opt/homebrew/bin/brew",
+              "arguments": ["services", "stop", "redis"],
+              "timeoutMs": 30000
+            },
+            "restart": {
+              "executable": "/opt/homebrew/bin/brew",
+              "arguments": ["services", "restart", "redis"],
+              "timeoutMs": 30000
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

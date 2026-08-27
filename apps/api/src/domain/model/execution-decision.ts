@@ -12,6 +12,10 @@ import { MemoryActionArgumentsSchema } from '../memories/memory.ts';
 import { ModelProposalSchema } from './model-proposal.ts';
 import { GoalPlanSchema } from '../goals/goal-plan.ts';
 import { AdaptiveGoalPlanSchema } from '../goals/adaptive-goal.ts';
+import {
+  MachineInspectionArgumentsSchema,
+  MachineServiceActionArgumentsSchema,
+} from '../machines/machine.ts';
 
 const ResponseDecisionSchema = z
   .object({
@@ -118,6 +122,31 @@ const MemoryManagementApprovalDecisionSchema = z
   })
   .strict();
 
+const MachineInspectionApprovalDecisionSchema = z
+  .object({
+    kind: z.literal('approval_required'),
+    reason: z.literal('specialist_capability_invocation'),
+    capability: z
+      .object({ name: z.literal('machine_inspection'), version: z.literal(1) })
+      .strict(),
+    proposedArguments: MachineInspectionArgumentsSchema,
+  })
+  .strict();
+
+const MachineServiceManagementApprovalDecisionSchema = z
+  .object({
+    kind: z.literal('approval_required'),
+    reason: z.literal('specialist_capability_invocation'),
+    capability: z
+      .object({
+        name: z.literal('machine_service_management'),
+        version: z.literal(1),
+      })
+      .strict(),
+    proposedArguments: MachineServiceActionArgumentsSchema,
+  })
+  .strict();
+
 const RejectedProposalDecisionSchema = z
   .object({
     kind: z.literal('rejected'),
@@ -154,6 +183,8 @@ export const ExecutionDecisionSchema = z.union([
   PersonalTaskManagementApprovalDecisionSchema,
   PersonalReminderManagementApprovalDecisionSchema,
   MemoryManagementApprovalDecisionSchema,
+  MachineInspectionApprovalDecisionSchema,
+  MachineServiceManagementApprovalDecisionSchema,
   GoalPlannedDecisionSchema,
   AdaptiveGoalPlannedDecisionSchema,
   RejectedProposalDecisionSchema,

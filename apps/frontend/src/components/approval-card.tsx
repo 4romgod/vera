@@ -163,6 +163,37 @@ export function ApprovalCard(props: {
         />
       )}
 
+      {effects.includes('machine_service_control') ? (
+        <View
+          style={{
+            gap: 4,
+            borderWidth: 1,
+            borderColor: palette.warning,
+            borderRadius: radius.md,
+            padding: spacing.md,
+            backgroundColor: palette.canvas,
+          }}
+        >
+          <Text
+            style={{
+              color: palette.warning,
+              fontSize: 10,
+              fontWeight: '700',
+              letterSpacing: 0.8,
+            }}
+          >
+            MACHINE STATE WILL CHANGE
+          </Text>
+          <Text
+            selectable
+            style={{ color: palette.textSoft, fontSize: 12, lineHeight: 18 }}
+          >
+            Vera will run only the registered operation named below and will
+            verify the registered service health afterward.
+          </Text>
+        </View>
+      ) : null}
+
       <View
         style={{
           flexDirection: 'row',

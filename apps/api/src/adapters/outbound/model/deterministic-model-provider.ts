@@ -146,7 +146,13 @@ export class DeterministicModelProvider implements ModelProvider {
                     ].includes(artifact.type),
               )
               .map(({ stepId }) => stepId)
-          : [];
+          : nextRequirement?.capability === 'machine_service_management'
+            ? context.observations
+                .filter(
+                  ({ artifact }) => artifact.type === 'machine_diagnostic',
+                )
+                .map(({ stepId }) => stepId)
+            : [];
       const projectArguments = {
         objective: context.ownerMessage,
         ticket: {
@@ -194,7 +200,46 @@ export class DeterministicModelProvider implements ModelProvider {
                       scope: { kind: 'global' },
                       sensitivity: 'personal',
                     }
-                  : undefined;
+                  : nextRequirement?.capability === 'machine_service_management'
+                    ? (() => {
+                        const diagnosticObservation = context.observations.find(
+                          ({ artifact }) =>
+                            artifact.type === 'machine_diagnostic',
+                        );
+                        const diagnostic = diagnosticObservation?.artifact
+                          .content as
+                          | {
+                              machine?: { id?: string };
+                              services?: {
+                                id?: string;
+                                observation?: { status?: string };
+                              }[];
+                            }
+                          | undefined;
+                        const service = diagnostic?.services?.[0];
+                        if (
+                          diagnostic?.machine?.id === undefined ||
+                          service?.id === undefined ||
+                          service.observation?.status !== 'unhealthy'
+                        ) {
+                          return undefined;
+                        }
+                        const action = /\b(stop)\b/u.test(
+                          context.ownerMessage.toLowerCase(),
+                        )
+                          ? ('stop' as const)
+                          : /\b(start)\b/u.test(
+                                context.ownerMessage.toLowerCase(),
+                              )
+                            ? ('start' as const)
+                            : ('restart' as const);
+                        return {
+                          machineId: diagnostic.machine.id,
+                          serviceId: service.id,
+                          action,
+                        };
+                      })()
+                    : undefined;
       const evidenceStepIds = context.observations
         .map(({ stepId }) => stepId)
         .slice(-3);
@@ -223,18 +268,29 @@ export class DeterministicModelProvider implements ModelProvider {
               message: `I completed the requested adaptive goal using ${String(context.observations.length)} verified capability result(s).`,
               evidenceStepIds,
               requirementResolutions: context.requirements.map(
-                (requirement) => ({
-                  requirementId: requirement.id,
-                  status: 'satisfied' as const,
-                  evidenceStepIds: context.observations
+                (requirement) => {
+                  const matching = context.observations
                     .filter(
                       (observation) =>
                         observation.capability.name ===
                           requirement.capability &&
                         observation.capability.version === requirement.version,
                     )
-                    .map((observation) => observation.stepId),
-                }),
+                    .map((observation) => observation.stepId);
+                  return matching.length > 0
+                    ? {
+                        requirementId: requirement.id,
+                        status: 'satisfied' as const,
+                        evidenceStepIds: matching,
+                      }
+                    : {
+                        requirementId: requirement.id,
+                        status: 'not_applicable' as const,
+                        reason:
+                          'The registered machine diagnostic showed that the conditional service action was unnecessary.',
+                        evidenceStepIds,
+                      };
+                },
               ),
             };
       return Promise.resolve({
@@ -252,6 +308,10 @@ export class DeterministicModelProvider implements ModelProvider {
     let currentTime = '2030-01-01T00:00:00.000Z';
     let ownerTimeZone = 'UTC';
     let attachments: { filename: string }[] = [];
+    let registeredMachines: {
+      id: string;
+      services: { id: string; actions: string[] }[];
+    }[] = [];
     try {
       const context = JSON.parse(input.message) as unknown;
       if (
@@ -286,6 +346,13 @@ export class DeterministicModelProvider implements ModelProvider {
           );
         }
         if (
+          'registeredMachines' in context &&
+          Array.isArray(context.registeredMachines)
+        ) {
+          registeredMachines =
+            context.registeredMachines as typeof registeredMachines;
+        }
+        if (
           'temporalContext' in context &&
           typeof context.temporalContext === 'object' &&
           context.temporalContext !== null
@@ -309,6 +376,34 @@ export class DeterministicModelProvider implements ModelProvider {
     }
 
     const normalizedMessage = ownerMessage.toLowerCase();
+    const selectedMachine =
+      registeredMachines.find(({ id }) =>
+        normalizedMessage.includes(id.toLowerCase()),
+      ) ?? registeredMachines[0];
+    const selectedService =
+      selectedMachine?.services.find(({ id }) =>
+        normalizedMessage.includes(id.toLowerCase()),
+      ) ?? selectedMachine?.services[0];
+    const canInspectMachines = JSON.stringify(input.outputSchema).includes(
+      'machine_inspection',
+    );
+    const canManageMachineServices = JSON.stringify(
+      input.outputSchema,
+    ).includes('machine_service_management');
+    const requestsMachineInspection =
+      canInspectMachines &&
+      selectedMachine !== undefined &&
+      /\b(inspect|check|diagnose|status|health)\b/u.test(normalizedMessage);
+    const requestedMachineAction =
+      canManageMachineServices &&
+      selectedMachine !== undefined &&
+      selectedService !== undefined
+        ? (['restart', 'start', 'stop'] as const).find(
+            (action) =>
+              new RegExp(`\\b${action}\\b`, 'u').test(normalizedMessage) &&
+              selectedService.actions.includes(action),
+          )
+        : undefined;
     const requestsChange = /\b(implement|fix|modify|edit|write)\b/u.test(
       normalizedMessage,
     );
@@ -443,6 +538,16 @@ export class DeterministicModelProvider implements ModelProvider {
       personalTaskAction !== undefined ||
       reminderAction !== undefined ||
       memoryAction !== undefined;
+    const machineAction =
+      requestedMachineAction === undefined ||
+      selectedMachine === undefined ||
+      selectedService === undefined
+        ? undefined
+        : {
+            machineId: selectedMachine.id,
+            serviceId: selectedService.id,
+            action: requestedMachineAction,
+          };
     const shouldChange = requestsChange && !hasOwnerDataAction;
     const shouldPlan = requestsPlan && !hasOwnerDataAction;
     const shouldResearch = requestsResearch && !hasOwnerDataAction;
@@ -458,6 +563,11 @@ export class DeterministicModelProvider implements ModelProvider {
       requestsResearch &&
       reminderAction !== undefined &&
       /\b(if|depending|based on|then)\b/u.test(normalizedMessage);
+    const shouldPursueMachineGoal =
+      canPursueGoal &&
+      requestsMachineInspection &&
+      machineAction !== undefined &&
+      /\b(if|when|unless|then)\b/u.test(normalizedMessage);
     const shouldExecuteGoal =
       canExecuteGoal &&
       [
@@ -560,141 +670,220 @@ export class DeterministicModelProvider implements ModelProvider {
       boundedGoalSteps.length >= 2 &&
       boundedGoalSteps.length <= 3;
 
-    const candidate = shouldPursueGoal
+    const candidate = shouldPursueMachineGoal
       ? {
           schemaVersion: 1,
           kind: 'pursue_goal',
           decisionSummary:
-            'The owner requested a later action that depends on evidence not available yet.',
+            'The requested machine action depends on current registered service health.',
           goal: {
             schemaVersion: 1,
             objective: ownerMessage,
             summary:
-              'Observe the first capability result before deciding the next bounded action.',
+              'Inspect the registered service, then separately approve an action only when evidence requires it.',
             completionCriteria:
-              'Use the research evidence to decide whether to create the requested reminder, then explain the outcome.',
+              'Report service health and perform the requested registered action only when its condition is met.',
             requirements: [
               {
-                id: 'requirement_research',
-                description:
-                  'Gather the requested source-backed research evidence.',
-                capability: 'web_research',
+                id: 'requirement_machine_inspection',
+                description: 'Inspect the current registered service health.',
+                capability: 'machine_inspection',
                 version: 1,
                 condition: { kind: 'always' },
               },
               {
-                id: 'requirement_reminder',
+                id: 'requirement_machine_action',
                 description:
-                  'Create the requested reminder when the research condition is satisfied.',
-                capability: 'personal_reminder_management',
+                  'Apply the requested service action if the health condition is met.',
+                capability: 'machine_service_management',
                 version: 1,
                 condition: {
                   kind: 'evidence_dependent',
                   description:
-                    'The research evidence satisfies the condition stated by the owner.',
+                    'The registered service inspection reports unhealthy.',
                 },
               },
             ],
             firstStep: {
               id: 'step_1',
-              purpose:
-                'Gather the source-backed evidence needed for the conditional action.',
+              purpose: 'Inspect the registered service before any mutation.',
               inputStepIds: [],
-              capability: 'web_research',
+              capability: 'machine_inspection',
               version: 1,
-              arguments: { objective: ownerMessage },
+              arguments: {
+                machineId: selectedMachine.id,
+                serviceIds: [machineAction.serviceId],
+              },
             },
           },
         }
-      : executeBoundedGoal
+      : shouldPursueGoal
         ? {
             schemaVersion: 1,
-            kind: 'execute_goal',
+            kind: 'pursue_goal',
             decisionSummary:
-              'The owner requested multiple dependent outcomes that require a bounded capability sequence.',
+              'The owner requested a later action that depends on evidence not available yet.',
             goal: {
               schemaVersion: 1,
               objective: ownerMessage,
-              summary: `Execute ${String(boundedGoalSteps.length)} bounded capability steps and carry approved artifacts forward.`,
-              steps: boundedGoalSteps,
+              summary:
+                'Observe the first capability result before deciding the next bounded action.',
+              completionCriteria:
+                'Use the research evidence to decide whether to create the requested reminder, then explain the outcome.',
+              requirements: [
+                {
+                  id: 'requirement_research',
+                  description:
+                    'Gather the requested source-backed research evidence.',
+                  capability: 'web_research',
+                  version: 1,
+                  condition: { kind: 'always' },
+                },
+                {
+                  id: 'requirement_reminder',
+                  description:
+                    'Create the requested reminder when the research condition is satisfied.',
+                  capability: 'personal_reminder_management',
+                  version: 1,
+                  condition: {
+                    kind: 'evidence_dependent',
+                    description:
+                      'The research evidence satisfies the condition stated by the owner.',
+                  },
+                },
+              ],
+              firstStep: {
+                id: 'step_1',
+                purpose:
+                  'Gather the source-backed evidence needed for the conditional action.',
+                inputStepIds: [],
+                capability: 'web_research',
+                version: 1,
+                arguments: { objective: ownerMessage },
+              },
             },
           }
-        : personalTaskAction !== undefined
+        : executeBoundedGoal
           ? {
               schemaVersion: 1,
-              kind: 'invoke_capability',
+              kind: 'execute_goal',
               decisionSummary:
-                'The owner requested an action against durable personal tasks.',
-              capability: { name: 'personal_task_management', version: 1 },
-              arguments: personalTaskAction,
+                'The owner requested multiple dependent outcomes that require a bounded capability sequence.',
+              goal: {
+                schemaVersion: 1,
+                objective: ownerMessage,
+                summary: `Execute ${String(boundedGoalSteps.length)} bounded capability steps and carry approved artifacts forward.`,
+                steps: boundedGoalSteps,
+              },
             }
-          : reminderAction !== undefined
+          : machineAction !== undefined
             ? {
                 schemaVersion: 1,
                 kind: 'invoke_capability',
                 decisionSummary:
-                  'The owner requested an action against durable reminders.',
-                capability: {
-                  name: 'personal_reminder_management',
-                  version: 1,
-                },
-                arguments: reminderAction,
+                  'The owner requested an exact registered service action.',
+                capability: { name: 'machine_service_management', version: 1 },
+                arguments: machineAction,
               }
-            : memoryAction !== undefined
+            : requestsMachineInspection
               ? {
                   schemaVersion: 1,
                   kind: 'invoke_capability',
                   decisionSummary:
-                    'The owner requested an explicit governed-memory action.',
-                  capability: { name: 'memory_management', version: 1 },
-                  arguments: memoryAction,
+                    'The owner requested bounded registered machine diagnostics.',
+                  capability: { name: 'machine_inspection', version: 1 },
+                  arguments: {
+                    machineId: selectedMachine.id,
+                    ...(selectedService === undefined
+                      ? {}
+                      : { serviceIds: [selectedService.id] }),
+                  },
                 }
-              : shouldResearch
+              : personalTaskAction !== undefined
                 ? {
                     schemaVersion: 1,
                     kind: 'invoke_capability',
                     decisionSummary:
-                      'The request asks for current, source-backed public-web research.',
-                    capability: { name: 'web_research', version: 1 },
-                    arguments: { objective: ownerMessage },
+                      'The owner requested an action against durable personal tasks.',
+                    capability: {
+                      name: 'personal_task_management',
+                      version: 1,
+                    },
+                    arguments: personalTaskAction,
                   }
-                : shouldPlan
+                : reminderAction !== undefined
                   ? {
                       schemaVersion: 1,
                       kind: 'invoke_capability',
                       decisionSummary:
-                        'The request asks for specialist software planning.',
-                      capability: { name: 'development_planning', version: 1 },
-                      arguments: projectArguments,
+                        'The owner requested an action against durable reminders.',
+                      capability: {
+                        name: 'personal_reminder_management',
+                        version: 1,
+                      },
+                      arguments: reminderAction,
                     }
-                  : shouldChange
+                  : memoryAction !== undefined
                     ? {
                         schemaVersion: 1,
                         kind: 'invoke_capability',
                         decisionSummary:
-                          'The request asks for an isolated specialist software change.',
-                        capability: { name: 'software_change', version: 1 },
-                        arguments: projectArguments,
+                          'The owner requested an explicit governed-memory action.',
+                        capability: { name: 'memory_management', version: 1 },
+                        arguments: memoryAction,
                       }
-                    : requestsAttachmentAnalysis
+                    : shouldResearch
                       ? {
                           schemaVersion: 1,
                           kind: 'invoke_capability',
                           decisionSummary:
-                            'The supplied attachments must be analyzed before Vera makes claims about their contents.',
-                          capability: {
-                            name: 'attachment_analysis',
-                            version: 1,
-                          },
+                            'The request asks for current, source-backed public-web research.',
+                          capability: { name: 'web_research', version: 1 },
                           arguments: { objective: ownerMessage },
                         }
-                      : {
-                          schemaVersion: 1,
-                          kind: 'respond',
-                          decisionSummary:
-                            'The request can be answered directly.',
-                          message: `Vera received: ${ownerMessage}`,
-                        };
+                      : shouldPlan
+                        ? {
+                            schemaVersion: 1,
+                            kind: 'invoke_capability',
+                            decisionSummary:
+                              'The request asks for specialist software planning.',
+                            capability: {
+                              name: 'development_planning',
+                              version: 1,
+                            },
+                            arguments: projectArguments,
+                          }
+                        : shouldChange
+                          ? {
+                              schemaVersion: 1,
+                              kind: 'invoke_capability',
+                              decisionSummary:
+                                'The request asks for an isolated specialist software change.',
+                              capability: {
+                                name: 'software_change',
+                                version: 1,
+                              },
+                              arguments: projectArguments,
+                            }
+                          : requestsAttachmentAnalysis
+                            ? {
+                                schemaVersion: 1,
+                                kind: 'invoke_capability',
+                                decisionSummary:
+                                  'The supplied attachments must be analyzed before Vera makes claims about their contents.',
+                                capability: {
+                                  name: 'attachment_analysis',
+                                  version: 1,
+                                },
+                                arguments: { objective: ownerMessage },
+                              }
+                            : {
+                                schemaVersion: 1,
+                                kind: 'respond',
+                                decisionSummary:
+                                  'The request can be answered directly.',
+                                message: `Vera received: ${ownerMessage}`,
+                              };
 
     return Promise.resolve({
       candidate,

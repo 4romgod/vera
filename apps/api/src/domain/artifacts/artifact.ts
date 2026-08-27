@@ -8,6 +8,10 @@ import { PersonalTaskResultSchema } from '../personal-tasks/personal-task.ts';
 import { ReminderResultSchema } from '../reminders/reminder.ts';
 import { MemoryResultSchema } from '../memories/memory.ts';
 import { AttachmentAnalysisSchema } from '../attachments/attachment-analysis.ts';
+import {
+  MachineDiagnosticSchema,
+  MachineServiceActionResultSchema,
+} from '../machines/machine.ts';
 
 export const ArtifactLineageReferenceSchema = z
   .object({
@@ -21,6 +25,8 @@ export const ArtifactLineageReferenceSchema = z
       'personal_reminder_result',
       'memory_result',
       'attachment_analysis',
+      'machine_diagnostic',
+      'machine_service_action_result',
     ]),
     mediaType: z.string().min(1),
     sha256: z.string().regex(/^[a-f0-9]{64}$/),
@@ -106,6 +112,21 @@ export const AttachmentAnalysisArtifactSchema = ArtifactIdentitySchema.extend({
   content: AttachmentAnalysisSchema,
 }).strict();
 
+export const MachineDiagnosticArtifactSchema = ArtifactIdentitySchema.extend({
+  type: z.literal('machine_diagnostic'),
+  mediaType: z.literal('application/vnd.vera.machine-diagnostic+json'),
+  content: MachineDiagnosticSchema,
+}).strict();
+
+export const MachineServiceActionResultArtifactSchema =
+  ArtifactIdentitySchema.extend({
+    type: z.literal('machine_service_action_result'),
+    mediaType: z.literal(
+      'application/vnd.vera.machine-service-action-result+json',
+    ),
+    content: MachineServiceActionResultSchema,
+  }).strict();
+
 export const ArtifactSchema = z.discriminatedUnion('type', [
   ImplementationPlanArtifactSchema,
   SoftwareChangeArtifactSchema,
@@ -114,6 +135,8 @@ export const ArtifactSchema = z.discriminatedUnion('type', [
   PersonalReminderResultArtifactSchema,
   MemoryResultArtifactSchema,
   AttachmentAnalysisArtifactSchema,
+  MachineDiagnosticArtifactSchema,
+  MachineServiceActionResultArtifactSchema,
 ]);
 
 const ArtifactReferenceBaseSchema = ArtifactIdentitySchema.pick({
@@ -165,6 +188,20 @@ export const AttachmentAnalysisArtifactReferenceSchema =
     mediaType: z.literal('application/vnd.vera.attachment-analysis+json'),
   }).strict();
 
+export const MachineDiagnosticArtifactReferenceSchema =
+  ArtifactReferenceBaseSchema.extend({
+    type: z.literal('machine_diagnostic'),
+    mediaType: z.literal('application/vnd.vera.machine-diagnostic+json'),
+  }).strict();
+
+export const MachineServiceActionResultArtifactReferenceSchema =
+  ArtifactReferenceBaseSchema.extend({
+    type: z.literal('machine_service_action_result'),
+    mediaType: z.literal(
+      'application/vnd.vera.machine-service-action-result+json',
+    ),
+  }).strict();
+
 export const ArtifactReferenceSchema = z.discriminatedUnion('type', [
   ImplementationPlanArtifactReferenceSchema,
   SoftwareChangeArtifactReferenceSchema,
@@ -173,6 +210,8 @@ export const ArtifactReferenceSchema = z.discriminatedUnion('type', [
   PersonalReminderResultArtifactReferenceSchema,
   MemoryResultArtifactReferenceSchema,
   AttachmentAnalysisArtifactReferenceSchema,
+  MachineDiagnosticArtifactReferenceSchema,
+  MachineServiceActionResultArtifactReferenceSchema,
 ]);
 
 export type Artifact = z.infer<typeof ArtifactSchema>;

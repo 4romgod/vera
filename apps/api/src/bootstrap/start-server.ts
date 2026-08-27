@@ -112,6 +112,17 @@ app.log.info(
       },
       worker: config.worker,
       reminders: config.reminders,
+      machines: {
+        registered: config.machines?.machines.length ?? 0,
+        local:
+          config.machines?.machines.filter(
+            ({ adapter }) => adapter.kind === 'local',
+          ).length ?? 0,
+        ssh:
+          config.machines?.machines.filter(
+            ({ adapter }) => adapter.kind === 'ssh',
+          ).length ?? 0,
+      },
       storage: {
         mode: config.storage.mode,
         ...(config.storage.mode === 'persistent'

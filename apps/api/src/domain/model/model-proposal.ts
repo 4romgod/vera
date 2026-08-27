@@ -10,6 +10,10 @@ import { PersonalTaskActionArgumentsSchema } from '../personal-tasks/personal-ta
 import { ReminderActionArgumentsSchema } from '../reminders/reminder.ts';
 import { MemoryActionArgumentsSchema } from '../memories/memory.ts';
 import {
+  MachineInspectionArgumentsSchema,
+  MachineServiceActionArgumentsSchema,
+} from '../machines/machine.ts';
+import {
   DevelopmentPlanningGoalStepSchema,
   GoalPlanSchema,
   GoalStepSchema,
@@ -19,6 +23,8 @@ import {
   PersonalReminderManagementGoalStepSchema,
   MemoryManagementGoalStepSchema,
   AttachmentAnalysisGoalStepSchema,
+  MachineInspectionGoalStepSchema,
+  MachineServiceManagementGoalStepSchema,
 } from '../goals/goal-plan.ts';
 import type { CapabilityReference } from '../capabilities/capability-registry.ts';
 import { AdaptiveGoalPlanSchema } from '../goals/adaptive-goal.ts';
@@ -132,6 +138,32 @@ const MemoryManagementProposalSchema = z
   })
   .strict();
 
+const MachineInspectionProposalSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    kind: z.literal('invoke_capability'),
+    decisionSummary: DecisionSummarySchema,
+    capability: CapabilityReferenceSchema.extend({
+      name: z.literal('machine_inspection'),
+      version: z.literal(1),
+    }),
+    arguments: MachineInspectionArgumentsSchema,
+  })
+  .strict();
+
+const MachineServiceManagementProposalSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    kind: z.literal('invoke_capability'),
+    decisionSummary: DecisionSummarySchema,
+    capability: CapabilityReferenceSchema.extend({
+      name: z.literal('machine_service_management'),
+      version: z.literal(1),
+    }),
+    arguments: MachineServiceActionArgumentsSchema,
+  })
+  .strict();
+
 const ExecuteGoalProposalSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -159,6 +191,8 @@ export const ModelProposalSchema = z.union([
   PersonalTaskManagementProposalSchema,
   PersonalReminderManagementProposalSchema,
   MemoryManagementProposalSchema,
+  MachineInspectionProposalSchema,
+  MachineServiceManagementProposalSchema,
   ExecuteGoalProposalSchema,
   PursueAdaptiveGoalProposalSchema,
 ]);
@@ -199,6 +233,15 @@ export function createModelProposalSchema(options: {
     (capability) =>
       capability.name === 'memory_management' && capability.version === 1,
   );
+  const machineInspectionEnabled = options.enabledCapabilities.some(
+    (capability) =>
+      capability.name === 'machine_inspection' && capability.version === 1,
+  );
+  const machineServiceManagementEnabled = options.enabledCapabilities.some(
+    (capability) =>
+      capability.name === 'machine_service_management' &&
+      capability.version === 1,
+  );
   const enabledGoalSteps = [
     ...(developmentPlanningEnabled ? [DevelopmentPlanningGoalStepSchema] : []),
     ...(softwareChangeEnabled ? [SoftwareChangeGoalStepSchema] : []),
@@ -211,6 +254,10 @@ export function createModelProposalSchema(options: {
       : []),
     ...(memoryManagementEnabled ? [MemoryManagementGoalStepSchema] : []),
     ...(attachmentAnalysisEnabled ? [AttachmentAnalysisGoalStepSchema] : []),
+    ...(machineInspectionEnabled ? [MachineInspectionGoalStepSchema] : []),
+    ...(machineServiceManagementEnabled
+      ? [MachineServiceManagementGoalStepSchema]
+      : []),
   ];
   const schemas: z.ZodType[] = [RespondProposalSchema];
   if (developmentPlanningEnabled) {
@@ -226,6 +273,10 @@ export function createModelProposalSchema(options: {
     schemas.push(PersonalReminderManagementProposalSchema);
   }
   if (memoryManagementEnabled) schemas.push(MemoryManagementProposalSchema);
+  if (machineInspectionEnabled) schemas.push(MachineInspectionProposalSchema);
+  if (machineServiceManagementEnabled) {
+    schemas.push(MachineServiceManagementProposalSchema);
+  }
   if (enabledGoalSteps.length >= 2) {
     const enabledGoalStepSchema = z.union(
       enabledGoalSteps as unknown as [z.ZodType, z.ZodType, ...z.ZodType[]],

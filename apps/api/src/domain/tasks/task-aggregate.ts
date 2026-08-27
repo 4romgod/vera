@@ -9,6 +9,8 @@ import {
   PersonalReminderResultArtifactReferenceSchema,
   MemoryResultArtifactReferenceSchema,
   AttachmentAnalysisArtifactReferenceSchema,
+  MachineDiagnosticArtifactReferenceSchema,
+  MachineServiceActionResultArtifactReferenceSchema,
 } from '../artifacts/artifact.ts';
 import { CapabilityDestinationSchema } from '../capabilities/capability-destination.ts';
 import { ConversationContextBundleSchema } from '../conversations/conversation-context.ts';
@@ -45,6 +47,12 @@ import {
 import { MemoryContextBundleSchema } from '../memories/memory-context.ts';
 import { AttachmentReferenceSchema } from '../attachments/attachment.ts';
 import { AttachmentAnalysisSchema } from '../attachments/attachment-analysis.ts';
+import {
+  MachineDiagnosticSchema,
+  MachineInspectionArgumentsSchema,
+  MachineServiceActionArgumentsSchema,
+  MachineServiceActionResultSchema,
+} from '../machines/machine.ts';
 
 export const TaskStatusSchema = z.enum([
   'active',
@@ -90,6 +98,21 @@ const ApprovalIdentitySchema = z
   .strict();
 
 export const ApprovalSchema = z.union([
+  ApprovalIdentitySchema.extend({
+    capability: z
+      .object({ name: z.literal('machine_inspection'), version: z.literal(1) })
+      .strict(),
+    proposedArguments: MachineInspectionArgumentsSchema,
+  }).strict(),
+  ApprovalIdentitySchema.extend({
+    capability: z
+      .object({
+        name: z.literal('machine_service_management'),
+        version: z.literal(1),
+      })
+      .strict(),
+    proposedArguments: MachineServiceActionArgumentsSchema,
+  }).strict(),
   ApprovalIdentitySchema.extend({
     capability: z
       .object({ name: z.literal('attachment_analysis'), version: z.literal(1) })
@@ -189,6 +212,21 @@ const CapabilityInvocationIdentitySchema = z
 export const CapabilityInvocationSchema = z.union([
   CapabilityInvocationIdentitySchema.extend({
     capability: z
+      .object({ name: z.literal('machine_inspection'), version: z.literal(1) })
+      .strict(),
+    arguments: MachineInspectionArgumentsSchema,
+  }).strict(),
+  CapabilityInvocationIdentitySchema.extend({
+    capability: z
+      .object({
+        name: z.literal('machine_service_management'),
+        version: z.literal(1),
+      })
+      .strict(),
+    arguments: MachineServiceActionArgumentsSchema,
+  }).strict(),
+  CapabilityInvocationIdentitySchema.extend({
+    capability: z
       .object({ name: z.literal('attachment_analysis'), version: z.literal(1) })
       .strict(),
     arguments: AttachmentAnalysisArgumentsSchema,
@@ -247,6 +285,20 @@ export const CapabilityInvocationSchema = z.union([
 ]);
 
 export const TaskOutputSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('machine_diagnostic'),
+      diagnostic: MachineDiagnosticSchema,
+      artifact: MachineDiagnosticArtifactReferenceSchema.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('machine_service_action_result'),
+      result: MachineServiceActionResultSchema,
+      artifact: MachineServiceActionResultArtifactReferenceSchema.optional(),
+    })
+    .strict(),
   z
     .object({
       kind: z.literal('attachment_analysis'),

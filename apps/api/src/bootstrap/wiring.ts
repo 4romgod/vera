@@ -62,6 +62,8 @@ import { createSpeechTranscriptionProvider } from '../adapters/outbound/transcri
 import { InMemoryAttachmentStore } from '../adapters/outbound/persistence/memory/in-memory-attachment-store.ts';
 import { MongoDbAttachmentStore } from '../adapters/outbound/persistence/mongodb/mongodb-attachment-store.ts';
 import { createAttachmentService } from '../application/attachments/attachment-service.ts';
+import { ConfiguredMachineOperations } from '../adapters/outbound/machines/configured-machine-operations.ts';
+import { createMachineService } from '../application/machines/machine-service.ts';
 
 export function createApp(
   config: AppConfig,
@@ -163,6 +165,9 @@ export function createApp(
   const personalTaskExecutor = new LocalPersonalTaskActionExecutor(resources);
   const reminderExecutor = new LocalReminderActionExecutor(resources);
   const memoryExecutor = new LocalMemoryActionExecutor(resources);
+  const machineOperations = new ConfiguredMachineOperations(
+    config.machines ?? { schemaVersion: 1, machines: [] },
+  );
   const capabilities = createCapabilityRuntimeRegistry({
     provider,
     attachmentAnalysisProvider: visionProvider,
@@ -173,11 +178,13 @@ export function createApp(
     personalTasks: personalTaskExecutor,
     reminders: reminderExecutor,
     memories: memoryExecutor,
+    machines: machineOperations,
   });
   const personalTaskService = createPersonalTaskService({ store: resources });
   const reminderService = createReminderService({ store: resources });
   const notificationService = createNotificationService({ store: resources });
   const memoryService = createMemoryService({ store: resources });
+  const machineService = createMachineService(machineOperations.catalog);
   const transcriptionProvider = createSpeechTranscriptionProvider(
     config.transcription,
   );
@@ -192,6 +199,7 @@ export function createApp(
     {
       enabledCapabilities: capabilities.enabledReferences(),
       ownerTimeZone: config.reminders.ownerTimeZone,
+      machines: machineOperations.catalog,
     },
   );
   const evaluateGoalContinuation = createEvaluateGoalContinuation(provider, {
@@ -335,6 +343,7 @@ export function createApp(
     memories: memoryService,
     transcriptions: transcriptionService,
     attachments: attachmentService,
+    machines: machineService,
     changeApplications: {
       ...changeApplicationLifecycle,
       wake: () => changeApplicationWorker.wake(),
