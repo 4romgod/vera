@@ -2,14 +2,15 @@
 
 **Status:** Accepted (capability declaration shape, invocation lifecycle,
 selection checks, and resource/delegation budget model)
-**Version:** 0.9
-**Last updated:** 26 August 2026
+**Version:** 1.0
+**Last updated:** 27 August 2026
 **Accepted:** 24 August 2026 (owner); declarative runtime, catalog, and
 `web_research@1` accepted by ADR-0020 on 25 August 2026; bounded composition
 accepted by ADR-0021 on 26 August 2026; provider-neutral integration actions
 and `personal_task_management@1` accepted by ADR-0022 on 26 August 2026;
 evidence-adaptive bounded orchestration accepted by ADR-0024 on 26 August 2026;
-and `memory_management@1` accepted by ADR-0025 on 26 August 2026
+and `memory_management@1` accepted by ADR-0025 on 26 August 2026;
+`attachment_analysis@1` is accepted by ADR-0031 on 27 August 2026
 
 ## Purpose
 
@@ -133,6 +134,19 @@ approval-gated; mutations declare `personal_data_write`, while list has no side
 effect. The local adapter is provider-neutral and writes to the authoritative
 owner memory store. See
 [ADR-0025](decisions/0025-use-explicit-versioned-owner-governed-memory.md).
+
+`attachment_analysis@1` is the owner-governed document-and-image intelligence
+boundary. Its
+proposal contract contains only the analysis objective; exact attachments come
+from code-frozen task state rather than model-authored arguments. The selected
+analysis model receives bounded extracted segments and normalized images only
+after approval. Vision provider selection is independent from orchestration
+provider selection. Its
+effective authority always includes `attachment_content` and adds
+`third_party_disclosure` only when the selected provider is outside the owner
+boundary. Output is an `attachment_analysis` artifact whose citations are
+checked against the exact approved document segments or images. See
+[ADR-0031](decisions/0031-store-owner-attachments-and-analyze-them-through-exact-approval.md).
 
 ## Capability invocation lifecycle
 

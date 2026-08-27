@@ -59,6 +59,9 @@ import { LocalMemoryActionExecutor } from '../adapters/outbound/integrations/mem
 import { createMemoryService } from '../application/memories/memory-service.ts';
 import { createTranscriptionService } from '../application/transcriptions/transcription-service.ts';
 import { createSpeechTranscriptionProvider } from '../adapters/outbound/transcription/speech-transcription-provider-registry.ts';
+import { InMemoryAttachmentStore } from '../adapters/outbound/persistence/memory/in-memory-attachment-store.ts';
+import { MongoDbAttachmentStore } from '../adapters/outbound/persistence/mongodb/mongodb-attachment-store.ts';
+import { createAttachmentService } from '../application/attachments/attachment-service.ts';
 
 export function createApp(
   config: AppConfig,
@@ -70,6 +73,7 @@ export function createApp(
     );
   }
   const provider = createModelProvider(config.model);
+  const visionProvider = createModelProvider(config.vision ?? config.model);
   const store: ExecutionStore =
     config.storage.mode === 'memory'
       ? new InMemoryExecutionStore()
@@ -94,6 +98,15 @@ export function createApp(
           database: config.storage.mongodbDatabase,
           timeoutMs: config.storage.dependencyTimeoutMs,
         });
+  const attachmentStore =
+    config.storage.mode === 'memory'
+      ? new InMemoryAttachmentStore()
+      : new MongoDbAttachmentStore({
+          uri: config.storage.mongodbUri,
+          database: config.storage.mongodbDatabase,
+          timeoutMs: config.storage.dependencyTimeoutMs,
+        });
+  const attachmentService = createAttachmentService({ store: attachmentStore });
   const leases: WorkLeaseStore =
     config.storage.mode === 'memory'
       ? new InMemoryWorkLeaseStore()
@@ -151,6 +164,9 @@ export function createApp(
   const reminderExecutor = new LocalReminderActionExecutor(resources);
   const memoryExecutor = new LocalMemoryActionExecutor(resources);
   const capabilities = createCapabilityRuntimeRegistry({
+    provider,
+    attachmentAnalysisProvider: visionProvider,
+    attachments: attachmentService,
     developmentPlanning,
     softwareChange,
     webResearch,
@@ -318,6 +334,7 @@ export function createApp(
     notifications: notificationService,
     memories: memoryService,
     transcriptions: transcriptionService,
+    attachments: attachmentService,
     changeApplications: {
       ...changeApplicationLifecycle,
       wake: () => changeApplicationWorker.wake(),
@@ -335,6 +352,10 @@ export function createApp(
       {
         name: 'mongodb_resource_store',
         check: () => resources.checkReadiness(),
+      },
+      {
+        name: 'attachment_store',
+        check: () => attachmentStore.checkReadiness(),
       },
       ...capabilities.declarations().flatMap((declaration) => {
         const runtime = capabilities.selected({
@@ -389,6 +410,7 @@ export function createApp(
         applicationStore.close(),
         publicationStore.close(),
         projectMutationLeases.close(),
+        attachmentStore.close(),
       ]);
     },
     logger: runtime.logger ?? true,

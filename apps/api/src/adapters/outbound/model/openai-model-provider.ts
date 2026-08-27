@@ -111,7 +111,22 @@ export class OpenAiModelProvider implements ModelProvider {
         body: JSON.stringify({
           model: this.model,
           instructions: input.systemPrompt,
-          input: input.message,
+          input:
+            input.images === undefined || input.images.length === 0
+              ? input.message
+              : [
+                  {
+                    role: 'user',
+                    content: [
+                      { type: 'input_text', text: input.message },
+                      ...input.images.map((image) => ({
+                        type: 'input_image',
+                        image_url: `data:${image.mediaType};base64,${Buffer.from(image.bytes).toString('base64')}`,
+                        detail: 'high',
+                      })),
+                    ],
+                  },
+                ],
           max_output_tokens: this.maxOutputTokens,
           store: false,
           text: {

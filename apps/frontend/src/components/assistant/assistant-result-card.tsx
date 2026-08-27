@@ -7,6 +7,7 @@ import {
   ChevronUp,
   ClipboardCheck,
   FileCode2,
+  FileSearch,
   Flag,
   Search,
 } from 'lucide-react-native';
@@ -235,6 +236,87 @@ function resultPresentation(output: NonNullable<TaskResource['output']>): {
                   ))}
                 </View>
               )}
+            </View>
+          ),
+      };
+    case 'attachment_analysis':
+      return {
+        title: 'Attachment analysis complete',
+        summary: output.analysis?.summary,
+        icon: FileSearch,
+        content:
+          output.analysis === undefined ? undefined : (
+            <View style={{ gap: spacing.md }}>
+              {output.analysis.findings.map((finding, index) => (
+                <Text
+                  key={`${String(index)}-${finding}`}
+                  selectable
+                  style={{
+                    color: palette.textSoft,
+                    fontSize: 14,
+                    lineHeight: 21,
+                  }}
+                >
+                  {`• ${finding}`}
+                </Text>
+              ))}
+              <View style={{ gap: spacing.sm }}>
+                <Text
+                  style={{
+                    color: palette.faint,
+                    fontSize: 10,
+                    fontWeight: '700',
+                    letterSpacing: 0.8,
+                  }}
+                >
+                  EVIDENCE
+                </Text>
+                {output.analysis.citations.map((citation, index) => (
+                  <View
+                    key={`${citation.attachmentId}-${citation.kind === 'document' ? citation.locator : 'image'}-${String(index)}`}
+                    style={{
+                      gap: 4,
+                      borderLeftWidth: 2,
+                      borderLeftColor: palette.accentLine,
+                      paddingLeft: spacing.sm,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: palette.accent,
+                        fontSize: 11,
+                        fontWeight: '700',
+                      }}
+                    >
+                      {citation.kind === 'document'
+                        ? `${citation.filename} · ${citation.locator}`
+                        : `${citation.filename} · image`}
+                    </Text>
+                    {citation.kind === 'document' ? (
+                      <Text
+                        selectable
+                        style={{
+                          color: palette.muted,
+                          fontSize: 12,
+                          lineHeight: 18,
+                        }}
+                      >
+                        “{citation.excerpt}”
+                      </Text>
+                    ) : (
+                      <Text
+                        style={{
+                          color: palette.muted,
+                          fontSize: 12,
+                          lineHeight: 18,
+                        }}
+                      >
+                        Visual evidence from the approved image.
+                      </Text>
+                    )}
+                  </View>
+                ))}
+              </View>
             </View>
           ),
       };

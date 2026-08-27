@@ -22,6 +22,38 @@ export class DeterministicModelProvider implements ModelProvider {
   public generateStructured(
     input: GenerateStructuredInput,
   ): Promise<ModelGeneration> {
+    if (input.purpose === 'attachment_analysis') {
+      const context = JSON.parse(input.message) as {
+        sources: {
+          sourceId: string;
+          kind: 'document' | 'image';
+          filename: string;
+          locator?: string;
+          text?: string;
+        }[];
+      };
+      const firstSource = context.sources[0];
+      if (firstSource === undefined) {
+        throw new Error('Deterministic attachment analysis requires evidence.');
+      }
+      return Promise.resolve({
+        candidate: {
+          summary: `Analyzed ${String(context.sources.length)} approved source segment(s).`,
+          findings: [
+            firstSource.kind === 'document'
+              ? (firstSource.text ?? '').slice(0, 180).trim()
+              : `The approved image ${firstSource.filename} was supplied for analysis.`,
+          ],
+          citations: [{ sourceId: firstSource.sourceId }],
+          limitations: [],
+        },
+        provider: this.name,
+        model: this.model,
+        durationMs: 0,
+        usage: { inputTokens: 0, outputTokens: 0 },
+      });
+    }
+
     if (input.purpose === 'development_plan') {
       return Promise.resolve({
         candidate: {
@@ -150,6 +182,7 @@ export class DeterministicModelProvider implements ModelProvider {
     let projectId: string | undefined;
     let currentTime = '2030-01-01T00:00:00.000Z';
     let ownerTimeZone = 'UTC';
+    let attachments: { filename: string }[] = [];
     try {
       const context = JSON.parse(input.message) as unknown;
       if (
@@ -173,6 +206,15 @@ export class DeterministicModelProvider implements ModelProvider {
           ) {
             projectId = context.selectedProject.id;
           }
+        }
+        if ('attachments' in context && Array.isArray(context.attachments)) {
+          attachments = context.attachments.filter(
+            (value: unknown): value is { filename: string } =>
+              typeof value === 'object' &&
+              value !== null &&
+              'filename' in value &&
+              typeof value.filename === 'string',
+          );
         }
         if (
           'temporalContext' in context &&
@@ -206,6 +248,12 @@ export class DeterministicModelProvider implements ModelProvider {
       /\b(research|investigate|look up|verify|compare)\b/u.test(
         normalizedMessage,
       ) && JSON.stringify(input.outputSchema).includes('web_research');
+    const requestsAttachmentAnalysis =
+      attachments.length > 0 &&
+      /\b(analy[sz]e|summari[sz]e|review|compare|extract|describe|identify)\b/u.test(
+        normalizedMessage,
+      ) &&
+      JSON.stringify(input.outputSchema).includes('attachment_analysis');
     const canManagePersonalTasks = JSON.stringify(input.outputSchema).includes(
       'personal_task_management',
     );
@@ -332,6 +380,23 @@ export class DeterministicModelProvider implements ModelProvider {
     const shouldChange = requestsChange && !hasOwnerDataAction;
     const shouldPlan = requestsPlan && !hasOwnerDataAction;
     const shouldResearch = requestsResearch && !hasOwnerDataAction;
+
+    if (requestsAttachmentAnalysis && !hasOwnerDataAction) {
+      return Promise.resolve({
+        candidate: {
+          schemaVersion: 1,
+          kind: 'invoke_capability',
+          decisionSummary:
+            'The owner asked Vera to analyze supplied attachments.',
+          capability: { name: 'attachment_analysis', version: 1 },
+          arguments: { objective: ownerMessage },
+        },
+        provider: this.name,
+        model: this.model,
+        durationMs: 0,
+        usage: { inputTokens: 0, outputTokens: 0 },
+      });
+    }
 
     const canExecuteGoal = JSON.stringify(input.outputSchema).includes(
       'execute_goal',

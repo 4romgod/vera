@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 
 import type { TaskLifecycle } from '../../../../application/tasks/task-lifecycle.ts';
+import type { AttachmentService } from '../../../../application/attachments/attachment-service.ts';
 import { taskResponse } from '../presenters.ts';
 import {
   ApprovalDecisionRequestJsonSchema,
@@ -17,7 +18,11 @@ import {
 
 export function registerTaskRoutes(
   app: FastifyInstance,
-  options: { principalId: string; taskLifecycle: TaskLifecycle },
+  options: {
+    principalId: string;
+    taskLifecycle: TaskLifecycle;
+    attachments?: AttachmentService;
+  },
 ): void {
   app.post<{ Body: SubmitTaskRequest; Headers: IdempotencyHeaders }>(
     '/v1/tasks',
@@ -29,6 +34,19 @@ export function registerTaskRoutes(
       },
     },
     async (request, reply) => {
+      const attachments =
+        request.body.attachmentIds === undefined
+          ? undefined
+          : await options.attachments?.resolveReferences(
+              options.principalId,
+              request.body.attachmentIds,
+            );
+      if (
+        request.body.attachmentIds !== undefined &&
+        options.attachments === undefined
+      ) {
+        throw new Error('Attachment service is not configured.');
+      }
       const aggregate = await options.taskLifecycle.submit({
         message: request.body.message,
         requestKey: request.headers['idempotency-key'],
@@ -36,6 +54,7 @@ export function registerTaskRoutes(
         ...(request.body.projectId === undefined
           ? {}
           : { projectId: request.body.projectId }),
+        ...(attachments === undefined ? {} : { attachments }),
       });
       return reply
         .status(202)

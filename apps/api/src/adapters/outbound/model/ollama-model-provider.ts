@@ -198,7 +198,17 @@ export class OllamaModelProvider implements ModelProvider {
             model: this.model,
             messages: [
               { role: 'system', content: input.systemPrompt },
-              { role: 'user', content: input.message },
+              {
+                role: 'user',
+                content: input.message,
+                ...(input.images === undefined || input.images.length === 0
+                  ? {}
+                  : {
+                      images: input.images.map((image) =>
+                        Buffer.from(image.bytes).toString('base64'),
+                      ),
+                    }),
+              },
             ],
             format,
             stream: false,

@@ -7,6 +7,7 @@ import { ResearchReportSchema } from '../research/research-report.ts';
 import { PersonalTaskResultSchema } from '../personal-tasks/personal-task.ts';
 import { ReminderResultSchema } from '../reminders/reminder.ts';
 import { MemoryResultSchema } from '../memories/memory.ts';
+import { AttachmentAnalysisSchema } from '../attachments/attachment-analysis.ts';
 
 export const ArtifactLineageReferenceSchema = z
   .object({
@@ -19,6 +20,7 @@ export const ArtifactLineageReferenceSchema = z
       'personal_task_result',
       'personal_reminder_result',
       'memory_result',
+      'attachment_analysis',
     ]),
     mediaType: z.string().min(1),
     sha256: z.string().regex(/^[a-f0-9]{64}$/),
@@ -98,6 +100,12 @@ export const MemoryResultArtifactSchema = ArtifactIdentitySchema.extend({
   content: MemoryResultSchema,
 }).strict();
 
+export const AttachmentAnalysisArtifactSchema = ArtifactIdentitySchema.extend({
+  type: z.literal('attachment_analysis'),
+  mediaType: z.literal('application/vnd.vera.attachment-analysis+json'),
+  content: AttachmentAnalysisSchema,
+}).strict();
+
 export const ArtifactSchema = z.discriminatedUnion('type', [
   ImplementationPlanArtifactSchema,
   SoftwareChangeArtifactSchema,
@@ -105,6 +113,7 @@ export const ArtifactSchema = z.discriminatedUnion('type', [
   PersonalTaskResultArtifactSchema,
   PersonalReminderResultArtifactSchema,
   MemoryResultArtifactSchema,
+  AttachmentAnalysisArtifactSchema,
 ]);
 
 const ArtifactReferenceBaseSchema = ArtifactIdentitySchema.pick({
@@ -150,6 +159,12 @@ export const MemoryResultArtifactReferenceSchema =
     mediaType: z.literal('application/vnd.vera.memory-result+json'),
   }).strict();
 
+export const AttachmentAnalysisArtifactReferenceSchema =
+  ArtifactReferenceBaseSchema.extend({
+    type: z.literal('attachment_analysis'),
+    mediaType: z.literal('application/vnd.vera.attachment-analysis+json'),
+  }).strict();
+
 export const ArtifactReferenceSchema = z.discriminatedUnion('type', [
   ImplementationPlanArtifactReferenceSchema,
   SoftwareChangeArtifactReferenceSchema,
@@ -157,6 +172,7 @@ export const ArtifactReferenceSchema = z.discriminatedUnion('type', [
   PersonalTaskResultArtifactReferenceSchema,
   PersonalReminderResultArtifactReferenceSchema,
   MemoryResultArtifactReferenceSchema,
+  AttachmentAnalysisArtifactReferenceSchema,
 ]);
 
 export type Artifact = z.infer<typeof ArtifactSchema>;

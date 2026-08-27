@@ -20,11 +20,23 @@ function providerWith(
   });
 }
 
-function generate(provider: OllamaModelProvider) {
+function generate(provider: OllamaModelProvider, withImage = false) {
   return provider.generateStructured({
     purpose: 'orchestration_decision',
     systemPrompt: 'Return the requested structured test value.',
     message: 'hello',
+    ...(withImage
+      ? {
+          images: [
+            {
+              sourceId: 'source_1',
+              filename: 'photo.png',
+              mediaType: 'image/png' as const,
+              bytes: Uint8Array.from([1, 2, 3]),
+            },
+          ],
+        }
+      : {}),
     outputSchema: {
       type: 'object',
       properties: {
@@ -119,7 +131,7 @@ void describe('Ollama model adapter', () => {
       );
     });
 
-    const generation = await generate(provider);
+    const generation = await generate(provider, true);
 
     assert.equal(generation.provider, 'ollama');
     assert.deepEqual(generation.usage, { inputTokens: 12, outputTokens: 7 });
@@ -133,6 +145,13 @@ void describe('Ollama model adapter', () => {
           temperature: z.number(),
           num_predict: z.number(),
         }),
+        messages: z.array(
+          z.object({
+            role: z.string(),
+            content: z.string(),
+            images: z.array(z.string()).optional(),
+          }),
+        ),
       })
       .parse(requestBody);
     assert.equal(parsedRequest.model, 'test-model');
@@ -140,6 +159,7 @@ void describe('Ollama model adapter', () => {
     assert.equal(parsedRequest.think, false);
     assert.equal(parsedRequest.options.temperature, 0);
     assert.equal(parsedRequest.options.num_predict, 2_048);
+    assert.deepEqual(parsedRequest.messages[1]?.images, ['AQID']);
     assert.ok(Object.keys(parsedRequest.format).length > 0);
     assert.equal(containsRemovedGrammarConstraint(parsedRequest.format), false);
     assert.deepEqual(patternValues(parsedRequest.format), []);

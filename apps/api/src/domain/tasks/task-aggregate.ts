@@ -8,6 +8,7 @@ import {
   PersonalTaskResultArtifactReferenceSchema,
   PersonalReminderResultArtifactReferenceSchema,
   MemoryResultArtifactReferenceSchema,
+  AttachmentAnalysisArtifactReferenceSchema,
 } from '../artifacts/artifact.ts';
 import { CapabilityDestinationSchema } from '../capabilities/capability-destination.ts';
 import { ConversationContextBundleSchema } from '../conversations/conversation-context.ts';
@@ -15,6 +16,7 @@ import {
   DevelopmentPlanningProposalArgumentsSchema,
   SoftwareChangeProposalArgumentsSchema,
   WebResearchProposalArgumentsSchema,
+  AttachmentAnalysisArgumentsSchema,
   CapabilityAuthoritySchema,
 } from '../capabilities/capability-registry.ts';
 import {
@@ -41,6 +43,8 @@ import {
   MemoryResultSchema,
 } from '../memories/memory.ts';
 import { MemoryContextBundleSchema } from '../memories/memory-context.ts';
+import { AttachmentReferenceSchema } from '../attachments/attachment.ts';
+import { AttachmentAnalysisSchema } from '../attachments/attachment-analysis.ts';
 
 export const TaskStatusSchema = z.enum([
   'active',
@@ -78,6 +82,7 @@ const ApprovalIdentitySchema = z
     authority: CapabilityAuthoritySchema.optional(),
     inputArtifacts: z.array(ArtifactReferenceSchema).max(2).optional(),
     decisionEvidence: z.array(ArtifactReferenceSchema).max(3).optional(),
+    attachments: z.array(AttachmentReferenceSchema).min(1).max(5).optional(),
     requestedAt: z.iso.datetime(),
     decidedAt: z.iso.datetime().optional(),
     decidedBy: z.string().optional(),
@@ -85,6 +90,12 @@ const ApprovalIdentitySchema = z
   .strict();
 
 export const ApprovalSchema = z.union([
+  ApprovalIdentitySchema.extend({
+    capability: z
+      .object({ name: z.literal('attachment_analysis'), version: z.literal(1) })
+      .strict(),
+    proposedArguments: AttachmentAnalysisArgumentsSchema,
+  }).strict(),
   ApprovalIdentitySchema.extend({
     capability: z
       .object({ name: z.literal('memory_management'), version: z.literal(1) })
@@ -154,6 +165,7 @@ const CapabilityInvocationIdentitySchema = z
     authority: CapabilityAuthoritySchema.optional(),
     inputArtifacts: z.array(ArtifactReferenceSchema).max(2).optional(),
     decisionEvidence: z.array(ArtifactReferenceSchema).max(3).optional(),
+    attachments: z.array(AttachmentReferenceSchema).min(1).max(5).optional(),
     startedAt: z.iso.datetime(),
     completedAt: z.iso.datetime().optional(),
     model: z
@@ -175,6 +187,12 @@ const CapabilityInvocationIdentitySchema = z
   .strict();
 
 export const CapabilityInvocationSchema = z.union([
+  CapabilityInvocationIdentitySchema.extend({
+    capability: z
+      .object({ name: z.literal('attachment_analysis'), version: z.literal(1) })
+      .strict(),
+    arguments: AttachmentAnalysisArgumentsSchema,
+  }).strict(),
   CapabilityInvocationIdentitySchema.extend({
     capability: z
       .object({ name: z.literal('memory_management'), version: z.literal(1) })
@@ -229,6 +247,13 @@ export const CapabilityInvocationSchema = z.union([
 ]);
 
 export const TaskOutputSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('attachment_analysis'),
+      analysis: AttachmentAnalysisSchema,
+      artifact: AttachmentAnalysisArtifactReferenceSchema.optional(),
+    })
+    .strict(),
   z
     .object({
       kind: z.literal('memory_result'),
@@ -383,6 +408,7 @@ export const TaskAggregateSchema = z
         conversationId: z.string().startsWith('conversation_').optional(),
         messageId: z.string().startsWith('message_').optional(),
         projectId: z.string().startsWith('project_').optional(),
+        attachments: z.array(AttachmentReferenceSchema).max(5).optional(),
         message: z.string().min(1),
         status: TaskStatusSchema,
         createdAt: z.iso.datetime(),

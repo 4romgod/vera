@@ -9,6 +9,9 @@ import type { PersonalTaskStore } from '../../src/ports/persistence/personal-tas
 import { LocalReminderActionExecutor } from '../../src/adapters/outbound/integrations/reminders/local-reminder-action-executor.ts';
 import type { ReminderStore } from '../../src/ports/persistence/reminder-store.ts';
 import { LocalMemoryActionExecutor } from '../../src/adapters/outbound/integrations/memories/local-memory-action-executor.ts';
+import { DeterministicModelProvider } from '../../src/adapters/outbound/model/deterministic-model-provider.ts';
+import { InMemoryAttachmentStore } from '../../src/adapters/outbound/persistence/memory/in-memory-attachment-store.ts';
+import { createAttachmentService } from '../../src/application/attachments/attachment-service.ts';
 
 export function createTestCapabilityRuntime(options: {
   developmentPlanning: DevelopmentPlanningCapabilityRegistry;
@@ -18,7 +21,12 @@ export function createTestCapabilityRuntime(options: {
   reminderStore?: ReminderStore;
 }): CapabilityRuntimeRegistry {
   const defaultStore = new InMemoryOwnerResourceStore();
+  const provider = new DeterministicModelProvider();
   return createCapabilityRuntimeRegistry({
+    provider,
+    attachments: createAttachmentService({
+      store: new InMemoryAttachmentStore(),
+    }),
     developmentPlanning: options.developmentPlanning,
     softwareChange: options.softwareChange,
     webResearch: createWebResearchCapabilityRegistry({

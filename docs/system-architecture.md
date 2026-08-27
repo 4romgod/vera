@@ -3,8 +3,8 @@
 **Status:** Accepted (logical architecture, component responsibilities,
 request lifecycle, architectural invariants, initial modular API shape, and V1
 operational storage); general progress transport and deployment topology remain open
-**Version:** 1.2
-**Last updated:** 26 August 2026
+**Version:** 1.3
+**Last updated:** 27 August 2026
 **Accepted:** 24 August 2026 (owner) — post-V1 progress transport and deployment
 topology are deferred; V1 uses HTTP polling. The initial Fastify/Zod modular API
 is accepted by ADR-0009. MongoDB operational truth and the Redis scratchpad are
@@ -23,6 +23,8 @@ memory and its provider boundary are accepted by ADR-0025. The universal Expo
 React Native frontend is accepted by ADR-0026, its private physical-device
 ingress through Tailscale Serve is accepted by ADR-0027, and reviewed device
 voice input and output are accepted by ADR-0028.
+Owner-scoped attachments and approval-gated document analysis are accepted by
+ADR-0031.
 
 ## Purpose
 
@@ -111,6 +113,7 @@ flowchart TB
         EVENTS["Event journal and projections"]
         MEMORY["Governed long-term memory"]
         ART["Artifact metadata and content"]
+        DOC["Owner attachments<br/>(metadata, extraction, original bytes)"]
         OBS["Logs, metrics, traces"]
     end
 
@@ -135,7 +138,9 @@ flowchart TB
     ORCH --> EVENTS
     CONTEXT --> WORK
     CONTEXT --> MEMORY
+    CONTEXT --> DOC
     CAP --> ART
+    CAP --> DOC
     ORCH --> OBS
     MODEL --> OBS
     CAP --> OBS
@@ -209,6 +214,16 @@ preserving internal boundaries.
 - produce a disposable model-context projection;
 - avoid sending the entire conversation or database by default.
 
+Attachment content follows a stricter two-stage context path. The orchestration
+projection contains minimal file metadata only. After an exact
+`attachment_analysis@1` approval, the capability runtime independently loads
+and integrity-checks bounded extracted segments and normalized images from the
+attachment store. A separately configured vision provider may serve this
+runtime without changing Vera's orchestration brain. The model selects opaque
+source IDs; application code materializes citations from those exact approved
+sources. This keeps provider selection replaceable and prevents ordinary
+routing from becoming implicit attachment disclosure.
+
 ### Active working-set service
 
 - maintain one isolated, versioned execution scratchpad per active run;
@@ -228,6 +243,8 @@ preserving internal boundaries.
 - validate outputs and expose usage, latency, and failure metadata;
 - select Ollama, OpenAI, Gemini, or deterministic implementations through an
   explicit startup registry and profile;
+- select an attachment-vision provider and model independently from the
+  orchestration brain while retaining the same normalized gateway contract;
 - prohibit silent fallback across owner-controlled and third-party boundaries;
 - make provider capabilities explicit rather than pretending all models are
   identical.

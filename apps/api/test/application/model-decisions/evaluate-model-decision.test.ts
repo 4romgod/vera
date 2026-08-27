@@ -75,6 +75,57 @@ void describe('model decision boundary', () => {
     );
   });
 
+  void it('discloses only minimal attachment metadata during orchestration', async () => {
+    const provider = new FakeModelProvider(
+      {
+        schemaVersion: 1,
+        kind: 'respond',
+        decisionSummary: 'Acknowledge the document.',
+        message: 'I can analyze the attached document after approval.',
+      },
+      undefined,
+      undefined,
+      'third_party',
+    );
+
+    const result = await createEvaluateModelDecision(provider, undefined, {
+      ownerTimeZone: temporalContext.ownerTimeZone,
+      clock: () => currentTime,
+    })('analyze this', {
+      attachments: [
+        {
+          id: 'attachment_private',
+          kind: 'document',
+          filename: 'brief.md',
+          mediaType: 'text/markdown',
+          byteLength: 123,
+          sha256: 'a'.repeat(64),
+        },
+      ],
+    });
+
+    const input = JSON.parse(provider.inputs[0]?.message ?? '{}') as {
+      attachments: unknown[];
+    };
+    assert.deepEqual(input.attachments, [
+      {
+        filename: 'brief.md',
+        mediaType: 'text/markdown',
+        byteLength: 123,
+      },
+    ]);
+    assert.doesNotMatch(
+      provider.inputs[0]?.message ?? '',
+      /attachment_private|a{64}/u,
+    );
+    assert.deepEqual(result.decision, {
+      kind: 'rejected',
+      code: 'invalid_capability_arguments',
+      message:
+        'The current attachments require attachment_analysis before Vera can make claims about their content.',
+    });
+  });
+
   void it('uses a caller-frozen request instant with the configured owner time zone', async () => {
     const provider = new FakeModelProvider({
       schemaVersion: 1,

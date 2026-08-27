@@ -29,7 +29,8 @@ boundary.
 propose a direct response or one of the capabilities enabled in the runtime
 catalog. The implemented declarations are `development_planning@1`,
 `software_change@1`, project-independent `web_research@1`, and owner-scoped
-`personal_task_management@1`, and `personal_reminder_management@1`; Vera's code
+`personal_task_management@1`, `personal_reminder_management@1`, and
+`attachment_analysis@1`; Vera's code
 validates the closed, versioned proposal and routing arguments, then returns a
 direct response, one approval requirement, a validated fixed goal, an adaptive
 goal's first step, or a rejection. A disabled capability is absent from the
@@ -121,6 +122,16 @@ draft or ready pull request, separately approve the exact publication, follow
 durable progress, cancel while cancellation is still valid, and open the
 verified GitHub pull request. Refresh and device restart recover the chain from
 MongoDB-backed attempt discovery rather than browser-local IDs.
+
+The same conversation surface accepts documents and common image formats
+through one file control. Vera extracts bounded text from plain text, Markdown,
+JSON, and PDF files; normalizes JPEG, PNG, WebP, GIF, HEIC/HEIF, AVIF, and TIFF
+images into a safe vision representation; freezes exact attachment identities
+into approval; and stores a cited `attachment_analysis` artifact. The
+orchestration brain sees only attachment metadata before approval, while a
+separately configurable vision provider receives approved image content.
+Original bytes remain immutable and owner-scoped in MongoDB/GridFS. See
+[ADR-0031](docs/decisions/0031-store-owner-attachments-and-analyze-them-through-exact-approval.md).
 
 MongoDB is selected as V1's authoritative operational store and Redis as the
 rebuildable, expiring scratchpad through
@@ -255,6 +266,13 @@ Start the API and universal frontend for web in two terminals:
 ```bash
 VERA_PROFILE=ollama npm run dev
 npm run dev:web
+```
+
+For the default Ollama attachment-vision path, install the independently
+configured vision model once:
+
+```bash
+ollama pull qwen3-vl:8b
 ```
 
 For owner-controlled local voice transcription, install `whisper-cpp` and

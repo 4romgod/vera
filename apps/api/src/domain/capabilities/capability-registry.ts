@@ -3,6 +3,8 @@ import { CapabilityDestinationSchema } from './capability-destination.ts';
 import { PersonalTaskActionArgumentsSchema } from '../personal-tasks/personal-task.ts';
 import { ReminderActionArgumentsSchema } from '../reminders/reminder.ts';
 import { MemoryActionArgumentsSchema } from '../memories/memory.ts';
+import { AttachmentAnalysisArgumentsSchema } from '../attachments/attachment-analysis.ts';
+export { AttachmentAnalysisArgumentsSchema } from '../attachments/attachment-analysis.ts';
 
 export const DevelopmentPlanningProposalArgumentsSchema = z
   .object({
@@ -65,6 +67,7 @@ export const CapabilityAuthoritySchema = z
         'personal_reminder_data',
         'long_term_memory',
         'public_web',
+        'attachment_content',
       ]),
     ),
     sideEffects: z.array(
@@ -97,6 +100,33 @@ export type CapabilityDefinition = {
 };
 
 export const CapabilityDefinitions = [
+  {
+    name: 'attachment_analysis',
+    version: 1,
+    description:
+      'Analyze owner-attached documents and images and return evidence-backed findings.',
+    proposalArgumentsSchema: AttachmentAnalysisArgumentsSchema,
+    effect: 'external',
+    artifact: {
+      type: 'attachment_analysis',
+      mediaType: 'application/vnd.vera.attachment-analysis+json',
+    },
+    acceptedInputArtifacts: [],
+    explicitAdaptiveOutcome: {
+      patterns: [
+        /\b(analy[sz]e|summari[sz]e|review|compare|extract|describe|identify)\b.{0,80}\b(attachment|document|file|pdf|transcript|image|photo|picture|screenshot)\b/u,
+      ],
+      description: 'Analyze the documents or images attached by the owner.',
+    },
+    authority: {
+      approval: 'always',
+      projectContext: 'none',
+      networkAccess: 'provider_api',
+      dataClasses: ['owner_request', 'attachment_content'],
+      sideEffects: ['third_party_disclosure'],
+      credentials: 'server_managed',
+    },
+  },
   {
     name: 'development_planning',
     version: 1,

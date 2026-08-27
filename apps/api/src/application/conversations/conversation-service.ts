@@ -9,6 +9,7 @@ import {
 import type { ConversationStore } from '../../ports/persistence/conversation-store.ts';
 import type { ProjectStore } from '../../ports/persistence/project-store.ts';
 import { ResourceError } from '../shared/resource-error.ts';
+import type { AttachmentReference } from '../../domain/attachments/attachment.ts';
 
 export type ConversationService = {
   createConversation(input: {
@@ -27,6 +28,7 @@ export type ConversationService = {
     requestKey: string;
     content: string;
     projectId?: string;
+    attachments?: AttachmentReference[];
   }): Promise<{
     conversation: Conversation;
     messageId: string;
@@ -111,6 +113,9 @@ export function createConversationService(options: {
         ...(input.projectId === undefined
           ? {}
           : { projectId: input.projectId }),
+        ...(input.attachments === undefined || input.attachments.length === 0
+          ? {}
+          : { attachments: input.attachments }),
         createdAt: clock(),
       });
       let result;
@@ -132,7 +137,9 @@ export function createConversationService(options: {
       if (
         !result.created &&
         (result.message.content !== message.content ||
-          result.message.projectId !== message.projectId)
+          result.message.projectId !== message.projectId ||
+          JSON.stringify(result.message.attachments ?? []) !==
+            JSON.stringify(message.attachments ?? []))
       ) {
         throw new ResourceError(
           `Idempotency key ${input.requestKey} is already associated with different message input.`,

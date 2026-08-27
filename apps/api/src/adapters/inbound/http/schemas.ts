@@ -18,6 +18,7 @@ import {
   PersonalTaskResultArtifactSchema,
   PersonalReminderResultArtifactSchema,
   MemoryResultArtifactSchema,
+  AttachmentAnalysisArtifactSchema,
 } from '../../../domain/artifacts/artifact.ts';
 import {
   ConversationSchema,
@@ -47,6 +48,10 @@ import {
   MemoryResourceSchema,
 } from '../../../domain/memories/memory.ts';
 import { MemoryContextManifestSchema } from '../../../domain/memories/memory-context.ts';
+import {
+  AttachmentReferenceSchema,
+  AttachmentResponseSchema,
+} from '../../../domain/attachments/attachment.ts';
 
 export const EvaluateRequestSchema = z
   .object({
@@ -60,6 +65,11 @@ export const SubmitTaskRequestSchema = z
   .object({
     message: z.string().trim().min(1).max(20_000),
     projectId: z.string().startsWith('project_').optional(),
+    attachmentIds: z
+      .array(z.string().startsWith('attachment_'))
+      .max(5)
+      .refine((values) => new Set(values).size === values.length)
+      .optional(),
   })
   .strict();
 
@@ -95,12 +105,35 @@ export const CreateConversationMessageRequestSchema = z
   .object({
     content: z.string().trim().min(1).max(20_000),
     projectId: z.string().startsWith('project_').optional(),
+    attachmentIds: z
+      .array(z.string().startsWith('attachment_'))
+      .max(5)
+      .refine((values) => new Set(values).size === values.length)
+      .optional(),
   })
   .strict();
 
 export type CreateConversationMessageRequest = z.infer<
   typeof CreateConversationMessageRequestSchema
 >;
+
+export const AttachmentUploadHeadersSchema = z.looseObject({
+  'content-type': z.string().min(1).max(200),
+  'x-vera-filename': z.string().trim().min(1).max(1_000),
+  'x-vera-media-type': z.string().trim().min(1).max(200),
+});
+export type AttachmentUploadHeaders = z.infer<
+  typeof AttachmentUploadHeadersSchema
+>;
+
+export const AttachmentResponseJsonSchema = z.toJSONSchema(
+  AttachmentResponseSchema,
+  { target: 'draft-7' },
+);
+export const AttachmentUploadHeadersJsonSchema = z.toJSONSchema(
+  AttachmentUploadHeadersSchema,
+  { target: 'draft-7' },
+);
 
 export const IdempotencyHeadersSchema = z.looseObject({
   'idempotency-key': z.string().trim().min(8).max(200),
@@ -217,6 +250,7 @@ export const TaskLifecycleResponseSchema = z
     projectId: z.string().startsWith('project_').optional(),
     conversationId: z.string().startsWith('conversation_').optional(),
     messageId: z.string().startsWith('message_').optional(),
+    attachments: z.array(AttachmentReferenceSchema).max(5).optional(),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
     decision: DecisionResultSchema.optional(),
@@ -296,6 +330,7 @@ export const ArtifactResponseSchema = z.discriminatedUnion('type', [
   PersonalTaskResultArtifactSchema.omit({ principalId: true }),
   PersonalReminderResultArtifactSchema.omit({ principalId: true }),
   MemoryResultArtifactSchema.omit({ principalId: true }),
+  AttachmentAnalysisArtifactSchema.omit({ principalId: true }),
 ]);
 
 export const PersonalTaskListQuerySchema = z

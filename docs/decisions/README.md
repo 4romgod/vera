@@ -52,6 +52,7 @@ erasing why a choice was made.
 | [0028](0028-treat-device-voice-as-a-reviewed-experience-adapter.md) | Superseded | Original device-recognition approach; capture and transcription are replaced by ADR-0030. |
 | [0029](0029-publish-approved-software-changes-through-a-separate-durable-lifecycle.md) | Accepted | Commit, push a Vera branch, and create a pull request through a separate exact approval and recoverable publication lifecycle. |
 | [0030](0030-transcribe-owner-controlled-recordings-through-a-provider-neutral-boundary.md) | Accepted | Record until the owner stops, then transcribe once through an ephemeral provider-neutral API boundary. |
+| [0031](0031-store-owner-attachments-and-analyze-them-through-exact-approval.md) | Accepted | Store owner-scoped documents and images durably and disclose bounded derived content only through exact, provider-aware approval. |
 
 ADRs 0001–0008 were accepted 24 August 2026 following the owner's review of
 the foundation documentation. ADR-0007 accepted a semantic boundary without
@@ -104,6 +105,10 @@ non-durable server boundary; spoken replies still follow durable projection.
 ADR-0029 completes the controlled software-delivery path with one exact commit,
 a create-only Vera branch push, and one exact pull request behind a separate
 durable approval and retry reconciliation boundary.
+ADR-0031 adds durable document and image intelligence without treating uploads as prompts:
+immutable owner-scoped attachments, integrity-checked derived representations, minimal
+orchestration metadata, exact disclosure approval, and cited analysis
+artifacts.
 
 ## ADR rules
 

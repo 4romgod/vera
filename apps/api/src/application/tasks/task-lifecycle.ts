@@ -48,6 +48,7 @@ import { projectTaskScratchpad } from './project-task-scratchpad.ts';
 import { assembleMemoryContext } from '../memories/assemble-memory-context.ts';
 import { assertMemoryContextIntegrity } from '../memories/validate-memory-context.ts';
 import type { MemoryContextLimits } from '../../domain/memories/memory-context.ts';
+import type { AttachmentReference } from '../../domain/attachments/attachment.ts';
 
 export type LifecycleErrorCode =
   | 'task_not_found'
@@ -84,6 +85,7 @@ export type TaskLifecycle = {
     projectId?: string;
     conversationId?: string;
     messageId?: string;
+    attachments?: AttachmentReference[];
   }): Promise<TaskAggregate>;
   getTask(principalId: string, taskId: string): Promise<TaskAggregate>;
   getRun(principalId: string, runId: string): Promise<TaskAggregate>;
@@ -201,6 +203,13 @@ export function createTaskLifecycle(options: {
         );
       })
     );
+  }
+
+  function sameAttachmentReferences(
+    left: AttachmentReference[] | undefined,
+    right: AttachmentReference[] | undefined,
+  ): boolean {
+    return JSON.stringify(left ?? []) === JSON.stringify(right ?? []);
   }
 
   function authorityIsWithin(
@@ -343,6 +352,9 @@ export function createTaskLifecycle(options: {
         : {}),
       ...(inputs.length === 0 ? {} : { inputArtifacts: inputs }),
       ...(decisionEvidence.length === 0 ? {} : { decisionEvidence }),
+      ...(step.capability === 'attachment_analysis'
+        ? { attachments: aggregate.task.attachments }
+        : {}),
       destination: runtime.destination,
       authority,
       requestedAt,
@@ -438,6 +450,17 @@ export function createTaskLifecycle(options: {
         ...aggregate.run.output.result.memories.map(
           (memory) =>
             `[${memory.status}] ${memory.subject}: ${memory.content} (${memory.id}, revision ${String(memory.revision)})`,
+        ),
+        ...(artifactId === undefined ? [] : [`Artifact: ${artifactId}`]),
+      ].join('\n\n');
+    }
+    if (aggregate.run.output?.kind === 'attachment_analysis') {
+      const artifactId = aggregate.run.output.artifact?.id;
+      return [
+        `I analyzed ${String(aggregate.run.output.analysis.attachments.length)} attachment(s).`,
+        aggregate.run.output.analysis.summary,
+        ...aggregate.run.output.analysis.findings.map(
+          (finding) => `- ${finding}`,
         ),
         ...(artifactId === undefined ? [] : [`Artifact: ${artifactId}`]),
       ].join('\n\n');
@@ -559,6 +582,7 @@ export function createTaskLifecycle(options: {
     projectId?: string;
     conversationId?: string;
     messageId?: string;
+    attachments?: AttachmentReference[];
   }): Promise<ConversationContextBundle | undefined> {
     if (input.conversationId === undefined && input.messageId === undefined) {
       return undefined;
@@ -591,7 +615,9 @@ export function createTaskLifecycle(options: {
     if (
       currentMessage.role !== 'owner' ||
       currentMessage.content !== input.message ||
-      currentMessage.projectId !== input.projectId
+      currentMessage.projectId !== input.projectId ||
+      JSON.stringify(currentMessage.attachments ?? []) !==
+        JSON.stringify(input.attachments ?? [])
     ) {
       throw new LifecycleError(
         'The conversation message does not match the submitted task input.',
@@ -630,7 +656,9 @@ export function createTaskLifecycle(options: {
       aggregate.task.principalId !== input.principalId ||
       aggregate.task.projectId !== input.projectId ||
       aggregate.task.conversationId !== input.conversationId ||
-      aggregate.task.messageId !== input.messageId
+      aggregate.task.messageId !== input.messageId ||
+      JSON.stringify(aggregate.task.attachments ?? []) !==
+        JSON.stringify(input.attachments ?? [])
     ) {
       throw new LifecycleError(
         `Idempotency key ${input.requestKey} is already associated with different task input.`,
@@ -968,6 +996,9 @@ export function createTaskLifecycle(options: {
               }),
           destination: selectedCapability.destination,
           authority: selectedAuthority,
+          ...(decision.decision.capability.name === 'attachment_analysis'
+            ? { attachments: candidate.task.attachments }
+            : {}),
           requestedAt: now,
         });
         if (approvedContext !== undefined) {
@@ -1642,6 +1673,9 @@ export function createTaskLifecycle(options: {
                   budgetClaim.aggregate.run.conversationContext,
               }),
           ...(memoryContext === undefined ? {} : { memoryContext }),
+          ...(budgetClaim.aggregate.task.attachments === undefined
+            ? {}
+            : { attachments: budgetClaim.aggregate.task.attachments }),
         },
       );
       if (
@@ -1838,6 +1872,9 @@ export function createTaskLifecycle(options: {
           ...(candidate.run.approval.decisionEvidence === undefined
             ? {}
             : { decisionEvidence: candidate.run.approval.decisionEvidence }),
+          ...(candidate.run.approval.attachments === undefined
+            ? {}
+            : { attachments: candidate.run.approval.attachments }),
           startedAt: now,
         });
         const goalStep =
@@ -2067,18 +2104,31 @@ export function createTaskLifecycle(options: {
                             byteLength: artifact.byteLength,
                           },
                         }
-                      : {
-                          kind: 'memory_result',
-                          result: artifact.content,
-                          artifact: {
-                            id: artifact.id,
-                            version: artifact.version,
-                            type: artifact.type,
-                            mediaType: artifact.mediaType,
-                            sha256: artifact.sha256,
-                            byteLength: artifact.byteLength,
-                          },
-                        };
+                      : artifact.type === 'memory_result'
+                        ? {
+                            kind: 'memory_result',
+                            result: artifact.content,
+                            artifact: {
+                              id: artifact.id,
+                              version: artifact.version,
+                              type: artifact.type,
+                              mediaType: artifact.mediaType,
+                              sha256: artifact.sha256,
+                              byteLength: artifact.byteLength,
+                            },
+                          }
+                        : {
+                            kind: 'attachment_analysis',
+                            analysis: artifact.content,
+                            artifact: {
+                              id: artifact.id,
+                              version: artifact.version,
+                              type: artifact.type,
+                              mediaType: artifact.mediaType,
+                              sha256: artifact.sha256,
+                              byteLength: artifact.byteLength,
+                            },
+                          };
           appendEvent(candidate, 'run_succeeded', completedAt, {}, createId);
           return true;
         },
@@ -2238,6 +2288,16 @@ export function createTaskLifecycle(options: {
       ) {
         throw new Error(
           'The claimed decision evidence differs from the approved evidence.',
+        );
+      }
+      if (
+        !sameAttachmentReferences(
+          claimedInvocation.attachments,
+          executionAggregate.run.approval?.attachments,
+        )
+      ) {
+        throw new Error(
+          'The claimed attachment inputs differ from the approved inputs.',
         );
       }
       const capabilityRuntime = options.capabilities.resolve(
@@ -2429,6 +2489,9 @@ export function createTaskLifecycle(options: {
             : { project: projectReference }),
           ...(context === undefined ? {} : { context }),
           ...(inputArtifacts.length === 0 ? {} : { artifacts: inputArtifacts }),
+          ...(claimedInvocation.attachments === undefined
+            ? {}
+            : { attachments: claimedInvocation.attachments }),
           limits: {
             maxDurationMs: remainingDurationMs,
             maxArtifactBytes: runBudget.limits.maxArtifactBytes,
@@ -2758,6 +2821,9 @@ export function createTaskLifecycle(options: {
           ...(input.messageId === undefined
             ? {}
             : { messageId: input.messageId }),
+          ...(input.attachments === undefined || input.attachments.length === 0
+            ? {}
+            : { attachments: input.attachments }),
           message: input.message,
           status: 'active',
           createdAt: now,

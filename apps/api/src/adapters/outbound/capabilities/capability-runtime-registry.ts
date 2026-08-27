@@ -3,6 +3,7 @@ import {
   DevelopmentPlanningProposalArgumentsSchema,
   SoftwareChangeProposalArgumentsSchema,
   WebResearchProposalArgumentsSchema,
+  AttachmentAnalysisArgumentsSchema,
   type CapabilityDefinition,
   type CapabilityAuthority,
   type CapabilityReference,
@@ -41,6 +42,20 @@ import {
   type MemoryActionArguments,
   type MemoryResult,
 } from '../../../domain/memories/memory.ts';
+import {
+  assertAttachmentAnalysisCitations,
+  AttachmentAnalysisContentSchema,
+  AttachmentAnalysisModelContentJsonSchema,
+  AttachmentAnalysisModelContentSchema,
+  AttachmentAnalysisSchema,
+  cleanAttachmentAnalysisProse,
+} from '../../../domain/attachments/attachment-analysis.ts';
+import type { AttachmentAnalysisSource } from '../../../ports/attachments/attachment-analysis-source.ts';
+import type { ModelProvider } from '../../../ports/model/model-provider.ts';
+import type {
+  DocumentAttachment,
+  ImageAttachment,
+} from '../../../domain/attachments/attachment.ts';
 
 function definition(name: string): CapabilityDefinition {
   const value = CapabilityDefinitions.find(
@@ -121,6 +136,229 @@ function webResearchAuthority(
       : [],
     credentials: thirdParty ? 'server_managed' : 'none',
     maxWebSearchCalls: 4,
+  };
+}
+
+function attachmentAnalysisRegistration(options: {
+  provider: ModelProvider;
+  attachments: AttachmentAnalysisSource;
+}): CapabilityRuntimeRegistration {
+  const assertNotAborted = (signal?: AbortSignal) => {
+    if (signal?.aborted === true) {
+      throw new DOMException('Attachment analysis was aborted.', 'AbortError');
+    }
+  };
+  const capabilityDefinition = definition('attachment_analysis');
+  const destination = {
+    schemaVersion: 1 as const,
+    adapterId: 'structured_model',
+    provider: options.provider.name,
+    transport: 'in_process',
+    dataBoundary: options.provider.dataBoundary,
+  };
+  const authority = (): CapabilityAuthority => {
+    const thirdParty = destination.dataBoundary === 'third_party';
+    return {
+      approval: 'always',
+      projectContext: 'none',
+      networkAccess: thirdParty ? 'provider_api' : 'none',
+      dataClasses: ['owner_request', 'attachment_content'],
+      sideEffects: thirdParty ? ['third_party_disclosure'] : [],
+      credentials: thirdParty ? 'server_managed' : 'none',
+    };
+  };
+  const runtime = (): CapabilityRuntime => ({
+    definition: capabilityDefinition,
+    destination,
+    authority: authority(),
+    authorityFor: () => authority(),
+    checkReadiness: () =>
+      options.provider.checkReadiness().then(() => undefined),
+    async execute(invocation, executionOptions) {
+      if (
+        invocation.project !== undefined ||
+        invocation.context !== undefined ||
+        invocation.artifacts !== undefined
+      ) {
+        throw new Error(
+          'Attachment analysis must not receive project context or artifacts.',
+        );
+      }
+      const references = invocation.attachments ?? [];
+      if (references.length === 0) {
+        throw new Error(
+          'Attachment analysis requires at least one frozen attachment.',
+        );
+      }
+      assertNotAborted(executionOptions?.signal);
+      const arguments_ = AttachmentAnalysisArgumentsSchema.parse(
+        invocation.arguments,
+      );
+      const loadedAttachments = await options.attachments.loadForAnalysis(
+        invocation.principalId,
+        references,
+      );
+      const sources: (
+        | {
+            kind: 'document';
+            attachment: DocumentAttachment;
+            segment: DocumentAttachment['extraction']['segments'][number];
+          }
+        | {
+            kind: 'image';
+            attachment: ImageAttachment;
+            vision: {
+              mediaType: 'image/jpeg' | 'image/png';
+              bytes: Uint8Array;
+            };
+          }
+      )[] = [];
+      for (const loaded of loadedAttachments) {
+        if ('vision' in loaded) {
+          sources.push({
+            kind: 'image',
+            attachment: loaded.attachment,
+            vision: loaded.vision,
+          });
+          continue;
+        }
+        for (const segment of loaded.attachment.extraction.segments) {
+          sources.push({
+            kind: 'document',
+            attachment: loaded.attachment,
+            segment,
+          });
+        }
+      }
+      const numberedSources = sources.map((source, index) => ({
+        ...source,
+        sourceId: `source_${String(index + 1)}`,
+      }));
+      const generation = await options.provider.generateStructured({
+        purpose: 'attachment_analysis',
+        systemPrompt: [
+          "You are Vera's attachment-analysis specialist.",
+          'Analyze only the supplied approved document segments and images.',
+          'Images accompany the message in the exact order of image sources in the source manifest.',
+          'Every material finding must be supported by at least one citation.',
+          'Each finding must be a complete plain-language observation. Never return fragments, delimiters, or JSON punctuation as finding text.',
+          'Answer every part of the objective that the supplied evidence supports, including requested user impact.',
+          'Support material findings by citing one or more supplied sourceId values exactly.',
+          'Put sourceId values only in the citations array, never in summary, findings, or limitations prose.',
+          'State uncertainty or missing evidence in limitations. Never invent facts.',
+          'Return only the requested structured output.',
+        ].join('\n\n'),
+        message: JSON.stringify({
+          objective: arguments_.objective,
+          sources: numberedSources.map((source) =>
+            source.kind === 'document'
+              ? {
+                  sourceId: source.sourceId,
+                  kind: source.kind,
+                  filename: source.attachment.filename,
+                  mediaType: source.attachment.mediaType,
+                  locator: source.segment.locator,
+                  text: source.segment.text,
+                }
+              : {
+                  sourceId: source.sourceId,
+                  kind: source.kind,
+                  filename: source.attachment.filename,
+                  mediaType: source.attachment.mediaType,
+                  width: source.attachment.vision.width,
+                  height: source.attachment.vision.height,
+                },
+          ),
+        }),
+        images: numberedSources.flatMap((source) =>
+          source.kind === 'image'
+            ? [
+                {
+                  sourceId: source.sourceId,
+                  filename: source.attachment.filename,
+                  mediaType: source.vision.mediaType,
+                  bytes: source.vision.bytes,
+                },
+              ]
+            : [],
+        ),
+        outputSchema: AttachmentAnalysisModelContentJsonSchema,
+      });
+      assertNotAborted(executionOptions?.signal);
+      const modelContent = AttachmentAnalysisModelContentSchema.parse(
+        generation.candidate,
+      );
+      const citedSources = [
+        ...new Set(modelContent.citations.map(({ sourceId }) => sourceId)),
+      ].map((sourceId) => {
+        const index = Number.parseInt(sourceId.slice('source_'.length), 10) - 1;
+        const source = numberedSources.at(index);
+        if (source === undefined) {
+          throw new Error(
+            'Attachment analysis cited evidence outside the approved source set.',
+          );
+        }
+        return source;
+      });
+      const content = AttachmentAnalysisContentSchema.parse({
+        summary: cleanAttachmentAnalysisProse(modelContent.summary),
+        findings: modelContent.findings.map(cleanAttachmentAnalysisProse),
+        citations: citedSources.map((source) =>
+          source.kind === 'document'
+            ? {
+                kind: source.kind,
+                attachmentId: source.attachment.id,
+                filename: source.attachment.filename,
+                locator: source.segment.locator,
+                excerpt: source.segment.text.slice(0, 500).trim(),
+              }
+            : {
+                kind: source.kind,
+                attachmentId: source.attachment.id,
+                filename: source.attachment.filename,
+              },
+        ),
+        limitations: modelContent.limitations.map(cleanAttachmentAnalysisProse),
+      });
+      const attachments = loadedAttachments.map(({ attachment }) => attachment);
+      assertAttachmentAnalysisCitations(content, attachments);
+      return {
+        artifact: {
+          type: 'attachment_analysis',
+          mediaType: 'application/vnd.vera.attachment-analysis+json',
+          content: AttachmentAnalysisSchema.parse({
+            schemaVersion: 1,
+            objective: arguments_.objective,
+            attachments: attachments.map((attachment) => ({
+              id: attachment.id,
+              kind: attachment.kind,
+              filename: attachment.filename,
+              mediaType: attachment.mediaType,
+              sha256: attachment.sha256,
+            })),
+            ...content,
+            analyzedAt: new Date().toISOString(),
+          }),
+        },
+        model: {
+          provider: generation.provider,
+          model: generation.model,
+          durationMs: generation.durationMs,
+          ...(generation.usage === undefined
+            ? {}
+            : { usage: generation.usage }),
+        },
+      };
+    },
+  });
+  return {
+    definition: capabilityDefinition,
+    selected: runtime,
+    resolve(candidate) {
+      return sameCapabilityDestination(destination, candidate)
+        ? runtime()
+        : null;
+    },
   };
 }
 
@@ -546,6 +784,9 @@ function sameReference(
 }
 
 export function createCapabilityRuntimeRegistry(options: {
+  provider: ModelProvider;
+  attachmentAnalysisProvider?: ModelProvider;
+  attachments: AttachmentAnalysisSource;
   developmentPlanning: DevelopmentPlanningCapabilityRegistry;
   softwareChange: SoftwareChangeCapabilityRegistry;
   webResearch: WebResearchCapabilityRegistry;
@@ -557,6 +798,10 @@ export function createCapabilityRuntimeRegistry(options: {
   memories: IntegrationActionExecutor<MemoryActionArguments, MemoryResult>;
 }): CapabilityRuntimeRegistry {
   const registrations = [
+    attachmentAnalysisRegistration({
+      provider: options.attachmentAnalysisProvider ?? options.provider,
+      attachments: options.attachments,
+    }),
     planningRegistration(options.developmentPlanning),
     softwareChangeRegistration(options.softwareChange),
     webResearchRegistration(options.webResearch),

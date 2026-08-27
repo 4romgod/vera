@@ -75,11 +75,25 @@ destinations.
   Transcription runs once after capture and never submits on its own.
 - Run progress, cancellation, and approval remain inside the conversation where
   the relevant intent was expressed.
+- The composer exposes one paperclip rather than separate media controls. Its
+  file picker accepts up to five text, Markdown, JSON, PDF, JPEG, PNG, WebP,
+  GIF, HEIC, HEIF, AVIF, or TIFF attachments. Each selected file shows
+  processing, ready, retry, and remove states; images include a thumbnail. Send
+  remains disabled until every referenced attachment is ready.
+- Owner messages show compact attachment chips and image previews. Selecting `Use again` adds the
+  exact existing reference to the composer without silently attaching it to a
+  future turn.
 - Approval cards keep the action, target, network authority, side effects, and
   exact arguments inspectable before a decision.
+- Attachment-analysis approvals list the exact filenames, types, sizes, and
+  short hashes and say plainly whether extracted text or normalized images stay
+  owner-controlled or are sent to a named third-party model boundary.
 - Structured results are presented as task-specific cards. Opaque identifiers,
   hashes, raw payloads, and artifact metadata remain available under
   `Technical details`; arbitrary assistant text is never altered to hide data.
+- Attachment-analysis results present summary and findings first, followed by
+  readable evidence cards. Documents show filename, page/line locator, and a
+  verified excerpt; images show the exact approved image identity.
 
 ## Software delivery in conversation
 

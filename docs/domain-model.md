@@ -122,6 +122,24 @@ capability. A message can request new work, steer existing work, provide an
 approval-related answer, or communicate a result. Its relationship to a task
 must be explicit when one exists.
 
+### Attachment
+
+An immutable, owner-scoped file resource that may be referenced by a message or
+task. Every attachment owns stable identity, kind, filename, declared media
+type, byte length, original-content hash, and creation time. A document owns
+bounded extracted segments and their hash. An image owns a bounded,
+orientation-corrected, metadata-stripped vision representation with its own
+media type, dimensions, byte length, processor identity, and hash. Public
+resources expose processing and integrity metadata but not original bytes or
+document segments.
+
+An attachment reference is frozen into task, approval, and invocation state.
+It does not itself authorize content disclosure: an approved capability must
+name that exact reference. Retrieved document text and image content are
+untrusted data, not a message, instruction, memory, or source of authority.
+Reusing an attachment in a later task is explicit rather than inherited from
+conversation history.
+
 ### Task
 
 A durable representation of an outcome the owner has asked Vera to pursue.

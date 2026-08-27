@@ -15,6 +15,15 @@ void describe('application configuration', () => {
       readinessTimeoutMs: 3_000,
       maxOutputTokens: 8_192,
     });
+    assert.deepEqual(config.vision, {
+      provider: 'ollama',
+      baseUrl: 'http://127.0.0.1:11434',
+      model: 'qwen3-vl:8b',
+      think: false,
+      timeoutMs: 120_000,
+      readinessTimeoutMs: 3_000,
+      maxOutputTokens: 8_192,
+    });
     assert.deepEqual(config.conversationContext, {
       maxMessages: 20,
       maxCharacters: 40_000,
@@ -55,6 +64,35 @@ void describe('application configuration', () => {
     assert.throws(
       () => loadConfig({ OLLAMA_THINK: 'sometimes' }),
       /OLLAMA_THINK/u,
+    );
+  });
+
+  void it('configures vision independently from the orchestration model', () => {
+    assert.deepEqual(
+      loadConfig({
+        VERA_MODEL_PROVIDER: 'ollama',
+        OLLAMA_MODEL: 'gpt-oss:20b',
+        VERA_VISION_PROVIDER: 'gemini',
+        GEMINI_API_KEY: 'vision-key',
+        GEMINI_VISION_MODEL: 'models/gemini-vision-test',
+      }).vision,
+      {
+        provider: 'gemini',
+        baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+        apiKey: 'vision-key',
+        model: 'gemini-vision-test',
+        timeoutMs: 120_000,
+        readinessTimeoutMs: 3_000,
+        maxOutputTokens: 8_192,
+      },
+    );
+    assert.throws(
+      () =>
+        loadConfig({
+          VERA_MODEL_PROVIDER: 'ollama',
+          VERA_VISION_PROVIDER: 'openai',
+        }),
+      /OPENAI_API_KEY is required/u,
     );
   });
 

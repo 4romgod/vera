@@ -13,7 +13,10 @@ export function toMongoJsonSchema(value: unknown, topLevel = false): unknown {
   const source = value as Record<string, unknown>;
   const result = Object.fromEntries(
     Object.entries(source)
-      .filter(([key]) => !['$schema', 'format', 'propertyNames'].includes(key))
+      .filter(
+        ([key]) =>
+          !['$schema', 'default', 'format', 'propertyNames'].includes(key),
+      )
       .filter(
         ([key]) =>
           !['const', 'exclusiveMinimum', 'exclusiveMaximum'].includes(key),

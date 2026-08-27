@@ -6,6 +6,7 @@ import { createApp } from './wiring.ts';
 
 const environmentFiles = loadEnvironmentFiles();
 const config = loadConfig();
+const visionConfig = config.vision ?? config.model;
 const app = createApp(config, {
   logger: createRuntimeLoggerConfiguration(),
 });
@@ -42,6 +43,26 @@ app.log.info(
             ? 'owner_controlled'
             : 'third_party',
         ...remoteModelConfiguration,
+      },
+      vision: {
+        provider: visionConfig.provider,
+        model: visionConfig.model,
+        ...(visionConfig.provider === 'ollama'
+          ? { think: visionConfig.think }
+          : {}),
+        dataBoundary:
+          visionConfig.provider === 'ollama' ||
+          visionConfig.provider === 'deterministic'
+            ? 'owner_controlled'
+            : 'third_party',
+        ...(visionConfig.provider === 'deterministic'
+          ? {}
+          : {
+              origin: new URL(visionConfig.baseUrl).origin,
+              timeoutMs: visionConfig.timeoutMs,
+              readinessTimeoutMs: visionConfig.readinessTimeoutMs,
+              maxOutputTokens: visionConfig.maxOutputTokens,
+            }),
       },
       planning: {
         configuredAdapterId: config.planning.adapterId,

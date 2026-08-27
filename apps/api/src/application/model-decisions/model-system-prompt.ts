@@ -38,6 +38,10 @@ export function buildModelSystemPrompt(
     (capability) =>
       capability.name === 'memory_management' && capability.version === 1,
   );
+  const documentAnalysisEnabled = enabledCapabilities.some(
+    (capability) =>
+      capability.name === 'attachment_analysis' && capability.version === 1,
+  );
   const goalEnabled =
     [
       webResearchEnabled,
@@ -46,6 +50,7 @@ export function buildModelSystemPrompt(
       personalTaskManagementEnabled,
       personalReminderManagementEnabled,
       memoryManagementEnabled,
+      documentAnalysisEnabled,
     ].filter(Boolean).length >= 2;
   const adaptiveGoalEnabled =
     enabledCapabilities.length > 0 && options.allowAdaptiveGoals !== false;
@@ -145,6 +150,14 @@ export function buildModelSystemPrompt(
           'For remember, faithfully preserve the owner-stated subject and content. Use preference for a stated preference, instruction for a durable way Vera should work, fact for an owner fact, and project_knowledge only for knowledge explicitly scoped to a selected project.',
           'Use global scope unless the owner explicitly scopes the memory to selectedProject. For project scope, copy selectedProject.id exactly. Default sensitivity to personal; use sensitive for credentials, health, financial, legal, identity, or similarly high-risk personal material.',
           'For correct or forget, require an exact memory_ identifier from the owner message or trusted conversation history. Never claim memory changed before Vera code executes the approved action.',
+        ]
+      : []),
+    ...(documentAnalysisEnabled
+      ? [
+          'Use attachment_analysis when the owner asks to analyze, summarize, review, compare, describe, identify, or extract information from supplied documents or images.',
+          'attachments is authoritative metadata for the current owner message. Never invent attachment identifiers or claim to read attachment content during orchestration; the specialist receives the frozen content only after approval.',
+          'When attachments is present, the first action must be attachment_analysis. Never answer from conversation history as though it describes the current attachments.',
+          'For attachment_analysis, arguments.objective must faithfully preserve the requested analysis. If no attachment metadata is supplied, ask the owner to attach a supported document or image instead of invoking the capability.',
         ]
       : []),
     `Available capabilities:\n${JSON.stringify(modelVisibleCapabilities(enabledCapabilities))}`,

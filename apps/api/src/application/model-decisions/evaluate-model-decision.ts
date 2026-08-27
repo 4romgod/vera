@@ -4,6 +4,7 @@ import {
   DevelopmentPlanningProposalArgumentsSchema,
   SoftwareChangeProposalArgumentsSchema,
   WebResearchProposalArgumentsSchema,
+  AttachmentAnalysisArgumentsSchema,
   findCapability,
   findExplicitAdaptiveOutcomes,
 } from '../../domain/capabilities/capability-registry.ts';
@@ -33,6 +34,7 @@ import {
   AdaptiveGoalRequirementSchema,
 } from '../../domain/goals/adaptive-goal.ts';
 import type { AdaptiveGoalPlan } from '../../domain/goals/adaptive-goal.ts';
+import type { AttachmentReference } from '../../domain/attachments/attachment.ts';
 
 export type EvaluateModelDecision = (
   message: string,
@@ -41,6 +43,7 @@ export type EvaluateModelDecision = (
     conversationContext?: ConversationContextBundle;
     memoryContext?: import('../../domain/memories/memory-context.ts').MemoryContextBundle;
     temporalContext?: { currentTime?: string; ownerTimeZone?: string };
+    attachments?: AttachmentReference[];
   },
 ) => Promise<DecisionResult>;
 
@@ -132,7 +135,27 @@ function decide(
   selectedProject?: { id: string; displayName: string },
   ownerTimeZone = 'UTC',
   ownerMessage = '',
+  attachments: readonly AttachmentReference[] = [],
 ): ExecutionDecision {
+  if (attachments.length > 0) {
+    const firstCapability =
+      proposal.kind === 'invoke_capability'
+        ? proposal.capability.name
+        : proposal.kind === 'execute_goal'
+          ? proposal.goal.steps[0]?.capability
+          : proposal.kind === 'pursue_goal'
+            ? proposal.goal.firstStep.capability
+            : undefined;
+    if (firstCapability !== 'attachment_analysis') {
+      return {
+        kind: 'rejected',
+        code: 'invalid_capability_arguments',
+        message:
+          'The current attachments require attachment_analysis before Vera can make claims about their content.',
+      };
+    }
+  }
+
   if (proposal.kind === 'respond') {
     return { kind: 'respond', message: proposal.message };
   }
@@ -180,6 +203,18 @@ function decide(
         'timeZone' in step.arguments &&
         step.arguments.timeZone !== ownerTimeZone,
     );
+    if (
+      plan.data.steps.some(
+        (step) => step.capability === 'attachment_analysis',
+      ) &&
+      attachments.length === 0
+    ) {
+      return {
+        kind: 'rejected',
+        code: 'invalid_goal_plan',
+        message: 'Attachment analysis requires a current attachment.',
+      };
+    }
     if (mismatchedReminderStep !== undefined) {
       return {
         kind: 'rejected',
@@ -284,6 +319,13 @@ function decide(
           'The adaptive goal did not preserve the configured owner time zone.',
       };
     }
+    if (step.capability === 'attachment_analysis' && attachments.length === 0) {
+      return {
+        kind: 'rejected',
+        code: 'invalid_goal_plan',
+        message: 'Attachment analysis requires a current attachment.',
+      };
+    }
     return { kind: 'adaptive_goal_planned', plan: enrichedPlan.data };
   }
 
@@ -380,6 +422,23 @@ function decide(
       proposedArguments: arguments_,
     };
   }
+  if (proposal.capability.name === 'attachment_analysis') {
+    if (attachments.length === 0) {
+      return {
+        kind: 'rejected',
+        code: 'invalid_capability_arguments',
+        message: 'Attachment analysis requires a current attachment.',
+      };
+    }
+    return {
+      kind: 'approval_required',
+      reason: 'specialist_capability_invocation',
+      capability: proposal.capability,
+      proposedArguments: AttachmentAnalysisArgumentsSchema.parse(
+        proposal.arguments,
+      ),
+    };
+  }
   return {
     kind: 'approval_required',
     reason: 'specialist_capability_invocation',
@@ -429,6 +488,18 @@ export function createEvaluateModelDecision(
         ...(context?.selectedProject === undefined
           ? {}
           : { selectedProject: context.selectedProject }),
+        ...(context?.attachments === undefined ||
+        context.attachments.length === 0
+          ? {}
+          : {
+              attachments: context.attachments.map(
+                ({ filename, mediaType, byteLength }) => ({
+                  filename,
+                  mediaType,
+                  byteLength,
+                }),
+              ),
+            }),
         ...(context?.conversationContext === undefined
           ? {}
           : {
@@ -492,6 +563,7 @@ export function createEvaluateModelDecision(
         context?.selectedProject,
         temporalContext.ownerTimeZone,
         message,
+        context?.attachments ?? [],
       ),
       model: {
         provider: generation.provider,

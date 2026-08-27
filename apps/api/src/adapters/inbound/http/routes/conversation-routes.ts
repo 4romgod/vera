@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 
 import type { ConversationService } from '../../../../application/conversations/conversation-service.ts';
 import type { TaskLifecycle } from '../../../../application/tasks/task-lifecycle.ts';
+import type { AttachmentService } from '../../../../application/attachments/attachment-service.ts';
 import { conversationResponse, taskResponse } from '../presenters.ts';
 import {
   ConversationResponseJsonSchema,
@@ -23,6 +24,7 @@ export function registerConversationRoutes(
     principalId: string;
     conversations: ConversationService;
     taskLifecycle?: TaskLifecycle;
+    attachments?: AttachmentService;
   },
 ): void {
   app.post<{
@@ -97,6 +99,16 @@ export function registerConversationRoutes(
       },
     },
     async (request, reply) => {
+      if (
+        request.body.attachmentIds !== undefined &&
+        options.attachments === undefined
+      ) {
+        throw new Error('Attachment service is not configured.');
+      }
+      const attachments = await options.attachments?.resolveReferences(
+        options.principalId,
+        request.body.attachmentIds ?? [],
+      );
       const appended = await options.conversations.appendOwnerMessage({
         principalId: options.principalId,
         conversationId: request.params.id,
@@ -105,6 +117,9 @@ export function registerConversationRoutes(
         ...(request.body.projectId === undefined
           ? {}
           : { projectId: request.body.projectId }),
+        ...(attachments === undefined || attachments.length === 0
+          ? {}
+          : { attachments }),
       });
       const aggregate =
         appended.taskId === undefined
@@ -117,6 +132,9 @@ export function registerConversationRoutes(
               ...(request.body.projectId === undefined
                 ? {}
                 : { projectId: request.body.projectId }),
+              ...(attachments === undefined || attachments.length === 0
+                ? {}
+                : { attachments }),
             })
           : await taskLifecycle.getTask(options.principalId, appended.taskId);
       if (appended.taskId === undefined) {

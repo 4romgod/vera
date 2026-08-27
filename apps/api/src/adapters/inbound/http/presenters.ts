@@ -22,6 +22,9 @@ export function taskResponse(aggregate: TaskAggregate) {
     ...(aggregate.task.messageId === undefined
       ? {}
       : { messageId: aggregate.task.messageId }),
+    ...(aggregate.task.attachments === undefined
+      ? {}
+      : { attachments: aggregate.task.attachments }),
     createdAt: aggregate.task.createdAt,
     updatedAt: aggregate.task.updatedAt,
     ...(aggregate.run.decision === undefined

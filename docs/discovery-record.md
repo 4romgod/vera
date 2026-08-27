@@ -323,6 +323,30 @@ approval boundaries remain suitable extension points; no calendar provider,
 schema, or synchronization policy should be selected until this item is
 reactivated with a concrete owner journey.
 
+### Durable document and image intelligence — implemented
+
+Vera now treats documents and images as immutable owner-scoped attachments
+rather than oversized prompt content. The universal frontend uses one file
+picker for both kinds, preserves upload state, renders image previews, and
+reuses exact references explicitly. The API validates real content, extracts
+bounded document segments, normalizes common image formats, stores originals
+and derived representations separately, and verifies every frozen identity and
+hash before disclosure.
+
+`attachment_analysis@1` remains read-only and always requires exact approval.
+Routing receives metadata only; the approved runtime receives document text or
+normalized image bytes. Vision provider/model selection is independent from
+the orchestration brain, so a text-focused brain can coexist with a capable
+local or cloud vision model. Provider-native multimodal transports are covered
+for Ollama, OpenAI, and Gemini, while artifacts use one provider-neutral,
+citation-checked contract. See
+[ADR-0031](decisions/0031-store-owner-attachments-and-analyze-them-through-exact-approval.md).
+
+Video is an explicit later attachment kind. It requires codec and duration
+limits, frame and audio sampling, temporal locators, and cost-aware inference;
+it must not be smuggled through the image contract merely because both are
+binary media.
+
 ### API source organization — implemented
 
 The growing modular monolith now uses role-first nested modules: domain, ports,

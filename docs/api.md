@@ -1,7 +1,7 @@
 # Vera HTTP API
 
 **Status:** Accepted for implemented V1 paths
-**Version:** 1.3
+**Version:** 1.4
 **Last updated:** 27 August 2026
 
 ## Purpose
@@ -25,6 +25,8 @@ must not be exposed to an untrusted or shared network.
 | `GET /ready` | Model, stores, recovery, workers, and every enabled task-capability runtime | `200` or `503` |
 | `GET /v1/capabilities` | List declared capability contracts, authority, enabled state, and destination | `200` |
 | `POST /v1/audio/transcriptions` | Transcribe one completed bounded audio recording without persisting it | `200` |
+| `POST /v1/attachments` | Validate, extract, and durably store one owner-scoped document | `200` or `201` |
+| `GET /v1/attachments/{attachmentId}` | Retrieve attachment metadata and extraction status, never original content | `200` |
 | `GET /v1/personal-tasks` | List owner-scoped personal tasks; filters: `status`, `limit` | `200` |
 | `GET /v1/personal-tasks/{personalTaskId}` | Retrieve one owner-scoped personal task | `200` |
 | `GET /v1/reminders` | List owner-scoped reminders; filters: `status`, `limit` | `200` |
@@ -98,6 +100,68 @@ The response metadata describes transcription only. Raw audio and this response
 are not stored by the endpoint. If the owner sends the returned text, the
 ordinary conversation/task contract governs that separate request. Provider
 credentials never enter the public client.
+
+## Attachments and document/image analysis
+
+`POST /v1/attachments` accepts the original bytes using
+`Content-Type: application/octet-stream`. `X-Vera-Filename` contains the
+percent-encoded display filename and `X-Vera-Media-Type` declares a supported
+document or image type. Separating transport type from declared media type
+preserves the API's ordinary JSON parser.
+
+```http
+POST /v1/attachments
+Content-Type: application/octet-stream
+X-Vera-Filename: quarterly-brief.pdf
+X-Vera-Media-Type: application/pdf
+
+<original PDF bytes>
+```
+
+Documents may be text, Markdown, JSON, or PDF and are limited to 8 MiB. Images
+may be JPEG, PNG, WebP, GIF, HEIC, HEIF, AVIF, or TIFF and are limited to 20
+MiB. Successful creation returns `201`; uploading the same bytes again for the
+same
+owner returns the existing resource with `200`. The response contains stable
+identity, filename, media type, byte length, content hash, creation time, and
+document extraction status or image normalization metadata. It never returns
+original bytes or extracted segments. Empty or unreadable content returns
+`422`, an unsupported declared or transport type returns `415`, and an
+over-limit body returns `413`.
+
+`GET /v1/attachments/{attachmentId}/preview` returns only the bounded,
+metadata-stripped JPEG or PNG vision representation for an owner-scoped image.
+It never returns original image bytes. Document attachments do not have a
+preview response in this version.
+
+Messages and direct tasks accept at most five unique `attachmentIds`:
+
+```json
+{
+  "content": "Compare the risks and cite the evidence.",
+  "attachmentIds": ["attachment_..."]
+}
+```
+
+The API resolves every ID inside the current owner boundary and freezes exact
+filename, media type, size, and SHA-256 references into the resulting task.
+Unknown or cross-owner IDs are reported as not found. The orchestration model
+sees only filename, media type, and byte length. If it proposes
+`attachment_analysis@1`, the approval identifies every exact attachment and
+whether extracted document text or normalized images will remain
+owner-controlled or cross a third-party provider boundary. Content is loaded
+only after approval and all stored hashes are verified again immediately before
+provider invocation.
+
+The successful task output and `attachment_analysis` artifact contain a summary,
+findings, and citations. During execution the model selects opaque source IDs;
+Vera resolves them to approved segments and constructs the public citations.
+Document citations contain an attachment ID, filename, exact locator such as
+`page 3` or `lines 12-20`, and a source excerpt verified against the approved
+segment. Image citations contain the exact approved image identity; this
+version does not falsely claim pixel-level citation precision. A follow-up must
+explicitly reference the attachment again; conversation history alone does not
+silently redisclose attachment content.
 
 ## Task lifecycle
 
@@ -501,6 +565,12 @@ A successful `web_research@1` invocation stores one project-independent
 report, deduplicated HTTP(S) sources, search timestamp, invocation identity, and
 producer destination. It has no `projectId`. The live adapter fails closed when
 it cannot establish that web search occurred or when the result has no source.
+
+A successful `attachment_analysis@1` invocation stores one owner-scoped
+`attachment_analysis` artifact with structured findings and source-verified
+citations. Its provenance freezes the exact attachment references and selected
+model destination; neither the artifact nor the conversation reply grants a
+later task implicit access to the source content.
 
 The stable artifact identity is derived from the invocation ID; retry or
 recovery cannot create a second artifact for that invocation. The task output

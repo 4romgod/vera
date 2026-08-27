@@ -91,7 +91,17 @@ void describe('OpenAI model adapter', () => {
       );
     });
 
-    const generation = await provider.generateStructured(generationInput);
+    const generation = await provider.generateStructured({
+      ...generationInput,
+      images: [
+        {
+          sourceId: 'source_1',
+          filename: 'photo.png',
+          mediaType: 'image/png',
+          bytes: Uint8Array.from([1, 2, 3]),
+        },
+      ],
+    });
     const parsedRequest = OpenAiRequestSchema.parse(requestBody);
 
     assert.equal(requestedUrl, 'https://openai.test/v1/responses');
@@ -101,6 +111,21 @@ void describe('OpenAI model adapter', () => {
     assert.equal(parsedRequest.text.format.type, 'json_schema');
     assert.equal(parsedRequest.text.format.strict, true);
     assert.equal(parsedRequest.text.format.schema.type, 'object');
+    assert.deepEqual(
+      (
+        requestBody as {
+          input: { content: { type: string; image_url?: string }[] }[];
+        }
+      ).input[0]?.content,
+      [
+        { type: 'input_text', text: 'hello' },
+        {
+          type: 'input_image',
+          image_url: 'data:image/png;base64,AQID',
+          detail: 'high',
+        },
+      ],
+    );
     assert.ok(parsedRequest.text.format.schema.properties.result.anyOf);
     assert.equal(
       parsedRequest.text.format.schema.properties.result.$schema,

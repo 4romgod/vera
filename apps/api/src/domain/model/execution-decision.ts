@@ -4,6 +4,7 @@ import {
   DevelopmentPlanningProposalArgumentsSchema,
   SoftwareChangeProposalArgumentsSchema,
   WebResearchProposalArgumentsSchema,
+  AttachmentAnalysisArgumentsSchema,
 } from '../capabilities/capability-registry.ts';
 import { PersonalTaskActionArgumentsSchema } from '../personal-tasks/personal-task.ts';
 import { ReminderActionArgumentsSchema } from '../reminders/reminder.ts';
@@ -58,6 +59,20 @@ const WebResearchApprovalDecisionSchema = z
       })
       .strict(),
     proposedArguments: WebResearchProposalArgumentsSchema,
+  })
+  .strict();
+
+const AttachmentAnalysisApprovalDecisionSchema = z
+  .object({
+    kind: z.literal('approval_required'),
+    reason: z.literal('specialist_capability_invocation'),
+    capability: z
+      .object({
+        name: z.literal('attachment_analysis'),
+        version: z.literal(1),
+      })
+      .strict(),
+    proposedArguments: AttachmentAnalysisArgumentsSchema,
   })
   .strict();
 
@@ -135,6 +150,7 @@ export const ExecutionDecisionSchema = z.union([
   DevelopmentPlanningApprovalDecisionSchema,
   SoftwareChangeApprovalDecisionSchema,
   WebResearchApprovalDecisionSchema,
+  AttachmentAnalysisApprovalDecisionSchema,
   PersonalTaskManagementApprovalDecisionSchema,
   PersonalReminderManagementApprovalDecisionSchema,
   MemoryManagementApprovalDecisionSchema,
