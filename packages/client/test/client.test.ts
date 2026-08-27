@@ -675,6 +675,61 @@ void describe('Vera HTTP client', () => {
     assert.equal(polls, 2);
   });
 
+  void it('rediscovers durable software-delivery attempts after a client restart', async () => {
+    const requests: string[] = [];
+    const client = new VeraClient({
+      baseUrl: 'http://vera.test',
+      fetch: (input) => {
+        const url =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        requests.push(url);
+        return Promise.resolve(
+          Response.json(
+            url.includes('/artifacts/')
+              ? {
+                  schemaVersion: 1,
+                  applications: [
+                    {
+                      schemaVersion: 1,
+                      id: 'application_recovered',
+                      status: 'succeeded',
+                    },
+                  ],
+                }
+              : {
+                  schemaVersion: 1,
+                  publications: [
+                    {
+                      schemaVersion: 1,
+                      id: 'publication_recovered',
+                      status: 'awaiting_approval',
+                    },
+                  ],
+                },
+          ),
+        );
+      },
+    });
+
+    const applications =
+      await client.listChangeApplicationsForArtifact('artifact_test');
+    const publications =
+      await client.listSoftwareChangePublicationsForApplication(
+        'application_recovered',
+      );
+
+    assert.equal(applications.applications[0]?.id, 'application_recovered');
+    assert.equal(publications.publications[0]?.id, 'publication_recovered');
+    assert.deepEqual(requests, [
+      'http://vera.test/v1/artifacts/artifact_test/applications',
+      'http://vera.test/v1/change-applications/application_recovered/publications',
+    ]);
+  });
+
   void it('waits for a terminal conversation reply to be projected', async () => {
     let calls = 0;
     const client = new VeraClient({

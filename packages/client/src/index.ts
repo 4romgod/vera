@@ -645,6 +645,11 @@ export type ChangeApplicationEventsResource = {
   }[];
 };
 
+export type ChangeApplicationListResource = {
+  schemaVersion: 1;
+  applications: ChangeApplicationResource[];
+};
+
 export type SoftwareChangePublicationStatus =
   | 'awaiting_approval'
   | 'approved'
@@ -740,6 +745,11 @@ export type SoftwareChangePublicationEventsResource = {
   }[];
 };
 
+export type SoftwareChangePublicationListResource = {
+  schemaVersion: 1;
+  publications: SoftwareChangePublicationResource[];
+};
+
 export class VeraApiError extends Error {
   public constructor(
     message: string,
@@ -824,6 +834,9 @@ export type VeraApi = {
     artifactId: string;
     idempotencyKey: string;
   }): Promise<ChangeApplicationResource>;
+  listChangeApplicationsForArtifact(
+    artifactId: string,
+  ): Promise<ChangeApplicationListResource>;
   getChangeApplication(
     applicationId: string,
   ): Promise<ChangeApplicationResource>;
@@ -848,6 +861,9 @@ export type VeraApi = {
     pullRequest: { title: string; body: string; draft: boolean };
     idempotencyKey: string;
   }): Promise<SoftwareChangePublicationResource>;
+  listSoftwareChangePublicationsForApplication(
+    applicationId: string,
+  ): Promise<SoftwareChangePublicationListResource>;
   getSoftwareChangePublication(
     publicationId: string,
   ): Promise<SoftwareChangePublicationResource>;
@@ -1129,6 +1145,21 @@ function assertChangeApplicationResource(
   }
 }
 
+function assertChangeApplicationListResource(
+  value: unknown,
+): asserts value is ChangeApplicationListResource {
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== 1 ||
+    !Array.isArray(value.applications)
+  ) {
+    throw new Error('Vera returned an invalid change-application list.');
+  }
+  for (const application of value.applications) {
+    assertChangeApplicationResource(application);
+  }
+}
+
 function assertSoftwareChangePublicationResource(
   value: unknown,
 ): asserts value is SoftwareChangePublicationResource {
@@ -1153,6 +1184,21 @@ function assertSoftwareChangePublicationResource(
     throw new Error(
       'Vera returned an invalid software-change publication resource.',
     );
+  }
+}
+
+function assertSoftwareChangePublicationListResource(
+  value: unknown,
+): asserts value is SoftwareChangePublicationListResource {
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== 1 ||
+    !Array.isArray(value.publications)
+  ) {
+    throw new Error('Vera returned an invalid software-publication list.');
+  }
+  for (const publication of value.publications) {
+    assertSoftwareChangePublicationResource(publication);
   }
 }
 
@@ -1554,6 +1600,16 @@ export class VeraClient implements VeraApi {
     );
   }
 
+  public async listChangeApplicationsForArtifact(
+    artifactId: string,
+  ): Promise<ChangeApplicationListResource> {
+    const value: unknown = await this.request(
+      `/v1/artifacts/${encodeURIComponent(artifactId)}/applications`,
+    );
+    assertChangeApplicationListResource(value);
+    return value;
+  }
+
   public getChangeApplication(
     applicationId: string,
   ): Promise<ChangeApplicationResource> {
@@ -1677,6 +1733,16 @@ export class VeraClient implements VeraApi {
         },
       },
     );
+  }
+
+  public async listSoftwareChangePublicationsForApplication(
+    applicationId: string,
+  ): Promise<SoftwareChangePublicationListResource> {
+    const value: unknown = await this.request(
+      `/v1/change-applications/${encodeURIComponent(applicationId)}/publications`,
+    );
+    assertSoftwareChangePublicationListResource(value);
+    return value;
   }
 
   public getSoftwareChangePublication(publicationId: string) {

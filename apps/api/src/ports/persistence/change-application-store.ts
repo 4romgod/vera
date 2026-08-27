@@ -17,6 +17,11 @@ export type ChangeApplicationStore = {
     principalId: string,
     approvalId: string,
   ): Promise<SoftwareChangeApplication | null>;
+  listBySourceArtifact(
+    principalId: string,
+    artifactId: string,
+    limit: number,
+  ): Promise<SoftwareChangeApplication[]>;
   replace(
     application: SoftwareChangeApplication,
     expectedVersion: number,

@@ -3,6 +3,7 @@ import { afterEach, describe, it } from 'node:test';
 
 import { createEvaluateModelDecision } from '../../../../src/application/model-decisions/evaluate-model-decision.ts';
 import { buildApp } from '../../../../src/adapters/inbound/http/build-app.ts';
+import { SoftwareChangeApplicationSchema } from '../../../../src/domain/changes/software-change-application.ts';
 import { ModelProviderError } from '../../../../src/ports/model/model-provider.ts';
 import { SoftwareChangePublicationSchema } from '../../../../src/domain/changes/software-change-publication.ts';
 import { FakeModelProvider } from '../../../support/fake-model-provider.ts';
@@ -91,6 +92,7 @@ void describe('HTTP API', () => {
       evaluateModelDecision: createEvaluateModelDecision(provider),
       provider,
       softwareChangePublications: {
+        listForApplication: () => Promise.resolve([base]),
         create: (input) => {
           assert.equal(input.applicationId, 'application_test');
           assert.equal(input.pullRequest.draft, true);
@@ -137,6 +139,18 @@ void describe('HTTP API', () => {
       false,
     );
 
+    const discovered = await app.inject({
+      method: 'GET',
+      url: '/v1/change-applications/application_test/publications',
+    });
+    assert.equal(discovered.statusCode, 200, discovered.body);
+    assert.deepEqual(
+      discovered
+        .json<{ publications: { id: string }[] }>()
+        .publications.map((publication) => publication.id),
+      ['publication_test'],
+    );
+
     const decided = await app.inject({
       method: 'POST',
       url: '/v1/software-change-publications/publication_test/decision',
@@ -157,6 +171,84 @@ void describe('HTTP API', () => {
       service: 'vera-api',
       model: { name: 'fake', model: 'fake-v1' },
     });
+  });
+
+  void it('discovers application attempts for an artifact', async () => {
+    const provider = new FakeModelProvider({});
+    const base = SoftwareChangeApplicationSchema.parse({
+      schemaVersion: 1,
+      version: 1,
+      id: 'application_discovered',
+      requestKey: 'discover-http-key',
+      principalId: 'owner_v1',
+      status: 'awaiting_approval',
+      sourceArtifact: {
+        id: 'artifact_test',
+        sha256: 'a'.repeat(64),
+      },
+      project: { id: 'project_test', displayName: 'Test' },
+      approval: {
+        id: 'approval_application',
+        status: 'pending',
+        reason: 'software_change_application',
+        sourceArtifact: {
+          id: 'artifact_test',
+          sha256: 'a'.repeat(64),
+        },
+        project: { id: 'project_test', displayName: 'Test' },
+        effect: {
+          adapterId: 'local_git_worktree',
+          baseRevision: 'b'.repeat(40),
+          branchName: 'vera/change-test',
+          workspacePath: '/managed/test',
+          patchSha256: 'c'.repeat(64),
+          staged: true,
+          files: [
+            {
+              relativePath: 'README.md',
+              operation: 'create',
+              afterSha256: 'd'.repeat(64),
+              bytes: 1,
+            },
+          ],
+        },
+        requestedAt: '2026-08-27T00:00:00.000Z',
+      },
+      effect: { id: 'effect_application', status: 'pending' },
+      events: [],
+      createdAt: '2026-08-27T00:00:00.000Z',
+      updatedAt: '2026-08-27T00:00:00.000Z',
+    });
+    const app = buildApp({
+      evaluateModelDecision: createEvaluateModelDecision(provider),
+      provider,
+      changeApplications: {
+        listForArtifact: (principalId, artifactId) => {
+          assert.equal(principalId, 'owner_v1');
+          assert.equal(artifactId, 'artifact_test');
+          return Promise.resolve([base]);
+        },
+        create: () => Promise.resolve(base),
+        get: () => Promise.resolve(base),
+        decideApproval: () => Promise.resolve(base),
+        cancel: () => Promise.resolve(base),
+        progress: () => Promise.resolve(base),
+        wake: () => undefined,
+      },
+    });
+    apps.push(app);
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/artifacts/artifact_test/applications',
+    });
+
+    assert.equal(response.statusCode, 200, response.body);
+    assert.deepEqual(
+      response
+        .json<{ applications: { id: string }[] }>()
+        .applications.map((application) => application.id),
+      ['application_discovered'],
+    );
   });
 
   void it('allows the local web frontend without widening the loopback trust boundary', async () => {

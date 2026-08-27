@@ -73,6 +73,20 @@ export class MongoDbSoftwareChangePublicationStore
     return document === null ? null : this.parse(document);
   }
 
+  public async listBySourceApplication(
+    principalId: string,
+    applicationId: string,
+    limit: number,
+  ) {
+    await this.ensureConnected();
+    const documents = await this.collection
+      .find({ principalId, 'sourceApplication.id': applicationId })
+      .sort({ createdAt: -1, id: -1 })
+      .limit(limit)
+      .toArray();
+    return documents.map((document) => this.parse(document));
+  }
+
   public async replace(
     publication: SoftwareChangePublication,
     expectedVersion: number,
@@ -140,6 +154,12 @@ export class MongoDbSoftwareChangePublicationStore
         { principalId: 1, requestKey: 1 },
         { unique: true },
       ),
+      this.collection.createIndex({
+        principalId: 1,
+        'sourceApplication.id': 1,
+        createdAt: -1,
+        id: -1,
+      }),
       this.collection.createIndex({ status: 1, createdAt: 1 }),
     ]);
   }

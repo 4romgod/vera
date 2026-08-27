@@ -1,7 +1,11 @@
 import { Sparkles, UserRound } from 'lucide-react-native';
 import { Text, View } from 'react-native';
 
-import type { ConversationMessageResource, TaskResource } from '@vera/client';
+import type {
+  ConversationMessageResource,
+  TaskResource,
+  VeraApi,
+} from '@vera/client';
 
 import { SpokenReplyButton } from '@/components/voice-controls';
 import { palette, radius, spacing } from '@/design/tokens';
@@ -12,6 +16,7 @@ import {
 
 export function ConversationMessage(props: {
   message: ConversationMessageResource;
+  client: VeraApi;
   task?: TaskResource | null;
   speaking: boolean;
   onSpeak: () => void;
@@ -45,7 +50,9 @@ export function ConversationMessage(props: {
       ) : null}
       <View
         style={{
-          maxWidth: owner ? '84%' : '88%',
+          maxWidth: owner ? '84%' : structured ? undefined : '88%',
+          flexBasis: structured ? 0 : 'auto',
+          flexGrow: structured ? 1 : 0,
           flexShrink: 1,
           gap: spacing.sm,
         }}
@@ -82,7 +89,7 @@ export function ConversationMessage(props: {
           ) : null}
         </View>
         {structured && props.task !== null && props.task !== undefined ? (
-          <AssistantResultCard task={props.task} />
+          <AssistantResultCard client={props.client} task={props.task} />
         ) : (
           <View
             style={{

@@ -70,6 +70,28 @@ export class InMemoryChangeApplicationStore implements ChangeApplicationStore {
     );
   }
 
+  public listBySourceArtifact(
+    principalId: string,
+    artifactId: string,
+    limit: number,
+  ): Promise<SoftwareChangeApplication[]> {
+    return Promise.resolve(
+      [...this.applications.values()]
+        .filter(
+          (application) =>
+            application.principalId === principalId &&
+            application.sourceArtifact.id === artifactId,
+        )
+        .sort(
+          (left, right) =>
+            right.createdAt.localeCompare(left.createdAt) ||
+            right.id.localeCompare(left.id),
+        )
+        .slice(0, limit)
+        .map((application) => structuredClone(application)),
+    );
+  }
+
   public replace(
     application: SoftwareChangeApplication,
     expectedVersion: number,

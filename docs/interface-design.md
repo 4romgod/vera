@@ -81,6 +81,39 @@ destinations.
   hashes, raw payloads, and artifact metadata remain available under
   `Technical details`; arbitrary assistant text is never altered to hide data.
 
+## Software delivery in conversation
+
+A completed software-change artifact is not a terminal blob. Its result card
+is the durable owner interface for taking that exact change through staging and
+publication:
+
+```mermaid
+flowchart LR
+    CHANGE["Review change, files, checks, and risks"] --> STAGE["Prepare staging review"]
+    STAGE --> APPROVE1{"Approve exact local effect?"}
+    APPROVE1 -->|approve| STAGED["Managed worktree staged"]
+    APPROVE1 -->|reject| STOP1["No filesystem effect"]
+    STAGED --> SETUP["Edit commit and pull-request metadata"]
+    SETUP --> APPROVE2{"Approve exact remote effect?"}
+    APPROVE2 -->|approve| PR["Open verified pull request"]
+    APPROVE2 -->|reject| STOP2["No remote effect"]
+```
+
+- The card shows human-readable change evidence before offering an effect.
+- Staging and publication remain separate reviews; neither button silently
+  grants the authority of the next phase.
+- Pull-request metadata is editable before publication preparation. The exact
+  frozen repository, branches, files, author, commit, and PR payload remain
+  inspectable at approval time.
+- Active work follows durable status and exposes cancellation only when the API
+  says cancellation is still truthful.
+- Refresh or process restart rebuilds the latest active or successful delivery
+  chain from owner-scoped API discovery. The device does not become a second
+  operational store.
+- A successful publication renders only a canonical HTTPS GitHub pull-request
+  URL as an external action. Full aggregates remain available under Delivery
+  evidence and Technical details.
+
 ## Accessibility and quality
 
 - Text and controls must retain readable contrast against every surface.

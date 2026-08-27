@@ -46,6 +46,28 @@ export class InMemorySoftwareChangePublicationStore
     );
   }
 
+  public listBySourceApplication(
+    principalId: string,
+    applicationId: string,
+    limit: number,
+  ) {
+    return Promise.resolve(
+      [...this.publications.values()]
+        .filter(
+          (publication) =>
+            publication.principalId === principalId &&
+            publication.sourceApplication.id === applicationId,
+        )
+        .sort(
+          (left, right) =>
+            right.createdAt.localeCompare(left.createdAt) ||
+            right.id.localeCompare(left.id),
+        )
+        .slice(0, limit)
+        .map((publication) => structuredClone(publication)),
+    );
+  }
+
   public replace(
     publication: SoftwareChangePublication,
     expectedVersion: number,

@@ -485,6 +485,7 @@ export function AssistantScreen() {
           <View style={{ minHeight: 0, flex: 1 }}>
             <ConversationView
               ref={messageList}
+              client={client}
               compact={compact}
               footer={footer}
               messages={messages}

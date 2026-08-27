@@ -12,11 +12,13 @@ import {
 } from 'lucide-react-native';
 import { Pressable, Text, View } from 'react-native';
 
-import type { TaskResource } from '@vera/client';
+import type { TaskResource, VeraApi } from '@vera/client';
 
 import { StructuredValue } from '@/components/structured-value';
 import { palette, radius, spacing } from '@/design/tokens';
 import { humanizeIdentifier } from './presentation';
+import { SoftwareDeliveryCard } from './software-delivery/software-delivery-card';
+import { softwareChangeArtifactReference } from './software-delivery/model';
 
 export function hasStructuredResult(
   task: TaskResource | null | undefined,
@@ -24,12 +26,16 @@ export function hasStructuredResult(
   return task?.output !== undefined && task.output.kind !== 'response';
 }
 
-export function AssistantResultCard(props: { task: TaskResource }) {
+export function AssistantResultCard(props: {
+  task: TaskResource;
+  client: VeraApi;
+}) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const output = props.task.output;
   if (output === undefined || output.kind === 'response') return null;
 
   const presentation = resultPresentation(output);
+  const softwareChange = softwareChangeArtifactReference(props.task);
   return (
     <View
       style={{
@@ -79,7 +85,17 @@ export function AssistantResultCard(props: { task: TaskResource }) {
         </View>
       </View>
 
-      {presentation.content}
+      {softwareChange === undefined ? (
+        presentation.content
+      ) : (
+        <SoftwareDeliveryCard
+          artifactId={softwareChange.id}
+          client={props.client}
+          preview={
+            output.kind === 'software_change' ? output.change : undefined
+          }
+        />
+      )}
 
       <Pressable
         accessibilityRole="button"

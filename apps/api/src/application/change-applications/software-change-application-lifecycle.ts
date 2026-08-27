@@ -44,6 +44,10 @@ export type SoftwareChangeApplicationLifecycle = {
     principalId: string,
     applicationId: string,
   ): Promise<SoftwareChangeApplication>;
+  listForArtifact(
+    principalId: string,
+    artifactId: string,
+  ): Promise<SoftwareChangeApplication[]>;
   decideApproval(input: {
     principalId: string;
     applicationId: string;
@@ -208,6 +212,9 @@ export function createSoftwareChangeApplicationLifecycle(options: {
   }
 
   return {
+    async listForArtifact(principalId, artifactId) {
+      return options.store.listBySourceArtifact(principalId, artifactId, 20);
+    },
     async create(input) {
       const existing = await options.store.findByRequestKey(
         input.principalId,
