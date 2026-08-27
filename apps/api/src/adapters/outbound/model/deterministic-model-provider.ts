@@ -93,6 +93,7 @@ export class DeterministicModelProvider implements ModelProvider {
         ownerMessage: string;
         nextStepId: string;
         temporalContext: { currentTime: string; ownerTimeZone: string };
+        selectedProject?: { id: string; displayName: string };
         requirements: {
           id: string;
           capability: string;
@@ -102,72 +103,140 @@ export class DeterministicModelProvider implements ModelProvider {
         observations: {
           stepId: string;
           capability: { name: string; version: number };
-          artifact: { type: string };
+          artifact: { type: string; content?: unknown };
         }[];
       };
-      const hasReminder = context.observations.some(
-        (observation) =>
-          observation.artifact.type === 'personal_reminder_result',
+      const completed = new Set(
+        context.observations.map(
+          ({ capability }) =>
+            `${capability.name}@${String(capability.version)}`,
+        ),
       );
-      const shouldCreateReminder =
-        !hasReminder &&
-        /\bremind\b/u.test(context.ownerMessage.toLowerCase()) &&
-        JSON.stringify(input.outputSchema).includes(
-          'personal_reminder_management',
-        );
+      const nextRequirement = context.requirements.find(
+        ({ capability, version }) =>
+          !completed.has(`${capability}@${String(version)}`),
+      );
       const explicitInstant =
         /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z/u.exec(
           context.ownerMessage,
         )?.[0];
-      const candidate = shouldCreateReminder
-        ? {
-            schemaVersion: 1,
-            kind: 'continue_goal',
-            decisionSummary:
-              'The observed research result requires the requested reminder action.',
-            evidenceStepIds: context.observations.map(
-              (observation) => observation.stepId,
-            ),
-            step: {
-              id: context.nextStepId,
-              purpose:
-                'Create the requested reminder after reviewing evidence.',
-              inputStepIds: [],
-              capability: 'personal_reminder_management',
-              version: 1,
-              arguments: {
-                action: 'create',
-                message: context.ownerMessage,
-                scheduledFor:
-                  explicitInstant ??
-                  new Date(
-                    Date.parse(context.temporalContext.currentTime) + 60_000,
-                  ).toISOString(),
-                timeZone: context.temporalContext.ownerTimeZone,
+      const attachmentObservation = context.observations.find(
+        ({ artifact }) => artifact.type === 'attachment_analysis',
+      );
+      const attachmentContent = attachmentObservation?.artifact.content as
+        | { summary?: string; findings?: string[] }
+        | undefined;
+      const evidenceText =
+        attachmentContent?.findings?.[0] ??
+        attachmentContent?.summary ??
+        context.ownerMessage;
+      const compatibleInputStepIds =
+        nextRequirement?.capability === 'development_planning' ||
+        nextRequirement?.capability === 'software_change'
+          ? context.observations
+              .filter(({ artifact }) =>
+                nextRequirement.capability === 'development_planning'
+                  ? ['attachment_analysis', 'research_report'].includes(
+                      artifact.type,
+                    )
+                  : [
+                      'attachment_analysis',
+                      'implementation_plan',
+                      'research_report',
+                    ].includes(artifact.type),
+              )
+              .map(({ stepId }) => stepId)
+          : [];
+      const projectArguments = {
+        objective: context.ownerMessage,
+        ticket: {
+          reference: 'untracked',
+          details: context.ownerMessage,
+        },
+        project: {
+          name: context.selectedProject?.displayName ?? 'vera',
+        },
+      };
+      const nextArguments =
+        nextRequirement?.capability === 'development_planning' ||
+        nextRequirement?.capability === 'software_change'
+          ? projectArguments
+          : nextRequirement?.capability === 'web_research'
+            ? { objective: context.ownerMessage }
+            : nextRequirement?.capability === 'personal_task_management'
+              ? {
+                  action: 'create',
+                  title: evidenceText.slice(0, 500),
+                  notes:
+                    `Derived from approved attachment analysis for: ${context.ownerMessage}`.slice(
+                      0,
+                      5_000,
+                    ),
+                }
+              : nextRequirement?.capability === 'personal_reminder_management'
+                ? {
+                    action: 'create',
+                    message: evidenceText.slice(0, 1_000),
+                    scheduledFor:
+                      explicitInstant ??
+                      new Date(
+                        Date.parse(context.temporalContext.currentTime) +
+                          60_000,
+                      ).toISOString(),
+                    timeZone: context.temporalContext.ownerTimeZone,
+                  }
+                : nextRequirement?.capability === 'memory_management'
+                  ? {
+                      action: 'remember',
+                      kind: 'fact',
+                      subject: evidenceText.slice(0, 200),
+                      content: evidenceText.slice(0, 2_000),
+                      scope: { kind: 'global' },
+                      sensitivity: 'personal',
+                    }
+                  : undefined;
+      const evidenceStepIds = context.observations
+        .map(({ stepId }) => stepId)
+        .slice(-3);
+      const candidate =
+        nextRequirement !== undefined && nextArguments !== undefined
+          ? {
+              schemaVersion: 1,
+              kind: 'continue_goal',
+              decisionSummary:
+                'The validated evidence supports the next requested bounded action.',
+              evidenceStepIds,
+              step: {
+                id: context.nextStepId,
+                purpose: `Complete the requested ${nextRequirement.capability.replaceAll('_', ' ')} outcome using validated evidence.`,
+                inputStepIds: compatibleInputStepIds,
+                capability: nextRequirement.capability,
+                version: nextRequirement.version,
+                arguments: nextArguments,
               },
-            },
-          }
-        : {
-            schemaVersion: 1,
-            kind: 'complete_goal',
-            decisionSummary:
-              'The validated observations satisfy the goal completion criteria.',
-            message: `I completed the requested adaptive goal using ${String(context.observations.length)} verified capability result(s).`,
-            evidenceStepIds: context.observations.map(
-              (observation) => observation.stepId,
-            ),
-            requirementResolutions: context.requirements.map((requirement) => ({
-              requirementId: requirement.id,
-              status: 'satisfied' as const,
-              evidenceStepIds: context.observations
-                .filter(
-                  (observation) =>
-                    observation.capability.name === requirement.capability &&
-                    observation.capability.version === requirement.version,
-                )
-                .map((observation) => observation.stepId),
-            })),
-          };
+            }
+          : {
+              schemaVersion: 1,
+              kind: 'complete_goal',
+              decisionSummary:
+                'The validated observations satisfy the goal completion criteria.',
+              message: `I completed the requested adaptive goal using ${String(context.observations.length)} verified capability result(s).`,
+              evidenceStepIds,
+              requirementResolutions: context.requirements.map(
+                (requirement) => ({
+                  requirementId: requirement.id,
+                  status: 'satisfied' as const,
+                  evidenceStepIds: context.observations
+                    .filter(
+                      (observation) =>
+                        observation.capability.name ===
+                          requirement.capability &&
+                        observation.capability.version === requirement.version,
+                    )
+                    .map((observation) => observation.stepId),
+                }),
+              ),
+            };
       return Promise.resolve({
         candidate,
         provider: this.name,
@@ -250,9 +319,6 @@ export class DeterministicModelProvider implements ModelProvider {
       ) && JSON.stringify(input.outputSchema).includes('web_research');
     const requestsAttachmentAnalysis =
       attachments.length > 0 &&
-      /\b(analy[sz]e|summari[sz]e|review|compare|extract|describe|identify)\b/u.test(
-        normalizedMessage,
-      ) &&
       JSON.stringify(input.outputSchema).includes('attachment_analysis');
     const canManagePersonalTasks = JSON.stringify(input.outputSchema).includes(
       'personal_task_management',
@@ -380,23 +446,6 @@ export class DeterministicModelProvider implements ModelProvider {
     const shouldChange = requestsChange && !hasOwnerDataAction;
     const shouldPlan = requestsPlan && !hasOwnerDataAction;
     const shouldResearch = requestsResearch && !hasOwnerDataAction;
-
-    if (requestsAttachmentAnalysis && !hasOwnerDataAction) {
-      return Promise.resolve({
-        candidate: {
-          schemaVersion: 1,
-          kind: 'invoke_capability',
-          decisionSummary:
-            'The owner asked Vera to analyze supplied attachments.',
-          capability: { name: 'attachment_analysis', version: 1 },
-          arguments: { objective: ownerMessage },
-        },
-        provider: this.name,
-        model: this.model,
-        durationMs: 0,
-        usage: { inputTokens: 0, outputTokens: 0 },
-      });
-    }
 
     const canExecuteGoal = JSON.stringify(input.outputSchema).includes(
       'execute_goal',
@@ -627,13 +676,25 @@ export class DeterministicModelProvider implements ModelProvider {
                         capability: { name: 'software_change', version: 1 },
                         arguments: projectArguments,
                       }
-                    : {
-                        schemaVersion: 1,
-                        kind: 'respond',
-                        decisionSummary:
-                          'The request can be answered directly.',
-                        message: `Vera received: ${ownerMessage}`,
-                      };
+                    : requestsAttachmentAnalysis
+                      ? {
+                          schemaVersion: 1,
+                          kind: 'invoke_capability',
+                          decisionSummary:
+                            'The supplied attachments must be analyzed before Vera makes claims about their contents.',
+                          capability: {
+                            name: 'attachment_analysis',
+                            version: 1,
+                          },
+                          arguments: { objective: ownerMessage },
+                        }
+                      : {
+                          schemaVersion: 1,
+                          kind: 'respond',
+                          decisionSummary:
+                            'The request can be answered directly.',
+                          message: `Vera received: ${ownerMessage}`,
+                        };
 
     return Promise.resolve({
       candidate,

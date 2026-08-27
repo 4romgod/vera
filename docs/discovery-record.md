@@ -461,6 +461,24 @@ the required V1 Codex disclosure and artifact evaluation on 25 August 2026.
 | Model or capability loop consumes unbounded resources | Unexpected cost, unavailable service, or uncontrolled delegation | Enforce finite run ceilings and forbid recursive delegation in V1; require inherited child limits before later enabling child tasks. |
 | Memory stores unsupported inference as fact | Loss of user trust | Record provenance, confidence, scope, and deletion rules. |
 
+### Actionable attachment composition — implemented
+
+Attachment intelligence now composes into bounded follow-on work instead of
+ending at a summary. Code normalizes an attachment-plus-action request into an
+adaptive goal whose first step is analysis and whose durable requirements
+preserve every explicit downstream outcome. The continuation derives exact
+task, reminder, memory, research, planning, or software-change arguments from
+validated observations and requests a separate approval.
+
+The approval contract distinguishes artifact-backed decision provenance from
+complete artifact disclosure. HTTP evidence covers a real document upload,
+analysis approval, derived task approval, durable task effect, final artifact
+ledger, and citation lineage. Planning and software-change consumers accept
+`attachment_analysis` as a typed artifact and fail closed if cited analysis is
+not explicitly bound for disclosure. The universal frontend exposes the flow
+as Understand → Decide → Act and keeps citations visible in the final result.
+ADR-0032 records the accepted semantics.
+
 ## Explicit non-decisions
 
 The project has not selected:

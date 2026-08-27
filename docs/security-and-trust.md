@@ -119,6 +119,16 @@ sources, constructs the external citation fields itself, and accepts the result
 only when attachment identity and filename match approved evidence; document
 citations additionally require an exact locator and matching excerpt.
 
+Attachment content never grants follow-on authority. Under
+[ADR-0032](decisions/0032-compose-attachment-evidence-into-separately-approved-actions.md),
+an attachment-driven request first produces an approved, validated analysis
+artifact. An owner-controlled continuation may use that artifact as
+`decisionEvidence` to derive exact arguments, but the downstream capability
+receives the complete artifact only when its declared contract accepts the type
+and a second approval also lists it under `inputArtifacts`. Planning or change
+steps that cite attachment analysis must bind it as an input or fail closed;
+owner-state actions receive only the derived values.
+
 ## Threat categories
 
 ### Prompt injection and instruction confusion

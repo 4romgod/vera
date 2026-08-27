@@ -10,7 +10,8 @@ accepted by ADR-0021 on 26 August 2026; provider-neutral integration actions
 and `personal_task_management@1` accepted by ADR-0022 on 26 August 2026;
 evidence-adaptive bounded orchestration accepted by ADR-0024 on 26 August 2026;
 and `memory_management@1` accepted by ADR-0025 on 26 August 2026;
-`attachment_analysis@1` is accepted by ADR-0031 on 27 August 2026
+`attachment_analysis@1` is accepted by ADR-0031 on 27 August 2026; actionable
+attachment composition is accepted by ADR-0032 on 27 August 2026
 
 ## Purpose
 
@@ -200,6 +201,8 @@ producer's artifact type.
 
 ```mermaid
 flowchart LR
+    A["attachment_analysis@1"] -->|"attachment_analysis"| P["development_planning@1"]
+    A -->|"attachment_analysis"| C["software_change@1"]
     R["web_research@1"] -->|"research_report"| P["development_planning@1"]
     P -->|"implementation_plan"| C["software_change@1"]
     R -. "also accepted" .-> C
@@ -216,8 +219,17 @@ The current accepted compositions are:
 
 | Consumer | Accepted input artifacts |
 |---|---|
-| `development_planning@1` | `research_report` |
-| `software_change@1` | `implementation_plan`, `research_report` |
+| `development_planning@1` | `attachment_analysis`, `research_report` |
+| `software_change@1` | `attachment_analysis`, `implementation_plan`, `research_report` |
+
+For adaptive work, an artifact cited as `decisionEvidence` informed Vera's
+choice but is not passed to the next capability. An `inputArtifacts` entry is a
+separate disclosure: the capability receives the full integrity-checked
+artifact after approval. Attachment-derived owner-state actions receive exact
+arguments and retain the analysis only as decision evidence. Planning and
+software-change steps that materially use attachment analysis must name it in
+both classes so the second approval explicitly authorizes specialist access.
+See [ADR-0032](decisions/0032-compose-attachment-evidence-into-separately-approved-actions.md).
 | `web_research@1` | none |
 | `personal_task_management@1` | none |
 

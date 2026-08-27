@@ -7,6 +7,7 @@ import {
   GoalStepSchema,
   PersonalReminderManagementGoalStepSchema,
   PersonalTaskManagementGoalStepSchema,
+  MemoryManagementGoalStepSchema,
   SoftwareChangeGoalStepSchema,
   WebResearchGoalStepSchema,
 } from './goal-plan.ts';
@@ -191,6 +192,11 @@ export function createAdaptiveGoalContinuationProposalSchema(options: {
         name === 'personal_reminder_management' && version === 1,
     )
       ? [constrainStepId(PersonalReminderManagementGoalStepSchema)]
+      : []),
+    ...(options.enabledCapabilities.some(
+      ({ name, version }) => name === 'memory_management' && version === 1,
+    )
+      ? [constrainStepId(MemoryManagementGoalStepSchema)]
       : []),
   ];
   const requirementResolutionSchemas = options.requirements?.map(

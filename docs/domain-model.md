@@ -207,6 +207,12 @@ and consumed by a capability whose declaration accepts that artifact type.
 Reasoning from an artifact never grants the next capability access to its
 content.
 
+For attachment-driven goals, analysis is always the first capability-backed
+requirement. Explicit downstream outcomes remain separate requirements and
+cannot be marked complete by the analysis artifact. A task, reminder, memory,
+plan, or code change is proven only by an observation from that exact
+capability.
+
 ### Step
 
 A bounded unit of execution within a run.

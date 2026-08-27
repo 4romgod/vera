@@ -138,7 +138,7 @@ export const CapabilityDefinitions = [
       type: 'implementation_plan',
       mediaType: 'application/vnd.vera.implementation-plan+json',
     },
-    acceptedInputArtifacts: ['research_report'],
+    acceptedInputArtifacts: ['attachment_analysis', 'research_report'],
     explicitAdaptiveOutcome: {
       patterns: [
         /\b(plan|design)\b.{0,60}\b(implementation|feature|fix|change)\b/u,
@@ -165,7 +165,11 @@ export const CapabilityDefinitions = [
       type: 'software_change',
       mediaType: 'application/vnd.vera.software-change+json',
     },
-    acceptedInputArtifacts: ['implementation_plan', 'research_report'],
+    acceptedInputArtifacts: [
+      'attachment_analysis',
+      'implementation_plan',
+      'research_report',
+    ],
     explicitAdaptiveOutcome: {
       patterns: [
         /\b(implement|fix|modify|edit|write|change)\b.{0,80}\b(code|file|project|application|app|api)\b/u,
@@ -203,7 +207,7 @@ export const CapabilityDefinitions = [
       approval: 'always',
       projectContext: 'none',
       networkAccess: 'none',
-      dataClasses: ['owner_request', 'personal_task_data'],
+      dataClasses: ['owner_request', 'artifact_content', 'personal_task_data'],
       sideEffects: ['personal_data_write'],
       credentials: 'none',
     },
@@ -230,7 +234,11 @@ export const CapabilityDefinitions = [
       approval: 'always',
       projectContext: 'none',
       networkAccess: 'none',
-      dataClasses: ['owner_request', 'personal_reminder_data'],
+      dataClasses: [
+        'owner_request',
+        'artifact_content',
+        'personal_reminder_data',
+      ],
       sideEffects: ['personal_data_write', 'scheduled_notification'],
       credentials: 'none',
     },
@@ -258,7 +266,7 @@ export const CapabilityDefinitions = [
       approval: 'always',
       projectContext: 'none',
       networkAccess: 'none',
-      dataClasses: ['owner_request', 'long_term_memory'],
+      dataClasses: ['owner_request', 'artifact_content', 'long_term_memory'],
       sideEffects: ['personal_data_write'],
       credentials: 'none',
     },
@@ -285,7 +293,7 @@ export const CapabilityDefinitions = [
       approval: 'always',
       projectContext: 'none',
       networkAccess: 'public_web_via_provider',
-      dataClasses: ['owner_request', 'public_web'],
+      dataClasses: ['owner_request', 'artifact_content', 'public_web'],
       sideEffects: ['third_party_disclosure', 'public_network_read'],
       credentials: 'server_managed',
       maxWebSearchCalls: 4,

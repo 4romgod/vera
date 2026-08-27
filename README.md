@@ -133,6 +133,16 @@ separately configurable vision provider receives approved image content.
 Original bytes remain immutable and owner-scoped in MongoDB/GridFS. See
 [ADR-0031](docs/decisions/0031-store-owner-attachments-and-analyze-them-through-exact-approval.md).
 
+Attachments can now drive useful work rather than ending at analysis. A request
+such as “analyze this note and create a task from its most important finding”
+becomes one bounded **Understand → Decide → Act** goal: approve the exact
+analysis, inspect its cited result, then approve the exact derived action. The
+second approval distinguishes evidence Vera used internally from complete
+artifacts a specialist will receive. Task, reminder, and memory actions receive
+only derived typed arguments; planning and software change can consume the
+analysis artifact only when that disclosure is named and approved. See
+[ADR-0032](docs/decisions/0032-compose-attachment-evidence-into-separately-approved-actions.md).
+
 MongoDB is selected as V1's authoritative operational store and Redis as the
 rebuildable, expiring scratchpad through
 [ADR-0010](docs/decisions/0010-use-mongodb-for-operational-truth-and-redis-for-scratchpads.md).

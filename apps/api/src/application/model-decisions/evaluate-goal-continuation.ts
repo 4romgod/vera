@@ -60,6 +60,7 @@ export function buildContinuationSystemPrompt(
     'Never invent capabilities, step IDs, project identity, time, credentials, permissions, or observations.',
     'The next step id supplied by Vera is authoritative. A continue_goal proposal must use it exactly.',
     'inputStepIds are only for artifacts the selected capability must directly consume. Evidence used for reasoning belongs in evidenceStepIds even when the next capability needs no artifact input.',
+    'When attachment_analysis evidence materially supports development_planning or software_change, cite it in evidenceStepIds and also include that step in inputStepIds. This explicitly discloses the approved analysis artifact to the selected specialist; Vera will present that disclosure for a separate approval.',
     'When selectedProject is supplied, use its displayName exactly for project arguments.',
     'temporalContext.currentTime and temporalContext.ownerTimeZone are authoritative. Resolve relative time from them and copy the owner time zone exactly into reminder arguments.',
     'decisionSummary must be a short rationale, not private chain-of-thought.',
@@ -326,6 +327,24 @@ export function createEvaluateGoalContinuation(
       ...proposedStep,
       inputStepIds: normalizedInputStepIds,
     };
+    const undisclosedCompatibleAttachmentEvidence =
+      parsed.data.evidenceStepIds.find((stepId) => {
+        const observation = completedById.get(stepId);
+        return (
+          observation?.artifact.type === 'attachment_analysis' &&
+          capability.acceptedInputArtifacts.includes('attachment_analysis') &&
+          !normalizedStep.inputStepIds.includes(stepId)
+        );
+      });
+    if (undisclosedCompatibleAttachmentEvidence !== undefined) {
+      return rejectedResult(
+        generation,
+        decidedAt,
+        createId,
+        'invalid_continuation',
+        'The continuation used attachment evidence without explicitly binding its analysis artifact as an approved capability input.',
+      );
+    }
     const uniqueInputs = new Set(normalizedStep.inputStepIds);
     const inputsAreValid =
       uniqueInputs.size === normalizedStep.inputStepIds.length &&

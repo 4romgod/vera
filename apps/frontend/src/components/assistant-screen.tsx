@@ -31,6 +31,7 @@ import { ApprovalCard } from '@/components/approval-card';
 import { AssistantHeader } from '@/components/assistant/assistant-header';
 import { ConversationSidebar } from '@/components/assistant/conversation-sidebar';
 import { ConversationView } from '@/components/assistant/conversation-view';
+import { GoalProgressCard } from '@/components/assistant/goal-progress-card';
 import {
   MessageComposer,
   type ComposerAttachment,
@@ -835,11 +836,16 @@ function RunFooter(props: {
     run.approval?.status === 'pending'
   ) {
     return (
-      <ApprovalCard
-        approval={run.approval}
-        busy={props.busy}
-        onDecision={props.onDecision}
-      />
+      <View style={{ gap: spacing.md }}>
+        {run.goal === undefined ? null : (
+          <GoalProgressCard goal={run.goal} compact />
+        )}
+        <ApprovalCard
+          approval={run.approval}
+          busy={props.busy}
+          onDecision={props.onDecision}
+        />
+      </View>
     );
   }
   if (
@@ -853,49 +859,58 @@ function RunFooter(props: {
     ].includes(run.runStatus)
   ) {
     return (
-      <View
-        accessibilityLiveRegion="polite"
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: spacing.md,
-          borderWidth: 1,
-          borderColor: palette.lineSoft,
-          borderRadius: radius.md,
-          padding: spacing.md,
-          backgroundColor: palette.surface,
-        }}
-      >
-        <ActivityIndicator color={palette.accent} size="small" />
-        <Text
-          selectable
+      <View style={{ gap: spacing.md }}>
+        {run.goal === undefined ? null : (
+          <GoalProgressCard goal={run.goal} compact />
+        )}
+        <View
+          accessibilityLiveRegion="polite"
           style={{
-            minWidth: 0,
-            flex: 1,
-            color: palette.textSoft,
-            fontSize: 13,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: spacing.md,
+            borderWidth: 1,
+            borderColor: palette.lineSoft,
+            borderRadius: radius.md,
+            padding: spacing.md,
+            backgroundColor: palette.surface,
           }}
         >
-          Vera is {run.runStatus.replaceAll('_', ' ')}…
-        </Text>
-        <Pressable
-          accessibilityRole="button"
-          disabled={props.busy}
-          onPress={props.onCancel}
-          style={({ pressed }) => ({
-            minHeight: 40,
-            justifyContent: 'center',
-            borderRadius: radius.sm,
-            paddingHorizontal: spacing.md,
-            opacity: props.busy ? 0.4 : pressed ? 0.65 : 1,
-          })}
-        >
+          <ActivityIndicator color={palette.accent} size="small" />
           <Text
-            style={{ color: palette.danger, fontSize: 12, fontWeight: '600' }}
+            selectable
+            style={{
+              minWidth: 0,
+              flex: 1,
+              color: palette.textSoft,
+              fontSize: 13,
+            }}
           >
-            Cancel
+            Vera is {run.runStatus.replaceAll('_', ' ')}…
           </Text>
-        </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            disabled={props.busy}
+            onPress={props.onCancel}
+            style={({ pressed }) => ({
+              minHeight: 40,
+              justifyContent: 'center',
+              borderRadius: radius.sm,
+              paddingHorizontal: spacing.md,
+              opacity: props.busy ? 0.4 : pressed ? 0.65 : 1,
+            })}
+          >
+            <Text
+              style={{
+                color: palette.danger,
+                fontSize: 12,
+                fontWeight: '600',
+              }}
+            >
+              Cancel
+            </Text>
+          </Pressable>
+        </View>
       </View>
     );
   }

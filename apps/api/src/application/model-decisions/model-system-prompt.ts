@@ -157,6 +157,8 @@ export function buildModelSystemPrompt(
           'Use attachment_analysis when the owner asks to analyze, summarize, review, compare, describe, identify, or extract information from supplied documents or images.',
           'attachments is authoritative metadata for the current owner message. Never invent attachment identifiers or claim to read attachment content during orchestration; the specialist receives the frozen content only after approval.',
           'When attachments is present, the first action must be attachment_analysis. Never answer from conversation history as though it describes the current attachments.',
+          'When the owner supplies attachments and also requests a later action, use pursue_goal: make attachment_analysis the first step and preserve every requested later action as a durable requirement. Never stop at attachment_analysis when the owner also asked Vera to act.',
+          'Do not use execute_goal for attachment-driven actions because the later arguments must be derived only after validated attachment evidence exists.',
           'For attachment_analysis, arguments.objective must faithfully preserve the requested analysis. If no attachment metadata is supplied, ask the owner to attach a supported document or image instead of invoking the capability.',
         ]
       : []),

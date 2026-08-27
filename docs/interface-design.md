@@ -88,12 +88,20 @@ destinations.
 - Attachment-analysis approvals list the exact filenames, types, sizes, and
   short hashes and say plainly whether extracted text or normalized images stay
   owner-controlled or are sent to a named third-party model boundary.
+- Attachment-driven outcomes remain in one visible **Understand → Decide →
+  Act** journey. The first approval governs analysis; a later approval names the
+  exact derived action. `Evidence used to decide` never implies destination
+  disclosure, while `Evidence disclosed to this action` lists every complete
+  artifact the destination will receive.
 - Structured results are presented as task-specific cards. Opaque identifiers,
   hashes, raw payloads, and artifact metadata remain available under
   `Technical details`; arbitrary assistant text is never altered to hide data.
 - Attachment-analysis results present summary and findings first, followed by
   readable evidence cards. Documents show filename, page/line locator, and a
   verified excerpt; images show the exact approved image identity.
+- Completed adaptive results retain the analysis summary and citations beside
+  the action ledger, so the owner can inspect what Vera understood and what it
+  ultimately did without opening raw JSON.
 
 ## Software delivery in conversation
 

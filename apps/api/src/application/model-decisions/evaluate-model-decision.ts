@@ -129,6 +129,133 @@ function inferExplicitAdaptiveRequirements(
   );
 }
 
+function normalizeAttachmentActionProposal(
+  proposal: ModelProposal,
+  ownerMessage: string,
+  enabledCapabilities: readonly CapabilityReference[],
+  attachments: readonly AttachmentReference[],
+  allowAdaptiveGoals: boolean,
+): { proposal: ModelProposal; exceedsGoalLimit: boolean } {
+  if (attachments.length === 0 || !allowAdaptiveGoals) {
+    return { proposal, exceedsGoalLimit: false };
+  }
+  const attachmentAnalysisEnabled = enabledCapabilities.some(
+    ({ name, version }) => name === 'attachment_analysis' && version === 1,
+  );
+  if (!attachmentAnalysisEnabled) {
+    return { proposal, exceedsGoalLimit: false };
+  }
+
+  const explicitRequirements = inferExplicitAdaptiveRequirements(
+    ownerMessage,
+    enabledCapabilities,
+  );
+  const proposalRequirements: AdaptiveRequirement[] =
+    proposal.kind === 'invoke_capability'
+      ? proposal.capability.name === 'attachment_analysis'
+        ? []
+        : [
+            {
+              id: `requirement_proposed_${proposal.capability.name}`,
+              description: proposal.decisionSummary,
+              capability: proposal.capability.name,
+              version: proposal.capability.version,
+              condition: { kind: 'always' },
+            },
+          ]
+      : proposal.kind === 'execute_goal'
+        ? proposal.goal.steps
+            .filter(({ capability }) => capability !== 'attachment_analysis')
+            .map((step) => ({
+              id: `requirement_proposed_${step.capability}`,
+              description: step.purpose,
+              capability: step.capability,
+              version: step.version,
+              condition: { kind: 'always' as const },
+            }))
+        : proposal.kind === 'pursue_goal'
+          ? proposal.goal.requirements.filter(
+              ({ capability }) => capability !== 'attachment_analysis',
+            )
+          : [];
+  const downstream = [...explicitRequirements, ...proposalRequirements].filter(
+    ({ capability }) => capability !== 'attachment_analysis',
+  );
+  const uniqueDownstream = downstream.filter(
+    (requirement, index) =>
+      downstream.findIndex(
+        (candidate) =>
+          candidate.capability === requirement.capability &&
+          candidate.version === requirement.version,
+      ) === index,
+  );
+  if (uniqueDownstream.length === 0) {
+    return { proposal, exceedsGoalLimit: false };
+  }
+
+  const requirements: AdaptiveRequirement[] = [
+    {
+      id: 'requirement_attachment_analysis',
+      description:
+        'Analyze the supplied attachments as evidence for the requested outcome.',
+      capability: 'attachment_analysis',
+      version: 1,
+      condition: { kind: 'always' },
+    },
+    ...uniqueDownstream,
+  ];
+  if (requirements.length > 3) {
+    return { proposal, exceedsGoalLimit: true };
+  }
+
+  const proposedFirstStep =
+    proposal.kind === 'invoke_capability' &&
+    proposal.capability.name === 'attachment_analysis'
+      ? {
+          id: 'step_1',
+          purpose: proposal.decisionSummary,
+          inputStepIds: [],
+          capability: 'attachment_analysis' as const,
+          version: 1 as const,
+          arguments: proposal.arguments,
+        }
+      : proposal.kind === 'execute_goal' &&
+          proposal.goal.steps[0]?.capability === 'attachment_analysis'
+        ? proposal.goal.steps[0]
+        : proposal.kind === 'pursue_goal' &&
+            proposal.goal.firstStep.capability === 'attachment_analysis'
+          ? proposal.goal.firstStep
+          : {
+              id: 'step_1',
+              purpose:
+                'Analyze the supplied attachments as evidence for the requested outcome.',
+              inputStepIds: [],
+              capability: 'attachment_analysis' as const,
+              version: 1 as const,
+              arguments: { objective: ownerMessage },
+            };
+
+  return {
+    proposal: ModelProposalSchema.parse({
+      schemaVersion: 1,
+      kind: 'pursue_goal',
+      decisionSummary:
+        'The requested action depends on evidence that must first be extracted from the supplied attachments.',
+      goal: {
+        schemaVersion: 1,
+        objective: ownerMessage,
+        summary:
+          'Understand the supplied evidence, then propose each requested action with its own exact approval.',
+        completionCriteria:
+          'Analyze the supplied attachments, complete every requested downstream outcome, and report the evidence and effects.',
+        requirements,
+        firstStep: proposedFirstStep,
+      },
+    }),
+    exceedsGoalLimit: false,
+  };
+}
+
 function decide(
   proposal: ModelProposal,
   enabledCapabilities: readonly CapabilityReference[],
@@ -554,17 +681,32 @@ export function createEvaluateModelDecision(
       };
     }
 
+    const normalizedAttachmentAction = normalizeAttachmentActionProposal(
+      validatedProposal.data,
+      message,
+      enabledCapabilities,
+      context?.attachments ?? [],
+      allowAdaptiveGoals,
+    );
+    const proposal = normalizedAttachmentAction.proposal;
     return {
       decisionId: createId(),
-      proposal: validatedProposal.data,
-      decision: decide(
-        validatedProposal.data,
-        enabledCapabilities,
-        context?.selectedProject,
-        temporalContext.ownerTimeZone,
-        message,
-        context?.attachments ?? [],
-      ),
+      proposal,
+      decision: normalizedAttachmentAction.exceedsGoalLimit
+        ? {
+            kind: 'rejected',
+            code: 'invalid_goal_plan',
+            message:
+              'The attachment request contains more downstream outcomes than Vera can preserve in one bounded goal.',
+          }
+        : decide(
+            proposal,
+            enabledCapabilities,
+            context?.selectedProject,
+            temporalContext.ownerTimeZone,
+            message,
+            context?.attachments ?? [],
+          ),
       model: {
         provider: generation.provider,
         model: generation.model,

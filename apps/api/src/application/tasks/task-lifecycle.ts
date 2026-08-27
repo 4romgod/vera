@@ -246,6 +246,29 @@ export function createTaskLifecycle(options: {
     );
   }
 
+  function sameAuthorityOrLegacyDecisionEvidence(
+    approved: CapabilityAuthority,
+    current: CapabilityAuthority,
+    invocation: {
+      inputArtifacts?: Artifact['inputs'];
+      decisionEvidence?: Artifact['inputs'];
+    },
+  ): boolean {
+    if (sameAuthority(approved, current)) return true;
+    const isLegacyDecisionEvidenceApproval =
+      (invocation.decisionEvidence?.length ?? 0) > 0 &&
+      (invocation.inputArtifacts?.length ?? 0) === 0 &&
+      !approved.dataClasses.includes('artifact_content') &&
+      current.dataClasses.includes('artifact_content');
+    if (!isLegacyDecisionEvidenceApproval) return false;
+    return sameAuthority(approved, {
+      ...current,
+      dataClasses: current.dataClasses.filter(
+        (dataClass) => dataClass !== 'artifact_content',
+      ),
+    });
+  }
+
   function setCurrentGoalStepStatus(
     aggregate: TaskAggregate,
     status: 'rejected' | 'failed' | 'cancelled',
@@ -331,6 +354,7 @@ export function createTaskLifecycle(options: {
     const authority = runtime.authorityFor({
       arguments: step.arguments,
       hasInputArtifacts: inputs.length > 0,
+      hasDecisionEvidence: decisionEvidence.length > 0,
     });
     if (!authorityIsWithin(authority, runtime.authority)) {
       throw new Error(`Goal step ${step.id} resolved invalid authority.`);
@@ -778,6 +802,7 @@ export function createTaskLifecycle(options: {
         ? selectedCapability.authorityFor({
             arguments: decision.decision.proposedArguments,
             hasInputArtifacts: false,
+            hasDecisionEvidence: false,
           })
         : undefined;
     if (
@@ -2312,6 +2337,8 @@ export function createTaskLifecycle(options: {
       const currentAuthority = capabilityRuntime.authorityFor({
         arguments: claimedInvocation.arguments,
         hasInputArtifacts: (claimedInvocation.inputArtifacts?.length ?? 0) > 0,
+        hasDecisionEvidence:
+          (claimedInvocation.decisionEvidence?.length ?? 0) > 0,
       });
       if (!authorityIsWithin(currentAuthority, capabilityRuntime.authority)) {
         throw new Error(
@@ -2320,7 +2347,11 @@ export function createTaskLifecycle(options: {
       }
       if (
         approvedAuthority !== undefined &&
-        !sameAuthority(approvedAuthority, currentAuthority)
+        !sameAuthorityOrLegacyDecisionEvidence(
+          approvedAuthority,
+          currentAuthority,
+          claimedInvocation,
+        )
       ) {
         throw new Error('The capability authority changed after approval.');
       }

@@ -933,7 +933,10 @@ export type VeraApi = {
     decision: 'approved' | 'rejected',
   ): Promise<TaskResource>;
   cancelRun(runId: string): Promise<TaskResource>;
-  getArtifact(artifactId: string): Promise<ArtifactResource>;
+  getArtifact(
+    artifactId: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<ArtifactResource>;
   createChangeApplication(input: {
     artifactId: string;
     idempotencyKey: string;
@@ -1794,8 +1797,13 @@ export class VeraClient implements VeraApi {
     );
   }
 
-  public getArtifact(artifactId: string): Promise<ArtifactResource> {
-    return this.request(`/v1/artifacts/${encodeURIComponent(artifactId)}`);
+  public getArtifact(
+    artifactId: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<ArtifactResource> {
+    return this.request(`/v1/artifacts/${encodeURIComponent(artifactId)}`, {
+      ...(options?.signal === undefined ? {} : { signal: options.signal }),
+    });
   }
 
   public createChangeApplication(input: {

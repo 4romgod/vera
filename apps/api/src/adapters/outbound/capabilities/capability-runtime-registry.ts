@@ -92,14 +92,23 @@ function requireAcceptedArtifacts(
 
 function withArtifactAuthority(
   authority: CapabilityAuthority,
-  hasInputArtifacts: boolean,
+  includesArtifactContent: boolean,
 ): CapabilityAuthority {
+  const dataClasses = authority.dataClasses.filter(
+    (dataClass) => dataClass !== 'artifact_content',
+  );
   return {
     ...authority,
-    dataClasses: authority.dataClasses.filter(
-      (dataClass) => dataClass !== 'artifact_content' || hasInputArtifacts,
-    ),
+    dataClasses: includesArtifactContent
+      ? [...dataClasses, 'artifact_content']
+      : dataClasses,
   };
+}
+
+function maximumArtifactAwareAuthority(
+  authority: CapabilityAuthority,
+): CapabilityAuthority {
+  return withArtifactAuthority(authority, true);
 }
 
 function projectCapabilityAuthority(options: {
@@ -130,7 +139,7 @@ function webResearchAuthority(
     approval: 'always',
     projectContext: 'none',
     networkAccess: thirdParty ? 'public_web_via_provider' : 'none',
-    dataClasses: ['owner_request', 'public_web'],
+    dataClasses: ['owner_request', 'artifact_content', 'public_web'],
     sideEffects: thirdParty
       ? ['third_party_disclosure', 'public_network_read']
       : [],
@@ -375,13 +384,13 @@ function planningRegistration(
       destination: capability.destination,
       isolatedWorkspaceWrite: false,
     }),
-    authorityFor: ({ hasInputArtifacts }) =>
+    authorityFor: ({ hasInputArtifacts, hasDecisionEvidence }) =>
       withArtifactAuthority(
         projectCapabilityAuthority({
           destination: capability.destination,
           isolatedWorkspaceWrite: false,
         }),
-        hasInputArtifacts,
+        hasInputArtifacts || hasDecisionEvidence,
       ),
     checkReadiness: () => capability.checkReadiness(),
     async execute(invocation, options) {
@@ -453,13 +462,13 @@ function softwareChangeRegistration(
       destination: capability.destination,
       isolatedWorkspaceWrite: true,
     }),
-    authorityFor: ({ hasInputArtifacts }) =>
+    authorityFor: ({ hasInputArtifacts, hasDecisionEvidence }) =>
       withArtifactAuthority(
         projectCapabilityAuthority({
           destination: capability.destination,
           isolatedWorkspaceWrite: true,
         }),
-        hasInputArtifacts,
+        hasInputArtifacts || hasDecisionEvidence,
       ),
     checkReadiness: () => capability.checkReadiness(),
     async execute(invocation, options) {
@@ -531,7 +540,11 @@ function webResearchRegistration(
     definition: capabilityDefinition,
     destination: capability.destination,
     authority: webResearchAuthority(capability.destination),
-    authorityFor: () => webResearchAuthority(capability.destination),
+    authorityFor: ({ hasInputArtifacts, hasDecisionEvidence }) =>
+      withArtifactAuthority(
+        webResearchAuthority(capability.destination),
+        hasInputArtifacts || hasDecisionEvidence,
+      ),
     checkReadiness: () => capability.checkReadiness(),
     async execute(invocation, options) {
       if (
@@ -595,10 +608,13 @@ function personalTaskRegistration(
   const runtime = (): CapabilityRuntime => ({
     definition: capabilityDefinition,
     destination: executor.destination,
-    authority: executor.maximumAuthority,
-    authorityFor({ arguments: arguments_ }) {
-      return executor.authorityFor(
-        PersonalTaskActionArgumentsSchema.parse(arguments_),
+    authority: maximumArtifactAwareAuthority(executor.maximumAuthority),
+    authorityFor({ arguments: arguments_, hasDecisionEvidence }) {
+      return withArtifactAuthority(
+        executor.authorityFor(
+          PersonalTaskActionArgumentsSchema.parse(arguments_),
+        ),
+        hasDecisionEvidence,
       );
     },
     checkReadiness: () => executor.checkReadiness(),
@@ -657,10 +673,11 @@ function reminderRegistration(
   const runtime = (): CapabilityRuntime => ({
     definition: capabilityDefinition,
     destination: executor.destination,
-    authority: executor.maximumAuthority,
-    authorityFor({ arguments: arguments_ }) {
-      return executor.authorityFor(
-        ReminderActionArgumentsSchema.parse(arguments_),
+    authority: maximumArtifactAwareAuthority(executor.maximumAuthority),
+    authorityFor({ arguments: arguments_, hasDecisionEvidence }) {
+      return withArtifactAuthority(
+        executor.authorityFor(ReminderActionArgumentsSchema.parse(arguments_)),
+        hasDecisionEvidence,
       );
     },
     checkReadiness: () => executor.checkReadiness(),
@@ -717,10 +734,11 @@ function memoryRegistration(
   const runtime = (): CapabilityRuntime => ({
     definition: capabilityDefinition,
     destination: executor.destination,
-    authority: executor.maximumAuthority,
-    authorityFor({ arguments: arguments_ }) {
-      return executor.authorityFor(
-        MemoryActionArgumentsSchema.parse(arguments_),
+    authority: maximumArtifactAwareAuthority(executor.maximumAuthority),
+    authorityFor({ arguments: arguments_, hasDecisionEvidence }) {
+      return withArtifactAuthority(
+        executor.authorityFor(MemoryActionArgumentsSchema.parse(arguments_)),
+        hasDecisionEvidence,
       );
     },
     checkReadiness: () => executor.checkReadiness(),

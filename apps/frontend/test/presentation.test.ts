@@ -5,12 +5,14 @@ import type {
   ConversationMessageResource,
   ConversationSummaryResource,
   ProjectResource,
+  TaskResource,
 } from '@vera/client';
 
 import {
   displayConversationTitle,
   filterConversations,
   groupConversations,
+  goalProgressStages,
   latestConversationProjectId,
   projectContextLabel,
 } from '../src/components/assistant/presentation';
@@ -129,5 +131,26 @@ void describe('assistant presentation', () => {
     assert.equal(projectContextLabel(undefined, [project]), 'Personal');
     assert.equal(projectContextLabel(project.id, [project]), 'Vera');
     assert.equal(projectContextLabel('project_missing', [project]), 'Project');
+  });
+
+  void it('shows the adaptive attachment journey as understand, decide, then act', () => {
+    const goal = {
+      mode: 'adaptive',
+      steps: [
+        { capability: 'attachment_analysis', status: 'succeeded' },
+        { capability: 'personal_task_management', status: 'awaiting_approval' },
+      ],
+      continuations: [{ decisionId: 'decision_continue' }],
+    } as NonNullable<TaskResource['goal']>;
+
+    assert.deepEqual(goalProgressStages(goal), [
+      { label: 'Understand', state: 'done' },
+      { label: 'Decide', state: 'done' },
+      { label: 'Act', state: 'active' },
+    ]);
+    const actionStep = goal.steps[1];
+    assert.ok(actionStep);
+    actionStep.status = 'succeeded';
+    assert.equal(goalProgressStages(goal)[2]?.state, 'done');
   });
 });

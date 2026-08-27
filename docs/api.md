@@ -225,6 +225,14 @@ history retains proposal, code-validated decision, model metadata, evidence
 step IDs, and decision time. Internal artifact content is not embedded in the
 task projection.
 
+An attachment-plus-action request is projected as an adaptive goal whose first
+step is `attachment_analysis@1`. A later approval exposes
+`decisionEvidence` for the exact analysis used to derive its arguments. When a
+planning or software-change specialist must also consume that analysis, the
+same reference appears under `inputArtifacts`; its complete content then falls
+inside the approval's `artifact_content` disclosure. Owner-state actions keep
+`inputArtifacts` absent and receive only their exact derived arguments.
+
 ## Submit a task
 
 ```http

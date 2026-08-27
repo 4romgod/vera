@@ -143,6 +143,26 @@ export function ApprovalCard(props: {
         </View>
       )}
 
+      {props.approval.decisionEvidence === undefined ? null : (
+        <ArtifactDisclosure
+          artifacts={props.approval.decisionEvidence}
+          label="Evidence used to decide"
+          description="Vera used these completed results to derive the exact action shown below. They are not automatically sent to the destination."
+        />
+      )}
+
+      {props.approval.inputArtifacts === undefined ? null : (
+        <ArtifactDisclosure
+          artifacts={props.approval.inputArtifacts}
+          label="Evidence disclosed to this action"
+          description={
+            effects.includes('third_party_disclosure')
+              ? 'Approval sends the complete contents of these artifacts to the named third-party specialist.'
+              : 'Approval supplies the complete contents of these artifacts to the owner-controlled specialist.'
+          }
+        />
+      )}
+
       <View
         style={{
           flexDirection: 'row',
@@ -221,6 +241,73 @@ export function ApprovalCard(props: {
           onPress={() => props.onDecision('approved')}
         />
       </View>
+    </View>
+  );
+}
+
+function ArtifactDisclosure(props: {
+  artifacts: NonNullable<Approval['inputArtifacts']>;
+  label: string;
+  description: string;
+}) {
+  return (
+    <View
+      style={{
+        gap: spacing.sm,
+        borderWidth: 1,
+        borderColor: palette.lineSoft,
+        borderRadius: radius.md,
+        padding: spacing.md,
+        backgroundColor: palette.canvas,
+      }}
+    >
+      <Text
+        style={{
+          color: palette.muted,
+          fontSize: 10,
+          fontWeight: '700',
+          letterSpacing: 0.8,
+          textTransform: 'uppercase',
+        }}
+      >
+        {props.label}
+      </Text>
+      {props.artifacts.map((artifact) => (
+        <View
+          key={artifact.id}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: spacing.sm,
+          }}
+        >
+          <Paperclip color={palette.accent} size={15} />
+          <View style={{ minWidth: 0, flex: 1 }}>
+            <Text
+              numberOfLines={1}
+              style={{
+                color: palette.textSoft,
+                fontSize: 13,
+                fontWeight: '600',
+              }}
+            >
+              {humanizeIdentifier(artifact.type)}
+            </Text>
+            <Text
+              numberOfLines={1}
+              style={{ color: palette.faint, fontSize: 10 }}
+            >
+              {artifact.id} · {artifact.sha256.slice(0, 12)}…
+            </Text>
+          </View>
+        </View>
+      ))}
+      <Text
+        selectable
+        style={{ color: palette.muted, fontSize: 12, lineHeight: 18 }}
+      >
+        {props.description}
+      </Text>
     </View>
   );
 }
