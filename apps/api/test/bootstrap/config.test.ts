@@ -309,4 +309,21 @@ void describe('application configuration', () => {
       /loopback host/u,
     );
   });
+
+  void it('loads and validates the operator-owned machine catalog from the repository root', () => {
+    const machines = loadConfig({
+      VERA_MACHINE_CATALOG_FILE: 'config/machines.example.json',
+    }).machines;
+
+    assert.ok(machines);
+    assert.equal(machines.machines[0]?.id, 'macmini');
+    assert.equal(machines.machines[0].services[0]?.id, 'redis');
+    assert.throws(
+      () =>
+        loadConfig({
+          VERA_MACHINE_CATALOG_FILE: 'config/does-not-exist.json',
+        }),
+      /Could not read VERA_MACHINE_CATALOG_FILE/u,
+    );
+  });
 });

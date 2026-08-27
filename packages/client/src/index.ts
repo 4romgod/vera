@@ -125,7 +125,11 @@ export type Approval = {
   authority?: {
     approval: 'always';
     projectContext: 'required' | 'none';
-    networkAccess: 'none' | 'provider_api' | 'public_web_via_provider';
+    networkAccess:
+      | 'none'
+      | 'provider_api'
+      | 'public_web_via_provider'
+      | 'owner_machine';
     dataClasses: (
       | 'owner_request'
       | 'project_context'
@@ -135,6 +139,7 @@ export type Approval = {
       | 'long_term_memory'
       | 'public_web'
       | 'attachment_content'
+      | 'machine_operational_data'
     )[];
     sideEffects: (
       | 'third_party_disclosure'
@@ -142,6 +147,7 @@ export type Approval = {
       | 'public_network_read'
       | 'personal_data_write'
       | 'scheduled_notification'
+      | 'machine_service_control'
     )[];
     credentials: 'none' | 'server_managed';
     maxWebSearchCalls?: number;
@@ -188,7 +194,71 @@ export type ArtifactReference = ArtifactReferenceIdentity &
         type: 'attachment_analysis';
         mediaType: 'application/vnd.vera.attachment-analysis+json';
       }
+    | {
+        type: 'machine_diagnostic';
+        mediaType: 'application/vnd.vera.machine-diagnostic+json';
+      }
+    | {
+        type: 'machine_service_action_result';
+        mediaType: 'application/vnd.vera.machine-service-action-result+json';
+      }
   );
+
+export type MachineCatalogResource = {
+  schemaVersion: 1;
+  machines: {
+    id: string;
+    displayName: string;
+    adapter: 'local' | 'ssh';
+    diagnostics: { id: string; label: string }[];
+    services: {
+      id: string;
+      displayName: string;
+      actions: ('start' | 'stop' | 'restart')[];
+    }[];
+  }[];
+};
+
+export type MachineObservation = {
+  status: 'healthy' | 'unhealthy' | 'unknown';
+  checkedAt: string;
+  durationMs: number;
+  summary: string;
+  exitCode?: number | null;
+};
+
+export type MachineDiagnosticContent = {
+  schemaVersion: 1;
+  machine: { id: string; displayName: string };
+  adapter: 'local' | 'ssh';
+  inspectedAt: string;
+  system: {
+    hostname: string;
+    platform: string;
+    architecture: string;
+    uptimeSeconds?: number;
+    freeMemoryBytes?: number;
+    totalMemoryBytes?: number;
+  };
+  diagnostics: { id: string; label: string; observation: MachineObservation }[];
+  services: {
+    id: string;
+    displayName: string;
+    observation: MachineObservation;
+  }[];
+};
+
+export type MachineServiceActionResultContent = {
+  schemaVersion: 1;
+  machine: { id: string; displayName: string };
+  service: { id: string; displayName: string };
+  action: 'start' | 'stop' | 'restart';
+  before: MachineObservation;
+  execution: { exitCode: number | null; summary: string };
+  after: MachineObservation;
+  verified: boolean;
+  completedAt: string;
+};
 
 export type PersonalTaskResource = {
   schemaVersion: 1;
@@ -452,6 +522,19 @@ export type TaskResource = {
         artifact?: Extract<ArtifactReference, { type: 'attachment_analysis' }>;
       }
     | {
+        kind: 'machine_diagnostic';
+        diagnostic?: MachineDiagnosticContent;
+        artifact?: Extract<ArtifactReference, { type: 'machine_diagnostic' }>;
+      }
+    | {
+        kind: 'machine_service_action_result';
+        result?: MachineServiceActionResultContent;
+        artifact?: Extract<
+          ArtifactReference,
+          { type: 'machine_service_action_result' }
+        >;
+      }
+    | {
         kind: 'goal_result';
         objective: string;
         summary: string;
@@ -624,6 +707,16 @@ export type ArtifactResource = ArtifactResourceIdentity &
         type: 'attachment_analysis';
         mediaType: 'application/vnd.vera.attachment-analysis+json';
         content: AttachmentAnalysisContent;
+      }
+    | {
+        type: 'machine_diagnostic';
+        mediaType: 'application/vnd.vera.machine-diagnostic+json';
+        content: MachineDiagnosticContent;
+      }
+    | {
+        type: 'machine_service_action_result';
+        mediaType: 'application/vnd.vera.machine-service-action-result+json';
+        content: MachineServiceActionResultContent;
       }
   );
 
@@ -871,6 +964,7 @@ export type VeraApi = {
     signal?: AbortSignal;
   }): Promise<SpeechTranscriptionResource>;
   listCapabilities(): Promise<CapabilityCatalogResource>;
+  listMachines(): Promise<MachineCatalogResource>;
   listPersonalTasks(options?: {
     status?: 'all' | 'open' | 'completed';
     limit?: number;
@@ -1119,6 +1213,61 @@ function assertCapabilityCatalogResource(
     )
   ) {
     throw new Error('Vera returned an invalid capability catalog.');
+  }
+}
+
+function assertMachineCatalogResource(
+  value: unknown,
+): asserts value is MachineCatalogResource {
+  const hasOnlyKeys = (
+    candidate: Record<string, unknown>,
+    allowed: readonly string[],
+  ) => Object.keys(candidate).every((key) => allowed.includes(key));
+  const validDiagnostic = (diagnostic: unknown) =>
+    isRecord(diagnostic) &&
+    hasOnlyKeys(diagnostic, ['id', 'label']) &&
+    typeof diagnostic.id === 'string' &&
+    diagnostic.id.length > 0 &&
+    typeof diagnostic.label === 'string' &&
+    diagnostic.label.length > 0;
+  const validService = (service: unknown) =>
+    isRecord(service) &&
+    hasOnlyKeys(service, ['id', 'displayName', 'actions']) &&
+    typeof service.id === 'string' &&
+    service.id.length > 0 &&
+    typeof service.displayName === 'string' &&
+    service.displayName.length > 0 &&
+    Array.isArray(service.actions) &&
+    service.actions.every((action) =>
+      ['start', 'stop', 'restart'].includes(String(action)),
+    );
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, ['schemaVersion', 'machines']) ||
+    value.schemaVersion !== 1 ||
+    !Array.isArray(value.machines) ||
+    value.machines.some(
+      (machine) =>
+        !isRecord(machine) ||
+        !hasOnlyKeys(machine, [
+          'id',
+          'displayName',
+          'adapter',
+          'diagnostics',
+          'services',
+        ]) ||
+        typeof machine.id !== 'string' ||
+        machine.id.length === 0 ||
+        typeof machine.displayName !== 'string' ||
+        machine.displayName.length === 0 ||
+        !['local', 'ssh'].includes(String(machine.adapter)) ||
+        !Array.isArray(machine.services) ||
+        machine.services.some((service) => !validService(service)) ||
+        !Array.isArray(machine.diagnostics) ||
+        machine.diagnostics.some((diagnostic) => !validDiagnostic(diagnostic)),
+    )
+  ) {
+    throw new Error('Vera returned an invalid machine catalog.');
   }
 }
 
@@ -1406,6 +1555,12 @@ export class VeraClient implements VeraApi {
   public async listCapabilities(): Promise<CapabilityCatalogResource> {
     const catalog = await this.request<unknown>('/v1/capabilities');
     assertCapabilityCatalogResource(catalog);
+    return catalog;
+  }
+
+  public async listMachines(): Promise<MachineCatalogResource> {
+    const catalog = await this.request<unknown>('/v1/machines');
+    assertMachineCatalogResource(catalog);
     return catalog;
   }
 

@@ -19,6 +19,7 @@ import {
   type ConversationResource,
   type ConversationSummaryResource,
   type MemoryResource,
+  type MachineCatalogResource,
   type NotificationResource,
   type PersonalTaskResource,
   type ProjectResource,
@@ -153,6 +154,9 @@ export function AssistantScreen() {
   const [notifications, setNotifications] = useState<NotificationResource[]>(
     [],
   );
+  const [machines, setMachines] = useState<MachineCatalogResource['machines']>(
+    [],
+  );
   const [resources, setResources] = useState<{
     open: boolean;
     tab: ResourceTab;
@@ -223,6 +227,7 @@ export function AssistantScreen() {
       taskPage,
       reminderPage,
       inbox,
+      machineCatalog,
     ] = await Promise.all([
       client.listConversations(),
       client.listProjects(),
@@ -230,6 +235,7 @@ export function AssistantScreen() {
       client.listPersonalTasks(),
       client.listReminders(),
       client.listNotifications({ limit: 50 }),
+      client.listMachines(),
     ]);
     if (!mounted.current) return;
     setConversations(conversationPage.conversations);
@@ -238,6 +244,7 @@ export function AssistantScreen() {
     setTasks(taskPage.tasks);
     setReminders(reminderPage.reminders);
     setNotifications([...inbox.notifications].reverse());
+    setMachines(machineCatalog.machines);
   }, [client]);
 
   const refreshNotifications = useCallback(async () => {
@@ -797,6 +804,7 @@ export function AssistantScreen() {
         <ResourcePanel
           compact={compact}
           memories={memories}
+          machines={machines}
           notifications={notifications}
           open={resources.open}
           reminders={reminders}
@@ -806,6 +814,10 @@ export function AssistantScreen() {
             setResources((current) => ({ ...current, open: false }))
           }
           onMemoryCommand={(command) => {
+            setResources((current) => ({ ...current, open: false }));
+            void send(command);
+          }}
+          onMachineCommand={(command) => {
             setResources((current) => ({ ...current, open: false }));
             void send(command);
           }}

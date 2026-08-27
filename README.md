@@ -207,6 +207,9 @@ Owner-controlled recording, provider-neutral transcription, and reviewed reply
 playback are accepted in
 [ADR-0030](docs/decisions/0030-transcribe-owner-controlled-recordings-through-a-provider-neutral-boundary.md),
 which supersedes ADR-0028's platform speech recognizer.
+Registered local and SSH machine operations, exact service-action approvals,
+and verified postconditions are accepted in
+[ADR-0033](docs/decisions/0033-govern-machine-operations-through-registered-actions.md).
 Explicit owner-governed long-term memory is now implemented through ADR-0025.
 Physical erasure, retention beyond tombstones, and third-party-provider memory
 disclosure remain deliberately open.
@@ -743,6 +746,26 @@ the exact objective, adapter destination, third-party disclosure, public-web
 read authority, and search-call ceiling. On success it prints the durable
 `research_report` artifact and sources. Use `--approve` only when you intend to
 approve that exact disclosure.
+
+To enable governed machine operations, copy
+`config/machines.example.json` to an ignored local file, correct every absolute
+executable path and service name for the host, and set:
+
+```bash
+VERA_MACHINE_CATALOG_FILE=config/machines.json npm run dev
+```
+
+Confirm the public, command-free registry with:
+
+```bash
+curl --silent http://127.0.0.1:4310/v1/machines | jq
+```
+
+Then ask Vera naturally: “Inspect Redis on macmini,” “Restart Redis on
+macmini,” or “Check Redis on macmini and if it is unhealthy then restart it.”
+The conditional form pauses once for read-only inspection and again for the
+exact mutation. Never copy the example unchanged: the catalog is executable
+operator policy, not sample data.
 
 For a multi-turn conversation, use `chat`. The first command creates a
 conversation and returns its ID with Vera's durable reply:

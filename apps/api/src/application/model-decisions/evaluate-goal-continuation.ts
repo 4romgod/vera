@@ -345,6 +345,36 @@ export function createEvaluateGoalContinuation(
         'The continuation used attachment evidence without explicitly binding its analysis artifact as an approved capability input.',
       );
     }
+    if (proposedStep.capability === 'machine_service_management') {
+      const diagnosticStepId = normalizedStep.inputStepIds.find(
+        (stepId) =>
+          completedById.get(stepId)?.artifact.type === 'machine_diagnostic',
+      );
+      const diagnostic =
+        diagnosticStepId === undefined
+          ? undefined
+          : completedById.get(diagnosticStepId)?.artifact;
+      const content = diagnostic?.content as
+        | {
+            machine?: { id?: string };
+            services?: { id?: string }[];
+          }
+        | undefined;
+      if (
+        content?.machine?.id !== proposedStep.arguments.machineId ||
+        !content.services?.some(
+          ({ id }) => id === proposedStep.arguments.serviceId,
+        )
+      ) {
+        return rejectedResult(
+          generation,
+          decidedAt,
+          createId,
+          'invalid_continuation',
+          'The proposed machine action is not bound to matching approved diagnostic evidence.',
+        );
+      }
+    }
     const uniqueInputs = new Set(normalizedStep.inputStepIds);
     const inputsAreValid =
       uniqueInputs.size === normalizedStep.inputStepIds.length &&

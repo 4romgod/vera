@@ -164,6 +164,13 @@ export function createTaskLifecycle(options: {
   };
   const activeInvocations = new Map<string, AbortController>();
 
+  function destinationFor(
+    runtime: NonNullable<ReturnType<CapabilityRuntimeRegistry['selected']>>,
+    arguments_: Record<string, unknown>,
+  ) {
+    return runtime.destinationFor?.(arguments_) ?? runtime.destination;
+  }
+
   function artifactReference(artifact: Artifact) {
     return ArtifactReferenceSchema.parse({
       id: artifact.id,
@@ -321,13 +328,21 @@ export function createTaskLifecycle(options: {
     if (goal === undefined || step === undefined) {
       throw new Error('The goal does not contain the requested step.');
     }
-    const runtime = options.capabilities.selected({
+    const reference = {
       name: step.capability,
       version: step.version,
-    });
-    if (runtime === null) {
+    };
+    const selectedRuntime = options.capabilities.selected(reference);
+    if (selectedRuntime === null) {
       throw new Error(
         `Goal capability ${step.capability}@${String(step.version)} is unavailable.`,
+      );
+    }
+    const destination = destinationFor(selectedRuntime, step.arguments);
+    const runtime = options.capabilities.resolve(reference, destination);
+    if (runtime === null) {
+      throw new Error(
+        `Goal capability ${step.capability}@${String(step.version)} could not resolve its selected destination.`,
       );
     }
     const inputs = step.inputStepIds.map((inputStepId) => {
@@ -379,7 +394,7 @@ export function createTaskLifecycle(options: {
       ...(step.capability === 'attachment_analysis'
         ? { attachments: aggregate.task.attachments }
         : {}),
-      destination: runtime.destination,
+      destination,
       authority,
       requestedAt,
     });
@@ -487,6 +502,29 @@ export function createTaskLifecycle(options: {
           (finding) => `- ${finding}`,
         ),
         ...(artifactId === undefined ? [] : [`Artifact: ${artifactId}`]),
+      ].join('\n\n');
+    }
+    if (aggregate.run.output?.kind === 'machine_diagnostic') {
+      const diagnostic = aggregate.run.output.diagnostic;
+      return [
+        `I inspected ${diagnostic.machine.displayName}.`,
+        ...diagnostic.services.map(
+          (service) =>
+            `${service.displayName}: ${service.observation.status} — ${service.observation.summary}`,
+        ),
+        ...(aggregate.run.output.artifact === undefined
+          ? []
+          : [`Artifact: ${aggregate.run.output.artifact.id}`]),
+      ].join('\n\n');
+    }
+    if (aggregate.run.output?.kind === 'machine_service_action_result') {
+      const result = aggregate.run.output.result;
+      return [
+        `${result.action} ${result.service.displayName} on ${result.machine.displayName}: ${result.verified ? 'verified' : 'not verified'}.`,
+        `Before: ${result.before.status}. After: ${result.after.status}.`,
+        ...(aggregate.run.output.artifact === undefined
+          ? []
+          : [`Artifact: ${aggregate.run.output.artifact.id}`]),
       ].join('\n\n');
     }
     if (aggregate.run.output?.kind === 'goal_result') {
@@ -796,19 +834,41 @@ export function createTaskLifecycle(options: {
     if (goalRuntimes.some((runtime) => runtime === null)) {
       throw new Error('The goal contains an unavailable capability runtime.');
     }
-    const selectedAuthority =
+    const selectedDestination =
       decision.decision.kind === 'approval_required' &&
       selectedCapability !== null
-        ? selectedCapability.authorityFor({
+        ? destinationFor(
+            selectedCapability,
+            decision.decision.proposedArguments,
+          )
+        : undefined;
+    const approvalCapability =
+      decision.decision.kind === 'approval_required' &&
+      selectedDestination !== undefined
+        ? options.capabilities.resolve(
+            decision.decision.capability,
+            selectedDestination,
+          )
+        : null;
+    if (
+      decision.decision.kind === 'approval_required' &&
+      approvalCapability === null
+    ) {
+      throw new Error('The selected capability destination is unavailable.');
+    }
+    const selectedAuthority =
+      decision.decision.kind === 'approval_required' &&
+      approvalCapability !== null
+        ? approvalCapability.authorityFor({
             arguments: decision.decision.proposedArguments,
             hasInputArtifacts: false,
             hasDecisionEvidence: false,
           })
         : undefined;
     if (
-      selectedCapability !== null &&
+      approvalCapability !== null &&
       selectedAuthority !== undefined &&
-      !authorityIsWithin(selectedAuthority, selectedCapability.authority)
+      !authorityIsWithin(selectedAuthority, approvalCapability.authority)
     ) {
       throw new Error(
         'The capability resolved authority outside its declared maximum.',
@@ -990,8 +1050,13 @@ export function createTaskLifecycle(options: {
         if (selectedCapability === null) {
           throw new Error('The approved capability runtime is unavailable.');
         }
+        if (approvalCapability === null || selectedDestination === undefined) {
+          throw new Error(
+            'The approved capability destination is unavailable.',
+          );
+        }
         const requiresProjectContext =
-          selectedCapability.authority.projectContext === 'required';
+          approvalCapability.authority.projectContext === 'required';
         if (requiresProjectContext && approvedContext === undefined) {
           throw new Error('Approved project context was not assembled.');
         }
@@ -1019,7 +1084,7 @@ export function createTaskLifecycle(options: {
                 },
                 contextManifest: approvedContext.context.manifest,
               }),
-          destination: selectedCapability.destination,
+          destination: selectedDestination,
           authority: selectedAuthority,
           ...(decision.decision.capability.name === 'attachment_analysis'
             ? { attachments: candidate.task.attachments }
@@ -2142,18 +2207,44 @@ export function createTaskLifecycle(options: {
                               byteLength: artifact.byteLength,
                             },
                           }
-                        : {
-                            kind: 'attachment_analysis',
-                            analysis: artifact.content,
-                            artifact: {
-                              id: artifact.id,
-                              version: artifact.version,
-                              type: artifact.type,
-                              mediaType: artifact.mediaType,
-                              sha256: artifact.sha256,
-                              byteLength: artifact.byteLength,
-                            },
-                          };
+                        : artifact.type === 'attachment_analysis'
+                          ? {
+                              kind: 'attachment_analysis',
+                              analysis: artifact.content,
+                              artifact: {
+                                id: artifact.id,
+                                version: artifact.version,
+                                type: artifact.type,
+                                mediaType: artifact.mediaType,
+                                sha256: artifact.sha256,
+                                byteLength: artifact.byteLength,
+                              },
+                            }
+                          : artifact.type === 'machine_diagnostic'
+                            ? {
+                                kind: 'machine_diagnostic',
+                                diagnostic: artifact.content,
+                                artifact: {
+                                  id: artifact.id,
+                                  version: artifact.version,
+                                  type: artifact.type,
+                                  mediaType: artifact.mediaType,
+                                  sha256: artifact.sha256,
+                                  byteLength: artifact.byteLength,
+                                },
+                              }
+                            : {
+                                kind: 'machine_service_action_result',
+                                result: artifact.content,
+                                artifact: {
+                                  id: artifact.id,
+                                  version: artifact.version,
+                                  type: artifact.type,
+                                  mediaType: artifact.mediaType,
+                                  sha256: artifact.sha256,
+                                  byteLength: artifact.byteLength,
+                                },
+                              };
           appendEvent(candidate, 'run_succeeded', completedAt, {}, createId);
           return true;
         },

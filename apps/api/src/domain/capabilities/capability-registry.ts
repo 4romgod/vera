@@ -4,6 +4,10 @@ import { PersonalTaskActionArgumentsSchema } from '../personal-tasks/personal-ta
 import { ReminderActionArgumentsSchema } from '../reminders/reminder.ts';
 import { MemoryActionArgumentsSchema } from '../memories/memory.ts';
 import { AttachmentAnalysisArgumentsSchema } from '../attachments/attachment-analysis.ts';
+import {
+  MachineInspectionArgumentsSchema,
+  MachineServiceActionArgumentsSchema,
+} from '../machines/machine.ts';
 export { AttachmentAnalysisArgumentsSchema } from '../attachments/attachment-analysis.ts';
 
 export const DevelopmentPlanningProposalArgumentsSchema = z
@@ -57,7 +61,12 @@ export const CapabilityAuthoritySchema = z
   .object({
     approval: z.literal('always'),
     projectContext: z.enum(['required', 'none']),
-    networkAccess: z.enum(['none', 'provider_api', 'public_web_via_provider']),
+    networkAccess: z.enum([
+      'none',
+      'provider_api',
+      'public_web_via_provider',
+      'owner_machine',
+    ]),
     dataClasses: z.array(
       z.enum([
         'owner_request',
@@ -68,6 +77,7 @@ export const CapabilityAuthoritySchema = z
         'long_term_memory',
         'public_web',
         'attachment_content',
+        'machine_operational_data',
       ]),
     ),
     sideEffects: z.array(
@@ -77,6 +87,7 @@ export const CapabilityAuthoritySchema = z
         'public_network_read',
         'personal_data_write',
         'scheduled_notification',
+        'machine_service_control',
       ]),
     ),
     credentials: z.enum(['none', 'server_managed']),
@@ -269,6 +280,66 @@ export const CapabilityDefinitions = [
       dataClasses: ['owner_request', 'artifact_content', 'long_term_memory'],
       sideEffects: ['personal_data_write'],
       credentials: 'none',
+    },
+  },
+  {
+    name: 'machine_inspection',
+    version: 1,
+    description:
+      'Inspect bounded diagnostics and registered service health on an owner-controlled machine.',
+    proposalArgumentsSchema: MachineInspectionArgumentsSchema,
+    effect: 'external',
+    artifact: {
+      type: 'machine_diagnostic',
+      mediaType: 'application/vnd.vera.machine-diagnostic+json',
+    },
+    acceptedInputArtifacts: [],
+    explicitAdaptiveOutcome: {
+      patterns: [
+        /\b(check|inspect|diagnose|status|health)\b.{0,80}\b(machine|server|service|mac mini|macmini)\b/u,
+      ],
+      description:
+        'Inspect the registered machine or service requested by the owner.',
+    },
+    authority: {
+      approval: 'always',
+      projectContext: 'none',
+      networkAccess: 'owner_machine',
+      dataClasses: ['owner_request', 'machine_operational_data'],
+      sideEffects: [],
+      credentials: 'server_managed',
+    },
+  },
+  {
+    name: 'machine_service_management',
+    version: 1,
+    description:
+      'Start, stop, or restart one named registered service and verify its postcondition.',
+    proposalArgumentsSchema: MachineServiceActionArgumentsSchema,
+    effect: 'external',
+    artifact: {
+      type: 'machine_service_action_result',
+      mediaType: 'application/vnd.vera.machine-service-action-result+json',
+    },
+    acceptedInputArtifacts: ['machine_diagnostic'],
+    explicitAdaptiveOutcome: {
+      patterns: [
+        /\b(start|stop|restart)\b.{0,80}\b(service|api|server|redis|mongodb|mongo|ollama)\b/u,
+      ],
+      description:
+        'Apply the exact registered service operation requested by the owner.',
+    },
+    authority: {
+      approval: 'always',
+      projectContext: 'none',
+      networkAccess: 'owner_machine',
+      dataClasses: [
+        'owner_request',
+        'artifact_content',
+        'machine_operational_data',
+      ],
+      sideEffects: ['machine_service_control'],
+      credentials: 'server_managed',
     },
   },
   {

@@ -11,6 +11,10 @@ import {
 import { PersonalTaskActionArgumentsSchema } from '../personal-tasks/personal-task.ts';
 import { ReminderActionArgumentsSchema } from '../reminders/reminder.ts';
 import { MemoryActionArgumentsSchema } from '../memories/memory.ts';
+import {
+  MachineInspectionArgumentsSchema,
+  MachineServiceActionArgumentsSchema,
+} from '../machines/machine.ts';
 
 export const GoalStepBaseSchema = z.object({
   id: z.string().regex(/^step_[a-z0-9_]+$/u),
@@ -54,6 +58,18 @@ export const MemoryManagementGoalStepSchema = GoalStepBaseSchema.extend({
   version: z.literal(1),
   arguments: MemoryActionArgumentsSchema,
 }).strict();
+export const MachineInspectionGoalStepSchema = GoalStepBaseSchema.extend({
+  capability: z.literal('machine_inspection'),
+  version: z.literal(1),
+  arguments: MachineInspectionArgumentsSchema,
+}).strict();
+export const MachineServiceManagementGoalStepSchema = GoalStepBaseSchema.extend(
+  {
+    capability: z.literal('machine_service_management'),
+    version: z.literal(1),
+    arguments: MachineServiceActionArgumentsSchema,
+  },
+).strict();
 
 export const GoalStepSchema = z.discriminatedUnion('capability', [
   DevelopmentPlanningGoalStepSchema,
@@ -63,6 +79,8 @@ export const GoalStepSchema = z.discriminatedUnion('capability', [
   PersonalReminderManagementGoalStepSchema,
   MemoryManagementGoalStepSchema,
   AttachmentAnalysisGoalStepSchema,
+  MachineInspectionGoalStepSchema,
+  MachineServiceManagementGoalStepSchema,
 ]);
 
 export const GoalPlanSchema = z
@@ -139,6 +157,8 @@ export const GoalExecutionStepSchema = z.discriminatedUnion('capability', [
   PersonalReminderManagementGoalStepSchema.extend(GoalExecutionFields).strict(),
   MemoryManagementGoalStepSchema.extend(GoalExecutionFields).strict(),
   AttachmentAnalysisGoalStepSchema.extend(GoalExecutionFields).strict(),
+  MachineInspectionGoalStepSchema.extend(GoalExecutionFields).strict(),
+  MachineServiceManagementGoalStepSchema.extend(GoalExecutionFields).strict(),
 ]);
 
 export const FixedGoalExecutionSchema = z

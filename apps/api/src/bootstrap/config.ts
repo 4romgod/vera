@@ -1,10 +1,16 @@
 import { z } from 'zod';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 import type { ModelConfig } from '../adapters/outbound/model/model-provider-registry.ts';
 import type { WebResearchAdapterConfig } from '../adapters/outbound/capabilities/web-research/web-research-adapter-registry.ts';
 import type { SpeechTranscriptionConfig } from '../adapters/outbound/transcription/speech-transcription-provider-registry.ts';
+import {
+  MachineCatalogSchema,
+  type MachineCatalog,
+} from '../domain/machines/machine.ts';
 
 const EnvironmentSchema = z.object({
   HOST: z.enum(['127.0.0.1', '::1', 'localhost']).default('127.0.0.1'),
@@ -117,7 +123,35 @@ const EnvironmentSchema = z.object({
     .default(2),
   REMINDER_POLL_INTERVAL_MS: z.coerce.number().int().min(25).default(500),
   REMINDER_LEASE_MS: z.coerce.number().int().min(1_000).default(30_000),
+  VERA_MACHINE_CATALOG_FILE: z.string().trim().min(1).optional(),
 });
+
+function findRepositoryRoot(): string {
+  let directory = dirname(fileURLToPath(import.meta.url));
+  for (;;) {
+    try {
+      const packageJson = JSON.parse(
+        readFileSync(join(directory, 'package.json'), 'utf8'),
+      ) as { name?: unknown; workspaces?: unknown };
+      if (
+        packageJson.name === 'vera' &&
+        Array.isArray(packageJson.workspaces)
+      ) {
+        return directory;
+      }
+    } catch {
+      // Keep walking: most directories between this module and the repository
+      // root do not contain a package manifest.
+    }
+    const parent = dirname(directory);
+    if (parent === directory) {
+      throw new Error('Could not locate the Vera repository root.');
+    }
+    directory = parent;
+  }
+}
+
+const repositoryRoot = findRepositoryRoot();
 
 export type AppConfig = {
   host: string;
@@ -175,7 +209,23 @@ export type AppConfig = {
     pollIntervalMs: number;
     leaseMs: number;
   };
+  machines?: MachineCatalog;
 };
+
+function loadMachineCatalog(path: string | undefined): MachineCatalog {
+  if (path === undefined) return { schemaVersion: 1, machines: [] };
+  const absolutePath = resolve(repositoryRoot, path);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(absolutePath, 'utf8'));
+  } catch (error) {
+    throw new Error(
+      `Could not read VERA_MACHINE_CATALOG_FILE at ${absolutePath}.`,
+      { cause: error },
+    );
+  }
+  return MachineCatalogSchema.parse(parsed);
+}
 
 function requireTimeZone(value: string): string {
   try {
@@ -460,5 +510,6 @@ export function loadConfig(
       pollIntervalMs: parsed.REMINDER_POLL_INTERVAL_MS,
       leaseMs: parsed.REMINDER_LEASE_MS,
     },
+    machines: loadMachineCatalog(parsed.VERA_MACHINE_CATALOG_FILE),
   };
 }

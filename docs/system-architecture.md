@@ -627,11 +627,13 @@ flowchart TD
     RESOLVE --> RESEARCH["web_research adapter"]
     RESOLVE --> PERSONAL["personal_task integration action"]
     RESOLVE --> REMINDER["personal_reminder integration action"]
+    RESOLVE --> MACHINE["registered machine adapter"]
     PLAN --> ARTIFACT["Versioned artifacts"]
     CHANGE --> ARTIFACT
     RESEARCH --> ARTIFACT
     PERSONAL --> ARTIFACT
     REMINDER --> ARTIFACT
+    MACHINE --> ARTIFACT
 ```
 
 The initial live research adapter uses OpenAI Responses web search, is selected
@@ -670,6 +672,18 @@ flowchart LR
 
 See
 [ADR-0023](decisions/0023-deliver-durable-reminders-through-a-vera-owned-notification-inbox.md).
+
+`machine_inspection@1` and `machine_service_management@1` extend the same
+runtime to owner-operated computers without introducing a model-controlled
+shell. An operator catalog contains exact local or SSH command vectors, probes,
+machine identities, and allowed service actions. The model and clients receive
+only a public projection of IDs, labels, adapter kind, and allowed actions.
+Every approval freezes a machine-specific destination. Inspection produces a
+typed diagnostic artifact; mutation captures before and after observations and
+succeeds only when the registered postcondition is observed. Conditional
+requests such as “check Redis and restart it if unhealthy” use an adaptive goal
+with separate read and mutation approvals. See
+[ADR-0033](decisions/0033-govern-machine-operations-through-registered-actions.md).
 
 The same worker lifecycle now supports adaptive goals. After a step artifact is
 durable, the run returns to `deciding`; the worker can therefore disappear at

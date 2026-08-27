@@ -8,6 +8,8 @@ import {
   Pencil,
   Trash2,
   X,
+  ServerCog,
+  Activity,
 } from 'lucide-react-native';
 import {
   Modal,
@@ -24,19 +26,26 @@ import type {
   NotificationResource,
   PersonalTaskResource,
   ReminderResource,
+  MachineCatalogResource,
 } from '@vera/client';
 
 import { IconButton } from '@/components/ui/icon-button';
 import { layout, palette, radius, shadow, spacing } from '@/design/tokens';
 import { humanizeIdentifier } from './assistant/presentation';
 
-export type ResourceTab = 'memory' | 'tasks' | 'reminders' | 'notifications';
+export type ResourceTab =
+  | 'memory'
+  | 'tasks'
+  | 'reminders'
+  | 'notifications'
+  | 'machines';
 
 const tabs: { id: ResourceTab; label: string; icon: typeof Brain }[] = [
   { id: 'memory', label: 'Memory', icon: Brain },
   { id: 'tasks', label: 'Tasks', icon: ListChecks },
   { id: 'reminders', label: 'Reminders', icon: CalendarClock },
   { id: 'notifications', label: 'Activity', icon: Bell },
+  { id: 'machines', label: 'Machines', icon: ServerCog },
 ];
 
 export function ResourcePanel(props: {
@@ -47,9 +56,11 @@ export function ResourcePanel(props: {
   tasks: PersonalTaskResource[];
   reminders: ReminderResource[];
   notifications: NotificationResource[];
+  machines: MachineCatalogResource['machines'];
   onTab: (tab: ResourceTab) => void;
   onClose: () => void;
   onMemoryCommand: (command: string) => void;
+  onMachineCommand: (command: string) => void;
 }) {
   if (!props.open) return null;
   const content = <PanelContent {...props} />;
@@ -135,7 +146,7 @@ function PanelContent(props: Parameters<typeof ResourcePanel>[0]) {
               letterSpacing: 0.9,
             }}
           >
-            PERSONAL INTELLIGENCE
+            VERA WORKSPACE
           </Text>
           <Text
             selectable
@@ -424,6 +435,95 @@ function PanelContent(props: Parameters<typeof ResourcePanel>[0]) {
                 <Text selectable style={{ color: palette.muted, fontSize: 11 }}>
                   {formatDate(notification.deliveredAt)}
                 </Text>
+              </ResourceCard>
+            ))
+          : null}
+
+        {props.tab === 'machines' && props.machines.length === 0 ? (
+          <Empty
+            icon={ServerCog}
+            title="No machines registered"
+            description="Add an operator-owned machine catalog to let Vera inspect and control exact services."
+          />
+        ) : null}
+        {props.tab === 'machines'
+          ? props.machines.map((machine) => (
+              <ResourceCard key={machine.id}>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: spacing.sm,
+                  }}
+                >
+                  <Tag label={machine.adapter} />
+                  <SmallButton
+                    icon={Activity}
+                    label="Inspect all"
+                    primary
+                    onPress={() =>
+                      props.onMachineCommand(
+                        `Inspect registered machine ${machine.id} and all of its services.`,
+                      )
+                    }
+                  />
+                </View>
+                <Text
+                  selectable
+                  style={{
+                    color: palette.text,
+                    fontSize: 17,
+                    fontWeight: '700',
+                  }}
+                >
+                  {machine.displayName}
+                </Text>
+                {machine.services.map((service) => (
+                  <View
+                    key={service.id}
+                    style={{
+                      gap: spacing.sm,
+                      borderTopWidth: 1,
+                      borderTopColor: palette.lineSoft,
+                      paddingTop: spacing.md,
+                    }}
+                  >
+                    <Text
+                      selectable
+                      style={{ color: palette.textSoft, fontWeight: '600' }}
+                    >
+                      {service.displayName}
+                    </Text>
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        flexWrap: 'wrap',
+                        gap: spacing.sm,
+                      }}
+                    >
+                      <SmallButton
+                        label="Inspect"
+                        onPress={() =>
+                          props.onMachineCommand(
+                            `Inspect service ${service.id} on registered machine ${machine.id}.`,
+                          )
+                        }
+                      />
+                      {service.actions.map((action) => (
+                        <SmallButton
+                          key={action}
+                          label={humanizeIdentifier(action)}
+                          onPress={() =>
+                            props.onMachineCommand(
+                              `${action} service ${service.id} on registered machine ${machine.id}.`,
+                            )
+                          }
+                        />
+                      ))}
+                    </View>
+                  </View>
+                ))}
               </ResourceCard>
             ))
           : null}

@@ -36,11 +36,20 @@ export type CapabilityArtifactDraft =
   | Pick<
       Extract<Artifact, { type: 'attachment_analysis' }>,
       'type' | 'mediaType' | 'content'
+    >
+  | Pick<
+      Extract<Artifact, { type: 'machine_diagnostic' }>,
+      'type' | 'mediaType' | 'content'
+    >
+  | Pick<
+      Extract<Artifact, { type: 'machine_service_action_result' }>,
+      'type' | 'mediaType' | 'content'
     >;
 
 export type CapabilityRuntime = {
   readonly definition: CapabilityDefinition;
   readonly destination: CapabilityDestination;
+  destinationFor?(arguments_: Record<string, unknown>): CapabilityDestination;
   readonly authority: CapabilityAuthority;
   authorityFor(input: {
     arguments: Record<string, unknown>;
@@ -85,6 +94,10 @@ export type CapabilityRuntime = {
 
 export type CapabilityRuntimeRegistration = {
   definition: CapabilityDefinition;
+  catalog?: {
+    authority: CapabilityAuthority;
+    destination?: CapabilityDestination;
+  };
   selected(): CapabilityRuntime | null;
   resolve(destination: CapabilityDestination): CapabilityRuntime | null;
 };

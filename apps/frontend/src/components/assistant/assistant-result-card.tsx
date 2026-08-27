@@ -10,6 +10,8 @@ import {
   FileSearch,
   Flag,
   Search,
+  ServerCog,
+  Wrench,
 } from 'lucide-react-native';
 import { Pressable, Text, View } from 'react-native';
 
@@ -290,6 +292,68 @@ function resultPresentation(output: NonNullable<TaskResource['output']>): {
   content?: ReactNode;
 } {
   switch (output.kind) {
+    case 'machine_diagnostic':
+      return {
+        title: output.diagnostic?.machine.displayName ?? 'Machine inspected',
+        summary:
+          output.diagnostic === undefined
+            ? undefined
+            : `Checked ${String(output.diagnostic.diagnostics.length)} system diagnostic${output.diagnostic.diagnostics.length === 1 ? '' : 's'} and ${String(output.diagnostic.services.length)} registered service${output.diagnostic.services.length === 1 ? '' : 's'}.`,
+        icon: ServerCog,
+        content:
+          output.diagnostic === undefined ? undefined : (
+            <View style={{ gap: spacing.sm }}>
+              <Text selectable style={{ color: palette.muted, fontSize: 11 }}>
+                {output.diagnostic.system.hostname} ·{' '}
+                {output.diagnostic.system.platform} ·{' '}
+                {output.diagnostic.system.architecture}
+              </Text>
+              {output.diagnostic.diagnostics.map((diagnostic) => (
+                <ResultRow
+                  key={`diagnostic-${diagnostic.id}`}
+                  status={diagnostic.observation.status}
+                  title={diagnostic.label}
+                  detail={diagnostic.observation.summary}
+                />
+              ))}
+              {output.diagnostic.services.map((service) => (
+                <ResultRow
+                  key={`service-${service.id}`}
+                  status={service.observation.status}
+                  title={service.displayName}
+                  detail={service.observation.summary}
+                />
+              ))}
+            </View>
+          ),
+      };
+    case 'machine_service_action_result':
+      return {
+        title:
+          output.result === undefined
+            ? 'Machine action completed'
+            : `${humanizeIdentifier(output.result.action)} ${output.result.service.displayName}`,
+        summary:
+          output.result === undefined
+            ? undefined
+            : `${output.result.machine.displayName} · ${output.result.verified ? 'Postcondition verified' : 'Verification failed'}`,
+        icon: Wrench,
+        content:
+          output.result === undefined ? undefined : (
+            <View style={{ gap: spacing.sm }}>
+              <ResultRow
+                status={output.result.before.status}
+                title="Before"
+                detail={output.result.before.summary}
+              />
+              <ResultRow
+                status={output.result.after.status}
+                title="After"
+                detail={output.result.after.summary}
+              />
+            </View>
+          ),
+      };
     case 'personal_task_result':
       return {
         title: humanizeIdentifier(`${output.result?.action ?? 'task'} task`),

@@ -381,6 +381,26 @@ There is deliberately no direct HTTP mutation path in this increment; mutations
 must pass through proposal validation, approval, durable invocation, and
 artifact evidence.
 
+## Registered machines
+
+`GET /v1/machines` returns only public registered identities, adapter kinds,
+diagnostic labels, service identities, and allowed actions. It never returns
+executables, command arguments, SSH options, or credentials.
+
+Machine work enters through the normal task or conversation API. An inspection
+approval targets `machine_inspection@1` and freezes a machine-specific
+destination such as `machine.macmini`. Its result is a
+`machine_diagnostic` artifact containing bounded system facts, diagnostic
+observations, and service health.
+
+Start, stop, and restart use `machine_service_management@1`. The approval names
+exactly `{ machineId, serviceId, action }`, declares
+`machine_service_control`, and may bind matching diagnostic evidence. A
+successful `machine_service_action_result` contains the before observation,
+bounded command outcome, after observation, and `verified: true`. A command
+whose registered postcondition is not met fails the run instead of reporting
+success.
+
 ## Reminders and notifications
 
 Reminder mutations are natural-language tasks or conversation messages using a
