@@ -27,7 +27,11 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 
-import type { ConversationMessageResource, TaskResource } from '@vera/client';
+import type {
+  ConversationMessageResource,
+  TaskResource,
+  VeraApi,
+} from '@vera/client';
 
 import { palette, radius, spacing } from '@/design/tokens';
 import { ConversationMessage } from './conversation-message';
@@ -52,6 +56,7 @@ export const ConversationView = forwardRef<
   FlatListType<ConversationMessageResource>,
   {
     messages: ConversationMessageResource[];
+    client: VeraApi;
     taskDetails: ReadonlyMap<string, TaskResource | null>;
     speakingMessageId?: string;
     footer?: ReactNode;
@@ -148,6 +153,7 @@ export const ConversationView = forwardRef<
         }
         renderItem={({ item }) => (
           <ConversationMessage
+            client={props.client}
             message={item}
             speaking={props.speakingMessageId === item.id}
             task={

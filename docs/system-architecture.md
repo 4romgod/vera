@@ -684,6 +684,7 @@ completion from an interrupted process claim. See
 ```mermaid
 flowchart LR
     ART["Durable software_change artifact"] --> CREATE["Create application"]
+    ART --> RECOVER["Discover durable attempts"]
     CREATE --> DISCLOSE["Exact effect disclosure"]
     DISCLOSE --> APPROVE{"Owner decision"}
     APPROVE -->|"reject"| REJECTED["Rejected"]
@@ -797,11 +798,13 @@ POST   /v1/approvals/{approval_id}/decision
 POST   /v1/runs/{run_id}/cancellation
 GET    /v1/artifacts/{artifact_id}
 POST   /v1/artifacts/{artifact_id}/applications   # requires Idempotency-Key
+GET    /v1/artifacts/{artifact_id}/applications
 GET    /v1/change-applications/{application_id}
 GET    /v1/change-applications/{application_id}/events
 POST   /v1/change-applications/{application_id}/decision
 POST   /v1/change-applications/{application_id}/cancellation
 POST   /v1/change-applications/{application_id}/publications   # requires Idempotency-Key
+GET    /v1/change-applications/{application_id}/publications
 GET    /v1/software-change-publications/{publication_id}
 GET    /v1/software-change-publications/{publication_id}/events
 POST   /v1/software-change-publications/{publication_id}/decision

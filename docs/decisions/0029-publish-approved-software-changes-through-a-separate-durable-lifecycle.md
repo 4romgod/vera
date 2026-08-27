@@ -108,7 +108,8 @@ Rejected. V1 publication is review-mediated and create-only.
 ## Follow-up
 
 - Add provider adapters only when another forge is actually needed.
-- Add a universal-frontend publication review surface after the API/CLI flow
-  has real owner-use evidence; it must render the complete authority envelope.
+- Continue visual and physical-device verification of the implemented universal
+  frontend delivery surface. It renders the complete authority envelope and
+  reconstructs active or successful attempts from durable discovery routes.
 - Revisit base-branch movement policy only with evidence that repeated review
   is materially harming delivery.

@@ -5,6 +5,7 @@ import { changeApplicationResponse } from '../presenters.ts';
 import {
   ApprovalDecisionRequestJsonSchema,
   ChangeApplicationEventsResponseJsonSchema,
+  ChangeApplicationListResponseJsonSchema,
   ChangeApplicationResponseJsonSchema,
   IdempotencyHeadersJsonSchema,
   ResourceIdParamsJsonSchema,
@@ -21,6 +22,25 @@ export function registerChangeApplicationRoutes(
   },
 ): void {
   const applications = options.changeApplications;
+  app.get<{ Params: ResourceIdParams }>(
+    '/v1/artifacts/:id/applications',
+    {
+      schema: {
+        params: ResourceIdParamsJsonSchema,
+        response: { 200: ChangeApplicationListResponseJsonSchema },
+      },
+    },
+    async (request) => ({
+      schemaVersion: 1 as const,
+      applications: (
+        await applications.listForArtifact(
+          options.principalId,
+          request.params.id,
+        )
+      ).map(changeApplicationResponse),
+    }),
+  );
+
   app.post<{ Params: ResourceIdParams; Headers: IdempotencyHeaders }>(
     '/v1/artifacts/:id/applications',
     {

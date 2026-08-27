@@ -8,6 +8,7 @@ import {
   IdempotencyHeadersJsonSchema,
   ResourceIdParamsJsonSchema,
   SoftwareChangePublicationEventsResponseJsonSchema,
+  SoftwareChangePublicationListResponseJsonSchema,
   SoftwareChangePublicationResponseJsonSchema,
   type ApprovalDecisionRequest,
   type CreateSoftwareChangePublicationRequest,
@@ -23,6 +24,25 @@ export function registerSoftwareChangePublicationRoutes(
   },
 ) {
   const publications = options.publications;
+  app.get<{ Params: ResourceIdParams }>(
+    '/v1/change-applications/:id/publications',
+    {
+      schema: {
+        params: ResourceIdParamsJsonSchema,
+        response: { 200: SoftwareChangePublicationListResponseJsonSchema },
+      },
+    },
+    async (request) => ({
+      schemaVersion: 1 as const,
+      publications: (
+        await publications.listForApplication(
+          options.principalId,
+          request.params.id,
+        )
+      ).map(softwareChangePublicationResponse),
+    }),
+  );
+
   app.post<{
     Params: ResourceIdParams;
     Headers: IdempotencyHeaders;

@@ -116,6 +116,26 @@ async function setup(reconciliation: 'succeeded' | 'cancelled') {
 }
 
 void describe('software-change application lifecycle', () => {
+  void it('rediscovers owner-scoped attempts from their source artifact', async () => {
+    const { lifecycle, artifact } = await setup('cancelled');
+    const created = await lifecycle.create({
+      principalId: 'owner_v1',
+      requestKey: 'discover-application',
+      artifactId: artifact.id,
+    });
+
+    assert.deepEqual(
+      (await lifecycle.listForArtifact('owner_v1', artifact.id)).map(
+        (application) => application.id,
+      ),
+      [created.id],
+    );
+    assert.deepEqual(
+      await lifecycle.listForArtifact('another_owner', artifact.id),
+      [],
+    );
+  });
+
   void it('keeps a rejected, never-started effect distinct from a failure', async () => {
     const { lifecycle, artifact } = await setup('cancelled');
     const created = await lifecycle.create({

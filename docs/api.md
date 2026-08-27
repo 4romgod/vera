@@ -48,11 +48,13 @@ must not be exposed to an untrusted or shared network.
 | `POST /v1/runs/{runId}/cancellation` | Request a best-effort stop | `202` |
 | `GET /v1/artifacts/{artifactId}` | Retrieve a versioned capability artifact | `200` |
 | `POST /v1/artifacts/{artifactId}/applications` | Create an exactly scoped software-change application | `202` |
+| `GET /v1/artifacts/{artifactId}/applications` | List the latest owner-scoped application attempts for recovery | `200` |
 | `GET /v1/change-applications/{applicationId}` | Retrieve application, approval, effect, and result state | `200` |
 | `GET /v1/change-applications/{applicationId}/events` | Retrieve immutable ordered application events | `200` |
 | `POST /v1/change-applications/{applicationId}/decision` | Approve or reject the disclosed managed-worktree effect | `202` |
 | `POST /v1/change-applications/{applicationId}/cancellation` | Request cancellation and reconciliation | `202` |
 | `POST /v1/change-applications/{applicationId}/publications` | Create an exact commit/branch/pull-request publication request | `202` |
+| `GET /v1/change-applications/{applicationId}/publications` | List the latest owner-scoped publication attempts for recovery | `200` |
 | `GET /v1/software-change-publications/{publicationId}` | Retrieve publication approval, effect, and result state | `200` |
 | `GET /v1/software-change-publications/{publicationId}/events` | Retrieve immutable ordered publication events | `200` |
 | `POST /v1/software-change-publications/{publicationId}/decision` | Approve or reject the disclosed publication effect | `202` |
@@ -552,6 +554,11 @@ different artifact returns a conflict. Persistent workers serialize effects per
 project, and restart reconciliation classifies the actual managed worktree as
 before, after, or mixed before recording an outcome.
 
+`GET /v1/artifacts/{artifactId}/applications` returns at most the latest 20
+owner-scoped attempts, newest first. This is a recovery query, not a new source
+of authority: after a client restart, the caller selects an active attempt
+first, then a successful attempt, and only then terminal history.
+
 ### Software-change publication
 
 Only a successful staged application can be published. The caller supplies
@@ -603,6 +610,11 @@ publication, before any approval resource is created. It is not part of the
 global readiness result because publication is an optional owner-initiated
 delivery effect rather than an enabled task capability; an unavailable tool or
 login returns `503 publication_unavailable` from the create request.
+
+`GET /v1/change-applications/{applicationId}/publications` provides the same
+bounded, newest-first recovery query for publication attempts. Together, the
+two discovery routes let a client reconstruct `artifact -> staged application
+-> publication` without keeping generated IDs in local device storage.
 
 ```mermaid
 stateDiagram-v2

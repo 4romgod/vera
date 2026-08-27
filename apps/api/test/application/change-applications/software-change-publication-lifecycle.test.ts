@@ -159,6 +159,39 @@ async function setup() {
 }
 
 void describe('software-change publication lifecycle', () => {
+  void it('rediscovers owner-scoped attempts from their source application', async () => {
+    const value = await setup();
+    const created = await value.lifecycle.create({
+      principalId: 'owner_v1',
+      requestKey: 'discover-publication',
+      applicationId: value.application.id,
+      baseBranch: 'main',
+      commitMessage: 'Publish fixture',
+      pullRequest: {
+        title: 'Publish fixture',
+        body: 'Fixture body',
+        draft: true,
+      },
+    });
+
+    assert.deepEqual(
+      (
+        await value.lifecycle.listForApplication(
+          'owner_v1',
+          value.application.id,
+        )
+      ).map((publication) => publication.id),
+      [created.id],
+    );
+    assert.deepEqual(
+      await value.lifecycle.listForApplication(
+        'another_owner',
+        value.application.id,
+      ),
+      [],
+    );
+  });
+
   void it('requires separate approval and publishes a frozen effect exactly once', async () => {
     const value = await setup();
     const created = await value.lifecycle.create({

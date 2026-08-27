@@ -13,6 +13,11 @@ export type SoftwareChangePublicationStore = {
     principalId: string,
     publicationId: string,
   ): Promise<SoftwareChangePublication | null>;
+  listBySourceApplication(
+    principalId: string,
+    applicationId: string,
+    limit: number,
+  ): Promise<SoftwareChangePublication[]>;
   replace(
     publication: SoftwareChangePublication,
     expectedVersion: number,

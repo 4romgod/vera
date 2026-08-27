@@ -47,6 +47,10 @@ export type SoftwareChangePublicationLifecycle = {
     principalId: string,
     publicationId: string,
   ): Promise<SoftwareChangePublication>;
+  listForApplication(
+    principalId: string,
+    applicationId: string,
+  ): Promise<SoftwareChangePublication[]>;
   decideApproval(input: {
     principalId: string;
     publicationId: string;
@@ -221,6 +225,13 @@ export function createSoftwareChangePublicationLifecycle(options: {
   }
 
   return {
+    async listForApplication(principalId, applicationId) {
+      return options.store.listBySourceApplication(
+        principalId,
+        applicationId,
+        20,
+      );
+    },
     async create(input) {
       const existing = await options.store.findByRequestKey(
         input.principalId,

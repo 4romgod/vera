@@ -100,6 +100,20 @@ export class MongoDbChangeApplicationStore implements ChangeApplicationStore {
     return document === null ? null : this.parse(document);
   }
 
+  public async listBySourceArtifact(
+    principalId: string,
+    artifactId: string,
+    limit: number,
+  ): Promise<SoftwareChangeApplication[]> {
+    await this.ensureConnected();
+    const documents = await this.collection
+      .find({ principalId, 'sourceArtifact.id': artifactId })
+      .sort({ createdAt: -1, id: -1 })
+      .limit(limit)
+      .toArray();
+    return documents.map((document) => this.parse(document));
+  }
+
   public async replace(
     application: SoftwareChangeApplication,
     expectedVersion: number,
@@ -180,6 +194,12 @@ export class MongoDbChangeApplicationStore implements ChangeApplicationStore {
         { principalId: 1, 'approval.id': 1 },
         { unique: true },
       ),
+      this.collection.createIndex({
+        principalId: 1,
+        'sourceArtifact.id': 1,
+        createdAt: -1,
+        id: -1,
+      }),
       this.collection.createIndex({ status: 1, createdAt: 1 }),
     ]);
   }

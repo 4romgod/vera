@@ -168,6 +168,13 @@ export const ChangeApplicationEventsResponseSchema = z
   })
   .strict();
 
+export const ChangeApplicationListResponseSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    applications: z.array(ChangeApplicationResponseSchema).max(20),
+  })
+  .strict();
+
 export const SoftwareChangePublicationResponseSchema =
   SoftwareChangePublicationSchema.omit({
     principalId: true,
@@ -189,6 +196,13 @@ export const SoftwareChangePublicationEventsResponseSchema = z
     schemaVersion: z.literal(1),
     publicationId: z.string().startsWith('publication_'),
     events: z.array(SoftwareChangePublicationEventSchema),
+  })
+  .strict();
+
+export const SoftwareChangePublicationListResponseSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    publications: z.array(SoftwareChangePublicationResponseSchema).max(20),
   })
   .strict();
 
@@ -472,6 +486,11 @@ export const ChangeApplicationEventsResponseJsonSchema = z.toJSONSchema(
   { target: 'draft-7' },
 );
 
+export const ChangeApplicationListResponseJsonSchema = z.toJSONSchema(
+  ChangeApplicationListResponseSchema,
+  { target: 'draft-7' },
+);
+
 export const CreateSoftwareChangePublicationRequestJsonSchema = z.toJSONSchema(
   CreateSoftwareChangePublicationRequestSchema,
   { target: 'draft-7' },
@@ -484,6 +503,11 @@ export const SoftwareChangePublicationResponseJsonSchema = z.toJSONSchema(
 
 export const SoftwareChangePublicationEventsResponseJsonSchema = z.toJSONSchema(
   SoftwareChangePublicationEventsResponseSchema,
+  { target: 'draft-7' },
+);
+
+export const SoftwareChangePublicationListResponseJsonSchema = z.toJSONSchema(
+  SoftwareChangePublicationListResponseSchema,
   { target: 'draft-7' },
 );
 

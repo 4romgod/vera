@@ -115,6 +115,13 @@ Every terminal task also records a recoverable pending Vera reply before that
 reply is appended to the conversation, so a crash cannot silently remove one
 side of the dialogue.
 
+The universal frontend now carries that same delivery contract end to end. A
+software-change result can prepare and approve isolated staging, configure a
+draft or ready pull request, separately approve the exact publication, follow
+durable progress, cancel while cancellation is still valid, and open the
+verified GitHub pull request. Refresh and device restart recover the chain from
+MongoDB-backed attempt discovery rather than browser-local IDs.
+
 MongoDB is selected as V1's authoritative operational store and Redis as the
 rebuildable, expiring scratchpad through
 [ADR-0010](docs/decisions/0010-use-mongodb-for-operational-truth-and-redis-for-scratchpads.md).
