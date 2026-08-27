@@ -86,7 +86,17 @@ void describe('Gemini model adapter', () => {
       );
     });
 
-    const generation = await provider.generateStructured(generationInput);
+    const generation = await provider.generateStructured({
+      ...generationInput,
+      images: [
+        {
+          sourceId: 'source_1',
+          filename: 'photo.jpg',
+          mediaType: 'image/jpeg',
+          bytes: Uint8Array.from([1, 2, 3]),
+        },
+      ],
+    });
     const parsedRequest = GeminiRequestSchema.parse(requestBody);
 
     assert.equal(
@@ -94,6 +104,17 @@ void describe('Gemini model adapter', () => {
       'https://gemini.test/v1beta/models/gemini-test:generateContent',
     );
     assert.equal(apiKey, 'gemini-secret');
+    assert.deepEqual(
+      (
+        requestBody as {
+          contents: { parts: unknown[] }[];
+        }
+      ).contents[0]?.parts,
+      [
+        { text: 'plan this' },
+        { inlineData: { mimeType: 'image/jpeg', data: 'AQID' } },
+      ],
+    );
     assert.equal(parsedRequest.generationConfig.temperature, 0);
     assert.equal(parsedRequest.generationConfig.maxOutputTokens, 4_096);
     assert.equal(

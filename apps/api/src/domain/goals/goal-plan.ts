@@ -5,6 +5,7 @@ import {
   DevelopmentPlanningProposalArgumentsSchema,
   SoftwareChangeProposalArgumentsSchema,
   WebResearchProposalArgumentsSchema,
+  AttachmentAnalysisArgumentsSchema,
   findCapability,
 } from '../capabilities/capability-registry.ts';
 import { PersonalTaskActionArgumentsSchema } from '../personal-tasks/personal-task.ts';
@@ -32,6 +33,11 @@ export const WebResearchGoalStepSchema = GoalStepBaseSchema.extend({
   version: z.literal(1),
   arguments: WebResearchProposalArgumentsSchema,
 }).strict();
+export const AttachmentAnalysisGoalStepSchema = GoalStepBaseSchema.extend({
+  capability: z.literal('attachment_analysis'),
+  version: z.literal(1),
+  arguments: AttachmentAnalysisArgumentsSchema,
+}).strict();
 export const PersonalTaskManagementGoalStepSchema = GoalStepBaseSchema.extend({
   capability: z.literal('personal_task_management'),
   version: z.literal(1),
@@ -56,6 +62,7 @@ export const GoalStepSchema = z.discriminatedUnion('capability', [
   PersonalTaskManagementGoalStepSchema,
   PersonalReminderManagementGoalStepSchema,
   MemoryManagementGoalStepSchema,
+  AttachmentAnalysisGoalStepSchema,
 ]);
 
 export const GoalPlanSchema = z
@@ -131,6 +138,7 @@ export const GoalExecutionStepSchema = z.discriminatedUnion('capability', [
   PersonalTaskManagementGoalStepSchema.extend(GoalExecutionFields).strict(),
   PersonalReminderManagementGoalStepSchema.extend(GoalExecutionFields).strict(),
   MemoryManagementGoalStepSchema.extend(GoalExecutionFields).strict(),
+  AttachmentAnalysisGoalStepSchema.extend(GoalExecutionFields).strict(),
 ]);
 
 export const FixedGoalExecutionSchema = z

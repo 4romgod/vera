@@ -36,6 +36,9 @@ function fakeApi(overrides: Partial<VeraApi>): VeraApi {
   };
   return {
     transcribeAudio: unavailable,
+    uploadAttachment: unavailable,
+    getAttachment: unavailable,
+    attachmentPreviewUrl: unavailable,
     listCapabilities: unavailable,
     listPersonalTasks: unavailable,
     getPersonalTask: unavailable,

@@ -27,6 +27,7 @@ function unsupportedPaths(value: unknown, path = '$'): string[] {
     const unsupportedKeyword = [
       '$schema',
       'const',
+      'default',
       'format',
       'propertyNames',
     ].includes(key);
@@ -47,6 +48,7 @@ void describe('MongoDB JSON Schema conversion', () => {
         properties: {
           version: { type: 'integer', exclusiveMinimum: 0 },
           kind: { const: 'task' },
+          legacyKind: { type: 'string', default: 'document' },
           occurredAt: { type: 'string', format: 'date-time' },
           labels: {
             type: 'object',
@@ -67,6 +69,7 @@ void describe('MongoDB JSON Schema conversion', () => {
           exclusiveMinimum: true,
         },
         kind: { enum: ['task'] },
+        legacyKind: { type: 'string' },
         occurredAt: { type: 'string' },
         labels: { type: 'object' },
       },

@@ -12,12 +12,21 @@ export type ModelGeneration = {
 export type StructuredGenerationPurpose =
   | 'orchestration_decision'
   | 'goal_continuation'
-  | 'development_plan';
+  | 'development_plan'
+  | 'attachment_analysis';
+
+export type ModelImageInput = {
+  sourceId: string;
+  filename: string;
+  mediaType: 'image/jpeg' | 'image/png';
+  bytes: Uint8Array;
+};
 
 export type GenerateStructuredInput = {
   purpose: StructuredGenerationPurpose;
   systemPrompt: string;
   message: string;
+  images?: ModelImageInput[];
   outputSchema: Record<string, unknown>;
 };
 

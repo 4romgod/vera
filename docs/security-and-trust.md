@@ -13,7 +13,8 @@ ADR-0022, with reminder scheduling and inbox authority accepted by ADR-0023 on
 ADR-0024; governed memory and the universal frontend boundary are accepted by
 ADRs 0025 and 0026; private physical-device ingress is accepted by ADR-0027;
 reviewed device voice interaction is accepted by ADR-0028; and governed
-software-change publication is accepted by ADR-0029 on 27 August 2026.
+software-change publication is accepted by ADR-0029 on 27 August 2026. Durable
+owner attachments and approval-scoped analysis are accepted by ADR-0031.
 
 ## Purpose
 
@@ -98,6 +99,25 @@ owner Send or Stop-and-send action. Provider error bodies are discarded because
 they may echo audio-derived content. Supported content types and a 25 MB limit
 bound memory use before inference. Spoken output is visible and stoppable
 because it can disclose conversation content to nearby people.
+
+Uploaded documents and images are durable owner data under
+[ADR-0031](decisions/0031-store-owner-attachments-and-analyze-them-through-exact-approval.md).
+Vera bounds type, size, count, extracted characters, decoded pixels, normalized
+dimensions, and normalized byte size; stores original bytes separately from
+metadata and derived representations; and scopes reads and deduplication by principal.
+Orchestration receives only filename, media type, and byte length. Attachment
+IDs, hashes, original bytes, extracted text, and normalized images are withheld from that routing
+request. Exact content is hash-verified and disclosed only after an approval
+that names each attachment and the selected provider boundary. Cloud execution
+declares `third_party_disclosure`; local execution does not.
+
+Attachment content, including document text or pixels that resemble system
+instructions or requests for credentials, remains untrusted capability input. It cannot expand the
+approved objective, select another capability, or grant follow-on authority.
+The model may cite only opaque source IDs. Vera maps those IDs to approved
+sources, constructs the external citation fields itself, and accepts the result
+only when attachment identity and filename match approved evidence; document
+citations additionally require an exact locator and matching excerpt.
 
 ## Threat categories
 

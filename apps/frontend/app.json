@@ -13,7 +13,8 @@
         {
           "microphonePermission": "Allow Vera to record your voice until you choose to stop."
         }
-      ]
+      ],
+      "expo-image"
     ],
     "ios": {
       "supportsTablet": true,

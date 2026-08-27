@@ -4,6 +4,55 @@ import { describe, it } from 'node:test';
 import { VeraApiError, VeraClient } from '../src/index.ts';
 
 void describe('Vera HTTP client', () => {
+  void it('uploads document bytes with a transport type separate from the declared media type', async () => {
+    const bytes = new TextEncoder().encode('Vera attachment').buffer;
+    const client = new VeraClient({
+      baseUrl: 'http://vera.test',
+      fetch: (input, init) => {
+        assert.equal(input, 'http://vera.test/v1/attachments');
+        assert.ok(init);
+        const headers = new Headers(init.headers);
+        assert.equal(headers.get('content-type'), 'application/octet-stream');
+        assert.equal(headers.get('x-vera-filename'), 'Vera%20brief.md');
+        assert.equal(headers.get('x-vera-media-type'), 'text/markdown');
+        assert.equal(init.body, bytes);
+        return Promise.resolve(
+          Response.json(
+            {
+              schemaVersion: 1,
+              id: 'attachment_test',
+              kind: 'document',
+              filename: 'Vera brief.md',
+              mediaType: 'text/markdown',
+              byteLength: 15,
+              sha256: 'a'.repeat(64),
+              extraction: {
+                status: 'ready',
+                extractor: 'vera_document_text_v1',
+                totalCharacters: 15,
+                sha256: 'b'.repeat(64),
+              },
+              createdAt: '2026-08-27T00:00:00.000Z',
+            },
+            { status: 201 },
+          ),
+        );
+      },
+    });
+
+    const attachment = await client.uploadAttachment({
+      filename: 'Vera brief.md',
+      mediaType: 'text/markdown',
+      bytes,
+    });
+
+    assert.equal(attachment.id, 'attachment_test');
+    assert.equal(
+      client.attachmentPreviewUrl(attachment.id),
+      'http://vera.test/v1/attachments/attachment_test/preview',
+    );
+  });
+
   void it('uploads a completed audio recording and validates its transcript', async () => {
     const audio = new Blob([Uint8Array.of(1, 2, 3)], {
       type: 'audio/webm',
@@ -421,6 +470,7 @@ void describe('Vera HTTP client', () => {
     const task = await client.submitTask({
       message: 'hello',
       projectId: 'project_test',
+      attachmentIds: ['attachment_test'],
       idempotencyKey: 'client-test-key',
     });
 
@@ -431,6 +481,15 @@ void describe('Vera HTTP client', () => {
       new Headers(request.init?.headers).get('idempotency-key'),
       'client-test-key',
     );
+    const requestBody = request.init?.body;
+    if (typeof requestBody !== 'string') {
+      throw new Error('Expected a JSON request body.');
+    }
+    assert.deepEqual(JSON.parse(requestBody), {
+      message: 'hello',
+      projectId: 'project_test',
+      attachmentIds: ['attachment_test'],
+    });
   });
 
   void it('normalizes Vera error envelopes', async () => {

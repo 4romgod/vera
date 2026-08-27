@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetch as expoFetch } from 'expo/fetch';
+import * as DocumentPicker from 'expo-document-picker';
 import { AlertCircle, X } from 'lucide-react-native';
 import {
   ActivityIndicator,
@@ -23,13 +24,17 @@ import {
   type ProjectResource,
   type ReminderResource,
   type TaskResource,
+  type AttachmentReference,
 } from '@vera/client';
 
 import { ApprovalCard } from '@/components/approval-card';
 import { AssistantHeader } from '@/components/assistant/assistant-header';
 import { ConversationSidebar } from '@/components/assistant/conversation-sidebar';
 import { ConversationView } from '@/components/assistant/conversation-view';
-import { MessageComposer } from '@/components/assistant/message-composer';
+import {
+  MessageComposer,
+  type ComposerAttachment,
+} from '@/components/assistant/message-composer';
 import { latestConversationProjectId } from '@/components/assistant/presentation';
 import { useTaskDetails } from '@/components/assistant/use-task-details';
 import { ResourcePanel, type ResourceTab } from '@/components/resource-panel';
@@ -53,9 +58,73 @@ const speechLocale =
     ? 'en-US'
     : configuredSpeechLocale;
 const EMPTY_MESSAGES: ConversationMessageResource[] = [];
+const MAX_ATTACHMENTS = 5;
+const DOCUMENT_ATTACHMENT_TYPES = [
+  'text/plain',
+  'text/markdown',
+  'application/json',
+  'application/pdf',
+] as const;
+const IMAGE_ATTACHMENT_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'image/heic',
+  'image/heif',
+  'image/avif',
+  'image/tiff',
+] as const;
+const SUPPORTED_ATTACHMENT_TYPES = [
+  ...DOCUMENT_ATTACHMENT_TYPES,
+  ...IMAGE_ATTACHMENT_TYPES,
+] as const;
+type AttachmentUpload = ComposerAttachment & {
+  bytes?: ArrayBuffer;
+  previewUri?: string;
+};
 
 function requestKey(): string {
   return `assistant-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
+function attachmentMediaType(
+  filename: string,
+  declared?: string,
+): AttachmentReference['mediaType'] | undefined {
+  const normalized = declared?.split(';', 1)[0]?.trim().toLowerCase();
+  if (
+    normalized !== undefined &&
+    (SUPPORTED_ATTACHMENT_TYPES as readonly string[]).includes(normalized)
+  ) {
+    return normalized as AttachmentReference['mediaType'];
+  }
+  const extension = filename.toLowerCase().split('.').at(-1);
+  return extension === 'pdf'
+    ? 'application/pdf'
+    : extension === 'md' || extension === 'markdown'
+      ? 'text/markdown'
+      : extension === 'json'
+        ? 'application/json'
+        : extension === 'txt' || extension === 'log'
+          ? 'text/plain'
+          : extension === 'jpg' || extension === 'jpeg'
+            ? 'image/jpeg'
+            : extension === 'png'
+              ? 'image/png'
+              : extension === 'webp'
+                ? 'image/webp'
+                : extension === 'gif'
+                  ? 'image/gif'
+                  : extension === 'heic'
+                    ? 'image/heic'
+                    : extension === 'heif'
+                      ? 'image/heif'
+                      : extension === 'avif'
+                        ? 'image/avif'
+                        : extension === 'tif' || extension === 'tiff'
+                          ? 'image/tiff'
+                          : undefined;
 }
 
 export function AssistantScreen() {
@@ -90,6 +159,8 @@ export function AssistantScreen() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const [draftFromVoice, setDraftFromVoice] = useState(false);
+  const [attachments, setAttachments] = useState<AttachmentUpload[]>([]);
+  const [attaching, setAttaching] = useState(false);
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string>();
@@ -99,6 +170,7 @@ export function AssistantScreen() {
   const voiceRunIds = useRef(new Set<string>());
   const mounted = useRef(true);
   const refreshInFlight = useRef(false);
+  const attachmentPickerActive = useRef(false);
   const spokenReply = useSpokenReply({
     locale: speechLocale,
     onError: setError,
@@ -240,6 +312,42 @@ export function AssistantScreen() {
     }
   }, [activeRun?.runStatus, messages.length]);
 
+  useEffect(() => {
+    const conversationId = activeRun?.conversationId;
+    const conversationReply = activeRun?.conversationReply;
+    if (
+      conversationId === undefined ||
+      conversationReply?.status !== 'projected'
+    ) {
+      return;
+    }
+    let current = true;
+    void client
+      .getConversation(conversationId)
+      .then((refreshed) => {
+        if (current && mounted.current) {
+          setConversation((selected) =>
+            selected?.id === refreshed.id ? refreshed : selected,
+          );
+        }
+      })
+      .catch((cause: unknown) => {
+        if (current && mounted.current) {
+          setError(
+            errorMessage(cause, 'Completed work could not be displayed.'),
+          );
+        }
+      });
+    return () => {
+      current = false;
+    };
+  }, [
+    activeRun?.conversationId,
+    activeRun?.conversationReply?.projectedAt,
+    activeRun?.conversationReply?.status,
+    client,
+  ]);
+
   async function selectConversation(id: string): Promise<void> {
     const generation = followGeneration.current + 1;
     followGeneration.current = generation;
@@ -252,6 +360,7 @@ export function AssistantScreen() {
       if (followGeneration.current !== generation) return;
       setConversation(selected);
       setSelectedProjectId(latestConversationProjectId(selected.messages));
+      setAttachments([]);
       setActiveRun(undefined);
       setSidebarOpen(false);
       setError(undefined);
@@ -274,6 +383,7 @@ export function AssistantScreen() {
     setSidebarOpen(false);
     setDraft('');
     setDraftFromVoice(false);
+    setAttachments([]);
     setError(undefined);
   }
 
@@ -353,6 +463,12 @@ export function AssistantScreen() {
     )
       return;
     const shouldSpeakReply = options.fromVoice ?? draftFromVoice;
+    const readyAttachments = attachments.flatMap((attachment) =>
+      attachment.status === 'ready' && attachment.resource !== undefined
+        ? [attachment.resource]
+        : [],
+    );
+    if (readyAttachments.length !== attachments.length) return;
     setBusy(true);
     setError(undefined);
     setDraft('');
@@ -366,7 +482,11 @@ export function AssistantScreen() {
         ...(selectedProjectId === undefined
           ? {}
           : { projectId: selectedProjectId }),
+        ...(readyAttachments.length === 0
+          ? {}
+          : { attachmentIds: readyAttachments.map(({ id }) => id) }),
       });
+      setAttachments([]);
       if (shouldSpeakReply) voiceRunIds.current.add(submitted.runId);
       setActiveRun(submitted);
       setConversation(await client.getConversation(current.id));
@@ -431,6 +551,139 @@ export function AssistantScreen() {
     }
     await spokenReply.stop();
     await voiceInput.start(draft);
+  }
+
+  async function uploadAttachment(upload: AttachmentUpload): Promise<void> {
+    if (upload.bytes === undefined) return;
+    setAttachments((current) =>
+      current.map((item) =>
+        item.localId === upload.localId
+          ? { ...item, status: 'uploading', error: undefined }
+          : item,
+      ),
+    );
+    try {
+      const resource = await client.uploadAttachment({
+        filename: upload.filename,
+        mediaType: upload.mediaType,
+        bytes: upload.bytes,
+      });
+      if (!mounted.current) return;
+      setAttachments((current) =>
+        current.map((item) =>
+          item.localId === upload.localId
+            ? {
+                ...item,
+                status: 'ready',
+                resource,
+                bytes: undefined,
+                error: undefined,
+              }
+            : item,
+        ),
+      );
+    } catch (cause) {
+      if (!mounted.current) return;
+      setAttachments((current) =>
+        current.map((item) =>
+          item.localId === upload.localId
+            ? {
+                ...item,
+                status: 'failed',
+                error: errorMessage(cause, 'Upload failed.'),
+              }
+            : item,
+        ),
+      );
+    }
+  }
+
+  async function addPickedAttachment(input: {
+    uri: string;
+    filename: string;
+    declaredMediaType?: string;
+  }): Promise<void> {
+    const mediaType = attachmentMediaType(
+      input.filename,
+      input.declaredMediaType,
+    );
+    if (mediaType === undefined) {
+      setError(`${input.filename} is not a supported attachment format.`);
+      return;
+    }
+    const response = await expoFetch(input.uri);
+    if (!response.ok) throw new Error(`Could not read ${input.filename}.`);
+    const bytes = await response.arrayBuffer();
+    const upload: AttachmentUpload = {
+      localId: `attachment-local-${requestKey()}`,
+      filename: input.filename,
+      mediaType,
+      byteLength: bytes.byteLength,
+      status: 'uploading',
+      bytes,
+      ...(mediaType.startsWith('image/') ? { previewUri: input.uri } : {}),
+    };
+    setAttachments((current) => [...current, upload]);
+    await uploadAttachment(upload);
+  }
+
+  async function pickAttachments(): Promise<void> {
+    if (attachmentPickerActive.current) return;
+    attachmentPickerActive.current = true;
+    setAttaching(true);
+    setError(undefined);
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: [...SUPPORTED_ATTACHMENT_TYPES],
+        multiple: true,
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled) return;
+      const available = Math.max(0, MAX_ATTACHMENTS - attachments.length);
+      const selected = result.assets.slice(0, available);
+      if (result.assets.length > available) {
+        setError('Vera accepts at most five attachments per message.');
+      }
+      for (const asset of selected) {
+        await addPickedAttachment({
+          uri: asset.uri,
+          filename: asset.name,
+          ...(asset.mimeType === undefined
+            ? {}
+            : { declaredMediaType: asset.mimeType }),
+        });
+      }
+    } catch (cause) {
+      setError(errorMessage(cause, 'Vera could not open the selected file.'));
+    } finally {
+      attachmentPickerActive.current = false;
+      if (mounted.current) setAttaching(false);
+    }
+  }
+
+  function reuseAttachment(reference: AttachmentReference): void {
+    setAttachments((current) => {
+      if (
+        current.length >= MAX_ATTACHMENTS ||
+        current.some((attachment) => attachment.resource?.id === reference.id)
+      ) {
+        return current;
+      }
+      return [
+        ...current,
+        {
+          localId: `attachment-reuse-${reference.id}`,
+          filename: reference.filename,
+          mediaType: reference.mediaType,
+          byteLength: reference.byteLength,
+          status: 'ready',
+          resource: reference,
+          ...(reference.kind === 'image'
+            ? { previewUri: client.attachmentPreviewUrl(reference.id) }
+            : {}),
+        },
+      ];
+    });
   }
 
   const footer = (
@@ -504,6 +757,7 @@ export function AssistantScreen() {
                   void spokenReply.speak(message.id, message.content);
                 }
               }}
+              onReuseAttachment={reuseAttachment}
               onRefresh={() => void refreshAssistant()}
             />
           </View>
@@ -515,6 +769,20 @@ export function AssistantScreen() {
             draftFromVoice={draftFromVoice}
             voicePhase={voiceInput.phase}
             voiceDurationMs={voiceInput.durationMs}
+            attachments={attachments}
+            attaching={attaching}
+            onAttach={() => void pickAttachments()}
+            onRemoveAttachment={(localId) =>
+              setAttachments((current) =>
+                current.filter((attachment) => attachment.localId !== localId),
+              )
+            }
+            onRetryAttachment={(localId) => {
+              const upload = attachments.find(
+                (attachment) => attachment.localId === localId,
+              );
+              if (upload !== undefined) void uploadAttachment(upload);
+            }}
             onChange={(value) => {
               setDraft(value);
               if (value.trim().length === 0) setDraftFromVoice(false);

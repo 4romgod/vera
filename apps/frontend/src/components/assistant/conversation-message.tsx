@@ -1,5 +1,6 @@
-import { Sparkles, UserRound } from 'lucide-react-native';
-import { Text, View } from 'react-native';
+import { FileText, Sparkles, UserRound } from 'lucide-react-native';
+import { Image } from 'expo-image';
+import { Pressable, Text, View } from 'react-native';
 
 import type {
   ConversationMessageResource,
@@ -20,6 +21,9 @@ export function ConversationMessage(props: {
   task?: TaskResource | null;
   speaking: boolean;
   onSpeak: () => void;
+  onReuseAttachment: (
+    attachment: NonNullable<ConversationMessageResource['attachments']>[number],
+  ) => void;
 }) {
   const owner = props.message.role === 'owner';
   const structured = !owner && hasStructuredResult(props.task);
@@ -108,6 +112,59 @@ export function ConversationMessage(props: {
             >
               {props.message.content}
             </Text>
+          </View>
+        )}
+        {props.message.attachments === undefined ? null : (
+          <View
+            style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}
+          >
+            {props.message.attachments.map((attachment) => (
+              <Pressable
+                key={attachment.id}
+                accessibilityLabel={`Use ${attachment.filename} again`}
+                accessibilityRole="button"
+                onPress={() => props.onReuseAttachment(attachment)}
+                style={({ pressed }) => ({
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 7,
+                  borderWidth: 1,
+                  borderColor: palette.line,
+                  borderRadius: radius.md,
+                  padding: attachment.kind === 'image' ? 5 : 7,
+                  opacity: pressed ? 0.72 : 1,
+                  backgroundColor: palette.surface,
+                })}
+              >
+                {attachment.kind === 'image' ? (
+                  <Image
+                    accessibilityLabel={`Preview of ${attachment.filename}`}
+                    contentFit="cover"
+                    source={props.client.attachmentPreviewUrl(attachment.id)}
+                    style={{
+                      width: 52,
+                      height: 52,
+                      borderRadius: radius.sm,
+                    }}
+                  />
+                ) : (
+                  <FileText color={palette.accent} size={14} />
+                )}
+                <Text
+                  numberOfLines={1}
+                  style={{
+                    maxWidth: 220,
+                    color: palette.textSoft,
+                    fontSize: 12,
+                  }}
+                >
+                  {attachment.filename}
+                </Text>
+                <Text style={{ color: palette.muted, fontSize: 10 }}>
+                  Use again
+                </Text>
+              </Pressable>
+            ))}
           </View>
         )}
       </View>

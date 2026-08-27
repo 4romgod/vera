@@ -65,6 +65,11 @@ export const ConversationView = forwardRef<
     onRefresh: () => void;
     onSuggestion: (prompt: string) => void;
     onSpeak: (message: ConversationMessageResource) => void;
+    onReuseAttachment: (
+      attachment: NonNullable<
+        ConversationMessageResource['attachments']
+      >[number],
+    ) => void;
   }
 >(function ConversationView(props, ref) {
   const webRefresh = useWebPullToRefresh({
@@ -162,6 +167,7 @@ export const ConversationView = forwardRef<
                 : props.taskDetails.get(item.taskId)
             }
             onSpeak={() => props.onSpeak(item)}
+            onReuseAttachment={props.onReuseAttachment}
           />
         )}
         scrollEventThrottle={16}

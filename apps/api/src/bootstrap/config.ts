@@ -12,19 +12,25 @@ const EnvironmentSchema = z.object({
   VERA_MODEL_PROVIDER: z
     .enum(['ollama', 'openai', 'gemini', 'deterministic'])
     .default('ollama'),
+  VERA_VISION_PROVIDER: z
+    .enum(['ollama', 'openai', 'gemini', 'deterministic'])
+    .optional(),
   OLLAMA_BASE_URL: z.url().default('http://127.0.0.1:11434'),
   OLLAMA_MODEL: z.string().min(1).default('gemma4-12b-64k:latest'),
+  OLLAMA_VISION_MODEL: z.string().min(1).default('qwen3-vl:8b'),
   OLLAMA_THINK: z
     .enum(['false', 'true', 'low', 'medium', 'high'])
     .default('false'),
   OPENAI_BASE_URL: z.url().default('https://api.openai.com/v1'),
   OPENAI_API_KEY: z.string().trim().min(1).optional(),
   OPENAI_MODEL: z.string().trim().min(1).default('gpt-5-mini'),
+  OPENAI_VISION_MODEL: z.string().trim().min(1).default('gpt-5-mini'),
   GEMINI_BASE_URL: z
     .url()
     .default('https://generativelanguage.googleapis.com/v1beta'),
   GEMINI_API_KEY: z.string().trim().min(1).optional(),
   GEMINI_MODEL: z.string().trim().min(1).default('gemini-2.5-flash'),
+  GEMINI_VISION_MODEL: z.string().trim().min(1).default('gemini-2.5-flash'),
   MODEL_TIMEOUT_MS: z.coerce.number().int().min(1_000).default(120_000),
   MODEL_READINESS_TIMEOUT_MS: z.coerce.number().int().min(250).default(3_000),
   MODEL_MAX_OUTPUT_TOKENS: z.coerce
@@ -117,6 +123,7 @@ export type AppConfig = {
   host: string;
   port: number;
   model: ModelConfig;
+  vision?: ModelConfig;
   conversationContext: {
     maxMessages: number;
     maxCharacters: number;
@@ -262,6 +269,50 @@ function createModelConfig(
   }
 }
 
+function createVisionModelConfig(
+  parsed: z.infer<typeof EnvironmentSchema>,
+): ModelConfig {
+  const provider = parsed.VERA_VISION_PROVIDER ?? parsed.VERA_MODEL_PROVIDER;
+  const shared = {
+    timeoutMs: parsed.MODEL_TIMEOUT_MS,
+    readinessTimeoutMs: parsed.MODEL_READINESS_TIMEOUT_MS,
+    maxOutputTokens: parsed.MODEL_MAX_OUTPUT_TOKENS,
+  };
+  switch (provider) {
+    case 'deterministic':
+      return { provider: 'deterministic', model: 'deterministic-v1' };
+    case 'ollama':
+      return {
+        provider: 'ollama',
+        baseUrl: normalizeProviderBaseUrl('ollama', parsed.OLLAMA_BASE_URL),
+        model: parsed.OLLAMA_VISION_MODEL,
+        think:
+          parsed.OLLAMA_THINK === 'false'
+            ? false
+            : parsed.OLLAMA_THINK === 'true'
+              ? true
+              : parsed.OLLAMA_THINK,
+        ...shared,
+      };
+    case 'openai':
+      return {
+        provider: 'openai',
+        baseUrl: normalizeProviderBaseUrl('openai', parsed.OPENAI_BASE_URL),
+        apiKey: requireApiKey('openai', parsed.OPENAI_API_KEY),
+        model: parsed.OPENAI_VISION_MODEL,
+        ...shared,
+      };
+    case 'gemini':
+      return {
+        provider: 'gemini',
+        baseUrl: normalizeProviderBaseUrl('gemini', parsed.GEMINI_BASE_URL),
+        apiKey: requireApiKey('gemini', parsed.GEMINI_API_KEY),
+        model: parsed.GEMINI_VISION_MODEL.replace(/^models\//u, ''),
+        ...shared,
+      };
+  }
+}
+
 function createResearchConfig(
   parsed: z.infer<typeof EnvironmentSchema>,
 ): WebResearchAdapterConfig {
@@ -350,6 +401,7 @@ export function loadConfig(
     host: parsed.HOST,
     port: parsed.PORT,
     model: createModelConfig(parsed),
+    vision: createVisionModelConfig(parsed),
     conversationContext: {
       maxMessages: parsed.CONVERSATION_CONTEXT_MAX_MESSAGES,
       maxCharacters: parsed.CONVERSATION_CONTEXT_MAX_CHARACTERS,

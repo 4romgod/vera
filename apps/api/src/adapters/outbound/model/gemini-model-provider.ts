@@ -123,7 +123,20 @@ export class GeminiModelProvider implements ModelProvider {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: input.systemPrompt }] },
-          contents: [{ role: 'user', parts: [{ text: input.message }] }],
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                { text: input.message },
+                ...(input.images ?? []).map((image) => ({
+                  inlineData: {
+                    mimeType: image.mediaType,
+                    data: Buffer.from(image.bytes).toString('base64'),
+                  },
+                })),
+              ],
+            },
+          ],
           generationConfig: {
             temperature: 0,
             maxOutputTokens: this.maxOutputTokens,

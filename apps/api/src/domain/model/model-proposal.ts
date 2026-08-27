@@ -4,6 +4,7 @@ import {
   DevelopmentPlanningProposalArgumentsSchema,
   SoftwareChangeProposalArgumentsSchema,
   WebResearchProposalArgumentsSchema,
+  AttachmentAnalysisArgumentsSchema,
 } from '../capabilities/capability-registry.ts';
 import { PersonalTaskActionArgumentsSchema } from '../personal-tasks/personal-task.ts';
 import { ReminderActionArgumentsSchema } from '../reminders/reminder.ts';
@@ -17,6 +18,7 @@ import {
   PersonalTaskManagementGoalStepSchema,
   PersonalReminderManagementGoalStepSchema,
   MemoryManagementGoalStepSchema,
+  AttachmentAnalysisGoalStepSchema,
 } from '../goals/goal-plan.ts';
 import type { CapabilityReference } from '../capabilities/capability-registry.ts';
 import { AdaptiveGoalPlanSchema } from '../goals/adaptive-goal.ts';
@@ -75,6 +77,19 @@ const WebResearchProposalSchema = z
       version: z.literal(1),
     }),
     arguments: WebResearchProposalArgumentsSchema,
+  })
+  .strict();
+
+const AttachmentAnalysisProposalSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    kind: z.literal('invoke_capability'),
+    decisionSummary: DecisionSummarySchema,
+    capability: CapabilityReferenceSchema.extend({
+      name: z.literal('attachment_analysis'),
+      version: z.literal(1),
+    }),
+    arguments: AttachmentAnalysisArgumentsSchema,
   })
   .strict();
 
@@ -140,6 +155,7 @@ export const ModelProposalSchema = z.union([
   DevelopmentPlanningProposalSchema,
   SoftwareChangeProposalSchema,
   WebResearchProposalSchema,
+  AttachmentAnalysisProposalSchema,
   PersonalTaskManagementProposalSchema,
   PersonalReminderManagementProposalSchema,
   MemoryManagementProposalSchema,
@@ -164,6 +180,10 @@ export function createModelProposalSchema(options: {
   const webResearchEnabled = options.enabledCapabilities.some(
     (capability) =>
       capability.name === 'web_research' && capability.version === 1,
+  );
+  const attachmentAnalysisEnabled = options.enabledCapabilities.some(
+    (capability) =>
+      capability.name === 'attachment_analysis' && capability.version === 1,
   );
   const personalTaskManagementEnabled = options.enabledCapabilities.some(
     (capability) =>
@@ -190,6 +210,7 @@ export function createModelProposalSchema(options: {
       ? [PersonalReminderManagementGoalStepSchema]
       : []),
     ...(memoryManagementEnabled ? [MemoryManagementGoalStepSchema] : []),
+    ...(attachmentAnalysisEnabled ? [AttachmentAnalysisGoalStepSchema] : []),
   ];
   const schemas: z.ZodType[] = [RespondProposalSchema];
   if (developmentPlanningEnabled) {
@@ -197,6 +218,7 @@ export function createModelProposalSchema(options: {
   }
   if (softwareChangeEnabled) schemas.push(SoftwareChangeProposalSchema);
   if (webResearchEnabled) schemas.push(WebResearchProposalSchema);
+  if (attachmentAnalysisEnabled) schemas.push(AttachmentAnalysisProposalSchema);
   if (personalTaskManagementEnabled) {
     schemas.push(PersonalTaskManagementProposalSchema);
   }

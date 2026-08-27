@@ -234,7 +234,7 @@ Examples include:
 - project repositories and documentation;
 - issue trackers;
 - cloud dashboards;
-- uploaded documents;
+- uploaded documents and images;
 - API documentation;
 - indexed reports;
 - capability-provided resources.

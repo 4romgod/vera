@@ -52,6 +52,11 @@ import { registerReminderRoutes } from './routes/reminder-routes.ts';
 import { registerNotificationRoutes } from './routes/notification-routes.ts';
 import { registerMemoryRoutes } from './routes/memory-routes.ts';
 import { registerTranscriptionRoutes } from './routes/transcription-routes.ts';
+import { registerAttachmentRoutes } from './routes/attachment-routes.ts';
+import {
+  AttachmentRequestError,
+  type AttachmentService,
+} from '../../../application/attachments/attachment-service.ts';
 import {
   EvaluateRequestJsonSchema,
   HealthResponseJsonSchema,
@@ -73,6 +78,7 @@ export type BuildAppOptions = {
   notifications?: NotificationService;
   memories?: MemoryService;
   transcriptions?: TranscriptionService;
+  attachments?: AttachmentService;
   changeApplications?: SoftwareChangeApplicationLifecycle & {
     wake(): void;
   };
@@ -308,6 +314,9 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       ...(options.taskLifecycle === undefined
         ? {}
         : { taskLifecycle: options.taskLifecycle }),
+      ...(options.attachments === undefined
+        ? {}
+        : { attachments: options.attachments }),
     });
   }
   if (options.artifacts !== undefined) {
@@ -340,10 +349,19 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   if (options.transcriptions !== undefined) {
     registerTranscriptionRoutes(app, options.transcriptions);
   }
+  if (options.attachments !== undefined) {
+    registerAttachmentRoutes(app, {
+      principalId,
+      attachments: options.attachments,
+    });
+  }
   if (options.taskLifecycle !== undefined) {
     registerTaskRoutes(app, {
       principalId,
       taskLifecycle: options.taskLifecycle,
+      ...(options.attachments === undefined
+        ? {}
+        : { attachments: options.attachments }),
     });
   }
   if (options.changeApplications !== undefined) {
@@ -456,6 +474,22 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       });
       return;
     }
+    if (error instanceof AttachmentRequestError) {
+      const statusCode =
+        error.code === 'attachment_too_large'
+          ? 413
+          : error.code === 'attachment_type_unsupported'
+            ? 415
+            : error.code === 'attachment_not_found'
+              ? 404
+              : error.code === 'attachment_integrity_failure'
+                ? 500
+                : 422;
+      void reply.status(statusCode).send({
+        error: { code: error.code, message: error.message },
+      });
+      return;
+    }
     if (error instanceof SpeechTranscriptionProviderError) {
       request.log.error(
         { err: error, errorCode: error.code },
@@ -480,6 +514,37 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
         error: {
           code: 'audio_type_unsupported',
           message: 'The uploaded audio type is not supported.',
+        },
+      });
+      return;
+    }
+    if (
+      request.url === '/v1/attachments' &&
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      error.code === 'FST_ERR_CTP_INVALID_MEDIA_TYPE'
+    ) {
+      void reply.status(415).send({
+        error: {
+          code: 'attachment_type_unsupported',
+          message:
+            'Attachments must use application/octet-stream transport with an x-vera-media-type header.',
+        },
+      });
+      return;
+    }
+    if (
+      request.url === '/v1/attachments' &&
+      typeof error === 'object' &&
+      error !== null &&
+      'statusCode' in error &&
+      error.statusCode === 413
+    ) {
+      void reply.status(413).send({
+        error: {
+          code: 'attachment_too_large',
+          message: "The attachment exceeds Vera's upload limit.",
         },
       });
       return;

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AttachmentReferenceSchema } from '../attachments/attachment.ts';
 
 export const ConversationMessageSchema = z
   .object({
@@ -8,6 +9,7 @@ export const ConversationMessageSchema = z
     content: z.string().trim().min(1).max(20_000),
     projectId: z.string().startsWith('project_').optional(),
     taskId: z.string().startsWith('task_').optional(),
+    attachments: z.array(AttachmentReferenceSchema).max(5).optional(),
     createdAt: z.iso.datetime(),
   })
   .strict();

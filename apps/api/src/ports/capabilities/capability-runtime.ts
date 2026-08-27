@@ -6,6 +6,7 @@ import type {
   CapabilityReference,
 } from '../../domain/capabilities/capability-registry.ts';
 import type { ProjectContextBundle } from '../../domain/projects/project-context.ts';
+import type { AttachmentReference } from '../../domain/attachments/attachment.ts';
 
 export type CapabilityArtifactDraft =
   | Pick<
@@ -30,6 +31,10 @@ export type CapabilityArtifactDraft =
     >
   | Pick<
       Extract<Artifact, { type: 'memory_result' }>,
+      'type' | 'mediaType' | 'content'
+    >
+  | Pick<
+      Extract<Artifact, { type: 'attachment_analysis' }>,
       'type' | 'mediaType' | 'content'
     >;
 
@@ -57,6 +62,7 @@ export type CapabilityRuntime = {
       project?: { id: string; displayName: string };
       context?: ProjectContextBundle;
       artifacts?: Artifact[];
+      attachments?: AttachmentReference[];
       limits: {
         maxDurationMs: number;
         maxArtifactBytes: number;

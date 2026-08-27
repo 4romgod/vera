@@ -1,4 +1,4 @@
-import { Check, ShieldCheck, X } from 'lucide-react-native';
+import { Check, Paperclip, ShieldCheck, X } from 'lucide-react-native';
 import { Pressable, Text, View } from 'react-native';
 
 import type { TaskResource } from '@vera/client';
@@ -73,6 +73,75 @@ export function ApprovalCard(props: {
           </Text>
         </View>
       </View>
+
+      {props.approval.attachments === undefined ? null : (
+        <View
+          style={{
+            gap: spacing.sm,
+            borderWidth: 1,
+            borderColor: palette.lineSoft,
+            borderRadius: radius.md,
+            padding: spacing.md,
+            backgroundColor: palette.canvas,
+          }}
+        >
+          <Text
+            style={{
+              color: palette.muted,
+              fontSize: 10,
+              fontWeight: '700',
+              letterSpacing: 0.8,
+            }}
+          >
+            EXACT ATTACHMENTS
+          </Text>
+          {props.approval.attachments.map((attachment) => (
+            <View
+              key={attachment.id}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: spacing.sm,
+              }}
+            >
+              <Paperclip color={palette.accent} size={15} />
+              <View style={{ minWidth: 0, flex: 1 }}>
+                <Text
+                  numberOfLines={1}
+                  style={{
+                    color: palette.textSoft,
+                    fontSize: 13,
+                    fontWeight: '600',
+                  }}
+                >
+                  {attachment.filename}
+                </Text>
+                <Text
+                  numberOfLines={1}
+                  style={{ color: palette.faint, fontSize: 10 }}
+                >
+                  {attachment.mediaType} ·{' '}
+                  {String(Math.ceil(attachment.byteLength / 1024))} KB ·{' '}
+                  {attachment.sha256.slice(0, 12)}…
+                </Text>
+              </View>
+            </View>
+          ))}
+          {effects.includes('third_party_disclosure') ? (
+            <Text style={{ color: '#F4C86A', fontSize: 12, lineHeight: 18 }}>
+              Approval sends the selected document text and normalized images to
+              the named third-party model provider.
+            </Text>
+          ) : (
+            <Text
+              style={{ color: palette.muted, fontSize: 12, lineHeight: 18 }}
+            >
+              Selected document text and normalized images stay within your
+              owner-controlled model boundary.
+            </Text>
+          )}
+        </View>
+      )}
 
       <View
         style={{

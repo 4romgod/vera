@@ -16,6 +16,59 @@ export type CapabilityDestination = {
   dataBoundary: 'owner_controlled' | 'third_party';
 };
 
+type AttachmentIdentity = {
+  schemaVersion: 1;
+  id: string;
+  filename: string;
+  byteLength: number;
+  sha256: string;
+  createdAt: string;
+};
+
+export type AttachmentResource = AttachmentIdentity &
+  (
+    | {
+        kind: 'document';
+        mediaType:
+          | 'text/plain'
+          | 'text/markdown'
+          | 'application/json'
+          | 'application/pdf';
+        extraction: {
+          status: 'ready';
+          extractor: 'vera_document_text_v1';
+          totalCharacters: number;
+          sha256: string;
+        };
+      }
+    | {
+        kind: 'image';
+        mediaType:
+          | 'image/jpeg'
+          | 'image/png'
+          | 'image/webp'
+          | 'image/gif'
+          | 'image/heic'
+          | 'image/heif'
+          | 'image/avif'
+          | 'image/tiff';
+        vision: {
+          status: 'ready';
+          processor: 'vera_image_vision_v1';
+          mediaType: 'image/jpeg' | 'image/png';
+          byteLength: number;
+          sha256: string;
+          width: number;
+          height: number;
+        };
+      }
+  );
+
+export type AttachmentReference = Pick<
+  AttachmentResource,
+  'id' | 'kind' | 'filename' | 'mediaType' | 'byteLength' | 'sha256'
+>;
+
 export type ContextManifest = {
   schemaVersion: 1;
   projectId: string;
@@ -67,6 +120,7 @@ export type Approval = {
   contextManifest?: ContextManifest;
   inputArtifacts?: ArtifactReference[];
   decisionEvidence?: ArtifactReference[];
+  attachments?: AttachmentReference[];
   destination?: CapabilityDestination;
   authority?: {
     approval: 'always';
@@ -80,6 +134,7 @@ export type Approval = {
       | 'personal_reminder_data'
       | 'long_term_memory'
       | 'public_web'
+      | 'attachment_content'
     )[];
     sideEffects: (
       | 'third_party_disclosure'
@@ -128,6 +183,10 @@ export type ArtifactReference = ArtifactReferenceIdentity &
     | {
         type: 'memory_result';
         mediaType: 'application/vnd.vera.memory-result+json';
+      }
+    | {
+        type: 'attachment_analysis';
+        mediaType: 'application/vnd.vera.attachment-analysis+json';
       }
   );
 
@@ -305,6 +364,29 @@ export type ResearchReportContent = {
   searchedAt: string;
 };
 
+export type AttachmentAnalysisContent = {
+  schemaVersion: 1;
+  objective: string;
+  summary: string;
+  findings: string[];
+  citations: (
+    | {
+        kind: 'document';
+        attachmentId: string;
+        filename: string;
+        locator: string;
+        excerpt: string;
+      }
+    | { kind: 'image'; attachmentId: string; filename: string }
+  )[];
+  limitations: string[];
+  attachments: Pick<
+    AttachmentReference,
+    'id' | 'kind' | 'filename' | 'mediaType' | 'sha256'
+  >[];
+  analyzedAt: string;
+};
+
 export type TaskResource = {
   schemaVersion: 1;
   taskId: string;
@@ -315,6 +397,7 @@ export type TaskResource = {
   projectId?: string;
   conversationId?: string;
   messageId?: string;
+  attachments?: AttachmentReference[];
   createdAt: string;
   updatedAt: string;
   decision?: unknown;
@@ -362,6 +445,11 @@ export type TaskResource = {
         kind: 'memory_result';
         result?: MemoryResultContent;
         artifact?: Extract<ArtifactReference, { type: 'memory_result' }>;
+      }
+    | {
+        kind: 'attachment_analysis';
+        analysis?: AttachmentAnalysisContent;
+        artifact?: Extract<ArtifactReference, { type: 'attachment_analysis' }>;
       }
     | {
         kind: 'goal_result';
@@ -481,6 +569,7 @@ export type ConversationMessageResource = {
   content: string;
   projectId?: string;
   taskId?: string;
+  attachments?: AttachmentReference[];
   createdAt: string;
 };
 
@@ -530,6 +619,11 @@ export type ArtifactResource = ArtifactResourceIdentity &
         type: 'memory_result';
         mediaType: 'application/vnd.vera.memory-result+json';
         content: MemoryResultContent;
+      }
+    | {
+        type: 'attachment_analysis';
+        mediaType: 'application/vnd.vera.attachment-analysis+json';
+        content: AttachmentAnalysisContent;
       }
   );
 
@@ -763,6 +857,14 @@ export class VeraApiError extends Error {
 }
 
 export type VeraApi = {
+  uploadAttachment(input: {
+    filename: string;
+    mediaType: AttachmentResource['mediaType'];
+    bytes: ArrayBuffer | Blob;
+    signal?: AbortSignal;
+  }): Promise<AttachmentResource>;
+  getAttachment(attachmentId: string): Promise<AttachmentResource>;
+  attachmentPreviewUrl(attachmentId: string): string;
   transcribeAudio(input: {
     audio: SpeechTranscriptionAudio;
     contentType: string;
@@ -814,11 +916,13 @@ export type VeraApi = {
     conversationId: string;
     content: string;
     projectId?: string;
+    attachmentIds?: string[];
     idempotencyKey: string;
   }): Promise<TaskResource>;
   submitTask(input: {
     message: string;
     projectId?: string;
+    attachmentIds?: string[];
     idempotencyKey: string;
   }): Promise<TaskResource>;
   getTask(taskId: string): Promise<TaskResource>;
@@ -934,6 +1038,59 @@ function assertTaskResource(value: unknown): asserts value is TaskResource {
     !runStatuses.includes(value.runStatus)
   ) {
     throw new Error('Vera returned an invalid task resource.');
+  }
+}
+
+function assertAttachmentResource(
+  value: unknown,
+): asserts value is AttachmentResource {
+  const validIdentity =
+    isRecord(value) &&
+    value.schemaVersion === 1 &&
+    typeof value.id === 'string' &&
+    value.id.startsWith('attachment_') &&
+    typeof value.filename === 'string' &&
+    typeof value.byteLength === 'number' &&
+    typeof value.sha256 === 'string' &&
+    typeof value.createdAt === 'string';
+  if (!validIdentity || !isRecord(value)) {
+    throw new Error('Vera returned an invalid attachment resource.');
+  }
+  const validDocument =
+    value.kind === 'document' &&
+    [
+      'text/plain',
+      'text/markdown',
+      'application/json',
+      'application/pdf',
+    ].includes(String(value.mediaType)) &&
+    isRecord(value.extraction) &&
+    value.extraction.status === 'ready' &&
+    value.extraction.extractor === 'vera_document_text_v1' &&
+    typeof value.extraction.totalCharacters === 'number' &&
+    typeof value.extraction.sha256 === 'string';
+  const validImage =
+    value.kind === 'image' &&
+    [
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'image/gif',
+      'image/heic',
+      'image/heif',
+      'image/avif',
+      'image/tiff',
+    ].includes(String(value.mediaType)) &&
+    isRecord(value.vision) &&
+    value.vision.status === 'ready' &&
+    value.vision.processor === 'vera_image_vision_v1' &&
+    ['image/jpeg', 'image/png'].includes(String(value.vision.mediaType)) &&
+    typeof value.vision.byteLength === 'number' &&
+    typeof value.vision.sha256 === 'string' &&
+    typeof value.vision.width === 'number' &&
+    typeof value.vision.height === 'number';
+  if (!validDocument && !validImage) {
+    throw new Error('Vera returned an invalid attachment resource.');
   }
 }
 
@@ -1249,6 +1406,47 @@ export class VeraClient implements VeraApi {
     return catalog;
   }
 
+  public async uploadAttachment(input: {
+    filename: string;
+    mediaType: AttachmentResource['mediaType'];
+    bytes: ArrayBuffer | Blob;
+    signal?: AbortSignal;
+  }): Promise<AttachmentResource> {
+    const response = await this.fetch(`${this.baseUrl}/v1/attachments`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/octet-stream',
+        'x-vera-filename': encodeURIComponent(input.filename),
+        'x-vera-media-type': input.mediaType,
+      },
+      body: input.bytes,
+      ...(input.signal === undefined ? {} : { signal: input.signal }),
+    });
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      body = undefined;
+    }
+    if (!response.ok) throw this.errorFromBody(response.status, body);
+    assertAttachmentResource(body);
+    return body;
+  }
+
+  public async getAttachment(
+    attachmentId: string,
+  ): Promise<AttachmentResource> {
+    const value = await this.request<unknown>(
+      `/v1/attachments/${encodeURIComponent(attachmentId)}`,
+    );
+    assertAttachmentResource(value);
+    return value;
+  }
+
+  public attachmentPreviewUrl(attachmentId: string): string {
+    return `${this.baseUrl}/v1/attachments/${encodeURIComponent(attachmentId)}/preview`;
+  }
+
   public async transcribeAudio(input: {
     audio: SpeechTranscriptionAudio;
     contentType: string;
@@ -1523,6 +1721,7 @@ export class VeraClient implements VeraApi {
     conversationId: string;
     content: string;
     projectId?: string;
+    attachmentIds?: string[];
     idempotencyKey: string;
   }): Promise<TaskResource> {
     return this.taskRequest(
@@ -1535,6 +1734,10 @@ export class VeraClient implements VeraApi {
           ...(input.projectId === undefined
             ? {}
             : { projectId: input.projectId }),
+          ...(input.attachmentIds === undefined ||
+          input.attachmentIds.length === 0
+            ? {}
+            : { attachmentIds: input.attachmentIds }),
         },
       },
     );
@@ -1543,6 +1746,7 @@ export class VeraClient implements VeraApi {
   public submitTask(input: {
     message: string;
     projectId?: string;
+    attachmentIds?: string[];
     idempotencyKey: string;
   }): Promise<TaskResource> {
     return this.taskRequest('/v1/tasks', {
@@ -1553,6 +1757,10 @@ export class VeraClient implements VeraApi {
         ...(input.projectId === undefined
           ? {}
           : { projectId: input.projectId }),
+        ...(input.attachmentIds === undefined ||
+        input.attachmentIds.length === 0
+          ? {}
+          : { attachmentIds: input.attachmentIds }),
       },
     });
   }
