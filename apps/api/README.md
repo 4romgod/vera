@@ -11,6 +11,7 @@ src/
 │   └── outbound/
 │       ├── capabilities/            # Codex/model/deterministic capability implementations
 │       ├── change-applications/     # Managed Git application and publication implementations
+│       ├── development-campaigns/   # Policy-frozen Git/GitHub campaign operations
 │       ├── integrations/            # Provider-neutral owner-service actions
 │       ├── model/                   # Ollama/OpenAI/Gemini/deterministic model implementations
 │       ├── notifications/           # Notification delivery implementations
@@ -23,6 +24,7 @@ src/
 │   ├── artifacts/
 │   ├── capabilities/                # Owner-visible runtime catalog
 │   ├── change-applications/
+│   ├── development-campaigns/       # Durable bounded delivery coordination
 │   ├── conversations/
 │   ├── memories/                    # Governed memory commands, retrieval, and context integrity
 │   ├── model-decisions/

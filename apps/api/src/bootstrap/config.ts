@@ -11,6 +11,10 @@ import {
   MachineCatalogSchema,
   type MachineCatalog,
 } from '../domain/machines/machine.ts';
+import {
+  DevelopmentCampaignCatalogSchema,
+  type DevelopmentCampaignCatalog,
+} from '../domain/development-campaigns/development-campaign.ts';
 
 const EnvironmentSchema = z.object({
   HOST: z.enum(['127.0.0.1', '::1', 'localhost']).default('127.0.0.1'),
@@ -124,6 +128,7 @@ const EnvironmentSchema = z.object({
   REMINDER_POLL_INTERVAL_MS: z.coerce.number().int().min(25).default(500),
   REMINDER_LEASE_MS: z.coerce.number().int().min(1_000).default(30_000),
   VERA_MACHINE_CATALOG_FILE: z.string().trim().min(1).optional(),
+  VERA_DEVELOPMENT_CAMPAIGN_CATALOG_FILE: z.string().trim().min(1).optional(),
 });
 
 function findRepositoryRoot(): string {
@@ -210,6 +215,7 @@ export type AppConfig = {
     leaseMs: number;
   };
   machines?: MachineCatalog;
+  developmentCampaigns?: DevelopmentCampaignCatalog;
 };
 
 function loadMachineCatalog(path: string | undefined): MachineCatalog {
@@ -225,6 +231,30 @@ function loadMachineCatalog(path: string | undefined): MachineCatalog {
     );
   }
   return MachineCatalogSchema.parse(parsed);
+}
+
+function loadDevelopmentCampaignCatalog(
+  path: string | undefined,
+): DevelopmentCampaignCatalog {
+  if (path === undefined) return { schemaVersion: 1, policies: [] };
+  const absolutePath = resolve(repositoryRoot, path);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(absolutePath, 'utf8'));
+  } catch (error) {
+    throw new Error(
+      `Could not read VERA_DEVELOPMENT_CAMPAIGN_CATALOG_FILE at ${absolutePath}.`,
+      { cause: error },
+    );
+  }
+  const catalog = DevelopmentCampaignCatalogSchema.parse(parsed);
+  return {
+    ...catalog,
+    policies: catalog.policies.map((policy) => ({
+      ...policy,
+      projectRoot: resolve(repositoryRoot, policy.projectRoot),
+    })),
+  };
 }
 
 function requireTimeZone(value: string): string {
@@ -511,5 +541,8 @@ export function loadConfig(
       leaseMs: parsed.REMINDER_LEASE_MS,
     },
     machines: loadMachineCatalog(parsed.VERA_MACHINE_CATALOG_FILE),
+    developmentCampaigns: loadDevelopmentCampaignCatalog(
+      parsed.VERA_DEVELOPMENT_CAMPAIGN_CATALOG_FILE,
+    ),
   };
 }

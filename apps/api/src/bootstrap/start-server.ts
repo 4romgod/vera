@@ -123,6 +123,10 @@ app.log.info(
             ({ adapter }) => adapter.kind === 'ssh',
           ).length ?? 0,
       },
+      developmentCampaigns: {
+        configuredPolicies: config.developmentCampaigns?.policies.length ?? 0,
+        enabled: (config.developmentCampaigns?.policies.length ?? 0) > 0,
+      },
       storage: {
         mode: config.storage.mode,
         ...(config.storage.mode === 'persistent'

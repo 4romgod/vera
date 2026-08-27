@@ -313,6 +313,23 @@ instead of rewriting it. The shared client and CLI expose create, review,
 decision, wait, inspect, event, and cancellation paths. See
 [ADR-0029](decisions/0029-publish-approved-software-changes-through-a-separate-durable-lifecycle.md).
 
+### Bounded development campaigns — implemented
+
+Vera can now compose one approved engineering objective across implementation,
+managed staging, independent local gates, exact pull-request publication,
+GitHub check/review observation, merge, and local-base synchronization. The
+operator-owned catalog freezes commands and limits; the coding specialist never
+receives repository credentials or merge authority. MongoDB persists campaign
+attempts and observations, and the existing project lease serializes effects.
+
+Local gate failure may retire the failed attempt and generate a complete
+replacement from the unchanged base within the approved attempt ceiling. The
+prior managed worktree remains evidence and is never reused. Once a pull request exists, CI failure or
+requested changes stops at `review_required`; remote branch repair, autonomous
+roadmap selection, recurring campaigns, and multi-PR programs remain explicit
+future decisions. See
+[ADR-0034](decisions/0034-delegate-bounded-development-campaigns-through-one-owner-approval.md).
+
 ### Deferred calendar integration — explicit backlog
 
 Calendar connection, availability reasoning, event creation, rescheduling, and

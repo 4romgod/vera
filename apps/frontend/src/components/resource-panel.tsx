@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   Bell,
   Brain,
@@ -10,8 +10,11 @@ import {
   X,
   ServerCog,
   Activity,
+  ExternalLink,
+  Rocket,
 } from 'lucide-react-native';
 import {
+  Linking,
   Modal,
   Pressable,
   ScrollView,
@@ -27,18 +30,22 @@ import type {
   PersonalTaskResource,
   ReminderResource,
   MachineCatalogResource,
+  DevelopmentCampaignResource,
+  DevelopmentCampaignPolicyResource,
 } from '@vera/client';
 
 import { IconButton } from '@/components/ui/icon-button';
 import { layout, palette, radius, shadow, spacing } from '@/design/tokens';
 import { humanizeIdentifier } from './assistant/presentation';
+import { isSafeGitHubPullRequestUrl } from './assistant/software-delivery/model';
 
 export type ResourceTab =
   | 'memory'
   | 'tasks'
   | 'reminders'
   | 'notifications'
-  | 'machines';
+  | 'machines'
+  | 'campaigns';
 
 const tabs: { id: ResourceTab; label: string; icon: typeof Brain }[] = [
   { id: 'memory', label: 'Memory', icon: Brain },
@@ -46,6 +53,7 @@ const tabs: { id: ResourceTab; label: string; icon: typeof Brain }[] = [
   { id: 'reminders', label: 'Reminders', icon: CalendarClock },
   { id: 'notifications', label: 'Activity', icon: Bell },
   { id: 'machines', label: 'Machines', icon: ServerCog },
+  { id: 'campaigns', label: 'Campaigns', icon: Rocket },
 ];
 
 export function ResourcePanel(props: {
@@ -57,10 +65,22 @@ export function ResourcePanel(props: {
   reminders: ReminderResource[];
   notifications: NotificationResource[];
   machines: MachineCatalogResource['machines'];
+  campaigns: DevelopmentCampaignResource[];
+  campaignPolicies: DevelopmentCampaignPolicyResource[];
   onTab: (tab: ResourceTab) => void;
   onClose: () => void;
   onMemoryCommand: (command: string) => void;
   onMachineCommand: (command: string) => void;
+  onCreateCampaign: (input: {
+    projectId: string;
+    policyId: string;
+    objective: string;
+  }) => Promise<boolean>;
+  onCampaignDecision: (
+    campaignId: string,
+    decision: 'approved' | 'rejected',
+  ) => Promise<boolean>;
+  onCampaignCancel: (campaignId: string) => Promise<boolean>;
 }) {
   if (!props.open) return null;
   const content = <PanelContent {...props} />;
@@ -96,6 +116,23 @@ function PanelContent(props: Parameters<typeof ResourcePanel>[0]) {
   const insets = useSafeAreaInsets();
   const [editingMemoryId, setEditingMemoryId] = useState<string>();
   const [correction, setCorrection] = useState('');
+  const [campaignPolicyId, setCampaignPolicyId] = useState(
+    props.campaignPolicies[0]?.id ?? '',
+  );
+  const [campaignObjective, setCampaignObjective] = useState('');
+  const [creatingCampaign, setCreatingCampaign] = useState(false);
+  const [campaignActionId, setCampaignActionId] = useState<string>();
+  const campaignPolicy = props.campaignPolicies.find(
+    (policy) => policy.id === campaignPolicyId,
+  );
+  useEffect(() => {
+    if (
+      campaignPolicyId.length === 0 ||
+      !props.campaignPolicies.some((policy) => policy.id === campaignPolicyId)
+    ) {
+      setCampaignPolicyId(props.campaignPolicies[0]?.id ?? '');
+    }
+  }, [campaignPolicyId, props.campaignPolicies]);
   return (
     <View
       style={{
@@ -527,8 +564,264 @@ function PanelContent(props: Parameters<typeof ResourcePanel>[0]) {
               </ResourceCard>
             ))
           : null}
+
+        {props.tab === 'campaigns' ? (
+          <ResourceCard>
+            <Tag label="New governed campaign" />
+            <Text
+              selectable
+              style={{ color: palette.text, fontSize: 17, fontWeight: '700' }}
+            >
+              Delegate one complete delivery cycle
+            </Text>
+            <Text
+              selectable
+              style={{ color: palette.textSoft, lineHeight: 20 }}
+            >
+              Vera will implement, verify, publish, observe CI, and finish only
+              inside the selected operator policy.
+            </Text>
+            <Text selectable style={{ color: palette.muted, fontSize: 11 }}>
+              Operator policy
+            </Text>
+            <View
+              style={{
+                flexDirection: 'row',
+                flexWrap: 'wrap',
+                gap: spacing.sm,
+              }}
+            >
+              {props.campaignPolicies.map((policy) => (
+                <SmallButton
+                  key={`${policy.project.id}:${policy.id}`}
+                  label={`${policy.project.displayName} · ${policy.id}`}
+                  primary={campaignPolicyId === policy.id}
+                  onPress={() => setCampaignPolicyId(policy.id)}
+                />
+              ))}
+            </View>
+            {campaignPolicy === undefined ? (
+              <Text selectable style={{ color: palette.muted, lineHeight: 20 }}>
+                No campaign policy is available for a registered project. Ask
+                the operator to configure the campaign catalog and restart Vera.
+              </Text>
+            ) : (
+              <Text
+                selectable
+                style={{ color: palette.textSoft, lineHeight: 20 }}
+              >
+                {campaignPolicy.baseBranch} · {campaignPolicy.merge.method}{' '}
+                merge ·{' '}
+                {campaignPolicy.qualityGates
+                  .map((gate) => gate.label)
+                  .join(', ')}
+              </Text>
+            )}
+            <TextInput
+              accessibilityLabel="Development campaign objective"
+              maxLength={10_000}
+              multiline
+              onChangeText={setCampaignObjective}
+              placeholder="What should Vera build?"
+              placeholderTextColor={palette.faint}
+              style={[inputStyle, { minHeight: 100, textAlignVertical: 'top' }]}
+              value={campaignObjective}
+            />
+            <SmallButton
+              disabled={
+                creatingCampaign ||
+                campaignPolicy === undefined ||
+                campaignObjective.trim().length === 0
+              }
+              icon={Rocket}
+              label="Prepare campaign approval"
+              primary
+              onPress={() => {
+                if (campaignPolicy === undefined) return;
+                setCreatingCampaign(true);
+                void props
+                  .onCreateCampaign({
+                    projectId: campaignPolicy.project.id,
+                    policyId: campaignPolicy.id,
+                    objective: campaignObjective.trim(),
+                  })
+                  .then((created) => {
+                    if (created) setCampaignObjective('');
+                  })
+                  .finally(() => setCreatingCampaign(false));
+              }}
+            />
+          </ResourceCard>
+        ) : null}
+        {props.tab === 'campaigns' && props.campaigns.length === 0 ? (
+          <Empty
+            icon={Rocket}
+            title="No development campaigns yet"
+            description="Configure an operator policy, then prepare one bounded objective for approval."
+          />
+        ) : null}
+        {props.tab === 'campaigns'
+          ? props.campaigns.map((campaign) => (
+              <CampaignCard
+                campaign={campaign}
+                busy={campaignActionId !== undefined}
+                key={campaign.id}
+                onCancel={() => {
+                  setCampaignActionId(campaign.id);
+                  void props
+                    .onCampaignCancel(campaign.id)
+                    .finally(() => setCampaignActionId(undefined));
+                }}
+                onDecision={(decision) => {
+                  setCampaignActionId(campaign.id);
+                  void props
+                    .onCampaignDecision(campaign.id, decision)
+                    .finally(() => setCampaignActionId(undefined));
+                }}
+              />
+            ))
+          : null}
       </ScrollView>
     </View>
+  );
+}
+
+const inputStyle = {
+  minHeight: 48,
+  borderWidth: 1,
+  borderColor: palette.line,
+  borderRadius: radius.md,
+  paddingHorizontal: spacing.md,
+  paddingVertical: spacing.sm,
+  color: palette.text,
+  backgroundColor: palette.canvas,
+} as const;
+
+function CampaignCard(props: {
+  campaign: DevelopmentCampaignResource;
+  busy: boolean;
+  onDecision: (decision: 'approved' | 'rejected') => void;
+  onCancel: () => void;
+}) {
+  const campaign = props.campaign;
+  const effect = campaign.approval.effect;
+  const cancellable = [
+    'awaiting_approval',
+    'approved',
+    'implementing',
+    'applying',
+    'verifying',
+  ].includes(campaign.status);
+  return (
+    <ResourceCard>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: spacing.sm,
+        }}
+      >
+        <Tag label={campaign.status} />
+        <Text selectable style={{ color: palette.faint, fontSize: 10 }}>
+          {campaign.attempts.length}/{effect.limits.maxAttempts} attempts
+        </Text>
+      </View>
+      <Text
+        selectable
+        style={{ color: palette.text, fontSize: 16, fontWeight: '700' }}
+      >
+        {effect.objective}
+      </Text>
+      <Text selectable style={{ color: palette.textSoft, lineHeight: 20 }}>
+        {effect.repository.owner}/{effect.repository.name} · {effect.baseBranch}{' '}
+        · {effect.merge.method} merge
+      </Text>
+      <Text selectable style={{ color: palette.muted, fontSize: 11 }}>
+        Base: {effect.baseRevision.slice(0, 12)} · Ticket:{' '}
+        {effect.ticket.reference}
+      </Text>
+      <Text selectable style={{ color: palette.muted, fontSize: 11 }}>
+        Gates: {effect.qualityGates.map((gate) => gate.label).join(', ')}
+      </Text>
+      <Text selectable style={{ color: palette.muted, fontSize: 11 }}>
+        Ceiling: {effect.limits.maxChangedFiles} files ·{' '}
+        {effect.limits.maxChangedBytes.toLocaleString()} bytes ·{' '}
+        {effect.limits.maxDurationMinutes} minutes
+      </Text>
+      {campaign.status === 'awaiting_approval' ? (
+        <View style={{ gap: spacing.sm }}>
+          <Text selectable style={{ color: palette.textSoft, lineHeight: 20 }}>
+            Commit: {effect.delivery.commitMessage}
+          </Text>
+          <Text selectable style={{ color: palette.textSoft, lineHeight: 20 }}>
+            Pull request: {effect.delivery.pullRequest.title}
+          </Text>
+          <Text selectable style={{ color: palette.muted, fontSize: 11 }}>
+            Protected: {effect.protectedPathPrefixes.join(', ')}
+          </Text>
+          <Text selectable style={{ color: palette.muted, fontSize: 11 }}>
+            Review approval:{' '}
+            {effect.merge.requireReviewApproval ? 'required' : 'not required'} ·
+            Local base sync:{' '}
+            {effect.merge.synchronizeLocalBase ? 'enabled' : 'disabled'}
+          </Text>
+          <Text selectable style={{ color: palette.muted, fontSize: 11 }}>
+            No direct base push · No force push · No policy mutation
+          </Text>
+        </View>
+      ) : null}
+      {campaign.pullRequest === undefined ? null : (
+        <View style={{ gap: spacing.sm }}>
+          <Text selectable style={{ color: palette.accent, fontSize: 12 }}>
+            Pull request #{campaign.pullRequest.number} ·{' '}
+            {campaign.pullRequest.observation === undefined
+              ? 'waiting for checks'
+              : `${String(campaign.pullRequest.observation.checks.passed)}/${String(campaign.pullRequest.observation.checks.total)} checks passed`}
+          </Text>
+          <SmallButton
+            disabled={!isSafeGitHubPullRequestUrl(campaign.pullRequest.url)}
+            icon={ExternalLink}
+            label="Open pull request"
+            onPress={() => {
+              if (isSafeGitHubPullRequestUrl(campaign.pullRequest?.url ?? '')) {
+                void Linking.openURL(campaign.pullRequest?.url ?? '');
+              }
+            }}
+          />
+        </View>
+      )}
+      {campaign.failure === undefined ? null : (
+        <Text selectable style={{ color: palette.danger, lineHeight: 20 }}>
+          {campaign.failure.message}
+        </Text>
+      )}
+      {campaign.status === 'awaiting_approval' &&
+      campaign.approval.status === 'pending' ? (
+        <View
+          style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}
+        >
+          <SmallButton
+            disabled={props.busy}
+            label="Reject"
+            onPress={() => props.onDecision('rejected')}
+          />
+          <SmallButton
+            disabled={props.busy}
+            icon={Check}
+            label="Approve bounded campaign"
+            primary
+            onPress={() => props.onDecision('approved')}
+          />
+        </View>
+      ) : cancellable ? (
+        <SmallButton
+          disabled={props.busy}
+          label="Cancel campaign"
+          onPress={props.onCancel}
+        />
+      ) : null}
+    </ResourceCard>
   );
 }
 

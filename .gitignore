@@ -10,3 +10,4 @@ apps/frontend/ios/
 node_modules/
 *.log
 config/machines.json
+config/development-campaigns.json

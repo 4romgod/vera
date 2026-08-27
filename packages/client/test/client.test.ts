@@ -811,6 +811,107 @@ void describe('Vera HTTP client', () => {
     assert.equal(polls, 2);
   });
 
+  void it('discovers policies and drives a durable development campaign', async () => {
+    const requests: {
+      url: string;
+      method: string;
+      headers: Headers;
+      body?: string;
+    }[] = [];
+    let polls = 0;
+    const campaign = (
+      status: 'awaiting_approval' | 'implementing' | 'succeeded',
+    ) => ({
+      schemaVersion: 1,
+      version: status === 'succeeded' ? 3 : 1,
+      id: 'campaign_test',
+      status,
+      approval: {
+        reason: 'development_campaign',
+        effect: {},
+      },
+      attempts: [],
+      events: [],
+    });
+    const client = new VeraClient({
+      baseUrl: 'http://vera.test',
+      fetch: (input, init) => {
+        const url =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        const method = init?.method ?? 'GET';
+        requests.push({
+          url,
+          method,
+          headers: new Headers(init?.headers),
+          ...(typeof init?.body === 'string' ? { body: init.body } : {}),
+        });
+        if (url.endsWith('/development-campaign-policies')) {
+          return Promise.resolve(
+            Response.json({
+              schemaVersion: 1,
+              policies: [
+                {
+                  schemaVersion: 1,
+                  id: 'fixture',
+                  project: { id: 'project_test', displayName: 'Test' },
+                  baseBranch: 'main',
+                  qualityGates: [
+                    { id: 'quality', label: 'Quality', timeoutMs: 1_000 },
+                  ],
+                  limits: {},
+                  merge: {},
+                },
+              ],
+            }),
+          );
+        }
+        if (method === 'POST') {
+          return Promise.resolve(
+            Response.json(campaign('awaiting_approval'), { status: 202 }),
+          );
+        }
+        polls += 1;
+        return Promise.resolve(
+          Response.json(campaign(polls === 1 ? 'implementing' : 'succeeded')),
+        );
+      },
+    });
+
+    const policies = await client.listDevelopmentCampaignPolicies();
+    const policy = policies.policies[0];
+    assert.ok(policy);
+    const created = await client.createDevelopmentCampaign({
+      projectId: 'project_test',
+      policyId: policy.id,
+      objective: 'Add status.',
+      ticket: { reference: 'VERA-401', details: 'Add status.' },
+      delivery: {
+        commitMessage: 'feat: add status',
+        pullRequest: { title: 'feat: add status', body: 'Body', draft: false },
+      },
+      idempotencyKey: 'campaign-key',
+    });
+    const completed = await client.waitForDevelopmentCampaign(created.id, {
+      intervalMs: 1,
+    });
+
+    assert.equal(policy.project.id, 'project_test');
+    assert.equal(completed.status, 'succeeded');
+    const creation = requests.find(
+      (request) =>
+        request.method === 'POST' &&
+        request.url.endsWith('/v1/development-campaigns'),
+    );
+    assert.ok(creation);
+    assert.equal(creation.headers.get('idempotency-key'), 'campaign-key');
+    assert.doesNotMatch(creation.body ?? '', /qualityGates|directBasePush/u);
+    assert.equal(polls, 2);
+  });
+
   void it('rediscovers durable software-delivery attempts after a client restart', async () => {
     const requests: string[] = [];
     const client = new VeraClient({

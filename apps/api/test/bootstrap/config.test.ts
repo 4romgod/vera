@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 
 import { loadConfig } from '../../src/bootstrap/config.ts';
@@ -41,6 +43,10 @@ void describe('application configuration', () => {
       adapterId: 'github_gh_cli',
       gitCommand: 'git',
       ghCommand: 'gh',
+    });
+    assert.deepEqual(config.developmentCampaigns, {
+      schemaVersion: 1,
+      policies: [],
     });
   });
 
@@ -324,6 +330,33 @@ void describe('application configuration', () => {
           VERA_MACHINE_CATALOG_FILE: 'config/does-not-exist.json',
         }),
       /Could not read VERA_MACHINE_CATALOG_FILE/u,
+    );
+  });
+
+  void it('loads and resolves the operator-owned development-campaign catalog', () => {
+    const campaigns = loadConfig({
+      VERA_DEVELOPMENT_CAMPAIGN_CATALOG_FILE:
+        'config/development-campaigns.example.json',
+    }).developmentCampaigns;
+
+    assert.ok(campaigns);
+    const policy = campaigns.policies.at(0);
+    assert.ok(policy);
+    const gate = policy.qualityGates.at(0);
+    assert.ok(gate);
+    assert.equal(policy.id, 'vera-supervised-autonomy');
+    const repositoryRoot = resolve(
+      fileURLToPath(new URL('../../../../', import.meta.url)),
+    );
+    assert.equal(policy.projectRoot, repositoryRoot);
+    assert.equal(gate.id, 'install');
+    assert.throws(
+      () =>
+        loadConfig({
+          VERA_DEVELOPMENT_CAMPAIGN_CATALOG_FILE:
+            'config/development-campaigns-does-not-exist.json',
+        }),
+      /Could not read VERA_DEVELOPMENT_CAMPAIGN_CATALOG_FILE/u,
     );
   });
 });

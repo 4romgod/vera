@@ -469,6 +469,34 @@ subprocess output. Cancellation is limited to the period before execution so
 Vera never presents an irreversible remote effect as rolled back. See
 [ADR-0029](decisions/0029-publish-approved-software-changes-through-a-separate-durable-lifecycle.md).
 
+### Delegated development-campaign boundary
+
+A campaign approval delegates a finite outcome, not unrestricted repository
+control. The approved effect freezes one objective, project, base revision,
+specialist destinations, local gates, protected paths, delivery metadata,
+attempt and duration ceilings, GitHub check/review policy, and merge method.
+Models and clients cannot supply gate commands, lower ceilings, remove protected
+paths, enable direct pushes, enable force pushes, or alter policy.
+
+Built-in protected paths cover repository automation, dependency manifests,
+environment files, campaign domain/application/adapter/persistence/HTTP code,
+bootstrap composition, security documentation, and decision records. Operator
+policy may add protection but cannot remove built-ins. A campaign-produced patch
+touching any protected path becomes `review_required` before a gate or remote
+effect runs.
+
+Gate executables and arguments come only from the validated server catalog and
+run without a shell in the exact managed worktree. Their process environment is
+allowlisted; model, database, GitHub, SSH-agent, and unrelated service secrets
+are not inherited. The same component producing code cannot change the
+acceptance commands. This is not a hostile-code sandbox: V1 still relies on the
+trusted Mac Mini account perimeter because a process running as that OS user may
+reach user-readable files. Strong OS isolation is required before campaigns run
+untrusted contributor code or leave the single-owner topology.
+GitHub merge additionally verifies exact head and base identities, check and
+review policy, and clean merge state. See
+[ADR-0034](decisions/0034-delegate-bounded-development-campaigns-through-one-owner-approval.md).
+
 ## Audit and observability
 
 Security-relevant records include:

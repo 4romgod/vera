@@ -937,6 +937,187 @@ export type SoftwareChangePublicationListResource = {
   publications: SoftwareChangePublicationResource[];
 };
 
+export type DevelopmentCampaignStatus =
+  | 'awaiting_approval'
+  | 'approved'
+  | 'implementing'
+  | 'applying'
+  | 'verifying'
+  | 'publishing'
+  | 'observing'
+  | 'merging'
+  | 'synchronizing'
+  | 'succeeded'
+  | 'rejected'
+  | 'failed'
+  | 'review_required'
+  | 'cancelled';
+
+export type DevelopmentCampaignResource = {
+  schemaVersion: 1;
+  version: number;
+  id: string;
+  requestKey: string;
+  principalId: string;
+  status: DevelopmentCampaignStatus;
+  approval: {
+    id: string;
+    status: 'pending' | 'approved' | 'rejected';
+    reason: 'development_campaign';
+    effect: {
+      adapterId: 'local_git_github';
+      policyId: string;
+      project: { id: string; displayName: string };
+      repository: { owner: string; name: string };
+      baseBranch: string;
+      baseRevision: string;
+      objective: string;
+      ticket: { reference: string; details: string };
+      delivery: {
+        commitMessage: string;
+        pullRequest: { title: string; body: string; draft: false };
+      };
+      capabilities: {
+        name: 'development_planning' | 'software_change';
+        version: 1;
+        destination: CapabilityDestination;
+        authority: NonNullable<Approval['authority']>;
+      }[];
+      qualityGates: {
+        id: string;
+        label: string;
+        executable: string;
+        arguments: string[];
+        timeoutMs: number;
+      }[];
+      protectedPathPrefixes: string[];
+      limits: {
+        maxAttempts: number;
+        maxChangedFiles: number;
+        maxChangedBytes: number;
+        maxDurationMinutes: number;
+        minimumRequiredChecks: number;
+      };
+      merge: {
+        method: 'squash' | 'merge' | 'rebase';
+        requireReviewApproval: boolean;
+        synchronizeLocalBase: boolean;
+      };
+      authority: {
+        implementation: 'bounded_capabilities';
+        application: 'exact_generated_patch';
+        verification: 'configured_commands';
+        publication: 'create_one_pull_request';
+        observation: 'github_checks_and_reviews';
+        merge: 'policy_gated_exact_head';
+        directBasePush: false;
+        forcePush: false;
+        policyMutation: false;
+      };
+    };
+    requestedAt: string;
+    decidedAt?: string;
+    decidedBy?: string;
+  };
+  attempts: {
+    number: number;
+    taskId: string;
+    runId: string;
+    artifactId?: string;
+    applicationId?: string;
+    verification?: {
+      status: 'passed' | 'failed';
+      checkedAt: string;
+      gates: {
+        id: string;
+        label: string;
+        status: 'passed' | 'failed';
+        exitCode: number;
+        durationMs: number;
+        output: string;
+      }[];
+    };
+  }[];
+  publicationId?: string;
+  pullRequest?: {
+    number: number;
+    url: string;
+    headRevision: string;
+    observation?: {
+      checkedAt: string;
+      state: 'OPEN' | 'CLOSED' | 'MERGED';
+      headRevision: string;
+      baseRevision: string;
+      checks: {
+        total: number;
+        pending: number;
+        passed: number;
+        failed: number;
+      };
+      reviewDecision:
+        | 'APPROVED'
+        | 'CHANGES_REQUESTED'
+        | 'REVIEW_REQUIRED'
+        | 'NONE';
+      mergeState: string;
+    };
+  };
+  mergeResult?: {
+    mergeRevision: string;
+    baseRevision: string;
+    mergedAt: string;
+  };
+  result?: {
+    pullRequestNumber: number;
+    pullRequestUrl: string;
+    mergeRevision: string;
+    baseRevision: string;
+    attempts: number;
+    completedAt: string;
+  };
+  failure?: { code: string; message: string };
+  events: {
+    schemaVersion: 1;
+    id: string;
+    sequence: number;
+    type: string;
+    occurredAt: string;
+    data: Record<string, unknown>;
+  }[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type DevelopmentCampaignListResource = {
+  schemaVersion: 1;
+  campaigns: DevelopmentCampaignResource[];
+};
+
+export type DevelopmentCampaignPolicyResource = {
+  schemaVersion: 1;
+  id: string;
+  project: { id: string; displayName: string };
+  baseBranch: string;
+  qualityGates: { id: string; label: string; timeoutMs: number }[];
+  limits: {
+    maxAttempts: number;
+    maxChangedFiles: number;
+    maxChangedBytes: number;
+    maxDurationMinutes: number;
+    minimumRequiredChecks: number;
+  };
+  merge: {
+    method: 'squash' | 'merge' | 'rebase';
+    requireReviewApproval: boolean;
+    synchronizeLocalBase: boolean;
+  };
+};
+
+export type DevelopmentCampaignPolicyListResource = {
+  schemaVersion: 1;
+  policies: DevelopmentCampaignPolicyResource[];
+};
+
 export class VeraApiError extends Error {
   public constructor(
     message: string,
@@ -1082,6 +1263,33 @@ export type VeraApi = {
     publicationId: string,
     options?: WaitForSoftwareChangePublicationOptions,
   ): Promise<SoftwareChangePublicationResource>;
+  createDevelopmentCampaign(input: {
+    projectId: string;
+    policyId: string;
+    objective: string;
+    ticket: { reference: string; details: string };
+    delivery: {
+      commitMessage: string;
+      pullRequest: { title: string; body: string; draft: false };
+    };
+    idempotencyKey: string;
+  }): Promise<DevelopmentCampaignResource>;
+  listDevelopmentCampaignPolicies(): Promise<DevelopmentCampaignPolicyListResource>;
+  listDevelopmentCampaigns(): Promise<DevelopmentCampaignListResource>;
+  getDevelopmentCampaign(
+    campaignId: string,
+  ): Promise<DevelopmentCampaignResource>;
+  decideDevelopmentCampaign(input: {
+    campaignId: string;
+    decision: 'approved' | 'rejected';
+  }): Promise<DevelopmentCampaignResource>;
+  cancelDevelopmentCampaign(
+    campaignId: string,
+  ): Promise<DevelopmentCampaignResource>;
+  waitForDevelopmentCampaign(
+    campaignId: string,
+    options?: WaitForDevelopmentCampaignOptions,
+  ): Promise<DevelopmentCampaignResource>;
   waitForRun(runId: string, options?: WaitForRunOptions): Promise<TaskResource>;
 };
 
@@ -1104,6 +1312,14 @@ export type WaitForChangeApplicationOptions = {
 export type WaitForSoftwareChangePublicationOptions = {
   until?: (publication: SoftwareChangePublicationResource) => boolean;
   onUpdate?: (publication: SoftwareChangePublicationResource) => void;
+  intervalMs?: number;
+  timeoutMs?: number;
+  signal?: AbortSignal;
+};
+
+export type WaitForDevelopmentCampaignOptions = {
+  until?: (campaign: DevelopmentCampaignResource) => boolean;
+  onUpdate?: (campaign: DevelopmentCampaignResource) => void;
   intervalMs?: number;
   timeoutMs?: number;
   signal?: AbortSignal;
@@ -1508,6 +1724,83 @@ function assertSoftwareChangePublicationListResource(
   }
   for (const publication of value.publications) {
     assertSoftwareChangePublicationResource(publication);
+  }
+}
+
+function assertDevelopmentCampaignResource(
+  value: unknown,
+): asserts value is DevelopmentCampaignResource {
+  const statuses: readonly string[] = [
+    'awaiting_approval',
+    'approved',
+    'implementing',
+    'applying',
+    'verifying',
+    'publishing',
+    'observing',
+    'merging',
+    'synchronizing',
+    'succeeded',
+    'rejected',
+    'failed',
+    'review_required',
+    'cancelled',
+  ];
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== 1 ||
+    typeof value.id !== 'string' ||
+    !value.id.startsWith('campaign_') ||
+    typeof value.version !== 'number' ||
+    typeof value.status !== 'string' ||
+    !statuses.includes(value.status) ||
+    !isRecord(value.approval) ||
+    !isRecord(value.approval.effect) ||
+    value.approval.reason !== 'development_campaign' ||
+    !Array.isArray(value.attempts) ||
+    !Array.isArray(value.events)
+  ) {
+    throw new Error('Vera returned an invalid development-campaign resource.');
+  }
+}
+
+function assertDevelopmentCampaignListResource(
+  value: unknown,
+): asserts value is DevelopmentCampaignListResource {
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== 1 ||
+    !Array.isArray(value.campaigns)
+  ) {
+    throw new Error('Vera returned an invalid development-campaign list.');
+  }
+  for (const campaign of value.campaigns) {
+    assertDevelopmentCampaignResource(campaign);
+  }
+}
+
+function assertDevelopmentCampaignPolicyListResource(
+  value: unknown,
+): asserts value is DevelopmentCampaignPolicyListResource {
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== 1 ||
+    !Array.isArray(value.policies) ||
+    value.policies.some(
+      (policy) =>
+        !isRecord(policy) ||
+        policy.schemaVersion !== 1 ||
+        typeof policy.id !== 'string' ||
+        !isRecord(policy.project) ||
+        typeof policy.project.id !== 'string' ||
+        !Array.isArray(policy.qualityGates) ||
+        !isRecord(policy.limits) ||
+        !isRecord(policy.merge),
+    )
+  ) {
+    throw new Error(
+      'Vera returned an invalid development-campaign policy list.',
+    );
   }
 }
 
@@ -2193,6 +2486,108 @@ export class VeraClient implements VeraApi {
     }
   }
 
+  public createDevelopmentCampaign(input: {
+    projectId: string;
+    policyId: string;
+    objective: string;
+    ticket: { reference: string; details: string };
+    delivery: {
+      commitMessage: string;
+      pullRequest: { title: string; body: string; draft: false };
+    };
+    idempotencyKey: string;
+  }) {
+    return this.developmentCampaignRequest('/v1/development-campaigns', {
+      method: 'POST',
+      idempotencyKey: input.idempotencyKey,
+      body: {
+        projectId: input.projectId,
+        policyId: input.policyId,
+        objective: input.objective,
+        ticket: input.ticket,
+        delivery: input.delivery,
+      },
+    });
+  }
+
+  public async listDevelopmentCampaignPolicies() {
+    const value: unknown = await this.request(
+      '/v1/development-campaign-policies',
+    );
+    assertDevelopmentCampaignPolicyListResource(value);
+    return value;
+  }
+
+  public async listDevelopmentCampaigns() {
+    const value: unknown = await this.request('/v1/development-campaigns');
+    assertDevelopmentCampaignListResource(value);
+    return value;
+  }
+
+  public getDevelopmentCampaign(campaignId: string) {
+    return this.developmentCampaignRequest(
+      `/v1/development-campaigns/${encodeURIComponent(campaignId)}`,
+    );
+  }
+
+  public decideDevelopmentCampaign(input: {
+    campaignId: string;
+    decision: 'approved' | 'rejected';
+  }) {
+    return this.developmentCampaignRequest(
+      `/v1/development-campaigns/${encodeURIComponent(input.campaignId)}/decision`,
+      { method: 'POST', body: { decision: input.decision } },
+    );
+  }
+
+  public cancelDevelopmentCampaign(campaignId: string) {
+    return this.developmentCampaignRequest(
+      `/v1/development-campaigns/${encodeURIComponent(campaignId)}/cancellation`,
+      { method: 'POST' },
+    );
+  }
+
+  public async waitForDevelopmentCampaign(
+    campaignId: string,
+    options?: WaitForDevelopmentCampaignOptions,
+  ) {
+    const startedAt = Date.now();
+    const timeoutMs = options?.timeoutMs ?? 4 * 60 * 60_000;
+    const intervalMs = options?.intervalMs ?? 5_000;
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      throw new Error('waitForDevelopmentCampaign timeoutMs must be positive.');
+    }
+    if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
+      throw new Error(
+        'waitForDevelopmentCampaign intervalMs must be positive.',
+      );
+    }
+    const terminal = new Set<DevelopmentCampaignStatus>([
+      'succeeded',
+      'rejected',
+      'failed',
+      'review_required',
+      'cancelled',
+    ]);
+    for (;;) {
+      if (Date.now() - startedAt >= timeoutMs) {
+        throw new Error(`Timed out waiting for campaign ${campaignId}.`);
+      }
+      const campaign = await this.getDevelopmentCampaign(campaignId);
+      options?.onUpdate?.(campaign);
+      if (
+        (options?.until ?? ((current) => terminal.has(current.status)))(
+          campaign,
+        )
+      )
+        return campaign;
+      await delay(
+        Math.min(intervalMs, Math.max(1, timeoutMs - (Date.now() - startedAt))),
+        options?.signal,
+      );
+    }
+  }
+
   public async waitForRun(
     runId: string,
     options?: WaitForRunOptions,
@@ -2281,6 +2676,15 @@ export class VeraClient implements VeraApi {
   ): Promise<SoftwareChangePublicationResource> {
     const value: unknown = await this.request(path, options);
     assertSoftwareChangePublicationResource(value);
+    return value;
+  }
+
+  private async developmentCampaignRequest(
+    path: string,
+    options?: RequestOptions,
+  ): Promise<DevelopmentCampaignResource> {
+    const value: unknown = await this.request(path, options);
+    assertDevelopmentCampaignResource(value);
     return value;
   }
 

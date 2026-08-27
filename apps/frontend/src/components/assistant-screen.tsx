@@ -26,6 +26,8 @@ import {
   type ReminderResource,
   type TaskResource,
   type AttachmentReference,
+  type DevelopmentCampaignResource,
+  type DevelopmentCampaignPolicyResource,
 } from '@vera/client';
 
 import { ApprovalCard } from '@/components/approval-card';
@@ -157,6 +159,10 @@ export function AssistantScreen() {
   const [machines, setMachines] = useState<MachineCatalogResource['machines']>(
     [],
   );
+  const [campaigns, setCampaigns] = useState<DevelopmentCampaignResource[]>([]);
+  const [campaignPolicies, setCampaignPolicies] = useState<
+    DevelopmentCampaignPolicyResource[]
+  >([]);
   const [resources, setResources] = useState<{
     open: boolean;
     tab: ResourceTab;
@@ -228,6 +234,8 @@ export function AssistantScreen() {
       reminderPage,
       inbox,
       machineCatalog,
+      campaignPolicyPage,
+      campaignPage,
     ] = await Promise.all([
       client.listConversations(),
       client.listProjects(),
@@ -236,6 +244,8 @@ export function AssistantScreen() {
       client.listReminders(),
       client.listNotifications({ limit: 50 }),
       client.listMachines(),
+      client.listDevelopmentCampaignPolicies(),
+      client.listDevelopmentCampaigns(),
     ]);
     if (!mounted.current) return;
     setConversations(conversationPage.conversations);
@@ -245,14 +255,121 @@ export function AssistantScreen() {
     setReminders(reminderPage.reminders);
     setNotifications([...inbox.notifications].reverse());
     setMachines(machineCatalog.machines);
+    setCampaignPolicies(campaignPolicyPage.policies);
+    setCampaigns(campaignPage.campaigns);
   }, [client]);
 
   const refreshNotifications = useCallback(async () => {
-    const inbox = await client.listNotifications({ limit: 50 });
+    const [inbox, campaignPage] = await Promise.all([
+      client.listNotifications({ limit: 50 }),
+      client.listDevelopmentCampaigns(),
+    ]);
     if (mounted.current) {
       setNotifications([...inbox.notifications].reverse());
+      setCampaigns(campaignPage.campaigns);
     }
   }, [client]);
+
+  const createCampaign = useCallback(
+    async (input: {
+      projectId: string;
+      policyId: string;
+      objective: string;
+    }) => {
+      const idempotencyKey = requestKey();
+      const subject = input.objective.trim().replace(/\s+/gu, ' ');
+      const title = `feat: ${subject}`.slice(0, 256);
+      try {
+        const campaign = await client.createDevelopmentCampaign({
+          ...input,
+          idempotencyKey,
+          ticket: {
+            reference: `CAMPAIGN-${idempotencyKey.slice(-12).toUpperCase()}`,
+            details: input.objective,
+          },
+          delivery: {
+            commitMessage: title,
+            pullRequest: {
+              title,
+              body: [
+                '## Summary',
+                '',
+                input.objective,
+                '',
+                '## Delivery',
+                '',
+                `Governed by Vera development campaign policy \`${input.policyId}\`.`,
+              ].join('\n'),
+              draft: false,
+            },
+          },
+        });
+        if (mounted.current) {
+          setCampaigns((current) => [
+            campaign,
+            ...current.filter((candidate) => candidate.id !== campaign.id),
+          ]);
+          setError(undefined);
+        }
+        return true;
+      } catch (cause) {
+        if (mounted.current) {
+          setError(errorMessage(cause, 'Vera could not prepare the campaign.'));
+        }
+        return false;
+      }
+    },
+    [client],
+  );
+
+  const decideCampaign = useCallback(
+    async (campaignId: string, decision: 'approved' | 'rejected') => {
+      try {
+        const campaign = await client.decideDevelopmentCampaign({
+          campaignId,
+          decision,
+        });
+        if (mounted.current) {
+          setCampaigns((current) =>
+            current.map((candidate) =>
+              candidate.id === campaign.id ? campaign : candidate,
+            ),
+          );
+          setError(undefined);
+        }
+        return true;
+      } catch (cause) {
+        if (mounted.current) {
+          setError(errorMessage(cause, 'Vera could not record that decision.'));
+        }
+        return false;
+      }
+    },
+    [client],
+  );
+
+  const cancelCampaign = useCallback(
+    async (campaignId: string) => {
+      try {
+        const campaign = await client.cancelDevelopmentCampaign(campaignId);
+        if (mounted.current) {
+          setCampaigns((current) =>
+            current.map((candidate) =>
+              candidate.id === campaign.id ? campaign : candidate,
+            ),
+          );
+          setError(undefined);
+        }
+        return true;
+      } catch (cause) {
+        if (mounted.current) {
+          setError(errorMessage(cause, 'Vera could not cancel the campaign.'));
+        }
+        return false;
+      }
+    },
+    [client],
+  );
 
   const refreshAssistant = useCallback(async () => {
     if (refreshInFlight.current) return;
@@ -805,6 +922,8 @@ export function AssistantScreen() {
           compact={compact}
           memories={memories}
           machines={machines}
+          campaigns={campaigns}
+          campaignPolicies={campaignPolicies}
           notifications={notifications}
           open={resources.open}
           reminders={reminders}
@@ -821,6 +940,9 @@ export function AssistantScreen() {
             setResources((current) => ({ ...current, open: false }));
             void send(command);
           }}
+          onCreateCampaign={createCampaign}
+          onCampaignDecision={decideCampaign}
+          onCampaignCancel={cancelCampaign}
           onTab={(tab) => setResources({ open: true, tab })}
         />
 

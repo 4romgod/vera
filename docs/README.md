@@ -62,6 +62,9 @@ pull request without granting the coding specialist repository credentials.
 ADR-0030 supersedes the unreliable device-recognition portion of ADR-0028 with
 owner-controlled recording and an ephemeral provider-neutral transcription
 boundary; review and durable reply playback remain unchanged.
+ADR-0034 composes the exact implementation, application, and publication
+boundaries into one owner-approved, operator-policy-bounded development
+campaign with independent gates and exact-head merge control.
 
 Implementation began on the same date. ADR-0009 accepts the first production
 source layout and model decision boundary. ADR-0010 accepts the durable
@@ -227,6 +230,8 @@ Separately governed software publication is accepted in
 Owner-controlled recording and provider-neutral transcription are accepted in
 [ADR-0030](decisions/0030-transcribe-owner-controlled-recordings-through-a-provider-neutral-boundary.md),
 which supersedes ADR-0028's device-recognition approach.
+Bounded development campaigns are accepted in
+[ADR-0034](decisions/0034-delegate-bounded-development-campaigns-through-one-owner-approval.md).
 
 ## Documentation and implementation cadence
 

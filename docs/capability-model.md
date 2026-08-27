@@ -685,3 +685,11 @@ sequenceDiagram
 Retries reconcile existing effects; they do not update or force remote state
 to make it match. See
 [ADR-0029](decisions/0029-publish-approved-software-changes-through-a-separate-durable-lifecycle.md).
+
+`DevelopmentCampaign` is an application-level composition of these boundaries,
+not another model-visible capability. One owner approval may authorize Vera to
+approve only matching planning/change invocations and their exact downstream
+application and publication effects. The specialist remains replaceable and
+receives no test-policy, GitHub-credential, check-observation, or merge
+authority. See
+[ADR-0034](decisions/0034-delegate-bounded-development-campaigns-through-one-owner-approval.md).

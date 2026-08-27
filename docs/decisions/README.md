@@ -55,6 +55,7 @@ erasing why a choice was made.
 | [0031](0031-store-owner-attachments-and-analyze-them-through-exact-approval.md) | Accepted | Store owner-scoped documents and images durably and disclose bounded derived content only through exact, provider-aware approval. |
 | [0032](0032-compose-attachment-evidence-into-separately-approved-actions.md) | Accepted | Turn attachment evidence into later actions through bounded adaptive goals, explicit evidence classes, and separate approvals. |
 | [0033](0033-govern-machine-operations-through-registered-actions.md) | Accepted | Inspect and control exact registered services through machine-specific approvals, local/SSH adapters, and verified postconditions. |
+| [0034](0034-delegate-bounded-development-campaigns-through-one-owner-approval.md) | Accepted | Carry one owner-approved engineering objective through bounded implementation, verification, publication, checks, merge, and synchronization. |
 
 ADRs 0001–0008 were accepted 24 August 2026 following the owner's review of
 the foundation documentation. ADR-0007 accepted a semantic boundary without
@@ -118,6 +119,10 @@ that the destination will receive.
 ADR-0033 adds the first governed machine operations without introducing a
 general shell: catalogs freeze operator-selected commands, inspection and
 mutation remain separate approvals, and durable artifacts prove postconditions.
+ADR-0034 composes the existing software-delivery lifecycles into one finite,
+operator-policy-bound development campaign. One approval delegates the exact
+objective and envelope; application code retains test, publication, check,
+review, merge, and control-plane authority.
 
 ## ADR rules
 
