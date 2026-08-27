@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "policies": [
+    {
+      "id": "vera-bounded-mission",
+      "campaignPolicyId": "vera-supervised-autonomy",
+      "limits": {
+        "maxCampaigns": 1,
+        "maxDurationMinutes": 240
+      }
+    }
+  ]
+}

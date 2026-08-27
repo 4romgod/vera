@@ -63,6 +63,12 @@ import type {
   DocumentAttachment,
   ImageAttachment,
 } from '../../../domain/attachments/attachment.ts';
+import {
+  MissionManagementResultSchema,
+  MissionProposalArgumentsSchema,
+  type MissionManagementResult,
+  type MissionProposalArguments,
+} from '../../../domain/missions/mission.ts';
 
 function definition(name: string): CapabilityDefinition {
   const value = CapabilityDefinitions.find(
@@ -673,6 +679,72 @@ function personalTaskRegistration(
   };
 }
 
+function missionRegistration(
+  executor: IntegrationActionExecutor<
+    MissionProposalArguments,
+    MissionManagementResult
+  >,
+): CapabilityRuntimeRegistration {
+  const capabilityDefinition = definition('mission_management');
+  const runtime = (): CapabilityRuntime => ({
+    definition: capabilityDefinition,
+    destination: executor.destination,
+    authority: executor.maximumAuthority,
+    authorityFor({ arguments: arguments_ }) {
+      return executor.authorityFor(
+        MissionProposalArgumentsSchema.parse(arguments_),
+      );
+    },
+    checkReadiness: () => executor.checkReadiness(),
+    async execute(invocation, options) {
+      if (
+        invocation.project !== undefined ||
+        invocation.context !== undefined ||
+        invocation.artifacts !== undefined
+      ) {
+        throw new Error(
+          'Mission management must not receive project context or artifacts.',
+        );
+      }
+      const started = Date.now();
+      const result = await executor.execute(
+        {
+          principalId: invocation.principalId,
+          invocationId: invocation.invocationId,
+          startedAt: invocation.startedAt,
+          recovery: invocation.recovery,
+          arguments: MissionProposalArgumentsSchema.parse(invocation.arguments),
+          ...(invocation.source === undefined
+            ? {}
+            : { source: invocation.source }),
+        },
+        options,
+      );
+      return {
+        artifact: {
+          type: 'mission_management_result',
+          mediaType: 'application/vnd.vera.mission-management-result+json',
+          content: MissionManagementResultSchema.parse(result),
+        },
+        model: {
+          provider: 'vera',
+          model: executor.integrationId,
+          durationMs: Date.now() - started,
+        },
+      };
+    },
+  });
+  return {
+    definition: capabilityDefinition,
+    selected: runtime,
+    resolve(destination) {
+      return sameCapabilityDestination(executor.destination, destination)
+        ? runtime()
+        : null;
+    },
+  };
+}
+
 function reminderRegistration(
   executor: IntegrationActionExecutor<ReminderActionArguments, ReminderResult>,
 ): CapabilityRuntimeRegistration {
@@ -1015,6 +1087,10 @@ export function createCapabilityRuntimeRegistry(options: {
   >;
   reminders: IntegrationActionExecutor<ReminderActionArguments, ReminderResult>;
   memories: IntegrationActionExecutor<MemoryActionArguments, MemoryResult>;
+  missions?: IntegrationActionExecutor<
+    MissionProposalArguments,
+    MissionManagementResult
+  >;
   machines?: MachineOperations;
 }): CapabilityRuntimeRegistry {
   const registrations = [
@@ -1028,6 +1104,9 @@ export function createCapabilityRuntimeRegistry(options: {
     personalTaskRegistration(options.personalTasks),
     reminderRegistration(options.reminders),
     memoryRegistration(options.memories),
+    ...(options.missions === undefined
+      ? []
+      : [missionRegistration(options.missions)]),
     ...(options.machines === undefined
       ? []
       : [

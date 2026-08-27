@@ -12,6 +12,7 @@ import {
   MachineDiagnosticSchema,
   MachineServiceActionResultSchema,
 } from '../machines/machine.ts';
+import { MissionManagementResultSchema } from '../missions/mission.ts';
 
 export const ArtifactLineageReferenceSchema = z
   .object({
@@ -27,6 +28,7 @@ export const ArtifactLineageReferenceSchema = z
       'attachment_analysis',
       'machine_diagnostic',
       'machine_service_action_result',
+      'mission_management_result',
     ]),
     mediaType: z.string().min(1),
     sha256: z.string().regex(/^[a-f0-9]{64}$/),
@@ -127,6 +129,13 @@ export const MachineServiceActionResultArtifactSchema =
     content: MachineServiceActionResultSchema,
   }).strict();
 
+export const MissionManagementResultArtifactSchema =
+  ArtifactIdentitySchema.extend({
+    type: z.literal('mission_management_result'),
+    mediaType: z.literal('application/vnd.vera.mission-management-result+json'),
+    content: MissionManagementResultSchema,
+  }).strict();
+
 export const ArtifactSchema = z.discriminatedUnion('type', [
   ImplementationPlanArtifactSchema,
   SoftwareChangeArtifactSchema,
@@ -137,6 +146,7 @@ export const ArtifactSchema = z.discriminatedUnion('type', [
   AttachmentAnalysisArtifactSchema,
   MachineDiagnosticArtifactSchema,
   MachineServiceActionResultArtifactSchema,
+  MissionManagementResultArtifactSchema,
 ]);
 
 const ArtifactReferenceBaseSchema = ArtifactIdentitySchema.pick({
@@ -202,6 +212,12 @@ export const MachineServiceActionResultArtifactReferenceSchema =
     ),
   }).strict();
 
+export const MissionManagementResultArtifactReferenceSchema =
+  ArtifactReferenceBaseSchema.extend({
+    type: z.literal('mission_management_result'),
+    mediaType: z.literal('application/vnd.vera.mission-management-result+json'),
+  }).strict();
+
 export const ArtifactReferenceSchema = z.discriminatedUnion('type', [
   ImplementationPlanArtifactReferenceSchema,
   SoftwareChangeArtifactReferenceSchema,
@@ -212,6 +228,7 @@ export const ArtifactReferenceSchema = z.discriminatedUnion('type', [
   AttachmentAnalysisArtifactReferenceSchema,
   MachineDiagnosticArtifactReferenceSchema,
   MachineServiceActionResultArtifactReferenceSchema,
+  MissionManagementResultArtifactReferenceSchema,
 ]);
 
 export type Artifact = z.infer<typeof ArtifactSchema>;

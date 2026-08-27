@@ -123,6 +123,9 @@ ADR-0034 composes the existing software-delivery lifecycles into one finite,
 operator-policy-bound development campaign. One approval delegates the exact
 objective and envelope; application code retains test, publication, check,
 review, merge, and control-plane authority.
+ADR-0035 adds one assistant-level software mission above campaigns. The model
+may draft one finite outcome, but one owner approval freezes its exact campaign
+and a permanent no-merge boundary before unattended work begins.
 
 ## ADR rules
 

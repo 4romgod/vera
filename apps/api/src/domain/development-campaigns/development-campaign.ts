@@ -29,6 +29,7 @@ const DevelopmentCampaignLimitsSchema = z
 
 const DevelopmentCampaignMergePolicySchema = z
   .object({
+    enabled: z.boolean().default(true),
     method: z.enum(['squash', 'merge', 'rebase']),
     requireReviewApproval: z.boolean(),
     synchronizeLocalBase: z.boolean(),
@@ -163,6 +164,18 @@ const CampaignQualityGateSchema = z
 export const DevelopmentCampaignEffectSchema = z
   .object({
     adapterId: z.literal('local_git_github'),
+    completionMode: z.enum(['policy', 'pull_request_only']).default('policy'),
+    approvalController: z
+      .discriminatedUnion('kind', [
+        z.object({ kind: z.literal('owner') }).strict(),
+        z
+          .object({
+            kind: z.literal('mission'),
+            missionId: z.string().startsWith('mission_'),
+          })
+          .strict(),
+      ])
+      .optional(),
     policyId: SafeIdentifierSchema,
     project: z
       .object({
@@ -215,6 +228,7 @@ export const DevelopmentCampaignEffectSchema = z
       .strict(),
     merge: z
       .object({
+        enabled: z.boolean().default(true),
         method: z.enum(['squash', 'merge', 'rebase']),
         requireReviewApproval: z.boolean(),
         synchronizeLocalBase: z.boolean(),
@@ -227,7 +241,7 @@ export const DevelopmentCampaignEffectSchema = z
         verification: z.literal('configured_commands'),
         publication: z.literal('create_one_pull_request'),
         observation: z.literal('github_checks_and_reviews'),
-        merge: z.literal('policy_gated_exact_head'),
+        merge: z.enum(['prohibited', 'policy_gated_exact_head']),
         directBasePush: z.literal(false),
         forcePush: z.literal(false),
         policyMutation: z.literal(false),
@@ -361,15 +375,30 @@ export const DevelopmentCampaignSchema = z
       .strict()
       .optional(),
     result: z
-      .object({
-        pullRequestNumber: z.number().int().positive(),
-        pullRequestUrl: z.url(),
-        mergeRevision: GitRevisionSchema,
-        baseRevision: GitRevisionSchema,
-        attempts: z.number().int().positive().max(3),
-        completedAt: z.iso.datetime(),
-      })
-      .strict()
+      .union([
+        z
+          .object({
+            outcome: z.literal('pull_request_ready'),
+            pullRequestNumber: z.number().int().positive(),
+            pullRequestUrl: z.url(),
+            headRevision: GitRevisionSchema,
+            baseRevision: GitRevisionSchema,
+            attempts: z.number().int().positive().max(3),
+            completedAt: z.iso.datetime(),
+          })
+          .strict(),
+        z
+          .object({
+            outcome: z.literal('merged').default('merged'),
+            pullRequestNumber: z.number().int().positive(),
+            pullRequestUrl: z.url(),
+            mergeRevision: GitRevisionSchema,
+            baseRevision: GitRevisionSchema,
+            attempts: z.number().int().positive().max(3),
+            completedAt: z.iso.datetime(),
+          })
+          .strict(),
+      ])
       .optional(),
     failure: z
       .object({

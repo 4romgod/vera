@@ -11,6 +11,7 @@ import {
   AttachmentAnalysisArtifactReferenceSchema,
   MachineDiagnosticArtifactReferenceSchema,
   MachineServiceActionResultArtifactReferenceSchema,
+  MissionManagementResultArtifactReferenceSchema,
 } from '../artifacts/artifact.ts';
 import { CapabilityDestinationSchema } from '../capabilities/capability-destination.ts';
 import { ConversationContextBundleSchema } from '../conversations/conversation-context.ts';
@@ -53,6 +54,10 @@ import {
   MachineServiceActionArgumentsSchema,
   MachineServiceActionResultSchema,
 } from '../machines/machine.ts';
+import {
+  MissionManagementResultSchema,
+  MissionProposalArgumentsSchema,
+} from '../missions/mission.ts';
 
 export const TaskStatusSchema = z.enum([
   'active',
@@ -98,6 +103,12 @@ const ApprovalIdentitySchema = z
   .strict();
 
 export const ApprovalSchema = z.union([
+  ApprovalIdentitySchema.extend({
+    capability: z
+      .object({ name: z.literal('mission_management'), version: z.literal(1) })
+      .strict(),
+    proposedArguments: MissionProposalArgumentsSchema,
+  }).strict(),
   ApprovalIdentitySchema.extend({
     capability: z
       .object({ name: z.literal('machine_inspection'), version: z.literal(1) })
@@ -212,6 +223,12 @@ const CapabilityInvocationIdentitySchema = z
 export const CapabilityInvocationSchema = z.union([
   CapabilityInvocationIdentitySchema.extend({
     capability: z
+      .object({ name: z.literal('mission_management'), version: z.literal(1) })
+      .strict(),
+    arguments: MissionProposalArgumentsSchema,
+  }).strict(),
+  CapabilityInvocationIdentitySchema.extend({
+    capability: z
       .object({ name: z.literal('machine_inspection'), version: z.literal(1) })
       .strict(),
     arguments: MachineInspectionArgumentsSchema,
@@ -285,6 +302,13 @@ export const CapabilityInvocationSchema = z.union([
 ]);
 
 export const TaskOutputSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('mission_management_result'),
+      result: MissionManagementResultSchema,
+      artifact: MissionManagementResultArtifactReferenceSchema.optional(),
+    })
+    .strict(),
   z
     .object({
       kind: z.literal('machine_diagnostic'),

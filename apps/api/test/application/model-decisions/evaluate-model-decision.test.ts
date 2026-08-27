@@ -15,6 +15,35 @@ function evaluator(candidate: unknown) {
 }
 
 void describe('model decision boundary', () => {
+  void it('accepts a bounded mission only for the authoritative selected project', async () => {
+    const result = await createEvaluateModelDecision(
+      new FakeModelProvider({
+        schemaVersion: 1,
+        kind: 'invoke_capability',
+        decisionSummary: 'Draft one bounded no-merge mission.',
+        capability: { name: 'mission_management', version: 1 },
+        arguments: {
+          action: 'create',
+          objective: 'Select and deliver one useful Vera improvement.',
+          completionCriteria: 'One verified pull request is ready for review.',
+          project: { name: 'Vera' },
+          delivery: {
+            commitMessage: 'feat: complete bounded mission',
+            pullRequestTitle: 'Complete bounded mission',
+          },
+        },
+      }),
+      () => 'decision_mission',
+      {
+        enabledCapabilities: [{ name: 'mission_management', version: 1 }],
+      },
+    )('Run one mission while I am away.', {
+      selectedProject: { id: 'project_vera', displayName: 'Vera' },
+    });
+
+    assert.equal(result.decision.kind, 'approval_required');
+    assert.equal(result.decision.capability.name, 'mission_management');
+  });
   void it('requires capability arguments to preserve the user-stated scope', async () => {
     const provider = new FakeModelProvider({
       schemaVersion: 1,

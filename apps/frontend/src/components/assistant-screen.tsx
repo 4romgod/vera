@@ -28,6 +28,7 @@ import {
   type AttachmentReference,
   type DevelopmentCampaignResource,
   type DevelopmentCampaignPolicyResource,
+  type MissionResource,
 } from '@vera/client';
 
 import { ApprovalCard } from '@/components/approval-card';
@@ -163,6 +164,7 @@ export function AssistantScreen() {
   const [campaignPolicies, setCampaignPolicies] = useState<
     DevelopmentCampaignPolicyResource[]
   >([]);
+  const [missions, setMissions] = useState<MissionResource[]>([]);
   const [resources, setResources] = useState<{
     open: boolean;
     tab: ResourceTab;
@@ -236,6 +238,7 @@ export function AssistantScreen() {
       machineCatalog,
       campaignPolicyPage,
       campaignPage,
+      missionPage,
     ] = await Promise.all([
       client.listConversations(),
       client.listProjects(),
@@ -246,6 +249,7 @@ export function AssistantScreen() {
       client.listMachines(),
       client.listDevelopmentCampaignPolicies(),
       client.listDevelopmentCampaigns(),
+      client.listMissions(),
     ]);
     if (!mounted.current) return;
     setConversations(conversationPage.conversations);
@@ -257,16 +261,19 @@ export function AssistantScreen() {
     setMachines(machineCatalog.machines);
     setCampaignPolicies(campaignPolicyPage.policies);
     setCampaigns(campaignPage.campaigns);
+    setMissions(missionPage.missions);
   }, [client]);
 
   const refreshNotifications = useCallback(async () => {
-    const [inbox, campaignPage] = await Promise.all([
+    const [inbox, campaignPage, missionPage] = await Promise.all([
       client.listNotifications({ limit: 50 }),
       client.listDevelopmentCampaigns(),
+      client.listMissions(),
     ]);
     if (mounted.current) {
       setNotifications([...inbox.notifications].reverse());
       setCampaigns(campaignPage.campaigns);
+      setMissions(missionPage.missions);
     }
   }, [client]);
 
@@ -364,6 +371,52 @@ export function AssistantScreen() {
       } catch (cause) {
         if (mounted.current) {
           setError(errorMessage(cause, 'Vera could not cancel the campaign.'));
+        }
+        return false;
+      }
+    },
+    [client],
+  );
+
+  const decideMission = useCallback(
+    async (missionId: string, decision: 'approved' | 'rejected') => {
+      try {
+        const mission = await client.decideMission({ missionId, decision });
+        if (mounted.current) {
+          setMissions((current) =>
+            current.map((candidate) =>
+              candidate.id === mission.id ? mission : candidate,
+            ),
+          );
+          setError(undefined);
+        }
+        return true;
+      } catch (cause) {
+        if (mounted.current) {
+          setError(errorMessage(cause, 'Vera could not record that decision.'));
+        }
+        return false;
+      }
+    },
+    [client],
+  );
+
+  const cancelMission = useCallback(
+    async (missionId: string) => {
+      try {
+        const mission = await client.cancelMission(missionId);
+        if (mounted.current) {
+          setMissions((current) =>
+            current.map((candidate) =>
+              candidate.id === mission.id ? mission : candidate,
+            ),
+          );
+          setError(undefined);
+        }
+        return true;
+      } catch (cause) {
+        if (mounted.current) {
+          setError(errorMessage(cause, 'Vera could not cancel the mission.'));
         }
         return false;
       }
@@ -923,6 +976,7 @@ export function AssistantScreen() {
           memories={memories}
           machines={machines}
           campaigns={campaigns}
+          missions={missions}
           campaignPolicies={campaignPolicies}
           notifications={notifications}
           open={resources.open}
@@ -943,6 +997,8 @@ export function AssistantScreen() {
           onCreateCampaign={createCampaign}
           onCampaignDecision={decideCampaign}
           onCampaignCancel={cancelCampaign}
+          onMissionDecision={decideMission}
+          onMissionCancel={cancelMission}
           onTab={(tab) => setResources({ open: true, tab })}
         />
 

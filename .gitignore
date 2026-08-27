@@ -11,3 +11,4 @@ node_modules/
 *.log
 config/machines.json
 config/development-campaigns.json
+config/missions.json

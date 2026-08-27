@@ -36,6 +36,8 @@ export type DevelopmentCampaignOperations = {
     ticket: { reference: string; details: string };
     delivery: DevelopmentCampaignEffect['delivery'];
     capabilities: DevelopmentCampaignEffect['capabilities'];
+    completionMode?: 'policy' | 'pull_request_only';
+    approvalController?: DevelopmentCampaignEffect['approvalController'];
   }): Promise<DevelopmentCampaignEffect>;
   assertProjectBase(input: {
     project: Project;

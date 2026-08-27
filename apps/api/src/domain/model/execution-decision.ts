@@ -16,11 +16,23 @@ import {
   MachineInspectionArgumentsSchema,
   MachineServiceActionArgumentsSchema,
 } from '../machines/machine.ts';
+import { MissionProposalArgumentsSchema } from '../missions/mission.ts';
 
 const ResponseDecisionSchema = z
   .object({
     kind: z.literal('respond'),
     message: z.string(),
+  })
+  .strict();
+
+const MissionManagementApprovalDecisionSchema = z
+  .object({
+    kind: z.literal('approval_required'),
+    reason: z.literal('specialist_capability_invocation'),
+    capability: z
+      .object({ name: z.literal('mission_management'), version: z.literal(1) })
+      .strict(),
+    proposedArguments: MissionProposalArgumentsSchema,
   })
   .strict();
 
@@ -176,6 +188,7 @@ const AdaptiveGoalPlannedDecisionSchema = z
 
 export const ExecutionDecisionSchema = z.union([
   ResponseDecisionSchema,
+  MissionManagementApprovalDecisionSchema,
   DevelopmentPlanningApprovalDecisionSchema,
   SoftwareChangeApprovalDecisionSchema,
   WebResearchApprovalDecisionSchema,

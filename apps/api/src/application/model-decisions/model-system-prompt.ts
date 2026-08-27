@@ -16,6 +16,10 @@ export function buildModelSystemPrompt(
     (capability) =>
       capability.name === 'web_research' && capability.version === 1,
   );
+  const missionManagementEnabled = enabledCapabilities.some(
+    (capability) =>
+      capability.name === 'mission_management' && capability.version === 1,
+  );
   const developmentPlanningEnabled = enabledCapabilities.some(
     (capability) =>
       capability.name === 'development_planning' && capability.version === 1,
@@ -103,6 +107,14 @@ export function buildModelSystemPrompt(
       ? [
           'Use software_change only when the owner explicitly asks to implement, fix, modify, edit, or write project files.',
           'For software_change, extract the authoritative project, objective, and ticket fields. If no ticket reference is supplied, use "untracked".',
+        ]
+      : []),
+    ...(missionManagementEnabled
+      ? [
+          'Use mission_management only when the owner explicitly asks Vera to independently select and deliver one bounded software outcome, such as working while the owner is away and returning a pull request.',
+          'A mission is not a general goal and must not be placed inside execute_goal or pursue_goal. It creates exactly one subordinate campaign, exactly one pull request, never merges, never recurs, and never changes its policy.',
+          'The mission capability only drafts the frozen mission and therefore needs no separate capability approval. The owner still receives one consequential approval containing the exact objective, completion criteria, project, delivery metadata, limits, and no-merge authority before execution begins.',
+          'Use selectedProject.displayName exactly. Preserve the owner objective and explicit completion criteria; if safe completion criteria or delivery metadata cannot be derived without inventing scope, ask a concise clarification instead.',
         ]
       : []),
     'When selectedProject is supplied, it is authoritative. Use its displayName as the proposed project name and do not invent a different project.',

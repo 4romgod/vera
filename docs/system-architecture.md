@@ -916,6 +916,36 @@ selection remains late-bound in the capability runtime; test, merge, and policy
 authority remain deterministic code. See
 [ADR-0034](decisions/0034-delegate-bounded-development-campaigns-through-one-owner-approval.md).
 
+## Bounded mission coordination
+
+Missions add outcome selection without widening campaign execution authority.
+The orchestration capability can write only a draft. The mission aggregate
+then becomes the single consequential approval boundary and embeds the exact
+subordinate campaign effect it will authorize.
+
+```mermaid
+flowchart TB
+    CHAT["Conversation request"] --> MODEL["Provider-neutral orchestration model"]
+    MODEL --> DRAFT["mission_management draft write"]
+    DRAFT --> MISSION["MongoDB mission aggregate"]
+    POLICY["Operator mission + campaign catalogs"] --> MISSION
+    MISSION --> APPROVAL{"Exact owner approval"}
+    APPROVAL --> CAMPAIGN["One pull_request_only campaign"]
+    CAMPAIGN --> PR["Verified non-draft pull request"]
+    PR --> INBOX["Durable Vera notification"]
+    CAMPAIGN -. "merge prohibited" .-> BASE["Shared base branch"]
+```
+
+Mission and campaign workers are separately restart-discoverable. The mission
+worker does not implement software itself; it validates frozen identity,
+delegates only the embedded campaign approval, observes terminal campaign
+state, and projects a mission result. Mission-owned campaigns reject direct
+approval through the campaign boundary, so the mission remains the only
+consequential approval. This preserves the same capability,
+application, publication, GitHub, and project-lease boundaries described
+above. See
+[ADR-0035](decisions/0035-run-bounded-software-missions-that-stop-at-a-pull-request.md).
+
 ## Initial deployment hypothesis
 
 ```mermaid

@@ -232,6 +232,8 @@ Owner-controlled recording and provider-neutral transcription are accepted in
 which supersedes ADR-0028's device-recognition approach.
 Bounded development campaigns are accepted in
 [ADR-0034](decisions/0034-delegate-bounded-development-campaigns-through-one-owner-approval.md).
+Bounded unattended missions that stop at one pull request are accepted in
+[ADR-0035](decisions/0035-run-bounded-software-missions-that-stop-at-a-pull-request.md).
 
 ## Documentation and implementation cadence
 

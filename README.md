@@ -172,6 +172,12 @@ policy-gated merge, and local-base synchronization. The campaign cannot alter
 its own policy or control-plane code, and remote CI/review failure stops for
 owner review. See
 [ADR-0034](docs/decisions/0034-delegate-bounded-development-campaigns-through-one-owner-approval.md).
+Vera can also draft one bounded software mission from conversation, ask for one
+exact owner approval, and run one `pull_request_only` campaign while the owner
+is away. The mission can select one outcome inside configured policy and return
+one verified PR, but it cannot merge, recur, create another campaign, or change
+its own controls. See
+[ADR-0035](docs/decisions/0035-run-bounded-software-missions-that-stop-at-a-pull-request.md).
 The accepted V1 journey, including an exact owner-reviewed third-party Codex
 disclosure and real artifact, was demonstrated on 25 August 2026. Additional
 cloud-brain profiles remain optional conformance targets, not V1 blockers or
@@ -407,7 +413,7 @@ Required CI runs the same compiled journey against ephemeral MongoDB 8.2 and
 Redis 8 service containers in the existing Linux job. CI builds once and calls
 `npm run verify:persistent:compiled`; it does not install Ollama, download model
 weights, or contact Codex or another third-party specialist. The job has a
-five-minute hard limit and superseded runs are cancelled. Real Ollama
+nine-minute hard limit and superseded runs are cancelled. Real Ollama
 conformance and real specialist acceptance remain separate, deliberate checks.
 The persistent gate runs once on the pull request, not again for the resulting
 `main` push; it can also be started manually. The normal deterministic quality
@@ -791,6 +797,21 @@ policy, then approve the complete envelope. Vera may merge only this campaign's
 exact non-draft pull request after the configured local and GitHub evidence is
 green. The example includes `npm ci` because each managed worktree starts
 without shared `node_modules`.
+
+To enable bounded missions on top of that campaign policy:
+
+```bash
+cp config/missions.example.json config/missions.json
+# Make campaignPolicyId match the configured campaign policy.
+VERA_DEVELOPMENT_CAMPAIGN_CATALOG_FILE=config/development-campaigns.json \
+VERA_MISSION_CATALOG_FILE=config/missions.json \
+npm run dev
+```
+
+Select the project in the frontend and ask Vera for one mission with an exact
+outcome and completion criteria. Vera creates the draft locally, then the
+Missions tab presents the single consequential approval. After approval it may
+produce one verified non-draft pull request and notify you; it never merges.
 
 For a multi-turn conversation, use `chat`. The first command creates a
 conversation and returns its ID with Vera's durable reply:

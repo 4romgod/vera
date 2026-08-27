@@ -41,6 +41,7 @@ import {
   publicMachineCatalog,
   type MachineCatalog,
 } from '../../domain/machines/machine.ts';
+import { MissionProposalArgumentsSchema } from '../../domain/missions/mission.ts';
 
 export type EvaluateModelDecision = (
   message: string,
@@ -652,6 +653,23 @@ function decide(
         code: 'invalid_capability_arguments',
         message:
           'The proposed service action is not registered for that machine.',
+      };
+    }
+    return {
+      kind: 'approval_required',
+      reason: 'specialist_capability_invocation',
+      capability: proposal.capability,
+      proposedArguments: arguments_,
+    };
+  }
+  if (proposal.capability.name === 'mission_management') {
+    const arguments_ = MissionProposalArgumentsSchema.parse(proposal.arguments);
+    if (arguments_.project.name !== selectedProject?.displayName) {
+      return {
+        kind: 'rejected',
+        code: 'invalid_capability_arguments',
+        message:
+          'The proposed mission does not preserve the selected project identity.',
       };
     }
     return {

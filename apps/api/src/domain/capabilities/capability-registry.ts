@@ -8,6 +8,7 @@ import {
   MachineInspectionArgumentsSchema,
   MachineServiceActionArgumentsSchema,
 } from '../machines/machine.ts';
+import { MissionProposalArgumentsSchema } from '../missions/mission-proposal.ts';
 export { AttachmentAnalysisArgumentsSchema } from '../attachments/attachment-analysis.ts';
 
 export const DevelopmentPlanningProposalArgumentsSchema = z
@@ -59,7 +60,7 @@ export const CapabilityReferenceSchema = z
 
 export const CapabilityAuthoritySchema = z
   .object({
-    approval: z.literal('always'),
+    approval: z.enum(['always', 'never']),
     projectContext: z.enum(['required', 'none']),
     networkAccess: z.enum([
       'none',
@@ -78,6 +79,7 @@ export const CapabilityAuthoritySchema = z
         'public_web',
         'attachment_content',
         'machine_operational_data',
+        'mission_data',
       ]),
     ),
     sideEffects: z.array(
@@ -88,6 +90,7 @@ export const CapabilityAuthoritySchema = z
         'personal_data_write',
         'scheduled_notification',
         'machine_service_control',
+        'mission_draft_write',
       ]),
     ),
     credentials: z.enum(['none', 'server_managed']),
@@ -111,6 +114,31 @@ export type CapabilityDefinition = {
 };
 
 export const CapabilityDefinitions = [
+  {
+    name: 'mission_management',
+    version: 1,
+    description:
+      'Draft one bounded, owner-approved software mission that may produce one verified pull request and can never merge it.',
+    proposalArgumentsSchema: MissionProposalArgumentsSchema,
+    effect: 'owner_state',
+    artifact: {
+      type: 'mission_management_result',
+      mediaType: 'application/vnd.vera.mission-management-result+json',
+    },
+    acceptedInputArtifacts: [],
+    explicitAdaptiveOutcome: {
+      patterns: [],
+      description: 'Create a bounded supervised mission.',
+    },
+    authority: {
+      approval: 'never',
+      projectContext: 'none',
+      networkAccess: 'none',
+      dataClasses: ['owner_request', 'mission_data'],
+      sideEffects: ['mission_draft_write'],
+      credentials: 'none',
+    },
+  },
   {
     name: 'attachment_analysis',
     version: 1,

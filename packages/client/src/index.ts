@@ -123,7 +123,7 @@ export type Approval = {
   attachments?: AttachmentReference[];
   destination?: CapabilityDestination;
   authority?: {
-    approval: 'always';
+    approval: 'always' | 'never';
     projectContext: 'required' | 'none';
     networkAccess:
       | 'none'
@@ -140,6 +140,7 @@ export type Approval = {
       | 'public_web'
       | 'attachment_content'
       | 'machine_operational_data'
+      | 'mission_data'
     )[];
     sideEffects: (
       | 'third_party_disclosure'
@@ -148,6 +149,7 @@ export type Approval = {
       | 'personal_data_write'
       | 'scheduled_notification'
       | 'machine_service_control'
+      | 'mission_draft_write'
     )[];
     credentials: 'none' | 'server_managed';
     maxWebSearchCalls?: number;
@@ -201,6 +203,10 @@ export type ArtifactReference = ArtifactReferenceIdentity &
     | {
         type: 'machine_service_action_result';
         mediaType: 'application/vnd.vera.machine-service-action-result+json';
+      }
+    | {
+        type: 'mission_management_result';
+        mediaType: 'application/vnd.vera.mission-management-result+json';
       }
   );
 
@@ -279,7 +285,7 @@ export type PersonalTaskResultContent = {
   tasks: PersonalTaskResource[];
 };
 
-export type NotificationResource = {
+export type ReminderNotificationResource = {
   schemaVersion: 1;
   id: string;
   reminderId: string;
@@ -291,6 +297,23 @@ export type NotificationResource = {
   acknowledgedAt?: string;
 };
 
+export type MissionNotificationResource = {
+  schemaVersion: 1;
+  id: string;
+  missionId: string;
+  message: string;
+  deliveredAt: string;
+  status: 'unread' | 'acknowledged';
+  channel: 'vera_inbox';
+  outcome: 'succeeded' | 'review_required' | 'failed' | 'cancelled';
+  pullRequestUrl?: string;
+  acknowledgedAt?: string;
+};
+
+export type NotificationResource =
+  | ReminderNotificationResource
+  | MissionNotificationResource;
+
 export type ReminderResource = {
   schemaVersion: 1;
   id: string;
@@ -300,7 +323,7 @@ export type ReminderResource = {
   status: 'scheduled' | 'delivered' | 'acknowledged' | 'cancelled';
   createdAt: string;
   updatedAt: string;
-  notification?: NotificationResource;
+  notification?: ReminderNotificationResource;
   cancelledAt?: string;
   acknowledgedAt?: string;
 };
@@ -535,6 +558,23 @@ export type TaskResource = {
         >;
       }
     | {
+        kind: 'mission_management_result';
+        result?: {
+          schemaVersion: 1;
+          action: 'create';
+          summary: string;
+          mission: {
+            id: string;
+            status: 'awaiting_approval';
+            objective: string;
+          };
+        };
+        artifact?: Extract<
+          ArtifactReference,
+          { type: 'mission_management_result' }
+        >;
+      }
+    | {
         kind: 'goal_result';
         objective: string;
         summary: string;
@@ -717,6 +757,20 @@ export type ArtifactResource = ArtifactResourceIdentity &
         type: 'machine_service_action_result';
         mediaType: 'application/vnd.vera.machine-service-action-result+json';
         content: MachineServiceActionResultContent;
+      }
+    | {
+        type: 'mission_management_result';
+        mediaType: 'application/vnd.vera.mission-management-result+json';
+        content: {
+          schemaVersion: 1;
+          action: 'create';
+          summary: string;
+          mission: {
+            id: string;
+            status: 'awaiting_approval';
+            objective: string;
+          };
+        };
       }
   );
 
@@ -972,6 +1026,10 @@ export type DevelopmentCampaignResource = {
       baseBranch: string;
       baseRevision: string;
       objective: string;
+      completionMode: 'policy' | 'pull_request_only';
+      approvalController?:
+        | { kind: 'owner' }
+        | { kind: 'mission'; missionId: string };
       ticket: { reference: string; details: string };
       delivery: {
         commitMessage: string;
@@ -999,6 +1057,7 @@ export type DevelopmentCampaignResource = {
         minimumRequiredChecks: number;
       };
       merge: {
+        enabled: boolean;
         method: 'squash' | 'merge' | 'rebase';
         requireReviewApproval: boolean;
         synchronizeLocalBase: boolean;
@@ -1009,7 +1068,7 @@ export type DevelopmentCampaignResource = {
         verification: 'configured_commands';
         publication: 'create_one_pull_request';
         observation: 'github_checks_and_reviews';
-        merge: 'policy_gated_exact_head';
+        merge: 'prohibited' | 'policy_gated_exact_head';
         directBasePush: false;
         forcePush: false;
         policyMutation: false;
@@ -1068,9 +1127,11 @@ export type DevelopmentCampaignResource = {
     mergedAt: string;
   };
   result?: {
+    outcome: 'pull_request_ready' | 'merged';
     pullRequestNumber: number;
     pullRequestUrl: string;
-    mergeRevision: string;
+    mergeRevision?: string;
+    headRevision?: string;
     baseRevision: string;
     attempts: number;
     completedAt: string;
@@ -1086,6 +1147,82 @@ export type DevelopmentCampaignResource = {
   }[];
   createdAt: string;
   updatedAt: string;
+};
+
+export type MissionStatus =
+  | 'awaiting_approval'
+  | 'approved'
+  | 'executing'
+  | 'succeeded'
+  | 'rejected'
+  | 'review_required'
+  | 'failed'
+  | 'cancelled';
+
+export type MissionResource = {
+  schemaVersion: 1;
+  version: number;
+  id: string;
+  requestKey: string;
+  principalId: string;
+  status: MissionStatus;
+  approval: {
+    id: string;
+    status: 'pending' | 'approved' | 'rejected';
+    reason: 'bounded_mission';
+    effect: {
+      policyId: string;
+      objective: string;
+      completionCriteria: string;
+      project: { id: string; displayName: string };
+      limits: { maxCampaigns: 1; maxDurationMinutes: number };
+      campaign: {
+        id: string;
+        approvalId: string;
+        effect: DevelopmentCampaignResource['approval']['effect'];
+      };
+      authority: {
+        selectOneOutcome: true;
+        createDevelopmentCampaigns: 1;
+        createPullRequest: true;
+        mergePullRequest: false;
+        recurringExecution: false;
+        missionPolicyMutation: false;
+      };
+    };
+    requestedAt: string;
+    decidedAt?: string;
+    decidedBy?: string;
+  };
+  result?: {
+    outcome: 'pull_request_ready';
+    campaignId: string;
+    pullRequestNumber: number;
+    pullRequestUrl: string;
+    completedAt: string;
+  };
+  failure?: { code: string; message: string };
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MissionPolicyResource = {
+  schemaVersion: 1;
+  id: string;
+  project: { id: string; displayName: string };
+  campaignPolicyId: string;
+  limits: { maxCampaigns: 1; maxDurationMinutes: number };
+  authority: MissionResource['approval']['effect']['authority'];
+};
+
+export type MissionListResource = {
+  schemaVersion: 1;
+  missions: MissionResource[];
+};
+
+export type MissionPolicyListResource = {
+  schemaVersion: 1;
+  policies: MissionPolicyResource[];
 };
 
 export type DevelopmentCampaignListResource = {
@@ -1107,6 +1244,7 @@ export type DevelopmentCampaignPolicyResource = {
     minimumRequiredChecks: number;
   };
   merge: {
+    enabled: boolean;
     method: 'squash' | 'merge' | 'rebase';
     requireReviewApproval: boolean;
     synchronizeLocalBase: boolean;
@@ -1290,6 +1428,26 @@ export type VeraApi = {
     campaignId: string,
     options?: WaitForDevelopmentCampaignOptions,
   ): Promise<DevelopmentCampaignResource>;
+  listMissionPolicies(): Promise<MissionPolicyListResource>;
+  createMission(input: {
+    projectId: string;
+    policyId: string;
+    objective: string;
+    completionCriteria: string;
+    delivery: { commitMessage: string; pullRequestTitle: string };
+    idempotencyKey: string;
+  }): Promise<MissionResource>;
+  listMissions(): Promise<MissionListResource>;
+  getMission(missionId: string): Promise<MissionResource>;
+  decideMission(input: {
+    missionId: string;
+    decision: 'approved' | 'rejected';
+  }): Promise<MissionResource>;
+  cancelMission(missionId: string): Promise<MissionResource>;
+  waitForMission(
+    missionId: string,
+    options?: WaitForMissionOptions,
+  ): Promise<MissionResource>;
   waitForRun(runId: string, options?: WaitForRunOptions): Promise<TaskResource>;
 };
 
@@ -1320,6 +1478,14 @@ export type WaitForSoftwareChangePublicationOptions = {
 export type WaitForDevelopmentCampaignOptions = {
   until?: (campaign: DevelopmentCampaignResource) => boolean;
   onUpdate?: (campaign: DevelopmentCampaignResource) => void;
+  intervalMs?: number;
+  timeoutMs?: number;
+  signal?: AbortSignal;
+};
+
+export type WaitForMissionOptions = {
+  until?: (mission: MissionResource) => boolean;
+  onUpdate?: (mission: MissionResource) => void;
   intervalMs?: number;
   timeoutMs?: number;
   signal?: AbortSignal;
@@ -1530,14 +1696,24 @@ function assertNotificationResource(
     value.schemaVersion !== 1 ||
     typeof value.id !== 'string' ||
     !value.id.startsWith('notification_') ||
-    typeof value.reminderId !== 'string' ||
-    !value.reminderId.startsWith('reminder_') ||
     typeof value.message !== 'string' ||
-    typeof value.scheduledFor !== 'string' ||
     typeof value.deliveredAt !== 'string' ||
     !['unread', 'acknowledged'].includes(String(value.status)) ||
     value.channel !== 'vera_inbox'
   ) {
+    throw new Error('Vera returned an invalid notification resource.');
+  }
+  const reminder =
+    typeof value.reminderId === 'string' &&
+    value.reminderId.startsWith('reminder_') &&
+    typeof value.scheduledFor === 'string';
+  const mission =
+    typeof value.missionId === 'string' &&
+    value.missionId.startsWith('mission_') &&
+    ['succeeded', 'review_required', 'failed', 'cancelled'].includes(
+      String(value.outcome),
+    );
+  if (!reminder && !mission) {
     throw new Error('Vera returned an invalid notification resource.');
   }
 }
@@ -1795,12 +1971,64 @@ function assertDevelopmentCampaignPolicyListResource(
         typeof policy.project.id !== 'string' ||
         !Array.isArray(policy.qualityGates) ||
         !isRecord(policy.limits) ||
-        !isRecord(policy.merge),
+        !isRecord(policy.merge) ||
+        typeof policy.merge.enabled !== 'boolean',
     )
   ) {
     throw new Error(
       'Vera returned an invalid development-campaign policy list.',
     );
+  }
+}
+
+function assertMissionResource(
+  value: unknown,
+): asserts value is MissionResource {
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== 1 ||
+    typeof value.id !== 'string' ||
+    !value.id.startsWith('mission_') ||
+    typeof value.version !== 'number' ||
+    typeof value.status !== 'string' ||
+    !isRecord(value.approval) ||
+    value.approval.reason !== 'bounded_mission' ||
+    !isRecord(value.approval.effect)
+  ) {
+    throw new Error('Vera returned an invalid mission resource.');
+  }
+}
+
+function assertMissionListResource(
+  value: unknown,
+): asserts value is MissionListResource {
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== 1 ||
+    !Array.isArray(value.missions)
+  ) {
+    throw new Error('Vera returned an invalid mission list.');
+  }
+  for (const mission of value.missions) assertMissionResource(mission);
+}
+
+function assertMissionPolicyListResource(
+  value: unknown,
+): asserts value is MissionPolicyListResource {
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== 1 ||
+    !Array.isArray(value.policies) ||
+    value.policies.some(
+      (policy) =>
+        !isRecord(policy) ||
+        typeof policy.id !== 'string' ||
+        !isRecord(policy.project) ||
+        !isRecord(policy.limits) ||
+        !isRecord(policy.authority),
+    )
+  ) {
+    throw new Error('Vera returned an invalid mission policy list.');
   }
 }
 
@@ -2547,6 +2775,98 @@ export class VeraClient implements VeraApi {
     );
   }
 
+  public async listMissionPolicies() {
+    const value: unknown = await this.request('/v1/mission-policies');
+    assertMissionPolicyListResource(value);
+    return value;
+  }
+
+  public async listMissions() {
+    const value: unknown = await this.request('/v1/missions');
+    assertMissionListResource(value);
+    return value;
+  }
+
+  public createMission(input: {
+    projectId: string;
+    policyId: string;
+    objective: string;
+    completionCriteria: string;
+    delivery: { commitMessage: string; pullRequestTitle: string };
+    idempotencyKey: string;
+  }) {
+    return this.missionRequest('/v1/missions', {
+      method: 'POST',
+      idempotencyKey: input.idempotencyKey,
+      body: {
+        action: 'create',
+        projectId: input.projectId,
+        policyId: input.policyId,
+        objective: input.objective,
+        completionCriteria: input.completionCriteria,
+        delivery: input.delivery,
+      },
+    });
+  }
+
+  public getMission(missionId: string) {
+    return this.missionRequest(`/v1/missions/${encodeURIComponent(missionId)}`);
+  }
+
+  public decideMission(input: {
+    missionId: string;
+    decision: 'approved' | 'rejected';
+  }) {
+    return this.missionRequest(
+      `/v1/missions/${encodeURIComponent(input.missionId)}/decision`,
+      { method: 'POST', body: { decision: input.decision } },
+    );
+  }
+
+  public cancelMission(missionId: string) {
+    return this.missionRequest(
+      `/v1/missions/${encodeURIComponent(missionId)}/cancellation`,
+      { method: 'POST' },
+    );
+  }
+
+  public async waitForMission(
+    missionId: string,
+    options?: WaitForMissionOptions,
+  ) {
+    const startedAt = Date.now();
+    const timeoutMs = options?.timeoutMs ?? 4 * 60 * 60_000;
+    const intervalMs = options?.intervalMs ?? 5_000;
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      throw new Error('waitForMission timeoutMs must be positive.');
+    }
+    if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
+      throw new Error('waitForMission intervalMs must be positive.');
+    }
+    const terminal = new Set<MissionStatus>([
+      'succeeded',
+      'rejected',
+      'review_required',
+      'failed',
+      'cancelled',
+    ]);
+    for (;;) {
+      if (Date.now() - startedAt >= timeoutMs) {
+        throw new Error(`Timed out waiting for mission ${missionId}.`);
+      }
+      const mission = await this.getMission(missionId);
+      options?.onUpdate?.(mission);
+      if (
+        (options?.until ?? ((current) => terminal.has(current.status)))(mission)
+      )
+        return mission;
+      await delay(
+        Math.min(intervalMs, Math.max(1, timeoutMs - (Date.now() - startedAt))),
+        options?.signal,
+      );
+    }
+  }
+
   public async waitForDevelopmentCampaign(
     campaignId: string,
     options?: WaitForDevelopmentCampaignOptions,
@@ -2685,6 +3005,15 @@ export class VeraClient implements VeraApi {
   ): Promise<DevelopmentCampaignResource> {
     const value: unknown = await this.request(path, options);
     assertDevelopmentCampaignResource(value);
+    return value;
+  }
+
+  private async missionRequest(
+    path: string,
+    options?: RequestOptions,
+  ): Promise<MissionResource> {
+    const value: unknown = await this.request(path, options);
+    assertMissionResource(value);
     return value;
   }
 

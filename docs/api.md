@@ -67,6 +67,12 @@ must not be exposed to an untrusted or shared network.
 | `GET /v1/development-campaigns/{campaignId}` | Retrieve frozen authority, attempts, PR observation, and result | `200` |
 | `POST /v1/development-campaigns/{campaignId}/decision` | Approve or reject the complete campaign envelope | `202` |
 | `POST /v1/development-campaigns/{campaignId}/cancellation` | Cancel a campaign before publication begins | `202` |
+| `GET /v1/mission-policies` | List safe bounded-mission policy summaries | `200` |
+| `GET /v1/missions` | List owner-scoped missions | `200` |
+| `POST /v1/missions` | Prepare one exact bounded mission for approval | `202` |
+| `GET /v1/missions/{missionId}` | Retrieve mission authority, campaign identity, progress, and result | `200` |
+| `POST /v1/missions/{missionId}/decision` | Approve or reject the complete mission envelope | `202` |
+| `POST /v1/missions/{missionId}/cancellation` | Cancel a mission while its campaign can still be stopped | `202` |
 | `POST /v1/model-decisions` | Exercise the lower-level model decision boundary | `200` |
 
 The model-decision path is useful for provider and proposal diagnostics. New
@@ -825,6 +831,31 @@ intentionally uses `/absolute/path/to/npm`; the operator replaces it with the
 result of `command -v npm` on the host. Its first gate installs the
 lockfile-defined dependencies in each fresh managed worktree before repository
 checks and build run.
+
+### Bounded missions
+
+A mission is one layer above a campaign: it lets Vera select and carry one
+software outcome to a verified pull request after one exact owner approval. It
+does not grant merge authority. Enable it by copying `config/missions.example.json`
+to ignored `config/missions.json`, ensuring its `campaignPolicyId` exists in the
+development-campaign catalog, and setting `VERA_MISSION_CATALOG_FILE`.
+
+Ordinary conversation is the primary creation path. With a project selected,
+the owner can ask: “Run one bounded mission while I am away: choose one useful
+improvement and return one verified pull request. Do not merge.” Vera first
+creates a durable draft and replies with its mission ID. The Missions tab then
+shows the one approval containing objective, completion criteria, campaign
+effect, delivery metadata, time ceiling, and explicit no-merge/no-recurrence
+authority.
+
+Approval starts the embedded `pull_request_only` campaign. A terminal mission
+is the only approval route for that subordinate campaign; direct campaign
+approval returns a conflict because its frozen approval controller is the
+mission. A terminal mission
+is `succeeded` only when that campaign reports `pull_request_ready`; a merged
+campaign is an integrity conflict. Expiry, failed checks, changed refs, or any
+campaign review boundary becomes `review_required` or `failed` and delivers an
+inbox notification. The owner opens and merges the resulting PR manually.
 
 ## Events
 

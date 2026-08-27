@@ -127,6 +127,10 @@ app.log.info(
         configuredPolicies: config.developmentCampaigns?.policies.length ?? 0,
         enabled: (config.developmentCampaigns?.policies.length ?? 0) > 0,
       },
+      missions: {
+        configuredPolicies: config.missions?.policies.length ?? 0,
+        enabled: (config.missions?.policies.length ?? 0) > 0,
+      },
       storage: {
         mode: config.storage.mode,
         ...(config.storage.mode === 'persistent'

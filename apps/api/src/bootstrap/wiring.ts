@@ -14,6 +14,8 @@ import { InMemorySoftwareChangePublicationStore } from '../adapters/outbound/per
 import { MongoDbSoftwareChangePublicationStore } from '../adapters/outbound/persistence/mongodb/mongodb-software-change-publication-store.ts';
 import { InMemoryDevelopmentCampaignStore } from '../adapters/outbound/persistence/memory/in-memory-development-campaign-store.ts';
 import { MongoDbDevelopmentCampaignStore } from '../adapters/outbound/persistence/mongodb/mongodb-development-campaign-store.ts';
+import { InMemoryMissionStore } from '../adapters/outbound/persistence/memory/in-memory-mission-store.ts';
+import { MongoDbMissionStore } from '../adapters/outbound/persistence/mongodb/mongodb-mission-store.ts';
 import { InMemoryProjectMutationLeaseStore } from '../adapters/outbound/persistence/memory/in-memory-project-mutation-lease-store.ts';
 import { MongoDbProjectMutationLeaseStore } from '../adapters/outbound/persistence/mongodb/mongodb-project-mutation-lease-store.ts';
 import { LocalGitSoftwareChangeApplicationExecutor } from '../adapters/outbound/change-applications/local-git-software-change-application-executor.ts';
@@ -41,6 +43,8 @@ import { createSoftwareChangePublicationLifecycle } from '../application/change-
 import { createSoftwareChangePublicationWorker } from '../application/change-applications/software-change-publication-worker.ts';
 import { createDevelopmentCampaignLifecycle } from '../application/development-campaigns/development-campaign-lifecycle.ts';
 import { createDevelopmentCampaignWorker } from '../application/development-campaigns/development-campaign-worker.ts';
+import { createMissionLifecycle } from '../application/missions/mission-lifecycle.ts';
+import { createMissionWorker } from '../application/missions/mission-worker.ts';
 import { createCapabilityService } from '../application/capabilities/capability-service.ts';
 import type { AppConfig } from './config.ts';
 import { DefaultRunBudget } from '../domain/tasks/run-budget.ts';
@@ -53,6 +57,7 @@ import type { WorkLeaseStore } from '../ports/persistence/work-lease-store.ts';
 import type { ChangeApplicationStore } from '../ports/persistence/change-application-store.ts';
 import type { SoftwareChangePublicationStore } from '../ports/persistence/software-change-publication-store.ts';
 import type { DevelopmentCampaignStore } from '../ports/persistence/development-campaign-store.ts';
+import type { MissionStore } from '../ports/persistence/mission-store.ts';
 import type { ProjectMutationLeaseStore } from '../ports/persistence/project-mutation-lease-store.ts';
 import { LocalPersonalTaskActionExecutor } from '../adapters/outbound/integrations/personal-tasks/local-personal-task-action-executor.ts';
 import { createPersonalTaskService } from '../application/personal-tasks/personal-task-service.ts';
@@ -70,6 +75,8 @@ import { MongoDbAttachmentStore } from '../adapters/outbound/persistence/mongodb
 import { createAttachmentService } from '../application/attachments/attachment-service.ts';
 import { ConfiguredMachineOperations } from '../adapters/outbound/machines/configured-machine-operations.ts';
 import { createMachineService } from '../application/machines/machine-service.ts';
+import { LocalMissionActionExecutor } from '../adapters/outbound/integrations/missions/local-mission-action-executor.ts';
+import type { MissionDraftServiceReference } from '../ports/missions/mission-draft-service.ts';
 
 export function createApp(
   config: AppConfig,
@@ -78,6 +85,20 @@ export function createApp(
   if (config.worker.leaseMs <= DefaultRunBudget.limits.maxDurationMs) {
     throw new Error(
       'WORKER_LEASE_MS must exceed the maximum configured run duration.',
+    );
+  }
+  const campaignPolicyIds = new Set(
+    config.developmentCampaigns?.policies.map((policy) => policy.id) ?? [],
+  );
+  const unresolvedMissionPolicies =
+    config.missions?.policies.filter(
+      (policy) => !campaignPolicyIds.has(policy.campaignPolicyId),
+    ) ?? [];
+  if (unresolvedMissionPolicies.length > 0) {
+    throw new Error(
+      `Mission policies reference unavailable development-campaign policies: ${unresolvedMissionPolicies
+        .map((policy) => `${policy.id} -> ${policy.campaignPolicyId}`)
+        .join(', ')}.`,
     );
   }
   const provider = createModelProvider(config.model);
@@ -147,6 +168,14 @@ export function createApp(
           database: config.storage.mongodbDatabase,
           timeoutMs: config.storage.dependencyTimeoutMs,
         });
+  const missionStore: MissionStore =
+    config.storage.mode === 'memory'
+      ? new InMemoryMissionStore()
+      : new MongoDbMissionStore({
+          uri: config.storage.mongodbUri,
+          database: config.storage.mongodbDatabase,
+          timeoutMs: config.storage.dependencyTimeoutMs,
+        });
   const projectMutationLeases: ProjectMutationLeaseStore =
     config.storage.mode === 'memory'
       ? new InMemoryProjectMutationLeaseStore()
@@ -182,6 +211,10 @@ export function createApp(
   const machineOperations = new ConfiguredMachineOperations(
     config.machines ?? { schemaVersion: 1, machines: [] },
   );
+  const missionLifecycleReference: MissionDraftServiceReference = {};
+  const missionExecutor = new LocalMissionActionExecutor(
+    missionLifecycleReference,
+  );
   const capabilities = createCapabilityRuntimeRegistry({
     provider,
     attachmentAnalysisProvider: visionProvider,
@@ -192,11 +225,17 @@ export function createApp(
     personalTasks: personalTaskExecutor,
     reminders: reminderExecutor,
     memories: memoryExecutor,
+    ...((config.missions?.policies.length ?? 0) === 0
+      ? {}
+      : { missions: missionExecutor }),
     machines: machineOperations,
   });
   const personalTaskService = createPersonalTaskService({ store: resources });
   const reminderService = createReminderService({ store: resources });
-  const notificationService = createNotificationService({ store: resources });
+  const notificationService = createNotificationService({
+    store: resources,
+    missions: missionStore,
+  });
   const memoryService = createMemoryService({ store: resources });
   const machineService = createMachineService(machineOperations.catalog);
   const transcriptionProvider = createSpeechTranscriptionProvider(
@@ -360,6 +399,21 @@ export function createApp(
     leaseMs: developmentCampaignLeaseMs,
     observer: lifecycleObserver,
   });
+  const missionLifecycle = createMissionLifecycle({
+    store: missionStore,
+    catalog: config.missions ?? { schemaVersion: 1, policies: [] },
+    campaigns: developmentCampaignLifecycle,
+  });
+  missionLifecycleReference.current = missionLifecycle;
+  const missionWorker = createMissionWorker({
+    store: missionStore,
+    leases,
+    lifecycle: missionLifecycle,
+    concurrency: 1,
+    pollIntervalMs: Math.max(config.worker.pollIntervalMs, 5_000),
+    leaseMs: developmentCampaignLeaseMs,
+    observer: lifecycleObserver,
+  });
   const dispatchedLifecycle: TaskLifecycle = {
     async submit(input) {
       const aggregate = await lifecycle.submit(input);
@@ -409,6 +463,10 @@ export function createApp(
     developmentCampaigns: {
       ...developmentCampaignLifecycle,
       wake: () => developmentCampaignWorker.wake(),
+    },
+    missions: {
+      ...missionLifecycle,
+      wake: () => missionWorker.wake(),
     },
     readinessChecks: [
       {
@@ -479,8 +537,11 @@ export function createApp(
         name: 'development_campaign_worker',
         check: () => developmentCampaignWorker.checkReadiness(),
       },
+      { name: 'mission_store', check: () => missionStore.checkReadiness() },
+      { name: 'mission_worker', check: () => missionWorker.checkReadiness() },
     ],
     close: async () => {
+      await missionWorker.stop();
       await developmentCampaignWorker.stop();
       await worker.stop();
       await reminderWorker.stop();
@@ -494,6 +555,7 @@ export function createApp(
         applicationStore.close(),
         publicationStore.close(),
         campaignStore.close(),
+        missionStore.close(),
         projectMutationLeases.close(),
         attachmentStore.close(),
       ]);
@@ -506,5 +568,6 @@ export function createApp(
   changeApplicationWorker.start();
   softwareChangePublicationWorker.start();
   developmentCampaignWorker.start();
+  missionWorker.start();
   return app;
 }

@@ -224,6 +224,8 @@ export function createTaskLifecycle(options: {
     maximum: CapabilityAuthority,
   ): boolean {
     return (
+      (effective.approval === maximum.approval ||
+        (effective.approval === 'never' && maximum.approval === 'always')) &&
       effective.projectContext === maximum.projectContext &&
       effective.networkAccess === maximum.networkAccess &&
       effective.credentials === maximum.credentials &&
@@ -242,6 +244,7 @@ export function createTaskLifecycle(options: {
     right: CapabilityAuthority,
   ): boolean {
     return (
+      left.approval === right.approval &&
       left.projectContext === right.projectContext &&
       left.networkAccess === right.networkAccess &&
       left.credentials === right.credentials &&
@@ -522,6 +525,16 @@ export function createTaskLifecycle(options: {
       return [
         `${result.action} ${result.service.displayName} on ${result.machine.displayName}: ${result.verified ? 'verified' : 'not verified'}.`,
         `Before: ${result.before.status}. After: ${result.after.status}.`,
+        ...(aggregate.run.output.artifact === undefined
+          ? []
+          : [`Artifact: ${aggregate.run.output.artifact.id}`]),
+      ].join('\n\n');
+    }
+    if (aggregate.run.output?.kind === 'mission_management_result') {
+      const result = aggregate.run.output.result;
+      return [
+        result.summary,
+        `Mission: ${result.mission.id}`,
         ...(aggregate.run.output.artifact === undefined
           ? []
           : [`Artifact: ${aggregate.run.output.artifact.id}`]),
@@ -1071,7 +1084,8 @@ export function createTaskLifecycle(options: {
         }
         candidate.run.approval = ApprovalSchema.parse({
           id: approvalId,
-          status: 'pending',
+          status:
+            selectedAuthority?.approval === 'never' ? 'approved' : 'pending',
           reason: decision.decision.reason,
           capability: decision.decision.capability,
           proposedArguments: decision.decision.proposedArguments,
@@ -1090,6 +1104,9 @@ export function createTaskLifecycle(options: {
             ? { attachments: candidate.task.attachments }
             : {}),
           requestedAt: now,
+          ...(selectedAuthority?.approval === 'never'
+            ? { decidedAt: now, decidedBy: 'vera_policy' }
+            : {}),
         });
         if (approvedContext !== undefined) {
           appendEvent(
@@ -1115,6 +1132,15 @@ export function createTaskLifecycle(options: {
           },
           createId,
         );
+        if (selectedAuthority?.approval === 'never') {
+          appendEvent(
+            candidate,
+            'approval_approved',
+            now,
+            { approvalId, decidedBy: 'vera_policy' },
+            createId,
+          );
+        }
         return true;
       },
     );
@@ -2233,18 +2259,31 @@ export function createTaskLifecycle(options: {
                                   byteLength: artifact.byteLength,
                                 },
                               }
-                            : {
-                                kind: 'machine_service_action_result',
-                                result: artifact.content,
-                                artifact: {
-                                  id: artifact.id,
-                                  version: artifact.version,
-                                  type: artifact.type,
-                                  mediaType: artifact.mediaType,
-                                  sha256: artifact.sha256,
-                                  byteLength: artifact.byteLength,
-                                },
-                              };
+                            : artifact.type === 'machine_service_action_result'
+                              ? {
+                                  kind: 'machine_service_action_result',
+                                  result: artifact.content,
+                                  artifact: {
+                                    id: artifact.id,
+                                    version: artifact.version,
+                                    type: artifact.type,
+                                    mediaType: artifact.mediaType,
+                                    sha256: artifact.sha256,
+                                    byteLength: artifact.byteLength,
+                                  },
+                                }
+                              : {
+                                  kind: 'mission_management_result',
+                                  result: artifact.content,
+                                  artifact: {
+                                    id: artifact.id,
+                                    version: artifact.version,
+                                    type: artifact.type,
+                                    mediaType: artifact.mediaType,
+                                    sha256: artifact.sha256,
+                                    byteLength: artifact.byteLength,
+                                  },
+                                };
           appendEvent(candidate, 'run_succeeded', completedAt, {}, createId);
           return true;
         },

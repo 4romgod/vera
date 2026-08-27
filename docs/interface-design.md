@@ -160,6 +160,25 @@ owner sees policy and effect before granting authority.
 - Refresh and periodic inbox refresh rediscover campaigns from the API. The
   frontend is a projection, never campaign execution authority.
 
+## Bounded missions
+
+The Missions tab is the owner control surface for unattended software work.
+Conversation creates the draft; the tab makes the consequential decision
+legible.
+
+- The approval card shows the objective, completion criteria, project, commit
+  and pull-request metadata, one-campaign ceiling, duration, and “no merge” in
+  plain language.
+- “Approve mission” means Vera may produce exactly one pull request. It never
+  means recurring work, multiple outcomes, policy edits, or merge.
+- Active cards show durable mission state while the embedded campaign remains
+  inspectable in Campaigns for technical evidence.
+- Terminal success presents the canonical GitHub pull-request action. Review
+  boundaries and failures explain why Vera stopped instead of implying hidden
+  retries.
+- Refresh and process restart rediscover missions and their notifications from
+  the API; the frontend never progresses a mission itself.
+
 ## Accessibility and quality
 
 - Text and controls must retain readable contrast against every surface.
