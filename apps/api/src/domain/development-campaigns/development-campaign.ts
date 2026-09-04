@@ -129,6 +129,8 @@ export const DevelopmentCampaignStatusSchema = z.enum([
   'verifying',
   'publishing',
   'observing',
+  'repair_awaiting_approval',
+  'repairing',
   'merging',
   'synchronizing',
   'succeeded',
@@ -264,6 +266,23 @@ const GateResultSchema = z
 const CampaignAttemptSchema = z
   .object({
     number: z.number().int().positive().max(3),
+    kind: z
+      .enum(['initial', 'local_replacement', 'pull_request_repair'])
+      .optional(),
+    sourceRevision: GitRevisionSchema.optional(),
+    repairId: z.string().startsWith('repair_').optional(),
+    requestedChange: z
+      .object({
+        objective: z.string().trim().min(1).max(10_000),
+        ticket: z
+          .object({
+            reference: z.string().trim().min(1).max(200),
+            details: z.string().trim().min(1).max(20_000),
+          })
+          .strict(),
+      })
+      .strict()
+      .optional(),
     taskId: z.string().startsWith('task_'),
     runId: z.string().startsWith('run_'),
     artifactId: z.string().startsWith('artifact_').optional(),
@@ -300,6 +319,98 @@ export const PullRequestObservationSchema = z
       'NONE',
     ]),
     mergeState: z.string().min(1).max(100),
+    failedChecks: z
+      .array(
+        z
+          .object({
+            name: z.string().trim().min(1).max(300),
+            status: z.string().trim().min(1).max(100),
+            conclusion: z.string().trim().min(1).max(100),
+            detailsUrl: z.url().optional(),
+            summary: z.string().max(4_000).optional(),
+          })
+          .strict(),
+      )
+      .max(20)
+      .optional(),
+    reviewFeedback: z
+      .array(
+        z
+          .object({
+            kind: z.enum(['review', 'comment', 'inline_comment']),
+            author: z.string().trim().min(1).max(200),
+            body: z.string().trim().min(1).max(4_000),
+            url: z.url().optional(),
+            path: z.string().min(1).max(1_000).optional(),
+            line: z.number().int().positive().optional(),
+          })
+          .strict(),
+      )
+      .max(50)
+      .optional(),
+  })
+  .strict();
+
+export const DevelopmentCampaignRepairSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    id: z.string().startsWith('repair_'),
+    requestKey: z.string().min(1).max(200),
+    status: z.enum(['pending', 'approved', 'rejected', 'applied']),
+    reason: z.literal('pull_request_repair'),
+    effect: z
+      .object({
+        attempt: z.number().int().positive().max(3),
+        sourceRevision: GitRevisionSchema,
+        pullRequest: z
+          .object({ number: z.number().int().positive(), url: z.url() })
+          .strict(),
+        requestedChange: z
+          .object({
+            objective: z.string().trim().min(1).max(10_000),
+            ticket: z
+              .object({
+                reference: z.string().trim().min(1).max(200),
+                details: z.string().trim().min(1).max(20_000),
+              })
+              .strict(),
+          })
+          .strict(),
+        delivery: z
+          .object({
+            commitMessage: z.string().trim().min(1).max(5_000),
+            author: z
+              .object({
+                name: z.string().trim().min(1).max(200),
+                email: z.email().max(320),
+              })
+              .strict(),
+          })
+          .strict(),
+        authority: z
+          .object({
+            context: z.literal('exact_pull_request_head'),
+            application: z.literal('exact_generated_patch'),
+            verification: z.literal('configured_commands'),
+            push: z.literal('fast_forward_existing_pull_request_branch'),
+            forcePush: z.literal(false),
+            merge: z.literal(false),
+          })
+          .strict(),
+      })
+      .strict(),
+    evidence: PullRequestObservationSchema,
+    requestedAt: z.iso.datetime(),
+    decidedAt: z.iso.datetime().optional(),
+    decidedBy: z.string().min(1).optional(),
+    appliedAt: z.iso.datetime().optional(),
+    result: z
+      .object({
+        headRevision: GitRevisionSchema,
+        previousRevision: GitRevisionSchema,
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -323,6 +434,10 @@ export const DevelopmentCampaignEventSchema = z
       'development_campaign_publication_started',
       'development_campaign_pull_request_created',
       'development_campaign_pull_request_observed',
+      'development_campaign_repair_approval_requested',
+      'development_campaign_repair_approval_approved',
+      'development_campaign_repair_approval_rejected',
+      'development_campaign_pull_request_updated',
       'development_campaign_merge_started',
       'development_campaign_merged',
       'development_campaign_synchronized',
@@ -356,6 +471,7 @@ export const DevelopmentCampaignSchema = z
       })
       .strict(),
     attempts: z.array(CampaignAttemptSchema).max(3),
+    repairs: z.array(DevelopmentCampaignRepairSchema).max(3).optional(),
     publicationId: z.string().startsWith('publication_').optional(),
     pullRequest: z
       .object({
@@ -444,4 +560,7 @@ export type DevelopmentCampaignEvent = z.infer<
 >;
 export type PullRequestObservation = z.infer<
   typeof PullRequestObservationSchema
+>;
+export type DevelopmentCampaignRepair = z.infer<
+  typeof DevelopmentCampaignRepairSchema
 >;

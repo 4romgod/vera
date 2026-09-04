@@ -201,6 +201,8 @@ export type DevelopmentCampaignStatus =
   | 'verifying'
   | 'publishing'
   | 'observing'
+  | 'repair_awaiting_approval'
+  | 'repairing'
   | 'merging'
   | 'synchronizing'
   | 'succeeded'
@@ -208,6 +210,36 @@ export type DevelopmentCampaignStatus =
   | 'failed'
   | 'review_required'
   | 'cancelled';
+
+export type PullRequestObservationResource = {
+  checkedAt: string;
+  state: 'OPEN' | 'CLOSED' | 'MERGED';
+  headRevision: string;
+  baseRevision: string;
+  checks: {
+    total: number;
+    pending: number;
+    passed: number;
+    failed: number;
+  };
+  reviewDecision: 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED' | 'NONE';
+  mergeState: string;
+  failedChecks?: {
+    name: string;
+    status: string;
+    conclusion: string;
+    detailsUrl?: string;
+    summary?: string;
+  }[];
+  reviewFeedback?: {
+    kind: 'review' | 'comment' | 'inline_comment';
+    author: string;
+    body: string;
+    url?: string;
+    path?: string;
+    line?: number;
+  }[];
+};
 
 export type DevelopmentCampaignResource = {
   schemaVersion: 1;
@@ -282,6 +314,13 @@ export type DevelopmentCampaignResource = {
   };
   attempts: {
     number: number;
+    kind?: 'initial' | 'local_replacement' | 'pull_request_repair';
+    sourceRevision?: string;
+    repairId?: string;
+    requestedChange?: {
+      objective: string;
+      ticket: { reference: string; details: string };
+    };
     taskId: string;
     runId: string;
     artifactId?: string;
@@ -299,29 +338,46 @@ export type DevelopmentCampaignResource = {
       }[];
     };
   }[];
+  repairs?: {
+    schemaVersion: 1;
+    id: string;
+    requestKey: string;
+    status: 'pending' | 'approved' | 'rejected' | 'applied';
+    reason: 'pull_request_repair';
+    effect: {
+      attempt: number;
+      sourceRevision: string;
+      pullRequest: { number: number; url: string };
+      requestedChange: {
+        objective: string;
+        ticket: { reference: string; details: string };
+      };
+      delivery: {
+        commitMessage: string;
+        author: { name: string; email: string };
+      };
+      authority: {
+        context: 'exact_pull_request_head';
+        application: 'exact_generated_patch';
+        verification: 'configured_commands';
+        push: 'fast_forward_existing_pull_request_branch';
+        forcePush: false;
+        merge: false;
+      };
+    };
+    evidence: PullRequestObservationResource;
+    requestedAt: string;
+    decidedAt?: string;
+    decidedBy?: string;
+    appliedAt?: string;
+    result?: { headRevision: string; previousRevision: string };
+  }[];
   publicationId?: string;
   pullRequest?: {
     number: number;
     url: string;
     headRevision: string;
-    observation?: {
-      checkedAt: string;
-      state: 'OPEN' | 'CLOSED' | 'MERGED';
-      headRevision: string;
-      baseRevision: string;
-      checks: {
-        total: number;
-        pending: number;
-        passed: number;
-        failed: number;
-      };
-      reviewDecision:
-        | 'APPROVED'
-        | 'CHANGES_REQUESTED'
-        | 'REVIEW_REQUIRED'
-        | 'NONE';
-      mergeState: string;
-    };
+    observation?: PullRequestObservationResource;
   };
   mergeResult?: {
     mergeRevision: string;

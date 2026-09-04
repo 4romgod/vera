@@ -246,6 +246,9 @@ is accepted in
 The user-scoped Mac Mini production installation, static frontend host, daily
 MongoDB backup, and verified update boundary are accepted in
 [ADR-0040](decisions/0040-install-vera-as-a-user-scoped-mac-mini-service.md).
+Separately approved, exact-head repairs of review-required campaign pull
+requests are accepted in
+[ADR-0041](decisions/0041-repair-review-required-pull-requests-through-exact-approved-fast-forwards.md).
 
 ## Documentation and implementation cadence
 

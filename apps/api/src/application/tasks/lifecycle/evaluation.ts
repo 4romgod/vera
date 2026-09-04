@@ -274,6 +274,9 @@ export function createEvaluationOperations(
       try {
         context = await options.contextAssembler.assemble({
           project: selectedProject,
+          ...(budgetClaim.aggregate.task.projectRevision === undefined
+            ? {}
+            : { revision: budgetClaim.aggregate.task.projectRevision }),
           objective: firstProjectStep.arguments.objective,
           ticket: firstProjectStep.arguments.ticket,
           limits: {
@@ -283,6 +286,15 @@ export function createEvaluationOperations(
           },
         });
         assertProjectContextIntegrity(context, selectedProject.id);
+        if (
+          budgetClaim.aggregate.task.projectRevision !== undefined &&
+          context.manifest.revision !==
+            budgetClaim.aggregate.task.projectRevision
+        ) {
+          throw new Error(
+            'Project context does not match the requested revision.',
+          );
+        }
       } catch (error) {
         observer.warning(error, {
           operation: 'project_context_assembly',

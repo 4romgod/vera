@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { describe, it } from 'node:test';
 
 import { LocalGitGitHubDevelopmentCampaignOperations } from '../../../../src/adapters/outbound/development-campaigns/local-git-github-development-campaign-operations.ts';
 import type { SoftwareChangeApplication } from '../../../../src/domain/changes/software-change-application.ts';
-import type { DevelopmentCampaign } from '../../../../src/domain/development-campaigns/development-campaign.ts';
+import type { SoftwareChangePublication } from '../../../../src/domain/changes/software-change-publication.ts';
+import type {
+  DevelopmentCampaign,
+  DevelopmentCampaignRepair,
+} from '../../../../src/domain/development-campaigns/development-campaign.ts';
 import type { Project } from '../../../../src/domain/projects/project.ts';
 
 const now = '2026-08-27T12:00:00.000Z';
@@ -250,6 +255,274 @@ void describe('local Git and GitHub development-campaign operations', () => {
     assert.match(
       verification.gates[0]?.output ?? '',
       /^\[earlier output omitted\]/u,
+    );
+  });
+
+  void it('persists bounded sanitized failure and review evidence', async () => {
+    const effect = await preparedEffect();
+    const instance = new LocalGitGitHubDevelopmentCampaignOperations({
+      catalog: { schemaVersion: 1, policies: [] },
+      clock: () => now,
+      run: (command, arguments_) => {
+        const key = [command, ...arguments_].join(' ');
+        if (key.startsWith('gh pr view ')) {
+          return Promise.resolve({
+            stdout: JSON.stringify({
+              number: 44,
+              url: 'https://github.com/4romgod/vera/pull/44',
+              state: 'OPEN',
+              isDraft: false,
+              headRefOid: revision,
+              baseRefOid: revision,
+              mergeStateStatus: 'BLOCKED',
+              reviewDecision: 'CHANGES_REQUESTED',
+              statusCheckRollup: [
+                { name: 'quality', status: 'COMPLETED', conclusion: 'FAILURE' },
+              ],
+              reviews: [],
+              comments: [],
+              mergeCommit: null,
+            }),
+            stderr: '',
+            exitCode: 0,
+          });
+        }
+        if (key.includes('/check-runs?')) {
+          return Promise.resolve({
+            stdout: JSON.stringify({
+              check_runs: [
+                {
+                  name: 'quality',
+                  status: 'completed',
+                  conclusion: 'failure',
+                  details_url: 'https://github.com/4romgod/vera/actions/1',
+                  output: { summary: `failure\u0000${'x'.repeat(5_000)}` },
+                },
+              ],
+            }),
+            stderr: '',
+            exitCode: 0,
+          });
+        }
+        if (key.includes('/comments?')) {
+          return Promise.resolve({
+            stdout: JSON.stringify([
+              {
+                user: { login: 'reviewer' },
+                body: 'Please fix\u0007this edge case.',
+                html_url: 'https://github.com/4romgod/vera/pull/44#discussion',
+                path: 'apps/api/src/example.ts',
+                line: 12,
+              },
+            ]),
+            stderr: '',
+            exitCode: 0,
+          });
+        }
+        throw new Error(`Unexpected command: ${key}`);
+      },
+    });
+    const campaign = {
+      publicationId: 'publication_campaign',
+      approval: { effect },
+      pullRequest: {
+        number: 44,
+        url: 'https://github.com/4romgod/vera/pull/44',
+        headRevision: revision,
+      },
+    } as unknown as DevelopmentCampaign;
+    const publication = {
+      id: 'publication_campaign',
+      status: 'succeeded',
+      approval: { effect },
+      result: {
+        commitRevision: revision,
+        pullRequest: {
+          number: 44,
+          url: 'https://github.com/4romgod/vera/pull/44',
+        },
+      },
+    } as unknown as SoftwareChangePublication;
+
+    const observation = await instance.observe({ campaign, publication });
+
+    const summary = observation.failedChecks?.[0]?.summary;
+    assert.equal(summary?.length, 4_000);
+    assert.equal(summary.includes(String.fromCharCode(0)), false);
+    assert.deepEqual(observation.reviewFeedback?.[0], {
+      kind: 'inline_comment',
+      author: 'reviewer',
+      body: 'Please fix this edge case.',
+      url: 'https://github.com/4romgod/vera/pull/44#discussion',
+      path: 'apps/api/src/example.ts',
+      line: 12,
+    });
+  });
+
+  void it('updates the existing PR branch with one non-forced fast-forward commit', async () => {
+    const effect = await preparedEffect();
+    const repairedRevision = 'b'.repeat(40);
+    const repairPatch = 'diff --git a/example b/example\n';
+    let workspaceHead = revision;
+    let remoteHead = revision;
+    const commands: string[][] = [];
+    const instance = new LocalGitGitHubDevelopmentCampaignOperations({
+      catalog: { schemaVersion: 1, policies: [] },
+      clock: () => now,
+      run: (command, arguments_) => {
+        commands.push([command, ...arguments_]);
+        if (command === 'gh') {
+          return Promise.resolve({
+            stdout: JSON.stringify({
+              number: 44,
+              url: 'https://github.com/4romgod/vera/pull/44',
+              state: 'OPEN',
+              isDraft: false,
+              headRefOid: workspaceHead,
+              baseRefOid: revision,
+              mergeStateStatus: 'CLEAN',
+              reviewDecision: 'CHANGES_REQUESTED',
+              statusCheckRollup: [],
+              reviews: [],
+              comments: [],
+              mergeCommit: null,
+            }),
+            stderr: '',
+            exitCode: 0,
+          });
+        }
+        const gitArguments = arguments_.slice(2);
+        const key = gitArguments.join(' ');
+        if (key === 'rev-parse HEAD') {
+          return Promise.resolve({
+            stdout: `${workspaceHead}\n`,
+            stderr: '',
+            exitCode: 0,
+          });
+        }
+        if (key === 'diff --cached --quiet') {
+          return Promise.resolve({ stdout: '', stderr: '', exitCode: 1 });
+        }
+        if (key === 'rev-parse HEAD^') {
+          return Promise.resolve({
+            stdout: `${revision}\n`,
+            stderr: '',
+            exitCode: 0,
+          });
+        }
+        if (key === 'show -s --format=%B HEAD') {
+          return Promise.resolve({
+            stdout: 'fix: address feedback\n',
+            stderr: '',
+            exitCode: 0,
+          });
+        }
+        if (key === 'show -s --format=%an%x00%ae HEAD') {
+          return Promise.resolve({
+            stdout: 'Vera\u0000vera@example.test\n',
+            stderr: '',
+            exitCode: 0,
+          });
+        }
+        if (key === 'commit --no-gpg-sign --message fix: address feedback') {
+          workspaceHead = repairedRevision;
+          return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 });
+        }
+        if (
+          key ===
+          `diff --no-ext-diff --binary --no-renames ${revision} ${repairedRevision}`
+        ) {
+          return Promise.resolve({
+            stdout: repairPatch,
+            stderr: '',
+            exitCode: 0,
+          });
+        }
+        if (key === 'push origin HEAD:refs/heads/vera/change-campaign') {
+          assert.equal(remoteHead, revision);
+          remoteHead = workspaceHead;
+          return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 });
+        }
+        if (
+          key === 'ls-remote --heads origin refs/heads/vera/change-campaign'
+        ) {
+          return Promise.resolve({
+            stdout: `${remoteHead}\trefs/heads/vera/change-campaign\n`,
+            stderr: '',
+            exitCode: 0,
+          });
+        }
+        throw new Error(`Unexpected command: ${key}`);
+      },
+    });
+    const campaign = {
+      publicationId: 'publication_campaign',
+      approval: { effect },
+      pullRequest: {
+        number: 44,
+        url: 'https://github.com/4romgod/vera/pull/44',
+        headRevision: revision,
+      },
+    } as unknown as DevelopmentCampaign;
+    const repair = {
+      status: 'approved',
+      effect: {
+        sourceRevision: revision,
+        delivery: {
+          commitMessage: 'fix: address feedback',
+          author: { name: 'Vera', email: 'vera@example.test' },
+        },
+      },
+    } as unknown as DevelopmentCampaignRepair;
+    const application = {
+      status: 'succeeded',
+      result: {
+        baseRevision: revision,
+        workspacePath: '/tmp/repair',
+        patchSha256: createHash('sha256').update(repairPatch).digest('hex'),
+        files: [],
+      },
+    } as unknown as SoftwareChangeApplication;
+    const publication = {
+      id: 'publication_campaign',
+      status: 'succeeded',
+      approval: { effect },
+      result: {
+        commitRevision: revision,
+        remoteBranch: 'vera/change-campaign',
+        pullRequest: {
+          number: 44,
+          url: 'https://github.com/4romgod/vera/pull/44',
+        },
+      },
+    } as unknown as SoftwareChangePublication;
+
+    const result = await instance.updatePullRequest({
+      campaign,
+      repair,
+      application,
+      publication,
+    });
+    const recovered = await instance.updatePullRequest({
+      campaign,
+      repair,
+      application,
+      publication,
+    });
+
+    assert.deepEqual(result, {
+      previousRevision: revision,
+      headRevision: repairedRevision,
+    });
+    assert.deepEqual(recovered, result);
+    assert.equal(remoteHead, repairedRevision);
+    assert.equal(
+      commands.filter((command) => command.includes('push')).length,
+      1,
+    );
+    assert.equal(
+      commands.flat().some((value) => value.includes('--force')),
+      false,
     );
   });
 });

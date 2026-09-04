@@ -189,8 +189,12 @@ single objective: bounded implementation, managed staging, operator-configured
 local gates, exact pull-request publication, GitHub checks/review observation,
 policy-gated merge, and local-base synchronization. The campaign cannot alter
 its own policy or control-plane code, and remote CI/review failure stops for
-owner review. See
+owner review. The owner can separately approve one exact-head repair; Vera then
+reruns local gates and non-forced fast-forwards the existing PR branch before
+observing it again. See
 [ADR-0034](docs/decisions/0034-delegate-bounded-development-campaigns-through-one-owner-approval.md).
+The repair boundary is specified by
+[ADR-0041](docs/decisions/0041-repair-review-required-pull-requests-through-exact-approved-fast-forwards.md).
 Vera can also draft one bounded software mission from conversation, ask for one
 exact owner approval, and run one `pull_request_only` campaign while the owner
 is away. The mission can select one outcome inside configured policy and return
@@ -873,6 +877,13 @@ policy, then approve the complete envelope. Vera may merge only this campaign's
 exact non-draft pull request after the configured local and GitHub evidence is
 green. The example includes `npm ci` because each managed worktree starts
 without shared `node_modules`.
+
+If hosted checks fail or a reviewer requests changes, open the Campaigns tab,
+prepare a repair approval, inspect the frozen evidence and exact PR head, and
+approve or reject it. The CLI equivalents are `vera campaign repair
+<campaign-id>` and `vera campaign repair-decision <campaign-id> <repair-id>
+<approved|rejected>`. Repair never force-pushes and consumes the original
+campaign attempt ceiling.
 
 To enable bounded missions on top of that campaign policy:
 

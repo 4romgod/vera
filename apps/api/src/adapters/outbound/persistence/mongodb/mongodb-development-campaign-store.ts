@@ -105,6 +105,7 @@ export class MongoDbDevelopmentCampaignStore
             'verifying',
             'publishing',
             'observing',
+            'repairing',
             'merging',
             'synchronizing',
           ],

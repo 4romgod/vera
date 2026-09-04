@@ -48,6 +48,18 @@ type CreateDevelopmentCampaignRequest = z.infer<
   typeof CreateDevelopmentCampaignRequestSchema
 >;
 
+const CampaignRepairParamsSchema = z
+  .object({
+    id: z.string().startsWith('campaign_'),
+    repairId: z.string().startsWith('repair_'),
+  })
+  .strict();
+type CampaignRepairParams = z.infer<typeof CampaignRepairParamsSchema>;
+const CampaignRepairParamsJsonSchema = z.toJSONSchema(
+  CampaignRepairParamsSchema,
+  { target: 'draft-7', unrepresentable: 'throw' },
+);
+
 const DevelopmentCampaignListSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -152,6 +164,49 @@ export function registerDevelopmentCampaignRoutes(
       const campaign = await options.campaigns.decideApproval({
         principalId: options.principalId,
         campaignId: request.params.id,
+        decision: request.body.decision,
+      });
+      options.campaigns.wake();
+      return reply.status(202).send(campaign);
+    },
+  );
+
+  app.post<{ Params: ResourceIdParams; Headers: IdempotencyHeaders }>(
+    '/v1/development-campaigns/:id/repairs',
+    {
+      schema: {
+        params: ResourceIdParamsJsonSchema,
+        headers: IdempotencyHeadersJsonSchema,
+        response: { 202: DevelopmentCampaignResponseJsonSchema },
+      },
+    },
+    async (request, reply) => {
+      const campaign = await options.campaigns.requestRepair({
+        principalId: options.principalId,
+        campaignId: request.params.id,
+        requestKey: request.headers['idempotency-key'],
+      });
+      return reply.status(202).send(campaign);
+    },
+  );
+
+  app.post<{
+    Params: CampaignRepairParams;
+    Body: ApprovalDecisionRequest;
+  }>(
+    '/v1/development-campaigns/:id/repairs/:repairId/decision',
+    {
+      schema: {
+        params: CampaignRepairParamsJsonSchema,
+        body: ApprovalDecisionRequestJsonSchema,
+        response: { 202: DevelopmentCampaignResponseJsonSchema },
+      },
+    },
+    async (request, reply) => {
+      const campaign = await options.campaigns.decideRepair({
+        principalId: options.principalId,
+        campaignId: request.params.id,
+        repairId: request.params.repairId,
         decision: request.body.decision,
       });
       options.campaigns.wake();

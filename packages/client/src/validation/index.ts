@@ -535,6 +535,8 @@ export function assertDevelopmentCampaignResource(
     'verifying',
     'publishing',
     'observing',
+    'repair_awaiting_approval',
+    'repairing',
     'merging',
     'synchronizing',
     'succeeded',

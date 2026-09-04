@@ -229,6 +229,15 @@ export type VeraApi = {
     campaignId: string;
     decision: 'approved' | 'rejected';
   }): Promise<DevelopmentCampaignResource>;
+  requestDevelopmentCampaignRepair(input: {
+    campaignId: string;
+    idempotencyKey: string;
+  }): Promise<DevelopmentCampaignResource>;
+  decideDevelopmentCampaignRepair(input: {
+    campaignId: string;
+    repairId: string;
+    decision: 'approved' | 'rejected';
+  }): Promise<DevelopmentCampaignResource>;
   cancelDevelopmentCampaign(
     campaignId: string,
   ): Promise<DevelopmentCampaignResource>;

@@ -126,6 +126,9 @@ export function createTaskLifecycleApi(
           ...(input.projectId === undefined
             ? {}
             : { projectId: input.projectId }),
+          ...(input.projectRevision === undefined
+            ? {}
+            : { projectRevision: input.projectRevision }),
           ...(input.conversationId === undefined
             ? {}
             : { conversationId: input.conversationId }),

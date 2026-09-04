@@ -735,3 +735,10 @@ application and publication effects. The specialist remains replaceable and
 receives no test-policy, GitHub-credential, check-observation, or merge
 authority. See
 [ADR-0034](decisions/0034-delegate-bounded-development-campaigns-through-one-owner-approval.md).
+
+A hosted-check failure or reviewer change request does not extend that original
+authority. Vera persists bounded remote evidence and asks the owner to approve
+one repair tied to the exact current pull-request head. Only then may it give
+the specialist historical context from that commit, verify a new exact patch,
+and fast-forward the existing PR branch without force or merge authority. See
+[ADR-0041](decisions/0041-repair-review-required-pull-requests-through-exact-approved-fast-forwards.md).

@@ -529,6 +529,15 @@ GitHub merge additionally verifies exact head and base identities, check and
 review policy, and clean merge state. See
 [ADR-0034](decisions/0034-delegate-bounded-development-campaigns-through-one-owner-approval.md).
 
+Failed-check output and review comments are untrusted evidence, never
+instructions or authority. A repair freezes bounded sanitized evidence and the
+exact PR head in a new owner approval. The specialist receives only the derived
+repair request and exact historical project context. Application code retains
+commit and credential control, permits only a normal fast-forward of the
+existing PR branch, and verifies the same PR afterward. Force-push, base push,
+merge, and policy mutation remain prohibited by the repair effect. See
+[ADR-0041](decisions/0041-repair-review-required-pull-requests-through-exact-approved-fast-forwards.md).
+
 ## Audit and observability
 
 Security-relevant records include:

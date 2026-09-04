@@ -68,6 +68,8 @@ function fakeApi(overrides: Partial<VeraApi>): VeraApi {
     getRun: unavailable,
     getRunEvents: unavailable,
     decideApproval: unavailable,
+    requestDevelopmentCampaignRepair: unavailable,
+    decideDevelopmentCampaignRepair: unavailable,
     cancelRun: unavailable,
     getArtifact: unavailable,
     createChangeApplication: unavailable,
@@ -1101,5 +1103,39 @@ void describe('Vera CLI', () => {
       }),
       /--timeout-ms must be a positive integer/u,
     );
+  });
+
+  void it('requests a campaign repair with an explicit idempotency key', async () => {
+    let received: { campaignId: string; idempotencyKey: string } | undefined;
+    const campaign = {
+      schemaVersion: 1,
+      version: 1,
+      id: 'campaign_test',
+      status: 'repair_awaiting_approval',
+      approval: { reason: 'development_campaign', effect: {} },
+      attempts: [],
+      events: [],
+    } as unknown as Awaited<
+      ReturnType<VeraApi['requestDevelopmentCampaignRepair']>
+    >;
+    const exitCode = await runCli(
+      ['campaign', 'repair', 'campaign_test', '--key', 'repair-key'],
+      {
+        client: fakeApi({
+          requestDevelopmentCampaignRepair: (input) => {
+            received = input;
+            return Promise.resolve(campaign);
+          },
+        }),
+        stdout: { write: () => true },
+        stderr: { write: () => true },
+      },
+    );
+
+    assert.equal(exitCode, 0);
+    assert.deepEqual(received, {
+      campaignId: 'campaign_test',
+      idempotencyKey: 'repair-key',
+    });
   });
 });

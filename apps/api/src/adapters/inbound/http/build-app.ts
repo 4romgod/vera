@@ -535,7 +535,8 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     if (error instanceof DevelopmentCampaignError) {
       const statusCode =
         error.code === 'development_campaign_not_found' ||
-        error.code === 'development_campaign_project_not_found'
+        error.code === 'development_campaign_project_not_found' ||
+        error.code === 'development_campaign_repair_not_found'
           ? 404
           : error.code === 'development_campaign_capability_unavailable'
             ? 503

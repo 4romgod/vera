@@ -1,17 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import type { SoftwareChangeApplicationLifecycle } from '../change-applications/software-change-application-lifecycle.ts';
-import type { SoftwareChangePublicationLifecycle } from '../change-applications/software-change-publication-lifecycle.ts';
-import { sameCapabilityDestination } from '../../domain/capabilities/capability-destination.ts';
-import {
-  DevelopmentPlanningProposalArgumentsSchema,
-  SoftwareChangeProposalArgumentsSchema,
-} from '../../domain/capabilities/capability-registry.ts';
 import {
   DevelopmentCampaignSchema,
   type DevelopmentCampaign,
 } from '../../domain/development-campaigns/development-campaign.ts';
 import { DevelopmentCampaignOperationError } from '../../ports/development-campaigns/development-campaign-operations.ts';
-import type { TaskAggregate } from '../../domain/tasks/task-aggregate.ts';
 import {
   DevelopmentCampaignError,
   type DevelopmentCampaignLifecycle,
@@ -19,11 +11,19 @@ import {
 } from './lifecycle/contracts.ts';
 import {
   appendEvent,
-  pathIsProtected,
   repairMessage,
   softwareChangeArtifactId,
   stableEqual,
 } from './lifecycle/support.ts';
+import {
+  assertApplicationApproval,
+  assertPublicationApproval,
+  assertTaskApproval,
+} from './lifecycle/approval-guards.ts';
+import {
+  createPullRequestRepairLifecycle,
+  repairTaskMessage,
+} from './lifecycle/pull-request-repair.ts';
 
 export {
   DevelopmentCampaignError,
@@ -70,6 +70,16 @@ export function createDevelopmentCampaignLifecycle(
     );
   }
 
+  const repairs = createPullRequestRepairLifecycle({
+    requireCampaign,
+    update,
+    publications: options.publications,
+    applications: options.applications,
+    operations: options.operations,
+    clock,
+    createId,
+  });
+
   async function requireProject(campaign: DevelopmentCampaign) {
     const project = await options.projects.findProjectById(
       campaign.principalId,
@@ -82,129 +92,6 @@ export function createDevelopmentCampaignLifecycle(
       );
     }
     return project;
-  }
-
-  function assertTaskApproval(
-    campaign: DevelopmentCampaign,
-    aggregate: TaskAggregate,
-  ) {
-    const approval = aggregate.run.approval;
-    if (approval?.status !== 'pending') {
-      throw new DevelopmentCampaignOperationError(
-        'The delegated task does not expose one pending exact approval.',
-        'review_required',
-      );
-    }
-    const allowed = campaign.approval.effect.capabilities.find(
-      (capability) => capability.name === approval.capability.name,
-    );
-    if (
-      allowed === undefined ||
-      approval.destination === undefined ||
-      approval.authority === undefined ||
-      !sameCapabilityDestination(allowed.destination, approval.destination) ||
-      !stableEqual(allowed.authority, approval.authority) ||
-      approval.project?.id !== campaign.approval.effect.project.id ||
-      approval.contextManifest?.revision !==
-        campaign.approval.effect.baseRevision ||
-      (approval.attachments?.length ?? 0) > 0 ||
-      (approval.decisionEvidence?.length ?? 0) > 0
-    ) {
-      throw new DevelopmentCampaignOperationError(
-        'The delegated task requested authority outside the approved campaign.',
-        'review_required',
-      );
-    }
-    const schema =
-      approval.capability.name === 'development_planning'
-        ? DevelopmentPlanningProposalArgumentsSchema
-        : SoftwareChangeProposalArgumentsSchema;
-    const arguments_ = schema.parse(approval.proposedArguments);
-    const effect = campaign.approval.effect;
-    if (
-      arguments_.objective !== effect.objective ||
-      arguments_.ticket.reference !== effect.ticket.reference ||
-      arguments_.ticket.details !== effect.ticket.details ||
-      arguments_.project.name !== effect.project.displayName
-    ) {
-      throw new DevelopmentCampaignOperationError(
-        'The delegated capability arguments differ from the approved objective.',
-        'review_required',
-      );
-    }
-    if (
-      approval.capability.name === 'development_planning' &&
-      (approval.inputArtifacts?.length ?? 0) > 0
-    ) {
-      throw new DevelopmentCampaignOperationError(
-        'Campaign planning cannot receive undeclared artifact input.',
-        'review_required',
-      );
-    }
-    if (
-      approval.capability.name === 'software_change' &&
-      (approval.inputArtifacts?.some(
-        (artifact) => artifact.type !== 'implementation_plan',
-      ) ??
-        false)
-    ) {
-      throw new DevelopmentCampaignOperationError(
-        'Campaign implementation received an unsupported input artifact.',
-        'review_required',
-      );
-    }
-  }
-
-  function assertApplicationApproval(
-    campaign: DevelopmentCampaign,
-    application: Awaited<ReturnType<SoftwareChangeApplicationLifecycle['get']>>,
-  ) {
-    const effect = application.approval.effect;
-    const campaignEffect = campaign.approval.effect;
-    const changedBytes = effect.files.reduce(
-      (total, file) => total + file.bytes,
-      0,
-    );
-    if (
-      application.project.id !== campaignEffect.project.id ||
-      effect.baseRevision !== campaignEffect.baseRevision ||
-      effect.files.length > campaignEffect.limits.maxChangedFiles ||
-      changedBytes > campaignEffect.limits.maxChangedBytes ||
-      effect.files.some((file) =>
-        pathIsProtected(
-          file.relativePath,
-          campaignEffect.protectedPathPrefixes,
-        ),
-      )
-    ) {
-      throw new DevelopmentCampaignOperationError(
-        'The generated patch exceeds the approved campaign application authority.',
-        'review_required',
-      );
-    }
-  }
-
-  function assertPublicationApproval(
-    campaign: DevelopmentCampaign,
-    publication: Awaited<ReturnType<SoftwareChangePublicationLifecycle['get']>>,
-  ) {
-    const expected = campaign.approval.effect;
-    const effect = publication.approval.effect;
-    if (
-      effect.repository.owner.toLowerCase() !==
-        expected.repository.owner.toLowerCase() ||
-      effect.repository.name.toLowerCase() !==
-        expected.repository.name.toLowerCase() ||
-      effect.baseBranch !== expected.baseBranch ||
-      effect.baseBranchRevision !== expected.baseRevision ||
-      effect.commitMessage !== expected.delivery.commitMessage ||
-      !stableEqual(effect.pullRequest, expected.delivery.pullRequest)
-    ) {
-      throw new DevelopmentCampaignOperationError(
-        'The prepared publication exceeds the approved campaign authority.',
-        'review_required',
-      );
-    }
   }
 
   async function fail(campaign: DevelopmentCampaign, error: unknown) {
@@ -299,11 +186,28 @@ export function createDevelopmentCampaignLifecycle(
     await options.operations.assertProjectBase({ project, effect });
     const previous = campaign.attempts.at(-1)?.verification;
     const number = campaign.attempts.length + 1;
+    const repair = (campaign.repairs ?? []).at(-1);
+    const pullRequestRepair =
+      repair?.status === 'approved' && repair.effect.attempt === number
+        ? repair
+        : undefined;
+    const sourceRevision =
+      pullRequestRepair?.effect.sourceRevision ?? effect.baseRevision;
+    const requested = pullRequestRepair?.effect.requestedChange ?? {
+      objective: effect.objective,
+      ticket: effect.ticket,
+    };
     const task = await options.tasks.submit({
       principalId: campaign.principalId,
       requestKey: `development-campaign:${campaign.id}:attempt:${String(number)}`,
       projectId: effect.project.id,
-      message: repairMessage(effect, number, previous),
+      ...(pullRequestRepair === undefined
+        ? {}
+        : { projectRevision: sourceRevision }),
+      message:
+        pullRequestRepair === undefined
+          ? repairMessage(effect, number, previous)
+          : repairTaskMessage(pullRequestRepair),
     });
     const now = clock();
     return update(campaign.principalId, campaign.id, (candidate) => {
@@ -311,6 +215,17 @@ export function createDevelopmentCampaignLifecycle(
       candidate.status = 'implementing';
       candidate.attempts.push({
         number,
+        kind:
+          pullRequestRepair === undefined
+            ? number === 1
+              ? 'initial'
+              : 'local_replacement'
+            : 'pull_request_repair',
+        sourceRevision,
+        requestedChange: requested,
+        ...(pullRequestRepair === undefined
+          ? {}
+          : { repairId: pullRequestRepair.id }),
         taskId: task.task.id,
         runId: task.run.id,
       });
@@ -580,7 +495,23 @@ export function createDevelopmentCampaignLifecycle(
           },
           createId,
         );
-        if (current.number < candidate.approval.effect.limits.maxAttempts) {
+        if (current.kind === 'pull_request_repair') {
+          candidate.status = 'review_required';
+          candidate.failure = {
+            code: 'verification_failed',
+            message:
+              'The approved pull-request repair did not pass local quality gates.',
+          };
+          appendEvent(
+            candidate,
+            'development_campaign_review_required',
+            now,
+            { code: 'verification_failed', repairId: current.repairId },
+            createId,
+          );
+        } else if (
+          current.number < candidate.approval.effect.limits.maxAttempts
+        ) {
           candidate.status = 'approved';
         } else {
           candidate.status = 'failed';
@@ -605,7 +536,8 @@ export function createDevelopmentCampaignLifecycle(
       const current = candidate.attempts.at(-1);
       if (current?.applicationId !== application.id) return false;
       current.verification = verification;
-      candidate.status = 'publishing';
+      candidate.status =
+        current.kind === 'pull_request_repair' ? 'repairing' : 'publishing';
       candidate.updatedAt = now;
       appendEvent(
         candidate,
@@ -617,13 +549,15 @@ export function createDevelopmentCampaignLifecycle(
         },
         createId,
       );
-      appendEvent(
-        candidate,
-        'development_campaign_publication_started',
-        now,
-        { applicationId: application.id },
-        createId,
-      );
+      if (current.kind !== 'pull_request_repair') {
+        appendEvent(
+          candidate,
+          'development_campaign_publication_started',
+          now,
+          { applicationId: application.id },
+          createId,
+        );
+      }
       return true;
     });
   }
@@ -748,12 +682,47 @@ export function createDevelopmentCampaignLifecycle(
       observation.checks.failed > 0 ||
       observation.reviewDecision === 'CHANGES_REQUESTED'
     ) {
-      throw new DevelopmentCampaignOperationError(
-        observation.checks.failed > 0
-          ? 'One or more required pull-request checks failed.'
-          : 'A reviewer requested changes on the campaign pull request.',
-        observation.checks.failed > 0 ? 'checks_failed' : 'review_required',
-      );
+      const now = clock();
+      return update(campaign.principalId, campaign.id, (candidate) => {
+        if (
+          candidate.status !== 'observing' ||
+          candidate.pullRequest === undefined
+        )
+          return false;
+        const code =
+          observation.checks.failed > 0
+            ? ('checks_failed' as const)
+            : ('review_required' as const);
+        candidate.pullRequest.observation = observation;
+        candidate.status = 'review_required';
+        candidate.failure = {
+          code,
+          message:
+            code === 'checks_failed'
+              ? 'One or more required pull-request checks failed.'
+              : 'A reviewer requested changes on the campaign pull request.',
+        };
+        candidate.updatedAt = now;
+        appendEvent(
+          candidate,
+          'development_campaign_pull_request_observed',
+          now,
+          {
+            checks: observation.checks,
+            reviewDecision: observation.reviewDecision,
+            mergeState: observation.mergeState,
+          },
+          createId,
+        );
+        appendEvent(
+          candidate,
+          'development_campaign_review_required',
+          now,
+          { code },
+          createId,
+        );
+        return true;
+      });
     }
     const ready =
       observation.checks.total >= effect.limits.minimumRequiredChecks &&
@@ -1061,6 +1030,10 @@ export function createDevelopmentCampaignLifecycle(
 
     decideMissionApproval: (input) => decideCampaignApproval(input),
 
+    requestRepair: repairs.requestRepair,
+
+    decideRepair: repairs.decideRepair,
+
     async cancel(input) {
       const campaign = await requireCampaign(
         input.principalId,
@@ -1172,6 +1145,7 @@ export function createDevelopmentCampaignLifecycle(
       try {
         switch (campaign.status) {
           case 'awaiting_approval':
+          case 'repair_awaiting_approval':
             return campaign;
           case 'approved':
             return await progressApproved(campaign);
@@ -1183,6 +1157,8 @@ export function createDevelopmentCampaignLifecycle(
             return await progressVerification(campaign);
           case 'publishing':
             return await progressPublication(campaign);
+          case 'repairing':
+            return await repairs.progressRepair(campaign);
           case 'observing':
             return await progressObservation(campaign);
           case 'merging':

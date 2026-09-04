@@ -306,6 +306,27 @@ export class SoftwareDeliveryClient extends OwnerDataClient {
     );
   }
 
+  public requestDevelopmentCampaignRepair(input: {
+    campaignId: string;
+    idempotencyKey: string;
+  }) {
+    return this.developmentCampaignRequest(
+      `/v1/development-campaigns/${encodeURIComponent(input.campaignId)}/repairs`,
+      { method: 'POST', idempotencyKey: input.idempotencyKey },
+    );
+  }
+
+  public decideDevelopmentCampaignRepair(input: {
+    campaignId: string;
+    repairId: string;
+    decision: 'approved' | 'rejected';
+  }) {
+    return this.developmentCampaignRequest(
+      `/v1/development-campaigns/${encodeURIComponent(input.campaignId)}/repairs/${encodeURIComponent(input.repairId)}/decision`,
+      { method: 'POST', body: { decision: input.decision } },
+    );
+  }
+
   public cancelDevelopmentCampaign(campaignId: string) {
     return this.developmentCampaignRequest(
       `/v1/development-campaigns/${encodeURIComponent(campaignId)}/cancellation`,

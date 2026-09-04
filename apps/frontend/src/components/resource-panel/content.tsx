@@ -877,6 +877,18 @@ export function PanelContent(props: ResourcePanelProps) {
                     .onCampaignDecision(campaign.id, decision)
                     .finally(() => setCampaignActionId(undefined));
                 }}
+                onRepairRequest={() => {
+                  setCampaignActionId(campaign.id);
+                  void props
+                    .onCampaignRepairRequest(campaign.id)
+                    .finally(() => setCampaignActionId(undefined));
+                }}
+                onRepairDecision={(repairId, decision) => {
+                  setCampaignActionId(campaign.id);
+                  void props
+                    .onCampaignRepairDecision(campaign.id, repairId, decision)
+                    .finally(() => setCampaignActionId(undefined));
+                }}
               />
             ))
           : null}

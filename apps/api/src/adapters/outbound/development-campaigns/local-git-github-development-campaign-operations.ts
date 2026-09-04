@@ -1,10 +1,12 @@
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { isAbsolute, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { promisify } from 'node:util';
 import { z } from 'zod';
 
 import type { SoftwareChangePublication } from '../../../domain/changes/software-change-publication.ts';
+import type { SoftwareChangeApplication } from '../../../domain/changes/software-change-application.ts';
 import {
   DevelopmentCampaignEffectSchema,
   DevelopmentCampaignPolicySummarySchema,
@@ -12,12 +14,17 @@ import {
   type DevelopmentCampaign,
   type DevelopmentCampaignCatalog,
   type DevelopmentCampaignEffect,
+  type DevelopmentCampaignRepair,
 } from '../../../domain/development-campaigns/development-campaign.ts';
 import type { Project } from '../../../domain/projects/project.ts';
 import {
   DevelopmentCampaignOperationError,
   type DevelopmentCampaignOperations,
 } from '../../../ports/development-campaigns/development-campaign-operations.ts';
+import {
+  boundedEvidenceText,
+  readGitHubReviewEvidence,
+} from './github-review-evidence.ts';
 
 const executeFile = promisify(execFile);
 const maxCommandOutputBytes = 8_000;
@@ -285,6 +292,37 @@ const GitHubPullRequestSchema = z
     mergeStateStatus: z.string().min(1),
     reviewDecision: z.string().nullable().optional(),
     statusCheckRollup: z.array(z.record(z.string(), z.unknown())),
+    reviews: z
+      .array(
+        z
+          .object({
+            author: z
+              .object({ login: z.string() })
+              .loose()
+              .nullable()
+              .optional(),
+            body: z.string().optional(),
+            state: z.string().optional(),
+            url: z.string().optional(),
+          })
+          .loose(),
+      )
+      .optional(),
+    comments: z
+      .array(
+        z
+          .object({
+            author: z
+              .object({ login: z.string() })
+              .loose()
+              .nullable()
+              .optional(),
+            body: z.string().optional(),
+            url: z.string().optional(),
+          })
+          .loose(),
+      )
+      .optional(),
     mergeCommit: z
       .object({ oid: z.string().regex(/^[a-f0-9]{40,64}$/u) })
       .nullable()
@@ -532,12 +570,14 @@ export class LocalGitGitHubDevelopmentCampaignOperations
     application: import('../../../domain/changes/software-change-application.ts').SoftwareChangeApplication;
   }) {
     const effect = input.campaign.approval.effect;
+    const sourceRevision =
+      input.campaign.attempts.at(-1)?.sourceRevision ?? effect.baseRevision;
     const result = input.application.result;
     if (
       input.application.status !== 'succeeded' ||
       result === undefined ||
       input.application.project.id !== effect.project.id ||
-      result.baseRevision !== effect.baseRevision
+      result.baseRevision !== sourceRevision
     ) {
       throw new DevelopmentCampaignOperationError(
         'The staged application does not match the approved campaign base.',
@@ -603,6 +643,74 @@ export class LocalGitGitHubDevelopmentCampaignOperations
       counts.total += 1;
       counts[checkClassification(check)] += 1;
     }
+    const enrichment =
+      counts.failed > 0 ||
+      normalizedReviewDecision(pullRequest.reviewDecision) ===
+        'CHANGES_REQUESTED'
+        ? await readGitHubReviewEvidence({
+            run: this.run,
+            ghCommand: this.ghCommand,
+            repositorySlug: this.slug(input.campaign.approval.effect),
+            pullRequest,
+          })
+        : { failedChecks: [], reviewFeedback: [] };
+    const failedChecks = (
+      enrichment.failedChecks.length > 0
+        ? enrichment.failedChecks
+        : pullRequest.statusCheckRollup.flatMap((check) => {
+            if (checkClassification(check) !== 'failed') return [];
+            const name = boundedEvidenceText(
+              check.name ?? check.context ?? check.workflowName,
+              300,
+            );
+            if (name === undefined) return [];
+            const detailsUrl = boundedEvidenceText(check.detailsUrl, 2_000);
+            return [
+              {
+                name,
+                status: boundedEvidenceText(check.status, 100) ?? 'COMPLETED',
+                conclusion:
+                  boundedEvidenceText(check.conclusion ?? check.state, 100) ??
+                  'FAILED',
+                ...(detailsUrl?.startsWith('https://') === true
+                  ? { detailsUrl }
+                  : {}),
+              },
+            ];
+          })
+    ).slice(0, 20);
+    const reviewFeedback = [
+      ...(pullRequest.reviews ?? []).flatMap((review) => {
+        const body = boundedEvidenceText(review.body);
+        if (body === undefined || review.state !== 'CHANGES_REQUESTED')
+          return [];
+        return [
+          {
+            kind: 'review' as const,
+            author: review.author?.login ?? 'unknown',
+            body,
+            ...(review.url?.startsWith('https://') === true
+              ? { url: review.url }
+              : {}),
+          },
+        ];
+      }),
+      ...(pullRequest.comments ?? []).flatMap((comment) => {
+        const body = boundedEvidenceText(comment.body);
+        if (body === undefined) return [];
+        return [
+          {
+            kind: 'comment' as const,
+            author: comment.author?.login ?? 'unknown',
+            body,
+            ...(comment.url?.startsWith('https://') === true
+              ? { url: comment.url }
+              : {}),
+          },
+        ];
+      }),
+      ...enrichment.reviewFeedback,
+    ].slice(0, 50);
     return PullRequestObservationSchema.parse({
       checkedAt: this.clock(),
       state: pullRequest.state,
@@ -611,7 +719,163 @@ export class LocalGitGitHubDevelopmentCampaignOperations
       checks: counts,
       reviewDecision: normalizedReviewDecision(pullRequest.reviewDecision),
       mergeState: pullRequest.mergeStateStatus,
+      ...(failedChecks.length === 0 ? {} : { failedChecks }),
+      ...(reviewFeedback.length === 0 ? {} : { reviewFeedback }),
     });
+  }
+
+  public async updatePullRequest(input: {
+    campaign: DevelopmentCampaign;
+    repair: DevelopmentCampaignRepair;
+    application: SoftwareChangeApplication;
+    publication: SoftwareChangePublication;
+  }) {
+    const application = input.application.result;
+    const publication = input.publication.result;
+    const sourceRevision = input.repair.effect.sourceRevision;
+    const limits = input.campaign.approval.effect.limits;
+    const protectedPrefixes =
+      input.campaign.approval.effect.protectedPathPrefixes;
+    if (
+      application === undefined ||
+      input.application.status !== 'succeeded' ||
+      application.baseRevision !== sourceRevision ||
+      publication === undefined ||
+      input.publication.status !== 'succeeded' ||
+      input.campaign.publicationId !== input.publication.id ||
+      input.campaign.pullRequest?.number !== publication.pullRequest.number ||
+      input.campaign.pullRequest.headRevision !== sourceRevision ||
+      application.files.length > limits.maxChangedFiles ||
+      application.files.reduce((total, file) => total + file.bytes, 0) >
+        limits.maxChangedBytes ||
+      application.files.some((file) =>
+        pathIsProtected(file.relativePath, protectedPrefixes),
+      )
+    ) {
+      throw new DevelopmentCampaignOperationError(
+        'The approved repair no longer matches the exact pull request head.',
+        'review_required',
+      );
+    }
+    const remoteBefore = await this.remoteRevision(
+      application.workspacePath,
+      publication.remoteBranch,
+    );
+    const head = trim(
+      (await this.git(application.workspacePath, ['rev-parse', 'HEAD'])).stdout,
+    );
+    let repairedRevision = head;
+    if (head === sourceRevision) {
+      const staged = await this.git(
+        application.workspacePath,
+        ['diff', '--cached', '--quiet'],
+        true,
+      );
+      if (staged.exitCode !== 1 || remoteBefore !== sourceRevision) {
+        throw new DevelopmentCampaignOperationError(
+          'The repair workspace or remote branch changed before publication.',
+          'review_required',
+        );
+      }
+      const author = input.repair.effect.delivery.author;
+      await this.run(
+        this.gitCommand,
+        [
+          '-C',
+          application.workspacePath,
+          'commit',
+          '--no-gpg-sign',
+          '--message',
+          input.repair.effect.delivery.commitMessage,
+        ],
+        {
+          environment: {
+            ...campaignProcessEnvironment(),
+            GIT_AUTHOR_NAME: author.name,
+            GIT_AUTHOR_EMAIL: author.email,
+            GIT_COMMITTER_NAME: author.name,
+            GIT_COMMITTER_EMAIL: author.email,
+          },
+        },
+      );
+      repairedRevision = trim(
+        (await this.git(application.workspacePath, ['rev-parse', 'HEAD']))
+          .stdout,
+      );
+    } else {
+      const [parent, message, author] = await Promise.all([
+        this.git(application.workspacePath, ['rev-parse', 'HEAD^']),
+        this.git(application.workspacePath, [
+          'show',
+          '-s',
+          '--format=%B',
+          'HEAD',
+        ]),
+        this.git(application.workspacePath, [
+          'show',
+          '-s',
+          '--format=%an%x00%ae',
+          'HEAD',
+        ]),
+      ]);
+      const expectedAuthor = input.repair.effect.delivery.author;
+      if (
+        trim(parent.stdout) !== sourceRevision ||
+        trim(message.stdout) !== input.repair.effect.delivery.commitMessage ||
+        trim(author.stdout) !==
+          `${expectedAuthor.name}\u0000${expectedAuthor.email}` ||
+        ![sourceRevision, head].includes(remoteBefore ?? '')
+      ) {
+        throw new DevelopmentCampaignOperationError(
+          'An existing repair commit failed exact recovery checks.',
+          'review_required',
+        );
+      }
+    }
+    const committedPatch = (
+      await this.git(application.workspacePath, [
+        'diff',
+        '--no-ext-diff',
+        '--binary',
+        '--no-renames',
+        sourceRevision,
+        repairedRevision,
+      ])
+    ).stdout;
+    if (
+      createHash('sha256').update(committedPatch).digest('hex') !==
+      application.patchSha256
+    ) {
+      throw new DevelopmentCampaignOperationError(
+        'The repair commit differs from the exact approved patch.',
+        'review_required',
+      );
+    }
+    if (remoteBefore !== repairedRevision) {
+      const pushed = await this.git(
+        application.workspacePath,
+        ['push', 'origin', `HEAD:refs/heads/${publication.remoteBranch}`],
+        true,
+      );
+      if (pushed.exitCode !== 0) {
+        throw new DevelopmentCampaignOperationError(
+          'The existing pull request branch could not be fast-forwarded safely.',
+          'review_required',
+        );
+      }
+    }
+    const remoteAfter = await this.remoteRevision(
+      application.workspacePath,
+      publication.remoteBranch,
+    );
+    if (remoteAfter !== repairedRevision) {
+      throw new DevelopmentCampaignOperationError(
+        'The remote pull request branch does not match the repair commit.',
+        'review_required',
+      );
+    }
+    await this.pullRequest(input.campaign, input.publication, repairedRevision);
+    return { headRevision: repairedRevision, previousRevision: sourceRevision };
   }
 
   public async merge(input: {
@@ -625,7 +889,7 @@ export class LocalGitGitHubDevelopmentCampaignOperations
       const observation = await this.observe(input);
       if (
         observation.state !== 'OPEN' ||
-        observation.headRevision !== input.publication.result?.commitRevision ||
+        observation.headRevision !== input.campaign.pullRequest?.headRevision ||
         observation.baseRevision !== effect.baseRevision ||
         observation.checks.total < effect.limits.minimumRequiredChecks ||
         observation.checks.pending > 0 ||
@@ -814,6 +1078,8 @@ export class LocalGitGitHubDevelopmentCampaignOperations
   private async pullRequest(
     campaign: DevelopmentCampaign,
     publication: SoftwareChangePublication,
+    expectedHead = campaign.pullRequest?.headRevision ??
+      publication.result?.commitRevision,
   ): Promise<GitHubPullRequest> {
     const result = publication.result;
     if (
@@ -837,7 +1103,7 @@ export class LocalGitGitHubDevelopmentCampaignOperations
       '--repo',
       this.slug(campaign.approval.effect),
       '--json',
-      'number,url,state,isDraft,headRefOid,baseRefOid,mergeStateStatus,reviewDecision,statusCheckRollup,mergeCommit',
+      'number,url,state,isDraft,headRefOid,baseRefOid,mergeStateStatus,reviewDecision,statusCheckRollup,reviews,comments,mergeCommit',
     ]);
     try {
       const parsed: unknown = JSON.parse(response.stdout);
@@ -846,7 +1112,7 @@ export class LocalGitGitHubDevelopmentCampaignOperations
         pullRequest.number !== result.pullRequest.number ||
         pullRequest.url !== result.pullRequest.url ||
         pullRequest.isDraft ||
-        pullRequest.headRefOid !== result.commitRevision
+        pullRequest.headRefOid !== expectedHead
       ) {
         throw new Error('identity mismatch');
       }
