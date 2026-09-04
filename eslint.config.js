@@ -33,4 +33,34 @@ export default tseslint.config(
       '@typescript-eslint/consistent-type-definitions': 'off',
     },
   },
+  {
+    files: ['apps/*/src/**/*.{ts,tsx}', 'packages/*/src/**/*.{ts,tsx}'],
+    rules: {
+      'max-lines': [
+        'error',
+        { max: 1250, skipBlankLines: false, skipComments: false },
+      ],
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              regex: '^\\.{1,2}/(?!.*\\.(?:ts|tsx|json)$).*$',
+              message:
+                'Relative source imports must name a .ts, .tsx, or .json extension; compilation rewrites TypeScript extensions to JavaScript.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['apps/*/test/**/*.{ts,tsx}', 'packages/*/test/**/*.{ts,tsx}'],
+    rules: {
+      'max-lines': [
+        'error',
+        { max: 2500, skipBlankLines: false, skipComments: false },
+      ],
+    },
+  },
 );

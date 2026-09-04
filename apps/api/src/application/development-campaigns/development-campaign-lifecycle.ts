@@ -1,8 +1,6 @@
 import { randomUUID } from 'node:crypto';
-
 import type { SoftwareChangeApplicationLifecycle } from '../change-applications/software-change-application-lifecycle.ts';
 import type { SoftwareChangePublicationLifecycle } from '../change-applications/software-change-publication-lifecycle.ts';
-import type { TaskLifecycle } from '../tasks/task-lifecycle.ts';
 import { sameCapabilityDestination } from '../../domain/capabilities/capability-destination.ts';
 import {
   DevelopmentPlanningProposalArgumentsSchema,
@@ -11,165 +9,31 @@ import {
 import {
   DevelopmentCampaignSchema,
   type DevelopmentCampaign,
-  type DevelopmentCampaignEffect,
-  type DevelopmentCampaignEvent,
 } from '../../domain/development-campaigns/development-campaign.ts';
-import type { ProjectStore } from '../../ports/persistence/project-store.ts';
-import type { DevelopmentCampaignStore } from '../../ports/persistence/development-campaign-store.ts';
-import type { CapabilityRuntimeRegistry } from '../../ports/capabilities/capability-runtime.ts';
-import {
-  DevelopmentCampaignOperationError,
-  type DevelopmentCampaignOperations,
-} from '../../ports/development-campaigns/development-campaign-operations.ts';
+import { DevelopmentCampaignOperationError } from '../../ports/development-campaigns/development-campaign-operations.ts';
 import type { TaskAggregate } from '../../domain/tasks/task-aggregate.ts';
+import {
+  DevelopmentCampaignError,
+  type DevelopmentCampaignLifecycle,
+  type DevelopmentCampaignLifecycleOptions,
+} from './lifecycle/contracts.ts';
+import {
+  appendEvent,
+  pathIsProtected,
+  repairMessage,
+  softwareChangeArtifactId,
+  stableEqual,
+} from './lifecycle/support.ts';
 
-export type DevelopmentCampaignErrorCode =
-  | 'development_campaign_not_found'
-  | 'development_campaign_idempotency_key_reused'
-  | 'development_campaign_project_not_found'
-  | 'development_campaign_capability_unavailable'
-  | 'development_campaign_approval_already_decided'
-  | 'development_campaign_approval_managed_by_mission'
-  | 'development_campaign_concurrent_transition_failed'
-  | 'development_campaign_not_cancellable';
+export {
+  DevelopmentCampaignError,
+  type DevelopmentCampaignErrorCode,
+  type DevelopmentCampaignLifecycle,
+} from './lifecycle/contracts.ts';
 
-export class DevelopmentCampaignError extends Error {
-  public constructor(
-    message: string,
-    public readonly code: DevelopmentCampaignErrorCode,
-  ) {
-    super(message);
-    this.name = 'DevelopmentCampaignError';
-  }
-}
-
-type Clock = () => string;
-type IdFactory = (prefix: string) => string;
-
-export type DevelopmentCampaignLifecycle = {
-  listPolicies(
-    principalId: string,
-  ): Promise<
-    import('../../domain/development-campaigns/development-campaign.ts').DevelopmentCampaignPolicySummary[]
-  >;
-  create(input: {
-    principalId: string;
-    requestKey: string;
-    projectId: string;
-    policyId: string;
-    objective: string;
-    ticket: { reference: string; details: string };
-    delivery: DevelopmentCampaignEffect['delivery'];
-    completionMode?: 'policy' | 'pull_request_only';
-    approvalController?: DevelopmentCampaignEffect['approvalController'];
-  }): Promise<DevelopmentCampaign>;
-  get(principalId: string, campaignId: string): Promise<DevelopmentCampaign>;
-  list(principalId: string): Promise<DevelopmentCampaign[]>;
-  decideApproval(input: {
-    principalId: string;
-    campaignId: string;
-    decision: 'approved' | 'rejected';
-  }): Promise<DevelopmentCampaign>;
-  decideMissionApproval(input: {
-    principalId: string;
-    campaignId: string;
-    missionId: string;
-    decision: 'approved' | 'rejected';
-  }): Promise<DevelopmentCampaign>;
-  cancel(input: {
-    principalId: string;
-    campaignId: string;
-  }): Promise<DevelopmentCampaign>;
-  progress(
-    principalId: string,
-    campaignId: string,
-  ): Promise<DevelopmentCampaign>;
-};
-
-function appendEvent(
-  campaign: DevelopmentCampaign,
-  type: DevelopmentCampaignEvent['type'],
-  occurredAt: string,
-  data: Record<string, unknown>,
-  createId: IdFactory,
-) {
-  campaign.events.push({
-    schemaVersion: 1,
-    id: createId('event'),
-    sequence: campaign.events.length + 1,
-    type,
-    occurredAt,
-    data,
-  });
-}
-
-function stableEqual(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
-
-function pathIsProtected(path: string, prefixes: string[]) {
-  const normalized = path.replace(/^\.\//u, '').replace(/\\/gu, '/');
-  return prefixes.some((candidate) => {
-    const prefix = candidate.replace(/^\.\//u, '').replace(/\\/gu, '/');
-    return (
-      normalized === prefix.replace(/\/$/u, '') || normalized.startsWith(prefix)
-    );
-  });
-}
-
-function softwareChangeArtifactId(
-  aggregate: TaskAggregate,
-): string | undefined {
-  const output = aggregate.run.output;
-  if (output === undefined) return undefined;
-  if (output.kind === 'software_change') return output.artifact?.id;
-  if (output.kind === 'goal_result' || output.kind === 'adaptive_goal_result') {
-    return output.artifacts.find(
-      (artifact) => artifact.type === 'software_change',
-    )?.id;
-  }
-  return undefined;
-}
-
-function repairMessage(
-  effect: DevelopmentCampaignEffect,
-  attempt: number,
-  previous?: DevelopmentCampaign['attempts'][number]['verification'],
-) {
-  const failure = previous?.gates.find((gate) => gate.status === 'failed');
-  return [
-    'Implement the following development-campaign objective as one complete software change.',
-    'The objective, ticket reference, ticket details, and project name must be copied exactly into any capability proposal.',
-    `Objective: ${effect.objective}`,
-    `Ticket reference: ${effect.ticket.reference}`,
-    `Ticket details: ${effect.ticket.details}`,
-    `Project name: ${effect.project.displayName}`,
-    `Campaign attempt: ${String(attempt)} of ${String(effect.limits.maxAttempts)}.`,
-    ...(failure === undefined
-      ? []
-      : [
-          'The previous replacement patch was retired from this campaign after its configured quality gate failed.',
-          `Failed gate: ${failure.label} (${failure.id}).`,
-          `Bounded gate output:\n${failure.output}`,
-          'Generate a complete replacement change from the unchanged approved base; do not reuse or depend on the retired workspace.',
-        ]),
-  ].join('\n\n');
-}
-
-export function createDevelopmentCampaignLifecycle(options: {
-  store: DevelopmentCampaignStore;
-  projects: ProjectStore;
-  tasks: TaskLifecycle;
-  applications: SoftwareChangeApplicationLifecycle;
-  publications: SoftwareChangePublicationLifecycle;
-  capabilities: CapabilityRuntimeRegistry;
-  operations: DevelopmentCampaignOperations;
-  clock?: Clock;
-  createId?: IdFactory;
-  observer?: {
-    warning(error: unknown, context: Record<string, unknown>): void;
-  };
-}): DevelopmentCampaignLifecycle {
+export function createDevelopmentCampaignLifecycle(
+  options: DevelopmentCampaignLifecycleOptions,
+): DevelopmentCampaignLifecycle {
   const clock = options.clock ?? (() => new Date().toISOString());
   const createId =
     options.createId ?? ((prefix: string) => `${prefix}_${randomUUID()}`);

@@ -489,11 +489,11 @@ Required CI runs the same compiled journey against ephemeral MongoDB 8.2 and
 Redis 8 service containers in the existing Linux job. CI builds once and calls
 `npm run verify:persistent:compiled`; it does not install Ollama, download model
 weights, or contact Codex or another third-party specialist. The job has a
-twelve-minute hard limit and superseded runs are cancelled. Real Ollama
+fifteen-minute hard limit and superseded runs are cancelled. Real Ollama
 conformance and real specialist acceptance remain separate, deliberate checks.
-The persistent gate runs once on the pull request, not again for the resulting
-`main` push; it can also be started manually. The normal deterministic quality
-and build checks still run on both events.
+The complete quality, build, and persistent gates run once on the pull request,
+not again for the resulting `main` push. The same workflow can also be started
+manually when explicit post-merge qualification is needed.
 
 Choose one loopback-only infrastructure option. To run MongoDB and Redis with
 Docker Compose:

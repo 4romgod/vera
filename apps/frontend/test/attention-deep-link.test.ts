@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { parseAttentionDeepLink } from '../src/notifications/attention-deep-link';
+import { parseAttentionDeepLink } from '../src/notifications/attention-deep-link.ts';
 
 void describe('notification attention deep links', () => {
   void it('accepts only the exact Vera Today target shapes', () => {

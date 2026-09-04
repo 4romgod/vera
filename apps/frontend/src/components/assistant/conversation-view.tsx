@@ -34,12 +34,12 @@ import type {
 } from '@vera/client';
 
 import { palette, radius, spacing } from '@/design/tokens';
-import { ConversationMessage } from './conversation-message';
+import { ConversationMessage } from './conversation-message.tsx';
 import {
   PULL_REFRESH_TRIGGER_DISTANCE,
   pullRefreshDistance,
   shouldTriggerPullRefresh,
-} from './pull-to-refresh';
+} from './pull-to-refresh.ts';
 
 const starters = [
   { icon: Brain, label: 'Remember something', prompt: 'Remember that ' },

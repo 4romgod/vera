@@ -28,7 +28,7 @@ import {
   filterConversations,
   formatConversationTime,
   groupConversations,
-} from './presentation';
+} from './presentation.ts';
 
 export function ConversationSidebar(props: {
   compact: boolean;

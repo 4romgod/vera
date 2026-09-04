@@ -33,6 +33,18 @@ Tests mirror these roles where useful. Architecture tests enforce that domain
 and application code do not import outward implementations. The complete map
 and placement rules live in `apps/api/README.md`.
 
+Within each role, keep contracts and shared types in a `contracts` module or
+subfolder, and group implementations by cohesive responsibility rather than
+allowing a single catch-all file to grow indefinitely. Stable entry modules may
+compose or re-export internal modules so callers do not depend on internal file
+placement. Relative TypeScript imports name `.ts` or `.tsx` explicitly; the
+compiler rewrites emitted Node.js imports to `.js`.
+
+The repository quality gate enforces a 1,250-line ceiling for production source
+and a 2,500-line ceiling for test source. These are hard
+backstops rather than design targets: a module should be split earlier whenever
+it combines independently understandable responsibilities.
+
 Do not add barrel files solely to hide paths. Do not extract a workspace
 package until there is a demonstrated second consumer, independent deployment
 need, or separately owned lifecycle.
@@ -55,6 +67,8 @@ one implementation or an application service from importing infrastructure.
   be verified by the complete quality gate.
 - New code has a deterministic placement test instead of accumulating in a
   generic root folder.
+- Oversized modules and ambiguous or emitted-JavaScript relative imports fail
+  the repository quality gate.
 - The monolith can add domains and adapters without creating deployment units
   prematurely.
 - Later package extraction will follow observed coupling rather than guesswork.

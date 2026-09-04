@@ -5,8 +5,8 @@ import type { ProjectResource } from '@vera/client';
 
 import { IconButton } from '@/components/ui/icon-button';
 import { palette, spacing } from '@/design/tokens';
-import { displayConversationTitle } from './presentation';
-import { ProjectContextMenu } from './project-context-menu';
+import { displayConversationTitle } from './presentation.ts';
+import { ProjectContextMenu } from './project-context-menu.tsx';
 
 export function AssistantHeader(props: {
   compact: boolean;

@@ -20,10 +20,10 @@ import type { ArtifactResource, TaskResource, VeraApi } from '@vera/client';
 
 import { StructuredValue } from '@/components/structured-value';
 import { palette, radius, spacing } from '@/design/tokens';
-import { humanizeIdentifier } from './presentation';
-import { GoalProgressCard } from './goal-progress-card';
-import { SoftwareDeliveryCard } from './software-delivery/software-delivery-card';
-import { softwareChangeArtifactReference } from './software-delivery/model';
+import { humanizeIdentifier } from './presentation.ts';
+import { GoalProgressCard } from './goal-progress-card.tsx';
+import { SoftwareDeliveryCard } from './software-delivery/software-delivery-card.tsx';
+import { softwareChangeArtifactReference } from './software-delivery/model.ts';
 
 export function hasStructuredResult(
   task: TaskResource | null | undefined,

@@ -13,7 +13,7 @@ import type { ProjectResource } from '@vera/client';
 
 import { IconButton } from '@/components/ui/icon-button';
 import { palette, radius, shadow, spacing } from '@/design/tokens';
-import { projectContextLabel } from './presentation';
+import { projectContextLabel } from './presentation.ts';
 
 export function ProjectContextMenu(props: {
   projects: ProjectResource[];
