@@ -7,6 +7,7 @@ import { SoftwareChangeApplicationSchema } from '../../../../src/domain/changes/
 import { ModelProviderError } from '../../../../src/ports/model/model-provider.ts';
 import { SoftwareChangePublicationSchema } from '../../../../src/domain/changes/software-change-publication.ts';
 import { FakeModelProvider } from '../../../support/fake-model-provider.ts';
+import type { ArtifactService } from '../../../../src/application/artifacts/artifact-service.ts';
 
 const apps: ReturnType<typeof buildApp>[] = [];
 
@@ -33,6 +34,62 @@ afterEach(async () => {
 });
 
 void describe('HTTP API', () => {
+  void it('serializes conversational software-delivery artifacts', async () => {
+    const provider = new FakeModelProvider({});
+    const app = buildApp({
+      evaluateModelDecision: createEvaluateModelDecision(provider),
+      provider,
+      artifacts: {
+        getArtifact: () =>
+          Promise.resolve({
+            schemaVersion: 1,
+            id: 'artifact_delivery',
+            version: 1,
+            principalId: 'owner_v1',
+            taskId: 'task_delivery',
+            runId: 'run_delivery',
+            invocationId: 'invocation_delivery',
+            sha256: 'a'.repeat(64),
+            byteLength: 125,
+            producer: {
+              destination: {
+                schemaVersion: 1,
+                adapterId: 'software_delivery_control',
+                provider: 'vera',
+                transport: 'in_process',
+                dataBoundary: 'owner_controlled',
+              },
+              provider: 'vera',
+              model: 'software_delivery_control',
+              durationMs: 0,
+            },
+            createdAt: '2026-09-05T00:00:00.000Z',
+            type: 'software_delivery_management_result',
+            mediaType:
+              'application/vnd.vera.software-delivery-management-result+json',
+            content: {
+              schemaVersion: 1,
+              action: 'list',
+              summary: 'No active software deliveries.',
+              resources: [],
+            },
+          }),
+      } as unknown as ArtifactService,
+    });
+    apps.push(app);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/artifacts/artifact_delivery',
+    });
+
+    assert.equal(response.statusCode, 200, response.body);
+    assert.equal(
+      response.json<{ type: string }>().type,
+      'software_delivery_management_result',
+    );
+  });
+
   void it('creates and approves a separately governed software-change publication', async () => {
     const provider = new FakeModelProvider({});
     const base = SoftwareChangePublicationSchema.parse({

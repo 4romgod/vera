@@ -1,7 +1,7 @@
 # Vera Documentation Guide
 
 **Status:** Active index
-**Last updated:** 4 September 2026
+**Last updated:** 5 September 2026
 
 ## Purpose
 
@@ -71,6 +71,9 @@ conversational briefing boundary without asking a model to invent status.
 ADR-0038 adds durable recurring standing instructions with frozen authority,
 restart-safe run materialization, daylight-saving-safe civil schedules, and
 quiet healthy outcomes.
+ADR-0042 makes missions and campaigns operable from the primary conversation
+surface through bounded model context, deterministic application-owned
+reference resolution, and the existing exact repair approval boundary.
 
 Implementation began on the same date. ADR-0009 accepts the first production
 source layout and model decision boundary. ADR-0010 accepts the durable
@@ -249,6 +252,8 @@ MongoDB backup, and verified update boundary are accepted in
 Separately approved, exact-head repairs of review-required campaign pull
 requests are accepted in
 [ADR-0041](decisions/0041-repair-review-required-pull-requests-through-exact-approved-fast-forwards.md).
+Conversational listing, inspection, and safe repair preparation are accepted in
+[ADR-0042](decisions/0042-resolve-conversational-software-delivery-references-in-application-code.md).
 
 ## Documentation and implementation cadence
 

@@ -16,6 +16,7 @@ import { MissionManagementResultSchema } from '../missions/mission.ts';
 import { KnowledgeResultSchema } from '../knowledge/knowledge.ts';
 import { AttentionResultSchema } from '../attention/attention.ts';
 import { RoutineManagementResultSchema } from '../routines/routine.ts';
+import { SoftwareDeliveryManagementResultSchema } from '../software-delivery/software-delivery-management.ts';
 
 export const ArtifactLineageReferenceSchema = z
   .object({
@@ -35,6 +36,7 @@ export const ArtifactLineageReferenceSchema = z
       'knowledge_result',
       'attention_result',
       'routine_management_result',
+      'software_delivery_management_result',
     ]),
     mediaType: z.string().min(1),
     sha256: z.string().regex(/^[a-f0-9]{64}$/),
@@ -142,6 +144,15 @@ export const MissionManagementResultArtifactSchema =
     content: MissionManagementResultSchema,
   }).strict();
 
+export const SoftwareDeliveryManagementResultArtifactSchema =
+  ArtifactIdentitySchema.extend({
+    type: z.literal('software_delivery_management_result'),
+    mediaType: z.literal(
+      'application/vnd.vera.software-delivery-management-result+json',
+    ),
+    content: SoftwareDeliveryManagementResultSchema,
+  }).strict();
+
 export const KnowledgeResultArtifactSchema = ArtifactIdentitySchema.extend({
   type: z.literal('knowledge_result'),
   mediaType: z.literal('application/vnd.vera.knowledge-result+json'),
@@ -172,6 +183,7 @@ export const ArtifactSchema = z.discriminatedUnion('type', [
   MachineDiagnosticArtifactSchema,
   MachineServiceActionResultArtifactSchema,
   MissionManagementResultArtifactSchema,
+  SoftwareDeliveryManagementResultArtifactSchema,
   KnowledgeResultArtifactSchema,
   AttentionResultArtifactSchema,
   RoutineManagementResultArtifactSchema,
@@ -246,6 +258,14 @@ export const MissionManagementResultArtifactReferenceSchema =
     mediaType: z.literal('application/vnd.vera.mission-management-result+json'),
   }).strict();
 
+export const SoftwareDeliveryManagementResultArtifactReferenceSchema =
+  ArtifactReferenceBaseSchema.extend({
+    type: z.literal('software_delivery_management_result'),
+    mediaType: z.literal(
+      'application/vnd.vera.software-delivery-management-result+json',
+    ),
+  }).strict();
+
 export const KnowledgeResultArtifactReferenceSchema =
   ArtifactReferenceBaseSchema.extend({
     type: z.literal('knowledge_result'),
@@ -275,6 +295,7 @@ export const ArtifactReferenceSchema = z.discriminatedUnion('type', [
   MachineDiagnosticArtifactReferenceSchema,
   MachineServiceActionResultArtifactReferenceSchema,
   MissionManagementResultArtifactReferenceSchema,
+  SoftwareDeliveryManagementResultArtifactReferenceSchema,
   KnowledgeResultArtifactReferenceSchema,
   AttentionResultArtifactReferenceSchema,
   RoutineManagementResultArtifactReferenceSchema,

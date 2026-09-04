@@ -8,6 +8,7 @@ import { appendEvent, type TaskLifecycleRuntime } from './contracts.ts';
 import type { TaskLifecycleFoundation } from './foundation.ts';
 import type { TaskLifecycleDecisionRecording } from './decision-recording.ts';
 import type { TaskLifecycleAdaptiveGoalOperations } from './adaptive-goal.ts';
+import { shouldAssembleSoftwareDeliveryContext } from '../../software-delivery/software-delivery-context.ts';
 
 export function createEvaluationOperations(
   runtime: TaskLifecycleRuntime,
@@ -172,6 +173,15 @@ export function createEvaluationOperations(
           );
         }
       }
+      const softwareDeliveryContext =
+        options.softwareDeliveryContext !== undefined &&
+        shouldAssembleSoftwareDeliveryContext(
+          budgetClaim.aggregate.task.message,
+        )
+          ? await options.softwareDeliveryContext.assemble(
+              budgetClaim.aggregate.task.principalId,
+            )
+          : undefined;
       if (
         budgetClaim.aggregate.run.goal?.schemaVersion === 2 &&
         budgetClaim.aggregate.run.goal.status === 'active'
@@ -204,6 +214,9 @@ export function createEvaluationOperations(
                   budgetClaim.aggregate.run.conversationContext,
               }),
           ...(memoryContext === undefined ? {} : { memoryContext }),
+          ...(softwareDeliveryContext === undefined
+            ? {}
+            : { softwareDeliveryContext }),
           ...(budgetClaim.aggregate.task.attachments === undefined
             ? {}
             : { attachments: budgetClaim.aggregate.task.attachments }),

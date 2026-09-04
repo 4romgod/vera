@@ -39,6 +39,13 @@ import {
 } from '../../../../domain/routines/routine.ts';
 import type { RoutineManagementService } from '../../../../ports/routines/routine-management-service.ts';
 import {
+  SoftwareDeliveryManagementArgumentsSchema,
+  SoftwareDeliveryRepairArgumentsSchema,
+  SoftwareDeliveryManagementResultSchema,
+  type SoftwareDeliveryActionArguments,
+  type SoftwareDeliveryManagementResult,
+} from '../../../../domain/software-delivery/software-delivery-management.ts';
+import {
   definition,
   maximumArtifactAwareAuthority,
   withArtifactAuthority,
@@ -102,6 +109,77 @@ export function attentionRegistration(
     selected: runtime,
     resolve(candidate) {
       return sameCapabilityDestination(destination, candidate)
+        ? runtime()
+        : null;
+    },
+  };
+}
+
+export function softwareDeliveryRegistration(
+  executor: IntegrationActionExecutor<
+    SoftwareDeliveryActionArguments,
+    SoftwareDeliveryManagementResult
+  >,
+  capabilityName: 'software_delivery_management' | 'software_delivery_repair',
+): CapabilityRuntimeRegistration {
+  const capabilityDefinition = definition(capabilityName);
+  const parseArguments = (value: unknown) =>
+    capabilityName === 'software_delivery_management'
+      ? SoftwareDeliveryManagementArgumentsSchema.parse(value)
+      : SoftwareDeliveryRepairArgumentsSchema.parse(value);
+  const runtime = (): CapabilityRuntime => ({
+    definition: capabilityDefinition,
+    destination: executor.destination,
+    authority: executor.maximumAuthority,
+    authorityFor({ arguments: arguments_ }) {
+      return executor.authorityFor(parseArguments(arguments_));
+    },
+    checkReadiness: () => executor.checkReadiness(),
+    async execute(invocation, options) {
+      if (
+        invocation.project !== undefined ||
+        invocation.context !== undefined ||
+        invocation.artifacts !== undefined ||
+        invocation.attachments !== undefined
+      ) {
+        throw new Error(
+          'Software-delivery capabilities must not receive external context.',
+        );
+      }
+      const started = Date.now();
+      const result = await executor.execute(
+        {
+          principalId: invocation.principalId,
+          invocationId: invocation.invocationId,
+          startedAt: invocation.startedAt,
+          recovery: invocation.recovery,
+          arguments: parseArguments(invocation.arguments),
+          ...(invocation.source === undefined
+            ? {}
+            : { source: invocation.source }),
+        },
+        options,
+      );
+      return {
+        artifact: {
+          type: 'software_delivery_management_result',
+          mediaType:
+            'application/vnd.vera.software-delivery-management-result+json',
+          content: SoftwareDeliveryManagementResultSchema.parse(result),
+        },
+        model: {
+          provider: 'vera',
+          model: executor.integrationId,
+          durationMs: Date.now() - started,
+        },
+      };
+    },
+  });
+  return {
+    definition: capabilityDefinition,
+    selected: runtime,
+    resolve(destination) {
+      return sameCapabilityDestination(executor.destination, destination)
         ? runtime()
         : null;
     },

@@ -15,6 +15,7 @@ import type {
   AttachmentAnalysisContent,
   RoutineSummaryResource,
   RoutineRunResource,
+  SoftwareDeliveryManagementResult,
 } from './index.ts';
 
 export type ProjectResource = {
@@ -156,6 +157,11 @@ export type ArtifactResource = ArtifactResourceIdentity &
           routines?: RoutineSummaryResource[];
           run?: RoutineRunResource;
         };
+      }
+    | {
+        type: 'software_delivery_management_result';
+        mediaType: 'application/vnd.vera.software-delivery-management-result+json';
+        content: SoftwareDeliveryManagementResult;
       }
   );
 

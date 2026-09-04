@@ -13,6 +13,7 @@ import type { ExecutionStore } from '../../../ports/persistence/execution-store.
 import type { OwnerResourceStore } from '../../../ports/persistence/owner-resource-store.ts';
 import type { Scratchpad } from '../../../ports/persistence/scratchpad.ts';
 import type { ProjectContextAssembler } from '../../../ports/projects/project-context-assembler.ts';
+import type { SoftwareDeliveryContext } from '../../../domain/software-delivery/software-delivery-management.ts';
 
 export type LifecycleErrorCode =
   | 'task_not_found'
@@ -82,6 +83,9 @@ export type TaskLifecycleOptions = {
   memoryContext?: {
     enabled: boolean;
     limits?: MemoryContextLimits;
+  };
+  softwareDeliveryContext?: {
+    assemble(principalId: string): Promise<SoftwareDeliveryContext>;
   };
   ownerTimeZone?: string;
   budget?: RunBudget;

@@ -409,6 +409,36 @@ export function createTaskLifecycleFoundation(runtime: TaskLifecycleRuntime) {
           : [`Artifact: ${aggregate.run.output.artifact.id}`]),
       ].join('\n\n');
     }
+    if (aggregate.run.output?.kind === 'software_delivery_management_result') {
+      const result = aggregate.run.output.result;
+      const resources =
+        result.action === 'list'
+          ? result.resources
+          : result.action === 'inspect'
+            ? [result.resource]
+            : [result.campaign];
+      return [
+        result.summary,
+        ...resources.map((resource) =>
+          [
+            `${resource.kind === 'mission' ? 'Mission' : 'Campaign'}: ${resource.id}`,
+            `Status: ${resource.status}`,
+            resource.kind === 'development_campaign' &&
+            resource.pullRequest !== undefined
+              ? `Pull request: #${String(resource.pullRequest.number)} ${resource.pullRequest.url}`
+              : undefined,
+          ]
+            .filter((value) => value !== undefined)
+            .join(' · '),
+        ),
+        ...(result.action === 'prepare_repair'
+          ? [`Repair approval: ${result.repair.id}`]
+          : []),
+        ...(aggregate.run.output.artifact === undefined
+          ? []
+          : [`Artifact: ${aggregate.run.output.artifact.id}`]),
+      ].join('\n\n');
+    }
     if (aggregate.run.output?.kind === 'knowledge_result') {
       const result = aggregate.run.output.result;
       return [

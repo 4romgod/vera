@@ -28,6 +28,7 @@ import { createDeterministicSoftwareChangeRegistry } from '../../support/determi
 import { createTestCapabilityRuntime } from '../../support/test-capability-runtime.ts';
 import { findCapability } from '../../../src/domain/capabilities/capability-registry.ts';
 import type { CapabilityRuntime } from '../../../src/ports/capabilities/capability-runtime.ts';
+import type { SoftwareDeliveryContext } from '../../../src/domain/software-delivery/software-delivery-management.ts';
 
 const plan: DevelopmentPlan = {
   schemaVersion: 1,
@@ -201,6 +202,89 @@ function missionCapabilityRegistry(): CapabilityRuntimeRegistry {
       sameCapabilityDestination(destination, candidate)
         ? runtime
         : null,
+  };
+}
+
+function softwareDeliveryDecision(): DecisionResult {
+  const proposedArguments = {
+    action: 'list' as const,
+    scope: 'active' as const,
+  };
+  return {
+    decisionId: 'decision_software_delivery_test',
+    proposal: {
+      schemaVersion: 1,
+      kind: 'invoke_capability',
+      decisionSummary: 'List active software deliveries.',
+      capability: { name: 'software_delivery_management', version: 1 },
+      arguments: proposedArguments,
+    },
+    decision: {
+      kind: 'approval_required',
+      reason: 'specialist_capability_invocation',
+      capability: { name: 'software_delivery_management', version: 1 },
+      proposedArguments,
+    },
+    model: { provider: 'fake', model: 'fake-v1', durationMs: 1 },
+  };
+}
+
+function softwareDeliveryCapabilityRegistry(): CapabilityRuntimeRegistry {
+  const definition = findCapability('software_delivery_management', 1);
+  assert.ok(definition);
+  const destination = {
+    schemaVersion: 1 as const,
+    adapterId: 'software_delivery_control',
+    provider: 'vera',
+    transport: 'in_process' as const,
+    dataBoundary: 'owner_controlled' as const,
+  };
+  const runtime: CapabilityRuntime = {
+    definition,
+    destination,
+    authority: definition.authority,
+    authorityFor: () => ({
+      ...definition.authority,
+      networkAccess: 'none',
+      sideEffects: [],
+      credentials: 'none',
+    }),
+    checkReadiness: () => Promise.resolve(),
+    execute: () =>
+      Promise.resolve({
+        artifact: {
+          type: 'software_delivery_management_result',
+          mediaType:
+            'application/vnd.vera.software-delivery-management-result+json',
+          content: {
+            schemaVersion: 1,
+            action: 'list',
+            summary: 'No active software deliveries.',
+            resources: [],
+          },
+        },
+        model: {
+          provider: 'vera',
+          model: 'software_delivery_control',
+          durationMs: 1,
+        },
+      }),
+  };
+  return {
+    declarations: () => [
+      {
+        definition,
+        authority: definition.authority,
+        enabled: true,
+        destination,
+      },
+    ],
+    enabledReferences: () => [
+      { name: 'software_delivery_management', version: 1 },
+    ],
+    selected: () => runtime,
+    resolve: (_reference, candidate) =>
+      sameCapabilityDestination(destination, candidate) ? runtime : null,
   };
 }
 
@@ -420,6 +504,9 @@ function harness(options?: {
   contextAssembler?: ProjectContextAssembler;
   executionMode?: 'inline' | 'worker';
   resources?: InMemoryOwnerResourceStore;
+  softwareDeliveryContext?: {
+    assemble(principalId: string): Promise<SoftwareDeliveryContext>;
+  };
 }) {
   const store = new InMemoryExecutionStore();
   const resources = options?.resources ?? new InMemoryOwnerResourceStore();
@@ -482,6 +569,9 @@ function harness(options?: {
       }),
     resources,
     contextAssembler,
+    ...(options?.softwareDeliveryContext === undefined
+      ? {}
+      : { softwareDeliveryContext: options.softwareDeliveryContext }),
     observer: {
       warning: (error) => warnings.push(error),
     },
@@ -534,6 +624,60 @@ void describe('task lifecycle', () => {
     );
     assert.equal(completed.run.status, 'succeeded');
     assert.equal(completed.run.output?.kind, 'mission_management_result');
+  });
+  void it('assembles delivery context and automatically executes a read-only conversational control action', async () => {
+    let assembledFor: string | undefined;
+    let evaluatedContext: Parameters<EvaluateModelDecision>[1];
+    const test = harness({
+      decision: softwareDeliveryDecision(),
+      evaluate: (_message, context) => {
+        evaluatedContext = context;
+        return Promise.resolve(softwareDeliveryDecision());
+      },
+      capabilities: softwareDeliveryCapabilityRegistry(),
+      executionMode: 'worker',
+      softwareDeliveryContext: {
+        assemble(principalId) {
+          assembledFor = principalId;
+          return Promise.resolve({
+            schemaVersion: 1,
+            generatedAt: '2026-08-24T18:00:00.000Z',
+            resources: [],
+          });
+        },
+      },
+    });
+    const submitted = await test.lifecycle.submit({
+      principalId: 'owner_v1',
+      requestKey: 'software-delivery-list',
+      message: 'Show my active missions and campaigns.',
+    });
+    const decided = await test.lifecycle.progressTask(
+      'owner_v1',
+      submitted.task.id,
+    );
+    assert.equal(assembledFor, 'owner_v1');
+    assert.deepEqual(evaluatedContext?.softwareDeliveryContext, {
+      schemaVersion: 1,
+      generatedAt: '2026-08-24T18:00:00.000Z',
+      resources: [],
+    });
+    assert.equal(
+      decided.run.approval?.status,
+      'approved',
+      `${JSON.stringify(decided.run)} ${test.warnings.map(String).join(' | ')}`,
+    );
+    assert.equal(decided.run.approval.decidedBy, 'vera_policy');
+
+    const completed = await test.lifecycle.progressTask(
+      'owner_v1',
+      submitted.task.id,
+    );
+    assert.equal(completed.run.status, 'succeeded');
+    assert.equal(
+      completed.run.output?.kind,
+      'software_delivery_management_result',
+    );
   });
   void it('anchors temporal context to the durable task creation instant', async () => {
     let now = '2026-08-26T10:00:00.000Z';

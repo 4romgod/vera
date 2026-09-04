@@ -12,6 +12,7 @@ import {
   MachineDiagnosticArtifactReferenceSchema,
   MachineServiceActionResultArtifactReferenceSchema,
   MissionManagementResultArtifactReferenceSchema,
+  SoftwareDeliveryManagementResultArtifactReferenceSchema,
   KnowledgeResultArtifactReferenceSchema,
   AttentionResultArtifactReferenceSchema,
   RoutineManagementResultArtifactReferenceSchema,
@@ -73,6 +74,11 @@ import {
   RoutineManagementArgumentsSchema,
   RoutineManagementResultSchema,
 } from '../routines/routine.ts';
+import {
+  SoftwareDeliveryManagementArgumentsSchema,
+  SoftwareDeliveryRepairArgumentsSchema,
+  SoftwareDeliveryManagementResultSchema,
+} from '../software-delivery/software-delivery-management.ts';
 
 export const TaskStatusSchema = z.enum([
   'active',
@@ -147,6 +153,24 @@ export const ApprovalSchema = z.union([
       .object({ name: z.literal('mission_management'), version: z.literal(1) })
       .strict(),
     proposedArguments: MissionProposalArgumentsSchema,
+  }).strict(),
+  ApprovalIdentitySchema.extend({
+    capability: z
+      .object({
+        name: z.literal('software_delivery_management'),
+        version: z.literal(1),
+      })
+      .strict(),
+    proposedArguments: SoftwareDeliveryManagementArgumentsSchema,
+  }).strict(),
+  ApprovalIdentitySchema.extend({
+    capability: z
+      .object({
+        name: z.literal('software_delivery_repair'),
+        version: z.literal(1),
+      })
+      .strict(),
+    proposedArguments: SoftwareDeliveryRepairArgumentsSchema,
   }).strict(),
   ApprovalIdentitySchema.extend({
     capability: z
@@ -292,6 +316,24 @@ export const CapabilityInvocationSchema = z.union([
   }).strict(),
   CapabilityInvocationIdentitySchema.extend({
     capability: z
+      .object({
+        name: z.literal('software_delivery_management'),
+        version: z.literal(1),
+      })
+      .strict(),
+    arguments: SoftwareDeliveryManagementArgumentsSchema,
+  }).strict(),
+  CapabilityInvocationIdentitySchema.extend({
+    capability: z
+      .object({
+        name: z.literal('software_delivery_repair'),
+        version: z.literal(1),
+      })
+      .strict(),
+    arguments: SoftwareDeliveryRepairArgumentsSchema,
+  }).strict(),
+  CapabilityInvocationIdentitySchema.extend({
+    capability: z
       .object({ name: z.literal('machine_inspection'), version: z.literal(1) })
       .strict(),
     arguments: MachineInspectionArgumentsSchema,
@@ -391,6 +433,14 @@ export const TaskOutputSchema = z.discriminatedUnion('kind', [
       kind: z.literal('mission_management_result'),
       result: MissionManagementResultSchema,
       artifact: MissionManagementResultArtifactReferenceSchema.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('software_delivery_management_result'),
+      result: SoftwareDeliveryManagementResultSchema,
+      artifact:
+        SoftwareDeliveryManagementResultArtifactReferenceSchema.optional(),
     })
     .strict(),
   z

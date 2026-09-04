@@ -15,6 +15,120 @@ function evaluator(candidate: unknown) {
 }
 
 void describe('model decision boundary', () => {
+  void it('resolves the latest repairable campaign from bounded software-delivery context', async () => {
+    const provider = new FakeModelProvider({
+      schemaVersion: 1,
+      kind: 'invoke_capability',
+      decisionSummary: 'Prepare the requested repair approval.',
+      capability: { name: 'software_delivery_repair', version: 1 },
+      arguments: {
+        action: 'prepare_repair',
+        campaignId: 'campaign_latest',
+      },
+    });
+    const result = await createEvaluateModelDecision(
+      provider,
+      () => 'decision_delivery',
+      {
+        enabledCapabilities: [{ name: 'software_delivery_repair', version: 1 }],
+      },
+    )('Repair the failed checks on the latest pull request.', {
+      softwareDeliveryContext: {
+        schemaVersion: 1,
+        generatedAt: currentTime,
+        resources: [
+          {
+            kind: 'development_campaign',
+            id: 'campaign_latest',
+            status: 'review_required',
+            objective: `Fix current CI ${'without disclosing excess detail '.repeat(30)}`,
+            project: { id: 'project_vera', displayName: 'Vera' },
+            repository: { owner: '4romgod', name: 'vera' },
+            attemptCount: 1,
+            maxAttempts: 3,
+            repairAvailable: true,
+            pullRequest: {
+              number: 33,
+              url: 'https://github.com/4romgod/vera/pull/33',
+              headRevision: 'a'.repeat(40),
+              checks: { pending: 0, passed: 2, failed: 1 },
+            },
+            createdAt: currentTime,
+            updatedAt: currentTime,
+          },
+        ],
+      },
+    });
+
+    assert.equal(result.decision.kind, 'approval_required');
+    const disclosed = JSON.parse(provider.inputs[0]?.message ?? '{}') as {
+      softwareDeliveryContext: {
+        id: string;
+        objective: string;
+        project: unknown;
+        pullRequest?: Record<string, unknown>;
+      }[];
+    };
+    const disclosedCampaign = disclosed.softwareDeliveryContext[0];
+    assert.ok(disclosedCampaign);
+    assert.equal(disclosedCampaign.id, 'campaign_latest');
+    assert.equal(disclosedCampaign.objective.length, 500);
+    assert.deepEqual(disclosedCampaign.project, {
+      displayName: 'Vera',
+    });
+    assert.equal(
+      'headRevision' in (disclosedCampaign.pullRequest ?? {}),
+      false,
+    );
+    assert.equal('url' in (disclosedCampaign.pullRequest ?? {}), false);
+  });
+
+  void it('asks for clarification instead of guessing between repairable campaigns', async () => {
+    const provider = new FakeModelProvider({
+      schemaVersion: 1,
+      kind: 'invoke_capability',
+      decisionSummary: 'Prepare a repair.',
+      capability: { name: 'software_delivery_repair', version: 1 },
+      arguments: {
+        action: 'prepare_repair',
+        campaignId: 'campaign_one',
+      },
+    });
+    const campaign = (id: string, objective: string) => ({
+      kind: 'development_campaign' as const,
+      id,
+      status: 'review_required' as const,
+      objective,
+      project: { id: 'project_vera', displayName: 'Vera' },
+      repository: { owner: '4romgod', name: 'vera' },
+      attemptCount: 1,
+      maxAttempts: 3,
+      repairAvailable: true,
+      createdAt: currentTime,
+      updatedAt: currentTime,
+    });
+    const result = await createEvaluateModelDecision(provider, undefined, {
+      enabledCapabilities: [{ name: 'software_delivery_repair', version: 1 }],
+    })('Repair the failed checks.', {
+      softwareDeliveryContext: {
+        schemaVersion: 1,
+        generatedAt: currentTime,
+        resources: [
+          campaign('campaign_one', 'First objective'),
+          campaign('campaign_two', 'Second objective'),
+        ],
+      },
+    });
+
+    assert.deepEqual(result.decision, {
+      kind: 'respond',
+      message:
+        'I found more than one software delivery that could be used to prepare a pull-request repair. Which one do you mean?\n' +
+        'campaign_one — development campaign: First objective\n' +
+        'campaign_two — development campaign: Second objective',
+    });
+  });
+
   void it('accepts a bounded mission only for the authoritative selected project', async () => {
     const result = await createEvaluateModelDecision(
       new FakeModelProvider({

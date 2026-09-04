@@ -20,6 +20,10 @@ import { MissionProposalArgumentsSchema } from '../missions/mission.ts';
 import { KnowledgeActionArgumentsSchema } from '../knowledge/knowledge.ts';
 import { AttentionActionArgumentsSchema } from '../attention/attention.ts';
 import { RoutineManagementArgumentsSchema } from '../routines/routine.ts';
+import {
+  SoftwareDeliveryManagementArgumentsSchema,
+  SoftwareDeliveryRepairArgumentsSchema,
+} from '../software-delivery/software-delivery-arguments.ts';
 
 const ResponseDecisionSchema = z
   .object({
@@ -61,6 +65,34 @@ const MissionManagementApprovalDecisionSchema = z
       .object({ name: z.literal('mission_management'), version: z.literal(1) })
       .strict(),
     proposedArguments: MissionProposalArgumentsSchema,
+  })
+  .strict();
+
+const SoftwareDeliveryManagementApprovalDecisionSchema = z
+  .object({
+    kind: z.literal('approval_required'),
+    reason: z.literal('specialist_capability_invocation'),
+    capability: z
+      .object({
+        name: z.literal('software_delivery_management'),
+        version: z.literal(1),
+      })
+      .strict(),
+    proposedArguments: SoftwareDeliveryManagementArgumentsSchema,
+  })
+  .strict();
+
+const SoftwareDeliveryRepairApprovalDecisionSchema = z
+  .object({
+    kind: z.literal('approval_required'),
+    reason: z.literal('specialist_capability_invocation'),
+    capability: z
+      .object({
+        name: z.literal('software_delivery_repair'),
+        version: z.literal(1),
+      })
+      .strict(),
+    proposedArguments: SoftwareDeliveryRepairArgumentsSchema,
   })
   .strict();
 
@@ -233,6 +265,8 @@ export const ExecutionDecisionSchema = z.union([
   RoutineManagementApprovalDecisionSchema,
   AttentionManagementApprovalDecisionSchema,
   MissionManagementApprovalDecisionSchema,
+  SoftwareDeliveryManagementApprovalDecisionSchema,
+  SoftwareDeliveryRepairApprovalDecisionSchema,
   DevelopmentPlanningApprovalDecisionSchema,
   SoftwareChangeApprovalDecisionSchema,
   WebResearchApprovalDecisionSchema,

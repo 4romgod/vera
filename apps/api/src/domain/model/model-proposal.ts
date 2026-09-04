@@ -33,6 +33,10 @@ import { KnowledgeActionArgumentsSchema } from '../knowledge/knowledge.ts';
 import { KnowledgeManagementGoalStepSchema } from '../goals/goal-plan.ts';
 import { AttentionActionArgumentsSchema } from '../attention/attention.ts';
 import { RoutineManagementArgumentsSchema } from '../routines/routine.ts';
+import {
+  SoftwareDeliveryManagementArgumentsSchema,
+  SoftwareDeliveryRepairArgumentsSchema,
+} from '../software-delivery/software-delivery-arguments.ts';
 
 const DecisionSummarySchema = z.string().trim().min(1).max(500);
 
@@ -88,6 +92,32 @@ const MissionManagementProposalSchema = z
       version: z.literal(1),
     }),
     arguments: MissionProposalArgumentsSchema,
+  })
+  .strict();
+
+const SoftwareDeliveryManagementProposalSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    kind: z.literal('invoke_capability'),
+    decisionSummary: DecisionSummarySchema,
+    capability: CapabilityReferenceSchema.extend({
+      name: z.literal('software_delivery_management'),
+      version: z.literal(1),
+    }),
+    arguments: SoftwareDeliveryManagementArgumentsSchema,
+  })
+  .strict();
+
+const SoftwareDeliveryRepairProposalSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    kind: z.literal('invoke_capability'),
+    decisionSummary: DecisionSummarySchema,
+    capability: CapabilityReferenceSchema.extend({
+      name: z.literal('software_delivery_repair'),
+      version: z.literal(1),
+    }),
+    arguments: SoftwareDeliveryRepairArgumentsSchema,
   })
   .strict();
 
@@ -244,6 +274,8 @@ export const ModelProposalSchema = z.union([
   RoutineManagementProposalSchema,
   AttentionManagementProposalSchema,
   MissionManagementProposalSchema,
+  SoftwareDeliveryManagementProposalSchema,
+  SoftwareDeliveryRepairProposalSchema,
   DevelopmentPlanningProposalSchema,
   SoftwareChangeProposalSchema,
   WebResearchProposalSchema,
@@ -279,6 +311,16 @@ export function createModelProposalSchema(options: {
   const missionManagementEnabled = options.enabledCapabilities.some(
     (capability) =>
       capability.name === 'mission_management' && capability.version === 1,
+  );
+  const softwareDeliveryManagementEnabled = options.enabledCapabilities.some(
+    (capability) =>
+      capability.name === 'software_delivery_management' &&
+      capability.version === 1,
+  );
+  const softwareDeliveryRepairEnabled = options.enabledCapabilities.some(
+    (capability) =>
+      capability.name === 'software_delivery_repair' &&
+      capability.version === 1,
   );
   const softwareChangeEnabled = options.enabledCapabilities.some(
     (capability) =>
@@ -342,6 +384,12 @@ export function createModelProposalSchema(options: {
     schemas.push(AttentionManagementProposalSchema);
   if (routineManagementEnabled) schemas.push(RoutineManagementProposalSchema);
   if (missionManagementEnabled) schemas.push(MissionManagementProposalSchema);
+  if (softwareDeliveryManagementEnabled) {
+    schemas.push(SoftwareDeliveryManagementProposalSchema);
+  }
+  if (softwareDeliveryRepairEnabled) {
+    schemas.push(SoftwareDeliveryRepairProposalSchema);
+  }
   if (developmentPlanningEnabled) {
     schemas.push(DevelopmentPlanningProposalSchema);
   }

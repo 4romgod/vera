@@ -15,6 +15,7 @@ import type {
   AttentionResultContent,
   RoutineSummaryResource,
   RoutineRunResource,
+  SoftwareDeliveryManagementResult,
 } from './index.ts';
 
 export type SoftwareChangeContent = {
@@ -201,6 +202,14 @@ export type TaskResource = {
         artifact?: Extract<
           ArtifactReference,
           { type: 'routine_management_result' }
+        >;
+      }
+    | {
+        kind: 'software_delivery_management_result';
+        result?: SoftwareDeliveryManagementResult;
+        artifact?: Extract<
+          ArtifactReference,
+          { type: 'software_delivery_management_result' }
         >;
       }
     | {

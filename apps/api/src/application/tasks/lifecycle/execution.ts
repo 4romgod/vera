@@ -406,9 +406,10 @@ export function createExecutionOperations(
                                       byteLength: artifact.byteLength,
                                     },
                                   }
-                                : artifact.type === 'knowledge_result'
+                                : artifact.type ===
+                                    'software_delivery_management_result'
                                   ? {
-                                      kind: 'knowledge_result',
+                                      kind: 'software_delivery_management_result',
                                       result: artifact.content,
                                       artifact: {
                                         id: artifact.id,
@@ -419,9 +420,9 @@ export function createExecutionOperations(
                                         byteLength: artifact.byteLength,
                                       },
                                     }
-                                  : artifact.type === 'attention_result'
+                                  : artifact.type === 'knowledge_result'
                                     ? {
-                                        kind: 'attention_result',
+                                        kind: 'knowledge_result',
                                         result: artifact.content,
                                         artifact: {
                                           id: artifact.id,
@@ -432,18 +433,31 @@ export function createExecutionOperations(
                                           byteLength: artifact.byteLength,
                                         },
                                       }
-                                    : {
-                                        kind: 'routine_management_result',
-                                        result: artifact.content,
-                                        artifact: {
-                                          id: artifact.id,
-                                          version: artifact.version,
-                                          type: artifact.type,
-                                          mediaType: artifact.mediaType,
-                                          sha256: artifact.sha256,
-                                          byteLength: artifact.byteLength,
-                                        },
-                                      };
+                                    : artifact.type === 'attention_result'
+                                      ? {
+                                          kind: 'attention_result',
+                                          result: artifact.content,
+                                          artifact: {
+                                            id: artifact.id,
+                                            version: artifact.version,
+                                            type: artifact.type,
+                                            mediaType: artifact.mediaType,
+                                            sha256: artifact.sha256,
+                                            byteLength: artifact.byteLength,
+                                          },
+                                        }
+                                      : {
+                                          kind: 'routine_management_result',
+                                          result: artifact.content,
+                                          artifact: {
+                                            id: artifact.id,
+                                            version: artifact.version,
+                                            type: artifact.type,
+                                            mediaType: artifact.mediaType,
+                                            sha256: artifact.sha256,
+                                            byteLength: artifact.byteLength,
+                                          },
+                                        };
           appendEvent(candidate, 'run_succeeded', completedAt, {}, createId);
           return true;
         },

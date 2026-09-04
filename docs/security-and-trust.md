@@ -538,6 +538,17 @@ existing PR branch, and verifies the same PR afterward. Force-push, base push,
 merge, and policy mutation remain prohibited by the repair effect. See
 [ADR-0041](decisions/0041-repair-review-required-pull-requests-through-exact-approved-fast-forwards.md).
 
+Conversational software-delivery control does not make model output an object
+reference. A bounded owner-scoped catalog gives the model only the metadata it
+needs to propose an existing ID; head revisions, URLs, internal project IDs,
+credentials, policies, commands, and full objectives stay local. Application
+code independently proves that the proposed ID follows from the owner's exact
+ID, PR number, latest qualifier, recent same-conversation reference, or a
+unique eligible candidate. Ambiguity fails closed. Execution re-reads durable
+state, and repair preparation can create only ADR-0041's pending exact-head
+approval. See
+[ADR-0042](decisions/0042-resolve-conversational-software-delivery-references-in-application-code.md).
+
 ## Audit and observability
 
 Security-relevant records include:
