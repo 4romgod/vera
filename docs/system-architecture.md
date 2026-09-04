@@ -1,9 +1,10 @@
 # Vera System Architecture
 
 **Status:** Accepted (logical architecture, component responsibilities,
-request lifecycle, architectural invariants, initial modular API shape, and V1
-operational storage); general progress transport and deployment topology remain open
-**Version:** 1.4
+request lifecycle, architectural invariants, initial modular API shape, V1
+operational storage, and the first Mac Mini deployment topology); general
+progress transport remains open
+**Version:** 1.5
 **Last updated:** 4 September 2026
 **Accepted:** 24 August 2026 (owner) — post-V1 progress transport and deployment
 topology are deferred; V1 uses HTTP polling. The initial Fastify/Zod modular API
@@ -29,6 +30,8 @@ Grounded personal knowledge, source integrity, bounded retrieval, and cited
 answers are accepted by ADR-0036.
 Deterministic attention delivery through an owner-device registry, durable
 outbox, and provider-neutral push worker is accepted by ADR-0039.
+The owner-scoped Mac Mini service topology and explicit update boundary are
+accepted by ADR-0040.
 
 ## Purpose
 
@@ -814,6 +817,11 @@ Tailscale Serve terminates HTTPS and proxies to the unchanged loopback listener;
 Funnel and direct LAN/Tailscale binding remain forbidden.
 For physical-browser development, the same Serve origin maps `/` to loopback
 Expo web and `/api` to the API, avoiding a remote CORS exception.
+For installed operation, user LaunchAgents run the compiled API, a loopback
+static host for the exported web frontend, and a daily MongoDB backup. Tailscale
+preserves the same `/` and `/api` contract without overwriting unrelated host
+routes. Updates verify the exact `origin/main` candidate in an isolated
+worktree before activation; pull-request publication never deploys code.
 The API admits browser cross-origin reads only from loopback HTTP(S) origins so
 the Expo web development server can use a separate port without making CORS an
 authentication substitute or exposing Vera to the LAN.
@@ -1007,9 +1015,13 @@ flowchart LR
     VERA -->|"scoped credentials and inputs"| SERVICES
 ```
 
-Running on the Mac Mini is a working assumption, not an accepted deployment
-decision. The architecture must state what happens when that machine sleeps,
-restarts, loses connectivity, or becomes unavailable.
+The first accepted deployment runs on the Mac Mini under the authenticated
+owner's user session. LaunchAgents recover the API and frontend after process
+failure and login restart, while Tailscale reconnects private ingress and a
+daily compressed archive protects MongoDB. The Mac Mini remains a single-host
+availability boundary: Vera is unavailable while it is powered off, asleep, or
+disconnected. See
+[ADR-0040](decisions/0040-install-vera-as-a-user-scoped-mac-mini-service.md).
 
 ## Architectural invariants
 

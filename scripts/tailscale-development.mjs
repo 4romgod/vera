@@ -45,9 +45,11 @@ function webHandlers(configuration) {
   if (typeof configuration.Web !== 'object' || configuration.Web === null) {
     return [];
   }
-  const webServers = Object.values(configuration.Web);
-  if (webServers.length !== 1) return [];
-  const server = webServers[0];
+  const httpsServers = Object.entries(configuration.Web).filter(([name]) =>
+    name.endsWith(':443'),
+  );
+  if (httpsServers.length !== 1) return [];
+  const server = httpsServers[0][1];
   if (
     typeof server !== 'object' ||
     server === null ||
@@ -57,11 +59,6 @@ function webHandlers(configuration) {
     return [];
   }
   return Object.entries(server.Handlers);
-}
-
-function hasOnlyHttps(configuration) {
-  const tcpPorts = Object.keys(configuration.TCP ?? {});
-  return tcpPorts.length === 1 && tcpPorts[0] === '443';
 }
 
 function handlerTargets(configuration) {
@@ -77,20 +74,9 @@ function handlerTargets(configuration) {
   );
 }
 
-function isLegacyApiOnlyConfiguration(configuration) {
-  const handlers = handlerTargets(configuration);
-  return (
-    hasOnlyHttps(configuration) &&
-    handlers.size === 1 &&
-    handlers.get('/') === VERA_API_TARGET
-  );
-}
-
 function isPhoneConfiguration(configuration) {
   const handlers = handlerTargets(configuration);
   return (
-    hasOnlyHttps(configuration) &&
-    handlers.size === 2 &&
     handlers.get('/') === VERA_FRONTEND_TARGET &&
     handlers.get(VERA_API_PATH) === VERA_API_TARGET
   );
@@ -106,20 +92,30 @@ function runTailscale(args) {
 function configurePhoneServe() {
   const serve = tailscaleJson(['serve', 'status', '--json']);
   if (isPhoneConfiguration(serve)) return;
-  if (isLegacyApiOnlyConfiguration(serve)) {
-    runTailscale(['serve', '--https=443', 'off']);
-  } else if (!isEmptyConfiguration(serve)) {
+  const handlers = handlerTargets(serve);
+  const conflictingPath = [
+    ['/', VERA_FRONTEND_TARGET],
+    [VERA_API_PATH, VERA_API_TARGET],
+  ].find(([path, expected]) => {
+    const actual = handlers.get(path);
+    return actual !== undefined && actual !== expected;
+  });
+  if (conflictingPath !== undefined) {
     fail(
-      'Tailscale Serve already has a non-Vera configuration. Refusing to overwrite it.',
+      `Tailscale Serve path ${conflictingPath[0]} already targets ${handlers.get(conflictingPath[0])}. Refusing to overwrite it.`,
     );
   }
-  runTailscale([
-    'serve',
-    '--bg',
-    `--set-path=${VERA_API_PATH}`,
-    VERA_API_TARGET,
-  ]);
-  runTailscale(['serve', '--bg', VERA_FRONTEND_TARGET]);
+  if (handlers.get(VERA_API_PATH) !== VERA_API_TARGET) {
+    runTailscale([
+      'serve',
+      '--bg',
+      `--set-path=${VERA_API_PATH}`,
+      VERA_API_TARGET,
+    ]);
+  }
+  if (handlers.get('/') !== VERA_FRONTEND_TARGET) {
+    runTailscale(['serve', '--bg', VERA_FRONTEND_TARGET]);
+  }
   if (!isPhoneConfiguration(tailscaleJson(['serve', 'status', '--json']))) {
     fail("Tailscale Serve did not retain Vera's expected phone routes.");
   }
@@ -202,19 +198,21 @@ switch (action) {
   }
   case 'off': {
     const serve = tailscaleJson(['serve', 'status', '--json']);
-    if (isEmptyConfiguration(serve)) {
+    const handlers = handlerTargets(serve);
+    const managedPaths = [
+      ['/', VERA_FRONTEND_TARGET],
+      [VERA_API_PATH, VERA_API_TARGET],
+    ].filter(([path, target]) => handlers.get(path) === target);
+    if (managedPaths.length === 0 || isEmptyConfiguration(serve)) {
       process.stdout.write('Tailscale Serve is already disabled.\n');
       break;
     }
-    if (!isPhoneConfiguration(serve) && !isLegacyApiOnlyConfiguration(serve)) {
-      fail(
-        'Tailscale Serve contains configuration beyond Vera. Refusing to remove it.',
-      );
+    for (const [path] of managedPaths) {
+      runTailscale(['serve', '--https=443', `--set-path=${path}`, 'off']);
     }
-    const result = spawnSync('tailscale', ['serve', '--https=443', 'off'], {
-      stdio: 'inherit',
-    });
-    process.exitCode = result.status ?? 1;
+    process.stdout.write(
+      'Removed Vera paths without changing unrelated Tailscale Serve routes.\n',
+    );
     break;
   }
   case 'status': {

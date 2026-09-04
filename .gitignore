@@ -4,6 +4,7 @@
 !.env.example
 !.env.*.example
 dist/
+dist-host/
 .expo/
 apps/frontend/android/
 apps/frontend/ios/

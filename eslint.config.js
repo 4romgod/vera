@@ -5,12 +5,10 @@ export default tseslint.config(
   {
     ignores: [
       '**/dist/**',
+      '**/dist-host/**',
       '**/node_modules/**',
       'eslint.config.js',
-      'scripts/local-transcription.mjs',
-      'scripts/tailscale-development.mjs',
-      'scripts/verify-live-model.mjs',
-      'scripts/verify-persistent.mjs',
+      'scripts/**/*.mjs',
     ],
   },
   eslint.configs.recommended,
