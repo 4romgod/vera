@@ -324,11 +324,19 @@ attempts and observations, and the existing project lease serializes effects.
 
 Local gate failure may retire the failed attempt and generate a complete
 replacement from the unchanged base within the approved attempt ceiling. The
-prior managed worktree remains evidence and is never reused. Once a pull request exists, CI failure or
-requested changes stops at `review_required`; remote branch repair, autonomous
-roadmap selection, recurring campaigns, and multi-PR programs remain explicit
-future decisions. See
+prior managed worktree remains evidence and is never reused. Once a pull
+request exists, CI failure or requested changes stops the campaign at
+`review_required`. ADR-0041 now permits one separately approved exact-head
+repair; autonomous roadmap selection, recurring campaigns, and multi-PR
+programs remain explicit future decisions. See
 [ADR-0034](decisions/0034-delegate-bounded-development-campaigns-through-one-owner-approval.md).
+
+The primary conversation can now list or inspect owner-scoped missions and
+campaigns and prepare that existing repair approval through deterministic
+reference resolution. A minimized bounded catalog aids model routing, but
+application code owns identity, eligibility, ambiguity handling, and current
+state revalidation. See
+[ADR-0042](decisions/0042-resolve-conversational-software-delivery-references-in-application-code.md).
 
 ### Bounded unattended software missions — implemented
 

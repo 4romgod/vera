@@ -45,6 +45,12 @@ import { MissionProposalArgumentsSchema } from '../../domain/missions/mission.ts
 import { KnowledgeActionArgumentsSchema } from '../../domain/knowledge/knowledge.ts';
 import { AttentionActionArgumentsSchema } from '../../domain/attention/attention.ts';
 import { RoutineManagementArgumentsSchema } from '../../domain/routines/routine.ts';
+import {
+  SoftwareDeliveryManagementArgumentsSchema,
+  SoftwareDeliveryRepairArgumentsSchema,
+  type SoftwareDeliveryContext,
+} from '../../domain/software-delivery/software-delivery-management.ts';
+import { validateSoftwareDeliveryReference } from './resolve-software-delivery-reference.ts';
 
 export type EvaluateModelDecision = (
   message: string,
@@ -54,6 +60,7 @@ export type EvaluateModelDecision = (
     memoryContext?: import('../../domain/memories/memory-context.ts').MemoryContextBundle;
     temporalContext?: { currentTime?: string; ownerTimeZone?: string };
     attachments?: AttachmentReference[];
+    softwareDeliveryContext?: SoftwareDeliveryContext;
   },
 ) => Promise<DecisionResult>;
 
@@ -274,6 +281,8 @@ function decide(
   ownerMessage = '',
   attachments: readonly AttachmentReference[] = [],
   machines?: MachineCatalog,
+  softwareDeliveryContext?: SoftwareDeliveryContext,
+  conversationContext?: ConversationContextBundle,
 ): ExecutionDecision {
   const machineArgumentsAreRegistered = (
     capability: string,
@@ -682,6 +691,42 @@ function decide(
       proposedArguments: arguments_,
     };
   }
+  if (
+    proposal.capability.name === 'software_delivery_management' ||
+    proposal.capability.name === 'software_delivery_repair'
+  ) {
+    const arguments_ =
+      proposal.capability.name === 'software_delivery_management'
+        ? SoftwareDeliveryManagementArgumentsSchema.parse(proposal.arguments)
+        : SoftwareDeliveryRepairArgumentsSchema.parse(proposal.arguments);
+    const resolution = validateSoftwareDeliveryReference({
+      arguments: arguments_,
+      ownerMessage,
+      ...(conversationContext === undefined ? {} : { conversationContext }),
+      ...(softwareDeliveryContext === undefined
+        ? {}
+        : { context: softwareDeliveryContext }),
+    });
+    if (!resolution.accepted) {
+      return { kind: 'respond', message: resolution.message };
+    }
+    if (proposal.capability.name === 'software_delivery_management') {
+      return {
+        kind: 'approval_required',
+        reason: 'specialist_capability_invocation',
+        capability: { name: 'software_delivery_management', version: 1 },
+        proposedArguments:
+          SoftwareDeliveryManagementArgumentsSchema.parse(arguments_),
+      };
+    }
+    return {
+      kind: 'approval_required',
+      reason: 'specialist_capability_invocation',
+      capability: { name: 'software_delivery_repair', version: 1 },
+      proposedArguments:
+        SoftwareDeliveryRepairArgumentsSchema.parse(arguments_),
+    };
+  }
   if (proposal.capability.name === 'knowledge_management') {
     const arguments_ = KnowledgeActionArgumentsSchema.parse(proposal.arguments);
     if (
@@ -829,6 +874,33 @@ export function createEvaluateModelDecision(
               registeredMachines: publicMachineCatalog(options.machines)
                 .machines,
             }),
+        ...(context?.softwareDeliveryContext === undefined
+          ? {}
+          : {
+              softwareDeliveryContext:
+                context.softwareDeliveryContext.resources.map((resource) => ({
+                  kind: resource.kind,
+                  id: resource.id,
+                  status: resource.status,
+                  objective: resource.objective.slice(0, 500),
+                  project: { displayName: resource.project.displayName },
+                  ...(resource.kind === 'mission'
+                    ? { campaignId: resource.campaignId }
+                    : {
+                        repairAvailable: resource.repairAvailable,
+                        ...(resource.pullRequest === undefined
+                          ? {}
+                          : {
+                              pullRequest: {
+                                number: resource.pullRequest.number,
+                                checks: resource.pullRequest.checks,
+                                reviewDecision:
+                                  resource.pullRequest.reviewDecision,
+                              },
+                            }),
+                      }),
+                })),
+            }),
       }),
       outputSchema: generationJsonSchema,
     });
@@ -886,6 +958,8 @@ export function createEvaluateModelDecision(
             message,
             context?.attachments ?? [],
             options.machines,
+            context?.softwareDeliveryContext,
+            context?.conversationContext,
           ),
       model: {
         provider: generation.provider,

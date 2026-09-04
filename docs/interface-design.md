@@ -178,6 +178,12 @@ flowchart LR
 - A successful publication renders only a canonical HTTPS GitHub pull-request
   URL as an external action. Full aggregates remain available under Delivery
   evidence and Technical details.
+- The owner may ask Vera to list active missions and campaigns or inspect an
+  exact, latest, uniquely eligible, PR-number, or recent-conversation reference.
+  Ambiguity produces a short candidate list instead of an inferred selection.
+- A conversational repair request renders the existing exact-head repair card
+  inline. “Approve exact repair” and “Reject” decide only that frozen repair;
+  preparing the card has not changed the branch, force-pushed, or merged.
 
 ## Delegated development campaigns
 

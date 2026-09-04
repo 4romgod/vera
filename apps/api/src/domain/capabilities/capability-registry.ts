@@ -12,6 +12,10 @@ import { MissionProposalArgumentsSchema } from '../missions/mission-proposal.ts'
 import { KnowledgeActionArgumentsSchema } from '../knowledge/knowledge.ts';
 import { AttentionActionArgumentsSchema } from '../attention/attention.ts';
 import { RoutineManagementArgumentsSchema } from '../routines/routine.ts';
+import {
+  SoftwareDeliveryManagementArgumentsSchema,
+  SoftwareDeliveryRepairArgumentsSchema,
+} from '../software-delivery/software-delivery-arguments.ts';
 export { AttachmentAnalysisArgumentsSchema } from '../attachments/attachment-analysis.ts';
 
 export const DevelopmentPlanningProposalArgumentsSchema = z
@@ -86,6 +90,7 @@ export const CapabilityAuthoritySchema = z
         'personal_knowledge',
         'owner_attention',
         'routine_data',
+        'software_delivery_metadata',
       ]),
     ),
     sideEffects: z.array(
@@ -99,6 +104,7 @@ export const CapabilityAuthoritySchema = z
         'mission_draft_write',
         'knowledge_write',
         'standing_instruction_write',
+        'campaign_repair_draft_write',
       ]),
     ),
     credentials: z.enum(['none', 'server_managed']),
@@ -122,6 +128,58 @@ export type CapabilityDefinition = {
 };
 
 export const CapabilityDefinitions = [
+  {
+    name: 'software_delivery_management',
+    version: 1,
+    description:
+      'List or inspect owner-scoped software missions and development campaigns.',
+    proposalArgumentsSchema: SoftwareDeliveryManagementArgumentsSchema,
+    effect: 'owner_state',
+    artifact: {
+      type: 'software_delivery_management_result',
+      mediaType:
+        'application/vnd.vera.software-delivery-management-result+json',
+    },
+    acceptedInputArtifacts: [],
+    explicitAdaptiveOutcome: {
+      patterns: [],
+      description: 'Inspect or manage an existing software delivery.',
+    },
+    authority: {
+      approval: 'never',
+      projectContext: 'none',
+      networkAccess: 'none',
+      dataClasses: ['owner_request', 'software_delivery_metadata'],
+      sideEffects: [],
+      credentials: 'none',
+    },
+  },
+  {
+    name: 'software_delivery_repair',
+    version: 1,
+    description:
+      'Observe an eligible campaign pull request and prepare one frozen exact-head repair approval.',
+    proposalArgumentsSchema: SoftwareDeliveryRepairArgumentsSchema,
+    effect: 'owner_state',
+    artifact: {
+      type: 'software_delivery_management_result',
+      mediaType:
+        'application/vnd.vera.software-delivery-management-result+json',
+    },
+    acceptedInputArtifacts: [],
+    explicitAdaptiveOutcome: {
+      patterns: [],
+      description: 'Prepare an approval for an eligible pull-request repair.',
+    },
+    authority: {
+      approval: 'never',
+      projectContext: 'none',
+      networkAccess: 'provider_api',
+      dataClasses: ['owner_request', 'software_delivery_metadata'],
+      sideEffects: ['campaign_repair_draft_write'],
+      credentials: 'server_managed',
+    },
+  },
   {
     name: 'routine_management',
     version: 1,

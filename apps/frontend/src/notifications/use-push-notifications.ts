@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import * as Device from 'expo-device';
-import * as Notifications from 'expo-notifications';
+import type { NotificationResponse } from 'expo-notifications';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
@@ -14,15 +14,31 @@ import type {
 import { parseAttentionDeepLink } from './attention-deep-link.ts';
 
 const INSTALLATION_KEY = 'vera.notificationInstallationId.v1';
-Notifications.setNotificationHandler({
-  handleNotification: () =>
-    Promise.resolve({
-      shouldShowBanner: true,
-      shouldShowList: true,
-      shouldPlaySound: true,
-      shouldSetBadge: false,
-    }),
-});
+let notificationModulePromise:
+  | Promise<typeof import('expo-notifications')>
+  | undefined;
+
+async function loadNotificationModule() {
+  notificationModulePromise ??= import('expo-notifications').then(
+    (notifications) => {
+      notifications.setNotificationHandler({
+        handleNotification: () =>
+          Promise.resolve({
+            shouldShowBanner: true,
+            shouldShowList: true,
+            shouldPlaySound: true,
+            shouldSetBadge: false,
+          }),
+      });
+      return notifications;
+    },
+  );
+  return notificationModulePromise;
+}
+
+if (Platform.OS !== 'web') {
+  void loadNotificationModule();
+}
 
 export type PushNotificationController = {
   loading: boolean;
@@ -50,7 +66,6 @@ export function usePushNotifications(options: {
   const [explanation, setExplanation] = useState<string>();
   const [device, setDevice] = useState<NotificationDeviceResource>();
   const [deliveries, setDeliveries] = useState<PushDeliveryResource[]>([]);
-  const lastNotificationResponse = Notifications.useLastNotificationResponse();
   const { client, onAttention, onError, onRefresh } = options;
 
   const refresh = useCallback(async () => {
@@ -89,13 +104,31 @@ export function usePushNotifications(options: {
     void refresh();
   }, [refresh]);
   useEffect(() => {
-    const target = parseAttentionDeepLink(
-      lastNotificationResponse?.notification.request.content.data?.deepLink,
-    );
-    if (target === null) return;
-    onAttention(target.attentionItemId);
-    void onRefresh();
-  }, [lastNotificationResponse, onAttention, onRefresh]);
+    if (Platform.OS === 'web') return;
+    let active = true;
+    let subscription: { remove(): void } | undefined;
+    const handleResponse = (response: NotificationResponse) => {
+      const target = parseAttentionDeepLink(
+        response.notification.request.content.data?.deepLink,
+      );
+      if (target === null) return;
+      onAttention(target.attentionItemId);
+      void onRefresh();
+    };
+    void loadNotificationModule().then((notifications) => {
+      if (!active) return;
+      const initialResponse = notifications.getLastNotificationResponse();
+      if (initialResponse !== null) handleResponse(initialResponse);
+      const subscribe: (listener: (response: NotificationResponse) => void) => {
+        remove(): void;
+      } = notifications.addNotificationResponseReceivedListener;
+      subscription = subscribe(handleResponse);
+    });
+    return () => {
+      active = false;
+      subscription?.remove();
+    };
+  }, [onAttention, onRefresh]);
 
   async function enable() {
     if (!supported || enabling) return;
@@ -103,16 +136,17 @@ export function usePushNotifications(options: {
     try {
       if (!Device.isDevice)
         throw new Error('Push notifications require a physical device.');
+      const notifications = await loadNotificationModule();
       if (Platform.OS === 'android')
-        await Notifications.setNotificationChannelAsync('vera-attention', {
+        await notifications.setNotificationChannelAsync('vera-attention', {
           name: 'Vera attention',
-          importance: Notifications.AndroidImportance.HIGH,
+          importance: notifications.AndroidImportance.HIGH,
           vibrationPattern: [0, 250, 150, 250],
           lightColor: '#F3C94F',
         });
-      let permissions = await Notifications.getPermissionsAsync();
+      let permissions = await notifications.getPermissionsAsync();
       if (!permissions.granted)
-        permissions = await Notifications.requestPermissionsAsync();
+        permissions = await notifications.requestPermissionsAsync();
       if (!permissions.granted)
         throw new Error('Notification permission was not granted.');
       const status = await client.getPushNotificationStatus();
@@ -120,7 +154,7 @@ export function usePushNotifications(options: {
       if (projectId === undefined)
         throw new Error('The Vera Expo project ID is not configured.');
       const pushToken = (
-        await Notifications.getExpoPushTokenAsync({ projectId })
+        await notifications.getExpoPushTokenAsync({ projectId })
       ).data;
       let installationId = await SecureStore.getItemAsync(INSTALLATION_KEY);
       if (installationId === null) {

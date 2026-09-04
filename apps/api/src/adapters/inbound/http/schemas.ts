@@ -19,8 +19,13 @@ import {
   PersonalReminderResultArtifactSchema,
   MemoryResultArtifactSchema,
   AttachmentAnalysisArtifactSchema,
+  MachineDiagnosticArtifactSchema,
+  MachineServiceActionResultArtifactSchema,
+  MissionManagementResultArtifactSchema,
   KnowledgeResultArtifactSchema,
   AttentionResultArtifactSchema,
+  RoutineManagementResultArtifactSchema,
+  SoftwareDeliveryManagementResultArtifactSchema,
 } from '../../../domain/artifacts/artifact.ts';
 import {
   ConversationSchema,
@@ -351,8 +356,13 @@ export const ArtifactResponseSchema = z.discriminatedUnion('type', [
   PersonalReminderResultArtifactSchema.omit({ principalId: true }),
   MemoryResultArtifactSchema.omit({ principalId: true }),
   AttachmentAnalysisArtifactSchema.omit({ principalId: true }),
+  MachineDiagnosticArtifactSchema.omit({ principalId: true }),
+  MachineServiceActionResultArtifactSchema.omit({ principalId: true }),
+  MissionManagementResultArtifactSchema.omit({ principalId: true }),
   KnowledgeResultArtifactSchema.omit({ principalId: true }),
   AttentionResultArtifactSchema.omit({ principalId: true }),
+  RoutineManagementResultArtifactSchema.omit({ principalId: true }),
+  SoftwareDeliveryManagementResultArtifactSchema.omit({ principalId: true }),
 ]);
 
 export const PersonalTaskListQuerySchema = z

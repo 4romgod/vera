@@ -584,3 +584,63 @@ export type DevelopmentCampaignPolicyListResource = {
   schemaVersion: 1;
   policies: DevelopmentCampaignPolicyResource[];
 };
+
+export type SoftwareDeliveryMissionSummary = {
+  kind: 'mission';
+  id: string;
+  status: MissionResource['status'];
+  objective: string;
+  project: { id: string; displayName: string };
+  campaignId: string;
+  pullRequest?: { number: number; url: string };
+  failure?: { code: string; message: string };
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SoftwareDeliveryCampaignSummary = {
+  kind: 'development_campaign';
+  id: string;
+  status: DevelopmentCampaignStatus;
+  objective: string;
+  project: { id: string; displayName: string };
+  repository: { owner: string; name: string };
+  attemptCount: number;
+  maxAttempts: number;
+  repairAvailable: boolean;
+  pullRequest?: {
+    number: number;
+    url: string;
+    headRevision: string;
+    checks?: { pending: number; passed: number; failed: number };
+    reviewDecision?: string;
+  };
+  failure?: { code: string; message: string };
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SoftwareDeliveryResourceSummary =
+  | SoftwareDeliveryMissionSummary
+  | SoftwareDeliveryCampaignSummary;
+
+export type SoftwareDeliveryManagementResult =
+  | {
+      schemaVersion: 1;
+      action: 'list';
+      summary: string;
+      resources: SoftwareDeliveryResourceSummary[];
+    }
+  | {
+      schemaVersion: 1;
+      action: 'inspect';
+      summary: string;
+      resource: SoftwareDeliveryResourceSummary;
+    }
+  | {
+      schemaVersion: 1;
+      action: 'prepare_repair';
+      summary: string;
+      campaign: SoftwareDeliveryCampaignSummary;
+      repair: NonNullable<DevelopmentCampaignResource['repairs']>[number];
+    };

@@ -13,6 +13,8 @@ import {
   ServerCog,
   Wrench,
   Library,
+  GitPullRequest,
+  ShieldCheck,
 } from 'lucide-react-native';
 import { Pressable, Text, View } from 'react-native';
 
@@ -112,7 +114,15 @@ export function AssistantResultCard(props: {
       ) : null}
 
       {softwareChange === undefined ? (
-        presentation.content
+        output.kind === 'software_delivery_management_result' &&
+        output.result !== undefined ? (
+          <SoftwareDeliveryManagementContent
+            client={props.client}
+            result={output.result}
+          />
+        ) : (
+          presentation.content
+        )
       ) : (
         <SoftwareDeliveryCard
           artifactId={softwareChange.id}
@@ -354,6 +364,17 @@ function resultPresentation(output: NonNullable<TaskResource['output']>): {
               />
             </View>
           ),
+      };
+    case 'software_delivery_management_result':
+      return {
+        title:
+          output.result?.action === 'prepare_repair'
+            ? 'Repair ready for approval'
+            : output.result?.action === 'inspect'
+              ? 'Software delivery status'
+              : 'Software deliveries',
+        summary: output.result?.summary,
+        icon: GitPullRequest,
       };
     case 'personal_task_result':
       return {
@@ -643,6 +664,166 @@ function resultPresentation(output: NonNullable<TaskResource['output']>): {
     default:
       return { title: 'Work completed', icon: CheckCircle2 };
   }
+}
+
+function SoftwareDeliveryManagementContent(props: {
+  result: NonNullable<
+    Extract<
+      NonNullable<TaskResource['output']>,
+      { kind: 'software_delivery_management_result' }
+    >['result']
+  >;
+  client: VeraApi;
+}) {
+  const [repairStatus, setRepairStatus] = useState(
+    props.result.action === 'prepare_repair'
+      ? props.result.repair.status
+      : undefined,
+  );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const resources =
+    props.result.action === 'list'
+      ? props.result.resources
+      : props.result.action === 'inspect'
+        ? [props.result.resource]
+        : [props.result.campaign];
+
+  async function decide(decision: 'approved' | 'rejected') {
+    if (props.result.action !== 'prepare_repair' || busy) return;
+    const result = props.result;
+    setBusy(true);
+    setError(undefined);
+    try {
+      const campaign = await props.client.decideDevelopmentCampaignRepair({
+        campaignId: result.campaign.id,
+        repairId: result.repair.id,
+        decision,
+      });
+      const repair = campaign.repairs?.find(
+        ({ id }) => id === result.repair.id,
+      );
+      setRepairStatus(repair?.status ?? decision);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Decision failed.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <View style={{ gap: spacing.md }}>
+      {resources.map((resource) => (
+        <ResultRow
+          key={resource.id}
+          status={humanizeIdentifier(resource.status)}
+          title={resource.objective}
+          detail={
+            resource.kind === 'development_campaign' &&
+            resource.pullRequest !== undefined
+              ? `PR #${String(resource.pullRequest.number)} · ${resource.project.displayName}`
+              : resource.project.displayName
+          }
+        />
+      ))}
+      {props.result.action !== 'prepare_repair' ? null : (
+        <View
+          style={{
+            gap: spacing.md,
+            borderWidth: 1,
+            borderColor: palette.accentLine,
+            borderRadius: radius.md,
+            padding: spacing.md,
+            backgroundColor: palette.accentSurface,
+          }}
+        >
+          <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+            <ShieldCheck color={palette.accent} size={18} />
+            <Text
+              selectable
+              style={{ flex: 1, color: palette.text, lineHeight: 20 }}
+            >
+              Exact head{' '}
+              {props.result.repair.effect.sourceRevision.slice(0, 12)}
+              {' · '}no force-push{' · '}no merge
+            </Text>
+          </View>
+          {(props.result.repair.evidence.failedChecks ?? []).map((check) => (
+            <Text
+              key={check.name}
+              selectable
+              style={{ color: palette.textSoft, fontSize: 13, lineHeight: 19 }}
+            >
+              {check.name}: {check.summary ?? check.conclusion}
+            </Text>
+          ))}
+          {repairStatus === 'pending' ? (
+            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+              <DecisionButton
+                disabled={busy}
+                label="Reject"
+                onPress={() => void decide('rejected')}
+              />
+              <DecisionButton
+                accent
+                disabled={busy}
+                label={busy ? 'Recording…' : 'Approve exact repair'}
+                onPress={() => void decide('approved')}
+              />
+            </View>
+          ) : (
+            <Text
+              selectable
+              style={{ color: palette.accent, fontSize: 13, fontWeight: '700' }}
+            >
+              Repair {repairStatus}
+            </Text>
+          )}
+          {error === undefined ? null : (
+            <Text accessibilityRole="alert" style={{ color: palette.danger }}>
+              {error}
+            </Text>
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
+
+function DecisionButton(props: {
+  label: string;
+  onPress: () => void;
+  disabled: boolean;
+  accent?: boolean;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      disabled={props.disabled}
+      onPress={props.onPress}
+      style={({ pressed }) => ({
+        flex: 1,
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: props.accent ? palette.accent : palette.line,
+        borderRadius: radius.pill,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
+        backgroundColor: props.accent ? palette.accentSurface : 'transparent',
+        opacity: props.disabled || pressed ? 0.65 : 1,
+      })}
+    >
+      <Text
+        style={{
+          color: props.accent ? palette.accent : palette.textSoft,
+          fontSize: 12,
+          fontWeight: '700',
+        }}
+      >
+        {props.label}
+      </Text>
+    </Pressable>
+  );
 }
 
 function ResultRow(props: { title: string; status: string; detail?: string }) {

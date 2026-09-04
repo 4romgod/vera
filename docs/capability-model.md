@@ -3,7 +3,7 @@
 **Status:** Accepted (capability declaration shape, invocation lifecycle,
 selection checks, and resource/delegation budget model)
 **Version:** 1.0
-**Last updated:** 4 September 2026
+**Last updated:** 5 September 2026
 **Accepted:** 24 August 2026 (owner); declarative runtime, catalog, and
 `web_research@1` accepted by ADR-0020 on 25 August 2026; bounded composition
 accepted by ADR-0021 on 26 August 2026; provider-neutral integration actions
@@ -13,7 +13,9 @@ and `memory_management@1` accepted by ADR-0025 on 26 August 2026;
 `attachment_analysis@1` is accepted by ADR-0031 on 27 August 2026; actionable
 attachment composition is accepted by ADR-0032 on 27 August 2026
 and registered machine operations are accepted by ADR-0033 on 27 August 2026;
-grounded personal knowledge is accepted by ADR-0036 on 4 September 2026
+grounded personal knowledge is accepted by ADR-0036 on 4 September 2026; and
+conversational software-delivery control is accepted by ADR-0042 on 5 September
+2026
 
 ## Purpose
 
@@ -742,3 +744,31 @@ one repair tied to the exact current pull-request head. Only then may it give
 the specialist historical context from that commit, verify a new exact patch,
 and fast-forward the existing PR branch without force or merge authority. See
 [ADR-0041](decisions/0041-repair-review-required-pull-requests-through-exact-approved-fast-forwards.md).
+
+## Implemented conversational software-delivery capabilities
+
+`software_delivery_management@1` lists or inspects durable owner-scoped
+missions and development campaigns. Its authority is fixed at local read-only
+access to software-delivery metadata. `software_delivery_repair@1` has a
+separate fixed envelope: it may observe the provider state required by the
+existing campaign lifecycle and persist one pending repair draft, but it cannot
+approve or execute that repair.
+
+```mermaid
+flowchart LR
+    U["Natural owner reference"] --> M["Model proposes catalog ID"]
+    M --> R{"Application resolves exactly?"}
+    R -->|no| Q["Clarification response"]
+    R -->|list / inspect| D["Read current durable resources"]
+    R -->|prepare repair| P["Persist exact-head repair approval"]
+    P -. "separate owner decision" .-> E["Existing repair execution"]
+```
+
+The catalog is assembled only for relevant requests, bounded to forty resources
+and ordered newest first. Provider disclosure omits head revisions, URLs,
+internal project IDs, credentials, policies, commands, and full objectives.
+The model's selected ID is accepted only when it matches an exact owner ID,
+unambiguous PR number, explicit latest reference, recent same-conversation ID,
+or one uniquely eligible resource. Current durable state is re-read at
+execution. See
+[ADR-0042](decisions/0042-resolve-conversational-software-delivery-references-in-application-code.md).

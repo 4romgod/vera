@@ -27,6 +27,10 @@ import {
 import type { KnowledgeService } from '../../../ports/knowledge/knowledge-service.ts';
 import type { AttentionService } from '../../../ports/attention/attention-service.ts';
 import type { RoutineManagementService } from '../../../ports/routines/routine-management-service.ts';
+import type {
+  SoftwareDeliveryActionArguments,
+  SoftwareDeliveryManagementResult,
+} from '../../../domain/software-delivery/software-delivery-management.ts';
 import { knowledgeRegistration } from './runtime/knowledge-registration.ts';
 import {
   machineInspectionRegistration,
@@ -39,6 +43,7 @@ import {
   personalTaskRegistration,
   reminderRegistration,
   routineRegistration,
+  softwareDeliveryRegistration,
 } from './runtime/owner-registrations.ts';
 import {
   attachmentAnalysisRegistration,
@@ -69,8 +74,32 @@ export function createCapabilityRuntimeRegistry(options: {
   machines?: MachineOperations;
   attention?: AttentionService;
   routines?: { lifecycle: RoutineManagementService; wake: () => void };
+  softwareDeliveryManagement?: IntegrationActionExecutor<
+    SoftwareDeliveryActionArguments,
+    SoftwareDeliveryManagementResult
+  >;
+  softwareDeliveryRepair?: IntegrationActionExecutor<
+    SoftwareDeliveryActionArguments,
+    SoftwareDeliveryManagementResult
+  >;
 }): CapabilityRuntimeRegistry {
   const registrations = [
+    ...(options.softwareDeliveryManagement === undefined
+      ? []
+      : [
+          softwareDeliveryRegistration(
+            options.softwareDeliveryManagement,
+            'software_delivery_management',
+          ),
+        ]),
+    ...(options.softwareDeliveryRepair === undefined
+      ? []
+      : [
+          softwareDeliveryRegistration(
+            options.softwareDeliveryRepair,
+            'software_delivery_repair',
+          ),
+        ]),
     ...(options.attention === undefined
       ? []
       : [attentionRegistration(options.attention)]),

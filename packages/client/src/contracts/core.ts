@@ -144,6 +144,7 @@ export type Approval = {
       | 'personal_knowledge'
       | 'owner_attention'
       | 'routine_data'
+      | 'software_delivery_metadata'
     )[];
     sideEffects: (
       | 'third_party_disclosure'
@@ -155,6 +156,7 @@ export type Approval = {
       | 'mission_draft_write'
       | 'knowledge_write'
       | 'standing_instruction_write'
+      | 'campaign_repair_draft_write'
     )[];
     credentials: 'none' | 'server_managed';
     maxWebSearchCalls?: number;
@@ -224,5 +226,9 @@ export type ArtifactReference = ArtifactReferenceIdentity &
     | {
         type: 'routine_management_result';
         mediaType: 'application/vnd.vera.routine-management-result+json';
+      }
+    | {
+        type: 'software_delivery_management_result';
+        mediaType: 'application/vnd.vera.software-delivery-management-result+json';
       }
   );

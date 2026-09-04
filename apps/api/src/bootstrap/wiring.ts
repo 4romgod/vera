@@ -81,6 +81,10 @@ import { ConfiguredMachineOperations } from '../adapters/outbound/machines/confi
 import { createMachineService } from '../application/machines/machine-service.ts';
 import { LocalMissionActionExecutor } from '../adapters/outbound/integrations/missions/local-mission-action-executor.ts';
 import type { MissionDraftServiceReference } from '../ports/missions/mission-draft-service.ts';
+import { LocalSoftwareDeliveryActionExecutor } from '../adapters/outbound/integrations/software-delivery/local-software-delivery-action-executor.ts';
+import type { SoftwareDeliveryControlServiceReference } from '../ports/software-delivery/software-delivery-control-service.ts';
+import { createSoftwareDeliveryContextSource } from '../application/software-delivery/software-delivery-context.ts';
+import { createSoftwareDeliveryControlService } from '../application/software-delivery/software-delivery-control-service.ts';
 import { InMemoryAttentionDecisionStore } from '../adapters/outbound/persistence/memory/in-memory-attention-decision-store.ts';
 import { MongoDbAttentionDecisionStore } from '../adapters/outbound/persistence/mongodb/mongodb-attention-decision-store.ts';
 import { createAttentionService } from '../application/attention/attention-service.ts';
@@ -283,6 +287,22 @@ export function createApp(
   const missionExecutor = new LocalMissionActionExecutor(
     missionLifecycleReference,
   );
+  const softwareDeliveryControlReference: SoftwareDeliveryControlServiceReference =
+    {};
+  const softwareDeliveryManagementExecutor =
+    new LocalSoftwareDeliveryActionExecutor(
+      softwareDeliveryControlReference,
+      'management',
+    );
+  const softwareDeliveryRepairExecutor =
+    new LocalSoftwareDeliveryActionExecutor(
+      softwareDeliveryControlReference,
+      'repair',
+    );
+  const softwareDeliveryContext = createSoftwareDeliveryContextSource({
+    missions: missionStore,
+    campaigns: campaignStore,
+  });
   const personalTaskService = createPersonalTaskService({ store: resources });
   const reminderService = createReminderService({ store: resources });
   const notificationService = createNotificationService({
@@ -354,6 +374,8 @@ export function createApp(
     personalTasks: personalTaskExecutor,
     reminders: reminderExecutor,
     memories: memoryExecutor,
+    softwareDeliveryManagement: softwareDeliveryManagementExecutor,
+    softwareDeliveryRepair: softwareDeliveryRepairExecutor,
     knowledge: knowledgeService,
     ...((config.missions?.policies.length ?? 0) === 0
       ? {}
@@ -427,6 +449,7 @@ export function createApp(
     contextAssembler,
     conversationContextLimits: config.conversationContext,
     memoryContext: { enabled: provider.dataBoundary === 'owner_controlled' },
+    softwareDeliveryContext,
     ownerTimeZone: config.reminders.ownerTimeZone,
     executionMode: 'worker',
     observer: lifecycleObserver,
@@ -523,6 +546,11 @@ export function createApp(
     campaigns: developmentCampaignLifecycle,
   });
   missionLifecycleReference.current = missionLifecycle;
+  softwareDeliveryControlReference.current =
+    createSoftwareDeliveryControlService({
+      missions: missionLifecycle,
+      campaigns: developmentCampaignLifecycle,
+    });
   const missionWorker = createMissionWorker({
     store: missionStore,
     leases,

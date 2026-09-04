@@ -900,6 +900,15 @@ outcome and completion criteria. Vera creates the draft locally, then the
 Missions tab presents the single consequential approval. After approval it may
 produce one verified non-draft pull request and notify you; it never merges.
 
+Once missions or campaigns exist, they can also be controlled from ordinary
+conversation. Useful requests include “Show my active missions and campaigns,”
+“How is the latest campaign?”, “Show me PR #42,” and “Repair the failed checks
+on the latest pull request.” Vera asks which resource you mean when the
+reference is ambiguous. A repair request only prepares the existing frozen
+exact-head approval; use the inline result card to inspect and separately
+approve or reject it. It never silently changes, force-pushes, or merges a
+branch.
+
 For a multi-turn conversation, use `chat`. The first command creates a
 conversation and returns its ID with Vera's durable reply:
 
