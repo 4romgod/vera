@@ -586,6 +586,20 @@ See [ADR-0011](decisions/0011-use-generic-project-sources-and-bounded-context-sn
 and [ADR-0012](decisions/0012-late-bind-specialist-platforms-behind-capability-adapters.md)
 and the [V1 Definition](v1-definition.md#required-first-journey).
 
+## Implemented attention capability
+
+`attention_management@1` currently exposes one `brief` action. The action is
+project-independent, local, read-only, and approval-free. It produces a durable
+`attention_result` artifact from the deterministic attention projector. The
+orchestration model selects the capability but never receives the projected
+owner data; the runtime reads authoritative resources only after routing.
+
+Dashboard snooze, dismiss, and restore commands use the direct owner-resource
+API. They change presentation state only and cannot approve a run, complete a
+task, acknowledge a reminder, or progress a mission. Consequential actions
+remain separate capabilities or lifecycle decisions with their existing
+authority.
+
 ## Implemented web-research capability
 
 `web_research@1` is the first capability that neither requires nor accepts a

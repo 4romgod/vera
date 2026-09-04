@@ -58,6 +58,7 @@ erasing why a choice was made.
 | [0034](0034-delegate-bounded-development-campaigns-through-one-owner-approval.md) | Accepted | Carry one owner-approved engineering objective through bounded implementation, verification, publication, checks, merge, and synchronization. |
 | [0035](0035-run-bounded-software-missions-that-stop-at-a-pull-request.md) | Accepted | Run one bounded unattended software mission that stops at a verified pull request and never merges. |
 | [0036](0036-build-grounded-personal-knowledge-from-owner-approved-sources.md) | Accepted | Promote explicitly approved attachments into an integrity-checked personal knowledge library and answer only from cited evidence. |
+| [0037](0037-project-attention-from-authoritative-resources.md) | Accepted | Compute a deterministic current briefing from authoritative resources and persist only generation-scoped owner dispositions. |
 
 ADRs 0001–0008 were accepted 24 August 2026 following the owner's review of
 the foundation documentation. ADR-0007 accepted a semantic boundary without

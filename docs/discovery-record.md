@@ -470,7 +470,7 @@ evidence-linked final response, budgets, artifacts, and owner resource after a
 later restart.
 
 The workflow remains one job, reuses one install and build, cancels superseded
-runs, and has a nine-minute hard limit. The persistent tier runs on the pull
+runs, and has a twelve-minute hard limit. The persistent tier runs on the pull
 request and is not repeated for its resulting `main` push, although it remains
 manually triggerable. Static, unit, boundary, and build checks still run for
 both events. This gate strengthens reproducible V1 evidence but does not replace

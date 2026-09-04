@@ -135,6 +135,20 @@ export class InMemoryExecutionStore implements ExecutionStore {
     );
   }
 
+  public listByPrincipal(principalId: string, limit: number) {
+    return Promise.resolve(
+      [...this.byTaskId.values()]
+        .filter((aggregate) => aggregate.task.principalId === principalId)
+        .sort(
+          (left, right) =>
+            right.task.updatedAt.localeCompare(left.task.updatedAt) ||
+            right.task.id.localeCompare(left.task.id),
+        )
+        .slice(0, limit)
+        .map((aggregate) => structuredClone(aggregate)),
+    );
+  }
+
   public checkReadiness(): Promise<void> {
     return Promise.resolve();
   }

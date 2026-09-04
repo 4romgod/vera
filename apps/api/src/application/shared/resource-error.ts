@@ -12,6 +12,8 @@ export type ResourceErrorCode =
   | 'invalid_knowledge_evidence'
   | 'knowledge_analysis_required'
   | 'knowledge_integrity_failure'
+  | 'attention_item_not_found'
+  | 'invalid_attention_decision'
   | 'invalid_notification_cursor'
   | 'idempotency_key_reused'
   | 'invalid_project_source';

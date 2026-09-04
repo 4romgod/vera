@@ -18,11 +18,26 @@ import {
 } from '../machines/machine.ts';
 import { MissionProposalArgumentsSchema } from '../missions/mission.ts';
 import { KnowledgeActionArgumentsSchema } from '../knowledge/knowledge.ts';
+import { AttentionActionArgumentsSchema } from '../attention/attention.ts';
 
 const ResponseDecisionSchema = z
   .object({
     kind: z.literal('respond'),
     message: z.string(),
+  })
+  .strict();
+
+const AttentionManagementApprovalDecisionSchema = z
+  .object({
+    kind: z.literal('approval_required'),
+    reason: z.literal('specialist_capability_invocation'),
+    capability: z
+      .object({
+        name: z.literal('attention_management'),
+        version: z.literal(1),
+      })
+      .strict(),
+    proposedArguments: AttentionActionArgumentsSchema,
   })
   .strict();
 
@@ -203,6 +218,7 @@ const AdaptiveGoalPlannedDecisionSchema = z
 
 export const ExecutionDecisionSchema = z.union([
   ResponseDecisionSchema,
+  AttentionManagementApprovalDecisionSchema,
   MissionManagementApprovalDecisionSchema,
   DevelopmentPlanningApprovalDecisionSchema,
   SoftwareChangeApprovalDecisionSchema,

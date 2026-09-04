@@ -13,6 +13,7 @@ import {
   MachineServiceActionResultArtifactReferenceSchema,
   MissionManagementResultArtifactReferenceSchema,
   KnowledgeResultArtifactReferenceSchema,
+  AttentionResultArtifactReferenceSchema,
 } from '../artifacts/artifact.ts';
 import { CapabilityDestinationSchema } from '../capabilities/capability-destination.ts';
 import { ConversationContextBundleSchema } from '../conversations/conversation-context.ts';
@@ -63,6 +64,10 @@ import {
   KnowledgeActionArgumentsSchema,
   KnowledgeResultSchema,
 } from '../knowledge/knowledge.ts';
+import {
+  AttentionActionArgumentsSchema,
+  AttentionResultSchema,
+} from '../attention/attention.ts';
 
 export const TaskStatusSchema = z.enum([
   'active',
@@ -108,6 +113,15 @@ const ApprovalIdentitySchema = z
   .strict();
 
 export const ApprovalSchema = z.union([
+  ApprovalIdentitySchema.extend({
+    capability: z
+      .object({
+        name: z.literal('attention_management'),
+        version: z.literal(1),
+      })
+      .strict(),
+    proposedArguments: AttentionActionArgumentsSchema,
+  }).strict(),
   ApprovalIdentitySchema.extend({
     capability: z
       .object({
@@ -238,6 +252,15 @@ export const CapabilityInvocationSchema = z.union([
   CapabilityInvocationIdentitySchema.extend({
     capability: z
       .object({
+        name: z.literal('attention_management'),
+        version: z.literal(1),
+      })
+      .strict(),
+    arguments: AttentionActionArgumentsSchema,
+  }).strict(),
+  CapabilityInvocationIdentitySchema.extend({
+    capability: z
+      .object({
         name: z.literal('knowledge_management'),
         version: z.literal(1),
       })
@@ -325,6 +348,13 @@ export const CapabilityInvocationSchema = z.union([
 ]);
 
 export const TaskOutputSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('attention_result'),
+      result: AttentionResultSchema,
+      artifact: AttentionResultArtifactReferenceSchema.optional(),
+    })
+    .strict(),
   z
     .object({
       kind: z.literal('knowledge_result'),

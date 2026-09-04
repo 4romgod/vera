@@ -43,6 +43,7 @@ import {
 } from '../../domain/machines/machine.ts';
 import { MissionProposalArgumentsSchema } from '../../domain/missions/mission.ts';
 import { KnowledgeActionArgumentsSchema } from '../../domain/knowledge/knowledge.ts';
+import { AttentionActionArgumentsSchema } from '../../domain/attention/attention.ts';
 
 export type EvaluateModelDecision = (
   message: string,
@@ -699,6 +700,16 @@ function decide(
       reason: 'specialist_capability_invocation',
       capability: proposal.capability,
       proposedArguments: arguments_,
+    };
+  }
+  if (proposal.capability.name === 'attention_management') {
+    return {
+      kind: 'approval_required',
+      reason: 'specialist_capability_invocation',
+      capability: proposal.capability,
+      proposedArguments: AttentionActionArgumentsSchema.parse(
+        proposal.arguments,
+      ),
     };
   }
   return {

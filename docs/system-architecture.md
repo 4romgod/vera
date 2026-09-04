@@ -308,7 +308,15 @@ contract without making the capability or model proposal vendor-specific.
 - record immutable events and build query-friendly projections;
 - store artifact metadata and content through appropriate backends;
 - expose long-term memory through its own governance rules;
+- project current attention deterministically from authoritative resources and
+  combine it with generation-scoped owner dispositions;
 - correlate logs, metrics, traces, and domain identifiers.
+
+The attention projector stores no duplicate task, reminder, run, mission, or
+campaign status. MongoDB stores only append-only snooze, dismiss, and restore
+decisions. API, conversational capability, and universal frontend consume the
+same projector, so restart and client reconnection cannot produce competing
+briefings.
 
 ## Request lifecycle
 

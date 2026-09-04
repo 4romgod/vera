@@ -41,6 +41,8 @@ function fakeApi(overrides: Partial<VeraApi>): VeraApi {
     attachmentPreviewUrl: unavailable,
     listCapabilities: unavailable,
     listMachines: unavailable,
+    getAttentionBriefing: unavailable,
+    decideAttention: unavailable,
     listPersonalTasks: unavailable,
     getPersonalTask: unavailable,
     listReminders: unavailable,

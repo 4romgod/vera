@@ -556,6 +556,22 @@ export function createTaskLifecycle(options: {
           : [`Artifact: ${aggregate.run.output.artifact.id}`]),
       ].join('\n\n');
     }
+    if (aggregate.run.output?.kind === 'attention_result') {
+      const { briefing } = aggregate.run.output.result;
+      return [
+        briefing.headline,
+        briefing.summary,
+        ...briefing.items
+          .slice(0, 10)
+          .map(
+            (item, index) =>
+              `${String(index + 1)}. [${item.priority}] ${item.title} — ${item.summary}`,
+          ),
+        ...(aggregate.run.output.artifact === undefined
+          ? []
+          : [`Artifact: ${aggregate.run.output.artifact.id}`]),
+      ].join('\n\n');
+    }
     if (aggregate.run.output?.kind === 'goal_result') {
       return [
         `I completed the goal through ${String(aggregate.run.output.artifacts.length)} approved capability steps.`,
@@ -2301,18 +2317,31 @@ export function createTaskLifecycle(options: {
                                       byteLength: artifact.byteLength,
                                     },
                                   }
-                                : {
-                                    kind: 'knowledge_result',
-                                    result: artifact.content,
-                                    artifact: {
-                                      id: artifact.id,
-                                      version: artifact.version,
-                                      type: artifact.type,
-                                      mediaType: artifact.mediaType,
-                                      sha256: artifact.sha256,
-                                      byteLength: artifact.byteLength,
-                                    },
-                                  };
+                                : artifact.type === 'knowledge_result'
+                                  ? {
+                                      kind: 'knowledge_result',
+                                      result: artifact.content,
+                                      artifact: {
+                                        id: artifact.id,
+                                        version: artifact.version,
+                                        type: artifact.type,
+                                        mediaType: artifact.mediaType,
+                                        sha256: artifact.sha256,
+                                        byteLength: artifact.byteLength,
+                                      },
+                                    }
+                                  : {
+                                      kind: 'attention_result',
+                                      result: artifact.content,
+                                      artifact: {
+                                        id: artifact.id,
+                                        version: artifact.version,
+                                        type: artifact.type,
+                                        mediaType: artifact.mediaType,
+                                        sha256: artifact.sha256,
+                                        byteLength: artifact.byteLength,
+                                      },
+                                    };
           appendEvent(candidate, 'run_succeeded', completedAt, {}, createId);
           return true;
         },

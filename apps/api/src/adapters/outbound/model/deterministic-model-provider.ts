@@ -474,6 +474,11 @@ export class DeterministicModelProvider implements ModelProvider {
     const canManagePersonalTasks = JSON.stringify(input.outputSchema).includes(
       'personal_task_management',
     );
+    const requestsAttention =
+      JSON.stringify(input.outputSchema).includes('attention_management') &&
+      /\b(what needs my attention|brief me|my briefing|what should i focus on|what needs me)\b/u.test(
+        normalizedMessage,
+      );
     const personalTaskId = /personal_task_[a-z0-9-]+/u.exec(ownerMessage)?.[0];
     const personalTaskAction =
       canManagePersonalTasks &&
@@ -786,254 +791,269 @@ export class DeterministicModelProvider implements ModelProvider {
       boundedGoalSteps.length >= 2 &&
       boundedGoalSteps.length <= 3;
 
-    const candidate = shouldPursueMachineGoal
+    const candidate = requestsAttention
       ? {
           schemaVersion: 1,
-          kind: 'pursue_goal',
+          kind: 'invoke_capability',
           decisionSummary:
-            'The requested machine action depends on current registered service health.',
-          goal: {
-            schemaVersion: 1,
-            objective: ownerMessage,
-            summary:
-              'Inspect the registered service, then separately approve an action only when evidence requires it.',
-            completionCriteria:
-              'Report service health and perform the requested registered action only when its condition is met.',
-            requirements: [
-              {
-                id: 'requirement_machine_inspection',
-                description: 'Inspect the current registered service health.',
-                capability: 'machine_inspection',
-                version: 1,
-                condition: { kind: 'always' },
-              },
-              {
-                id: 'requirement_machine_action',
-                description:
-                  'Apply the requested service action if the health condition is met.',
-                capability: 'machine_service_management',
-                version: 1,
-                condition: {
-                  kind: 'evidence_dependent',
-                  description:
-                    'The registered service inspection reports unhealthy.',
-                },
-              },
-            ],
-            firstStep: {
-              id: 'step_1',
-              purpose: 'Inspect the registered service before any mutation.',
-              inputStepIds: [],
-              capability: 'machine_inspection',
-              version: 1,
-              arguments: {
-                machineId: selectedMachine.id,
-                serviceIds: [machineAction.serviceId],
-              },
-            },
-          },
+            'The owner requested a current evidence-owned attention briefing.',
+          capability: { name: 'attention_management', version: 1 },
+          arguments: { action: 'brief' },
         }
-      : shouldPursueGoal
+      : shouldPursueMachineGoal
         ? {
             schemaVersion: 1,
             kind: 'pursue_goal',
             decisionSummary:
-              'The owner requested a later action that depends on evidence not available yet.',
+              'The requested machine action depends on current registered service health.',
             goal: {
               schemaVersion: 1,
               objective: ownerMessage,
               summary:
-                'Observe the first capability result before deciding the next bounded action.',
+                'Inspect the registered service, then separately approve an action only when evidence requires it.',
               completionCriteria:
-                'Use the research evidence to decide whether to create the requested reminder, then explain the outcome.',
+                'Report service health and perform the requested registered action only when its condition is met.',
               requirements: [
                 {
-                  id: 'requirement_research',
-                  description:
-                    'Gather the requested source-backed research evidence.',
-                  capability: 'web_research',
+                  id: 'requirement_machine_inspection',
+                  description: 'Inspect the current registered service health.',
+                  capability: 'machine_inspection',
                   version: 1,
                   condition: { kind: 'always' },
                 },
                 {
-                  id: 'requirement_reminder',
+                  id: 'requirement_machine_action',
                   description:
-                    'Create the requested reminder when the research condition is satisfied.',
-                  capability: 'personal_reminder_management',
+                    'Apply the requested service action if the health condition is met.',
+                  capability: 'machine_service_management',
                   version: 1,
                   condition: {
                     kind: 'evidence_dependent',
                     description:
-                      'The research evidence satisfies the condition stated by the owner.',
+                      'The registered service inspection reports unhealthy.',
                   },
                 },
               ],
               firstStep: {
                 id: 'step_1',
-                purpose:
-                  'Gather the source-backed evidence needed for the conditional action.',
+                purpose: 'Inspect the registered service before any mutation.',
                 inputStepIds: [],
-                capability: 'web_research',
+                capability: 'machine_inspection',
                 version: 1,
-                arguments: { objective: ownerMessage },
+                arguments: {
+                  machineId: selectedMachine.id,
+                  serviceIds: [machineAction.serviceId],
+                },
               },
             },
           }
-        : requestsMission
+        : shouldPursueGoal
           ? {
               schemaVersion: 1,
-              kind: 'invoke_capability',
+              kind: 'pursue_goal',
               decisionSummary:
-                'The owner requested one bounded autonomous software outcome ending at a reviewable pull request.',
-              capability: { name: 'mission_management', version: 1 },
-              arguments: {
-                action: 'create',
+                'The owner requested a later action that depends on evidence not available yet.',
+              goal: {
+                schemaVersion: 1,
                 objective: ownerMessage,
+                summary:
+                  'Observe the first capability result before deciding the next bounded action.',
                 completionCriteria:
-                  'Produce one verified, non-draft pull request that satisfies the stated objective, and do not merge it.',
-                project: { name: projectName },
-                delivery: {
-                  commitMessage: 'feat: complete bounded mission',
-                  pullRequestTitle: 'Complete bounded mission',
+                  'Use the research evidence to decide whether to create the requested reminder, then explain the outcome.',
+                requirements: [
+                  {
+                    id: 'requirement_research',
+                    description:
+                      'Gather the requested source-backed research evidence.',
+                    capability: 'web_research',
+                    version: 1,
+                    condition: { kind: 'always' },
+                  },
+                  {
+                    id: 'requirement_reminder',
+                    description:
+                      'Create the requested reminder when the research condition is satisfied.',
+                    capability: 'personal_reminder_management',
+                    version: 1,
+                    condition: {
+                      kind: 'evidence_dependent',
+                      description:
+                        'The research evidence satisfies the condition stated by the owner.',
+                    },
+                  },
+                ],
+                firstStep: {
+                  id: 'step_1',
+                  purpose:
+                    'Gather the source-backed evidence needed for the conditional action.',
+                  inputStepIds: [],
+                  capability: 'web_research',
+                  version: 1,
+                  arguments: { objective: ownerMessage },
                 },
               },
             }
-          : executeBoundedGoal
+          : requestsMission
             ? {
                 schemaVersion: 1,
-                kind: 'execute_goal',
+                kind: 'invoke_capability',
                 decisionSummary:
-                  'The owner requested multiple dependent outcomes that require a bounded capability sequence.',
-                goal: {
-                  schemaVersion: 1,
+                  'The owner requested one bounded autonomous software outcome ending at a reviewable pull request.',
+                capability: { name: 'mission_management', version: 1 },
+                arguments: {
+                  action: 'create',
                   objective: ownerMessage,
-                  summary: `Execute ${String(boundedGoalSteps.length)} bounded capability steps and carry approved artifacts forward.`,
-                  steps: boundedGoalSteps,
+                  completionCriteria:
+                    'Produce one verified, non-draft pull request that satisfies the stated objective, and do not merge it.',
+                  project: { name: projectName },
+                  delivery: {
+                    commitMessage: 'feat: complete bounded mission',
+                    pullRequestTitle: 'Complete bounded mission',
+                  },
                 },
               }
-            : machineAction !== undefined
+            : executeBoundedGoal
               ? {
                   schemaVersion: 1,
-                  kind: 'invoke_capability',
+                  kind: 'execute_goal',
                   decisionSummary:
-                    'The owner requested an exact registered service action.',
-                  capability: {
-                    name: 'machine_service_management',
-                    version: 1,
+                    'The owner requested multiple dependent outcomes that require a bounded capability sequence.',
+                  goal: {
+                    schemaVersion: 1,
+                    objective: ownerMessage,
+                    summary: `Execute ${String(boundedGoalSteps.length)} bounded capability steps and carry approved artifacts forward.`,
+                    steps: boundedGoalSteps,
                   },
-                  arguments: machineAction,
                 }
-              : requestsMachineInspection
+              : machineAction !== undefined
                 ? {
                     schemaVersion: 1,
                     kind: 'invoke_capability',
                     decisionSummary:
-                      'The owner requested bounded registered machine diagnostics.',
-                    capability: { name: 'machine_inspection', version: 1 },
-                    arguments: {
-                      machineId: selectedMachine.id,
-                      ...(selectedService === undefined
-                        ? {}
-                        : { serviceIds: [selectedService.id] }),
+                      'The owner requested an exact registered service action.',
+                    capability: {
+                      name: 'machine_service_management',
+                      version: 1,
                     },
+                    arguments: machineAction,
                   }
-                : personalTaskAction !== undefined
+                : requestsMachineInspection
                   ? {
                       schemaVersion: 1,
                       kind: 'invoke_capability',
                       decisionSummary:
-                        'The owner requested an action against durable personal tasks.',
-                      capability: {
-                        name: 'personal_task_management',
-                        version: 1,
+                        'The owner requested bounded registered machine diagnostics.',
+                      capability: { name: 'machine_inspection', version: 1 },
+                      arguments: {
+                        machineId: selectedMachine.id,
+                        ...(selectedService === undefined
+                          ? {}
+                          : { serviceIds: [selectedService.id] }),
                       },
-                      arguments: personalTaskAction,
                     }
-                  : reminderAction !== undefined
+                  : personalTaskAction !== undefined
                     ? {
                         schemaVersion: 1,
                         kind: 'invoke_capability',
                         decisionSummary:
-                          'The owner requested an action against durable reminders.',
+                          'The owner requested an action against durable personal tasks.',
                         capability: {
-                          name: 'personal_reminder_management',
+                          name: 'personal_task_management',
                           version: 1,
                         },
-                        arguments: reminderAction,
+                        arguments: personalTaskAction,
                       }
-                    : memoryAction !== undefined
+                    : reminderAction !== undefined
                       ? {
                           schemaVersion: 1,
                           kind: 'invoke_capability',
                           decisionSummary:
-                            'The owner requested an explicit governed-memory action.',
-                          capability: { name: 'memory_management', version: 1 },
-                          arguments: memoryAction,
+                            'The owner requested an action against durable reminders.',
+                          capability: {
+                            name: 'personal_reminder_management',
+                            version: 1,
+                          },
+                          arguments: reminderAction,
                         }
-                      : knowledgeAction !== undefined
+                      : memoryAction !== undefined
                         ? {
                             schemaVersion: 1,
                             kind: 'invoke_capability',
                             decisionSummary:
-                              'The owner requested an action against grounded personal knowledge.',
+                              'The owner requested an explicit governed-memory action.',
                             capability: {
-                              name: 'knowledge_management',
+                              name: 'memory_management',
                               version: 1,
                             },
-                            arguments: knowledgeAction,
+                            arguments: memoryAction,
                           }
-                        : shouldResearch
+                        : knowledgeAction !== undefined
                           ? {
                               schemaVersion: 1,
                               kind: 'invoke_capability',
                               decisionSummary:
-                                'The request asks for current, source-backed public-web research.',
-                              capability: { name: 'web_research', version: 1 },
-                              arguments: { objective: ownerMessage },
+                                'The owner requested an action against grounded personal knowledge.',
+                              capability: {
+                                name: 'knowledge_management',
+                                version: 1,
+                              },
+                              arguments: knowledgeAction,
                             }
-                          : shouldPlan
+                          : shouldResearch
                             ? {
                                 schemaVersion: 1,
                                 kind: 'invoke_capability',
                                 decisionSummary:
-                                  'The request asks for specialist software planning.',
+                                  'The request asks for current, source-backed public-web research.',
                                 capability: {
-                                  name: 'development_planning',
+                                  name: 'web_research',
                                   version: 1,
                                 },
-                                arguments: projectArguments,
+                                arguments: { objective: ownerMessage },
                               }
-                            : shouldChange
+                            : shouldPlan
                               ? {
                                   schemaVersion: 1,
                                   kind: 'invoke_capability',
                                   decisionSummary:
-                                    'The request asks for an isolated specialist software change.',
+                                    'The request asks for specialist software planning.',
                                   capability: {
-                                    name: 'software_change',
+                                    name: 'development_planning',
                                     version: 1,
                                   },
                                   arguments: projectArguments,
                                 }
-                              : requestsAttachmentAnalysis
+                              : shouldChange
                                 ? {
                                     schemaVersion: 1,
                                     kind: 'invoke_capability',
                                     decisionSummary:
-                                      'The supplied attachments must be analyzed before Vera makes claims about their contents.',
+                                      'The request asks for an isolated specialist software change.',
                                     capability: {
-                                      name: 'attachment_analysis',
+                                      name: 'software_change',
                                       version: 1,
                                     },
-                                    arguments: { objective: ownerMessage },
+                                    arguments: projectArguments,
                                   }
-                                : {
-                                    schemaVersion: 1,
-                                    kind: 'respond',
-                                    decisionSummary:
-                                      'The request can be answered directly.',
-                                    message: `Vera received: ${ownerMessage}`,
-                                  };
+                                : requestsAttachmentAnalysis
+                                  ? {
+                                      schemaVersion: 1,
+                                      kind: 'invoke_capability',
+                                      decisionSummary:
+                                        'The supplied attachments must be analyzed before Vera makes claims about their contents.',
+                                      capability: {
+                                        name: 'attachment_analysis',
+                                        version: 1,
+                                      },
+                                      arguments: { objective: ownerMessage },
+                                    }
+                                  : {
+                                      schemaVersion: 1,
+                                      kind: 'respond',
+                                      decisionSummary:
+                                        'The request can be answered directly.',
+                                      message: `Vera received: ${ownerMessage}`,
+                                    };
 
     return Promise.resolve({
       candidate,

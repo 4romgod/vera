@@ -14,6 +14,7 @@ import {
   Rocket,
   Library,
   Search,
+  CircleAlert,
 } from 'lucide-react-native';
 import {
   Linking,
@@ -37,14 +38,18 @@ import type {
   MissionResource,
   KnowledgeSearchResponse,
   KnowledgeSourceResource,
+  AttentionBriefing,
+  AttentionItem,
 } from '@vera/client';
 
 import { IconButton } from '@/components/ui/icon-button';
 import { layout, palette, radius, shadow, spacing } from '@/design/tokens';
 import { humanizeIdentifier } from './assistant/presentation';
 import { isSafeGitHubPullRequestUrl } from './assistant/software-delivery/model';
+import { AttentionPanel } from './attention/attention-panel';
 
 export type ResourceTab =
+  | 'attention'
   | 'memory'
   | 'knowledge'
   | 'tasks'
@@ -55,6 +60,7 @@ export type ResourceTab =
   | 'campaigns';
 
 const tabs: { id: ResourceTab; label: string; icon: typeof Brain }[] = [
+  { id: 'attention', label: 'Today', icon: CircleAlert },
   { id: 'memory', label: 'Memory', icon: Brain },
   { id: 'knowledge', label: 'Knowledge', icon: Library },
   { id: 'tasks', label: 'Tasks', icon: ListChecks },
@@ -69,6 +75,7 @@ export function ResourcePanel(props: {
   compact: boolean;
   open: boolean;
   tab: ResourceTab;
+  attention?: AttentionBriefing;
   memories: MemoryResource[];
   knowledgeSources: KnowledgeSourceResource[];
   tasks: PersonalTaskResource[];
@@ -79,6 +86,11 @@ export function ResourcePanel(props: {
   campaignPolicies: DevelopmentCampaignPolicyResource[];
   missions: MissionResource[];
   onTab: (tab: ResourceTab) => void;
+  onAttentionDecision: (
+    item: AttentionItem,
+    decision: 'dismiss' | 'snooze' | 'restore',
+  ) => Promise<boolean>;
+  onOpenAttention: (item: AttentionItem) => void;
   onClose: () => void;
   onMemoryCommand: (command: string) => void;
   onKnowledgeCommand: (command: string) => void;
@@ -322,6 +334,13 @@ function PanelContent(props: Parameters<typeof ResourcePanel>[0]) {
         contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
       >
+        {props.tab === 'attention' ? (
+          <AttentionPanel
+            briefing={props.attention}
+            onDecision={props.onAttentionDecision}
+            onOpen={props.onOpenAttention}
+          />
+        ) : null}
         {props.tab === 'memory' && props.memories.length === 0 ? (
           <Empty
             icon={Brain}

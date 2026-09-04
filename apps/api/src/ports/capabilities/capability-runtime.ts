@@ -52,6 +52,10 @@ export type CapabilityArtifactDraft =
   | Pick<
       Extract<Artifact, { type: 'knowledge_result' }>,
       'type' | 'mediaType' | 'content'
+    >
+  | Pick<
+      Extract<Artifact, { type: 'attention_result' }>,
+      'type' | 'mediaType' | 'content'
     >;
 
 export type CapabilityRuntime = {

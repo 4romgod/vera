@@ -31,6 +31,8 @@ import {
   type MissionResource,
   type KnowledgeSearchResponse,
   type KnowledgeSourceResource,
+  type AttentionBriefing,
+  type AttentionItem,
 } from '@vera/client';
 
 import { ApprovalCard } from '@/components/approval-card';
@@ -65,6 +67,15 @@ const speechLocale =
     ? 'en-US'
     : configuredSpeechLocale;
 const EMPTY_MESSAGES: ConversationMessageResource[] = [];
+
+function newestAttention(
+  current: AttentionBriefing | undefined,
+  incoming: AttentionBriefing,
+): AttentionBriefing {
+  return current !== undefined && current.generatedAt > incoming.generatedAt
+    ? current
+    : incoming;
+}
 const MAX_ATTACHMENTS = 5;
 const DOCUMENT_ATTACHMENT_TYPES = [
   'text/plain',
@@ -170,10 +181,11 @@ export function AssistantScreen() {
     DevelopmentCampaignPolicyResource[]
   >([]);
   const [missions, setMissions] = useState<MissionResource[]>([]);
+  const [attention, setAttention] = useState<AttentionBriefing>();
   const [resources, setResources] = useState<{
     open: boolean;
     tab: ResourceTab;
-  }>({ open: false, tab: 'memory' });
+  }>({ open: false, tab: 'attention' });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const [draftFromVoice, setDraftFromVoice] = useState(false);
@@ -245,6 +257,7 @@ export function AssistantScreen() {
       campaignPolicyPage,
       campaignPage,
       missionPage,
+      attentionBriefing,
     ] = await Promise.all([
       client.listConversations(),
       client.listProjects(),
@@ -257,6 +270,7 @@ export function AssistantScreen() {
       client.listDevelopmentCampaignPolicies(),
       client.listDevelopmentCampaigns(),
       client.listMissions(),
+      client.getAttentionBriefing(),
     ]);
     if (!mounted.current) return;
     setConversations(conversationPage.conversations);
@@ -270,6 +284,7 @@ export function AssistantScreen() {
     setCampaignPolicies(campaignPolicyPage.policies);
     setCampaigns(campaignPage.campaigns);
     setMissions(missionPage.missions);
+    setAttention((current) => newestAttention(current, attentionBriefing));
   }, [client]);
 
   const searchKnowledge = useCallback(
@@ -295,15 +310,18 @@ export function AssistantScreen() {
   );
 
   const refreshNotifications = useCallback(async () => {
-    const [inbox, campaignPage, missionPage] = await Promise.all([
-      client.listNotifications({ limit: 50 }),
-      client.listDevelopmentCampaigns(),
-      client.listMissions(),
-    ]);
+    const [inbox, campaignPage, missionPage, attentionBriefing] =
+      await Promise.all([
+        client.listNotifications({ limit: 50 }),
+        client.listDevelopmentCampaigns(),
+        client.listMissions(),
+        client.getAttentionBriefing(),
+      ]);
     if (mounted.current) {
       setNotifications([...inbox.notifications].reverse());
       setCampaigns(campaignPage.campaigns);
       setMissions(missionPage.missions);
+      setAttention((current) => newestAttention(current, attentionBriefing));
     }
   }, [client]);
 
@@ -751,6 +769,69 @@ export function AssistantScreen() {
     setResources({ open: true, tab });
   }
 
+  const decideAttention = useCallback(
+    async (
+      item: AttentionItem,
+      decision: 'dismiss' | 'snooze' | 'restore',
+    ): Promise<boolean> => {
+      try {
+        const updated = await client.decideAttention({
+          attentionItemId: item.id,
+          decision,
+          ...(decision === 'snooze'
+            ? {
+                snoozedUntil: new Date(
+                  Date.now() + 60 * 60 * 1_000,
+                ).toISOString(),
+              }
+            : {}),
+          idempotencyKey: requestKey(),
+        });
+        if (mounted.current) {
+          setAttention((current) => newestAttention(current, updated));
+          setError(undefined);
+        }
+        return true;
+      } catch (cause) {
+        if (mounted.current) {
+          setError(errorMessage(cause, 'Vera could not update that item.'));
+        }
+        return false;
+      }
+    },
+    [client],
+  );
+
+  async function openAttentionItem(item: AttentionItem): Promise<void> {
+    switch (item.target.kind) {
+      case 'task':
+        if (item.target.conversationId !== undefined) {
+          setResources((current) => ({ ...current, open: false }));
+          await selectConversation(item.target.conversationId);
+        } else {
+          try {
+            const run = await client.getRun(item.target.runId);
+            setActiveRun(run);
+            setResources((current) => ({ ...current, open: false }));
+          } catch (cause) {
+            setError(errorMessage(cause, 'That run could not be opened.'));
+          }
+        }
+        return;
+      case 'personal_task':
+        openResources('tasks');
+        return;
+      case 'reminder':
+        openResources('reminders');
+        return;
+      case 'mission':
+        openResources('missions');
+        return;
+      case 'campaign':
+        openResources('campaigns');
+    }
+  }
+
   async function toggleVoiceInput(): Promise<void> {
     setError(undefined);
     if (voiceInput.phase === 'recording') {
@@ -914,6 +995,7 @@ export function AssistantScreen() {
     >
       <View style={{ minHeight: 0, flex: 1, flexDirection: 'row' }}>
         <ConversationSidebar
+          attention={attention?.items.length ?? 0}
           compact={compact}
           conversationId={conversation?.id}
           conversations={conversations}
@@ -932,15 +1014,15 @@ export function AssistantScreen() {
           style={{ minWidth: 0, flex: 1, backgroundColor: palette.canvas }}
         >
           <AssistantHeader
+            attentionItems={attention?.items.length ?? 0}
             compact={compact}
             projects={projects}
             selectedProjectId={selectedProjectId}
             title={conversation?.title}
-            unreadNotifications={unreadNotifications}
             refreshing={refreshing}
             onMenu={() => setSidebarOpen(true)}
             onRefresh={() => void refreshAssistant()}
-            onResources={() => openResources('memory')}
+            onResources={() => openResources('attention')}
             onSelectProject={setSelectedProjectId}
           />
           <View style={{ minHeight: 0, flex: 1 }}>
@@ -1002,6 +1084,7 @@ export function AssistantScreen() {
         </KeyboardAvoidingView>
 
         <ResourcePanel
+          attention={attention}
           compact={compact}
           memories={memories}
           knowledgeSources={knowledgeSources}
@@ -1017,6 +1100,8 @@ export function AssistantScreen() {
           onClose={() =>
             setResources((current) => ({ ...current, open: false }))
           }
+          onAttentionDecision={decideAttention}
+          onOpenAttention={(item) => void openAttentionItem(item)}
           onMemoryCommand={(command) => {
             setResources((current) => ({ ...current, open: false }));
             void send(command);
