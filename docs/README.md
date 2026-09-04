@@ -243,6 +243,9 @@ Bounded unattended missions that stop at one pull request are accepted in
 Grounded personal knowledge promoted from explicit owner-approved attachments
 is accepted in
 [ADR-0036](decisions/0036-build-grounded-personal-knowledge-from-owner-approved-sources.md).
+The user-scoped Mac Mini production installation, static frontend host, daily
+MongoDB backup, and verified update boundary are accepted in
+[ADR-0040](decisions/0040-install-vera-as-a-user-scoped-mac-mini-service.md).
 
 ## Documentation and implementation cadence
 

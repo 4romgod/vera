@@ -383,10 +383,12 @@ without a custom development build when the API has a transcription adapter.
 
 Remote push notifications deliberately use the same universal frontend, but
 Expo Go cannot receive them. Configure `VERA_PUSH_ADAPTER=expo` and the EAS
-project UUID as `EXPO_PUSH_PROJECT_ID`, then create an internal development
-build from `apps/frontend` with `npx eas-cli build --profile development
---platform android` (or `--platform ios`). Install that build, start Vera over
-the tailnet, and open **Activity → Enable alerts**. The server returns its
+project UUID as `EXPO_PUSH_PROJECT_ID`. The `development` EAS profile remains
+available for native debugging with Metro; the standalone internal `preview`
+profile is the everyday installed Android build. Configure its
+`EXPO_PUBLIC_VERA_API_URL` to the private `https://<host>.<tailnet>.ts.net/api`
+origin, then run `npx eas-cli build --profile preview --platform android` from
+`apps/frontend`. Install that build and open **Activity → Enable alerts**. The server returns its
 expected project ID to the native client; no push token or provider credential
 is stored in the Expo public environment. **Send test** verifies the complete
 outbox, Expo ticket, device delivery, and receipt path. Web and Expo Go remain
@@ -406,7 +408,49 @@ phone's browser. Both the page and API then share one tailnet-only origin, so no
 remote browser origin needs to be added to CORS. Check the routes with
 `npm run tailscale:status`; configure them without starting Expo with
 `npm run tailscale:serve`, and remove them with
-`npm run tailscale:serve:off`. Never use Tailscale Funnel for Vera.
+`npm run tailscale:serve:off`. Vera changes only its `/` and `/api` handlers and
+preserves unrelated Serve routes. Never use Tailscale Funnel for Vera.
+
+### Install Vera on the Mac Mini
+
+The production installation uses compiled output, an exported static web
+frontend, and owner-scoped macOS LaunchAgents. It does not use `tsx watch` or a
+long-running Expo development server.
+
+```bash
+VERA_PROFILE=ollama npm run vera:doctor
+npm run check
+VERA_PROFILE=ollama npm run vera:install
+npm run tailscale:serve
+VERA_PROFILE=ollama npm run vera:status
+```
+
+The installer restricts `.env` and the selected profile to the owner, writes
+logs and backups below `~/.vera`, and waits for both `/ready` and the static
+frontend health endpoint. It installs a daily compressed MongoDB backup at
+03:15 local time; `VERA_BACKUP_RETENTION_DAYS` defaults to 14. Redis is
+rebuildable and is not backed up.
+
+Operational commands are explicit and preserve source, databases, backups, and
+configuration on uninstall:
+
+```bash
+npm run vera:status
+npm run vera:logs
+npm run vera:backup
+npm run vera:backup:verify
+npm run vera:restart
+npm run vera:stop
+npm run vera:start
+npm run vera:uninstall
+```
+
+After an owner-reviewed pull request is merged, `npm run vera:update` requires
+a clean local `main`, fetches a fast-forward-only `origin/main`, verifies that
+exact candidate in an isolated worktree, and restarts Vera only after the
+production checkout builds successfully. Pull-request creation or merge never
+activates new production code automatically. See
+[ADR-0040](docs/decisions/0040-install-vera-as-a-user-scoped-mac-mini-service.md).
 
 With local MongoDB and Redis running, execute the repeatable compiled
 persistence journey:
