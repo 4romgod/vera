@@ -572,6 +572,23 @@ export function createTaskLifecycle(options: {
           : [`Artifact: ${aggregate.run.output.artifact.id}`]),
       ].join('\n\n');
     }
+    if (aggregate.run.output?.kind === 'routine_management_result') {
+      const result = aggregate.run.output.result;
+      return [
+        result.summary,
+        ...(result.routines ?? []).map(
+          (routine) =>
+            `${routine.approval.effect.title} — ${routine.status} — ${routine.id} — ${routine.approval.effect.schedule.localTime} ${routine.approval.effect.schedule.timeZone}`,
+        ),
+        ...(result.routine === undefined
+          ? []
+          : [`Routine: ${result.routine.id}`]),
+        ...(result.run === undefined ? [] : [`Run: ${result.run.id}`]),
+        ...(aggregate.run.output.artifact === undefined
+          ? []
+          : [`Artifact: ${aggregate.run.output.artifact.id}`]),
+      ].join('\n\n');
+    }
     if (aggregate.run.output?.kind === 'goal_result') {
       return [
         `I completed the goal through ${String(aggregate.run.output.artifacts.length)} approved capability steps.`,
@@ -2330,18 +2347,31 @@ export function createTaskLifecycle(options: {
                                         byteLength: artifact.byteLength,
                                       },
                                     }
-                                  : {
-                                      kind: 'attention_result',
-                                      result: artifact.content,
-                                      artifact: {
-                                        id: artifact.id,
-                                        version: artifact.version,
-                                        type: artifact.type,
-                                        mediaType: artifact.mediaType,
-                                        sha256: artifact.sha256,
-                                        byteLength: artifact.byteLength,
-                                      },
-                                    };
+                                  : artifact.type === 'attention_result'
+                                    ? {
+                                        kind: 'attention_result',
+                                        result: artifact.content,
+                                        artifact: {
+                                          id: artifact.id,
+                                          version: artifact.version,
+                                          type: artifact.type,
+                                          mediaType: artifact.mediaType,
+                                          sha256: artifact.sha256,
+                                          byteLength: artifact.byteLength,
+                                        },
+                                      }
+                                    : {
+                                        kind: 'routine_management_result',
+                                        result: artifact.content,
+                                        artifact: {
+                                          id: artifact.id,
+                                          version: artifact.version,
+                                          type: artifact.type,
+                                          mediaType: artifact.mediaType,
+                                          sha256: artifact.sha256,
+                                          byteLength: artifact.byteLength,
+                                        },
+                                      };
           appendEvent(candidate, 'run_succeeded', completedAt, {}, createId);
           return true;
         },

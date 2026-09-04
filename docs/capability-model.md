@@ -600,6 +600,21 @@ task, acknowledge a reminder, or progress a mission. Consequential actions
 remain separate capabilities or lifecycle decisions with their existing
 authority.
 
+## Implemented routine capability
+
+`routine_management@1` exposes `create`, `list`, `pause`, `resume`, and
+`run_now`. The orchestration model may draft or address a closed routine action,
+but creating one produces an inactive routine with its own exact standing
+approval. Therefore the capability itself is approval-free while recurring
+execution is not.
+
+The first routine action is `machine_health_check`: one registered machine and
+an optional exact set of registered services. The resulting standing authority
+permits recurring read-only inspection and explicitly prohibits service
+control and routine mutation. Pause revokes execution; resume restores only the
+unchanged approved effect. See
+[ADR-0038](decisions/0038-run-recurring-work-as-approved-standing-instructions.md).
+
 ## Implemented web-research capability
 
 `web_research@1` is the first capability that neither requires nor accepts a

@@ -29,6 +29,7 @@ const runIds = new Set();
 const temporaryDirectories = new Set([changeApplicationRoot]);
 let child;
 let serverOutput = '';
+let machineCatalogFile;
 
 function scratchpadKey(runId) {
   return `vera:v1:run:${runId}:scratchpad`;
@@ -75,6 +76,9 @@ async function startServer(port) {
       REMINDER_WORKER_CONCURRENCY: '2',
       REMINDER_POLL_INTERVAL_MS: '25',
       REMINDER_LEASE_MS: '1000',
+      ...(machineCatalogFile === undefined
+        ? {}
+        : { VERA_MACHINE_CATALOG_FILE: machineCatalogFile }),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -127,6 +131,39 @@ async function createGitFixture() {
     { cwd: projectRoot },
   );
   return projectRoot;
+}
+
+async function createMachineCatalogFixture() {
+  const directory = await mkdtemp(join(tmpdir(), 'vera-machine-verify-'));
+  temporaryDirectories.add(directory);
+  const path = join(directory, 'machines.json');
+  await writeFile(
+    path,
+    JSON.stringify({
+      schemaVersion: 1,
+      machines: [
+        {
+          id: 'verification-machine',
+          displayName: 'Verification machine',
+          adapter: { kind: 'local' },
+          diagnostics: [
+            {
+              id: 'node-runtime',
+              label: 'Node runtime',
+              command: {
+                executable: process.execPath,
+                arguments: ['--version'],
+                timeoutMs: 2_000,
+              },
+            },
+          ],
+          services: [],
+        },
+      ],
+    }),
+    'utf8',
+  );
+  return path;
 }
 
 async function stopServer() {
@@ -603,10 +640,44 @@ async function verifyCliJourney(
 
 async function verifyScenarios(mongo, redis) {
   const startedAt = Date.now();
+  machineCatalogFile = await createMachineCatalogFixture();
   const port = await availablePort();
   let started = await startServer(port);
   child = started.processHandle;
   let client = new VeraClient({ baseUrl: started.baseUrl });
+
+  const routineInput = {
+    title: 'Persistent verification health check',
+    schedule: {
+      kind: 'daily',
+      timeZone: 'Africa/Johannesburg',
+      localTime: '08:00',
+      daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+    },
+    action: {
+      kind: 'machine_health_check',
+      machineId: 'verification-machine',
+    },
+    idempotencyKey: 'persistent-verification-routine',
+  };
+  const routine = await client.createRoutine(routineInput);
+  assert.equal((await client.createRoutine(routineInput)).id, routine.id);
+  assert.equal(routine.status, 'awaiting_approval');
+  const approvedRoutine = await client.decideRoutine({
+    routineId: routine.id,
+    decision: 'approved',
+  });
+  assert.equal(approvedRoutine.status, 'active');
+  const routineRun = await client.runRoutineNow({
+    routineId: routine.id,
+    idempotencyKey: 'persistent-verification-routine-run',
+  });
+  const completedRoutineRun = await client.waitForRoutineRun(routineRun.id, {
+    timeoutMs: operationTimeoutMs,
+    intervalMs: 25,
+  });
+  assert.equal(completedRoutineRun.status, 'succeeded');
+  assert.equal(completedRoutineRun.result?.outcome, 'healthy');
 
   const knowledgeAttachment = await client.uploadAttachment({
     filename: 'persistent-knowledge.txt',
@@ -653,7 +724,7 @@ async function verifyScenarios(mongo, redis) {
 
   const messageInput = {
     conversationId: conversation.id,
-    content: 'Plan a documentation health-check command.',
+    content: 'Plan a documentation validation command.',
     projectId: project.id,
     idempotencyKey: 'persistent-verification-message',
   };
@@ -697,6 +768,8 @@ async function verifyScenarios(mongo, redis) {
   started = await startServer(port);
   child = started.processHandle;
   client = new VeraClient({ baseUrl: started.baseUrl });
+  assert.equal((await client.listRoutines()).routines[0]?.id, routine.id);
+  assert.equal((await client.getRoutineRun(routineRun.id)).status, 'succeeded');
   assert.equal(
     (await client.getKnowledgeSource(knowledgeSource.id)).id,
     knowledgeSource.id,
@@ -1567,6 +1640,7 @@ async function verifyScenarios(mongo, redis) {
     governedMemoryVerified: true,
     groundedKnowledgePersistenceVerified: true,
     attentionDispositionRestartVerified: true,
+    durableStandingRoutineVerified: true,
     restartSafeNotificationDeliveryVerified: true,
     legacyConversationUpgradeVerified: true,
     roleScopedMessageIdempotencyVerified: true,

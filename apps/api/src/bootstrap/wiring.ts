@@ -84,6 +84,11 @@ import type { MissionDraftServiceReference } from '../ports/missions/mission-dra
 import { InMemoryAttentionDecisionStore } from '../adapters/outbound/persistence/memory/in-memory-attention-decision-store.ts';
 import { MongoDbAttentionDecisionStore } from '../adapters/outbound/persistence/mongodb/mongodb-attention-decision-store.ts';
 import { createAttentionService } from '../application/attention/attention-service.ts';
+import { InMemoryRoutineStore } from '../adapters/outbound/persistence/memory/in-memory-routine-store.ts';
+import { MongoDbRoutineStore } from '../adapters/outbound/persistence/mongodb/mongodb-routine-store.ts';
+import type { RoutineStore } from '../ports/persistence/routine-store.ts';
+import { createRoutineLifecycle } from '../application/routines/routine-lifecycle.ts';
+import { createRoutineWorker } from '../application/routines/routine-worker.ts';
 
 export function createApp(
   config: AppConfig,
@@ -199,6 +204,14 @@ export function createApp(
           database: config.storage.mongodbDatabase,
           timeoutMs: config.storage.dependencyTimeoutMs,
         });
+  const routineStore: RoutineStore =
+    config.storage.mode === 'memory'
+      ? new InMemoryRoutineStore()
+      : new MongoDbRoutineStore({
+          uri: config.storage.mongodbUri,
+          database: config.storage.mongodbDatabase,
+          timeoutMs: config.storage.dependencyTimeoutMs,
+        });
   const projectMutationLeases: ProjectMutationLeaseStore =
     config.storage.mode === 'memory'
       ? new InMemoryProjectMutationLeaseStore()
@@ -258,7 +271,13 @@ export function createApp(
     missions: missionStore,
     campaigns: campaignStore,
     decisions: attentionDecisions,
+    routines: routineStore,
   });
+  const routineLifecycle = createRoutineLifecycle({
+    store: routineStore,
+    machines: machineOperations,
+  });
+  const routineWorkerReference: { current?: { wake(): void } } = {};
   const capabilities = createCapabilityRuntimeRegistry({
     provider,
     attachmentAnalysisProvider: visionProvider,
@@ -275,6 +294,10 @@ export function createApp(
       : { missions: missionExecutor }),
     machines: machineOperations,
     attention: attentionService,
+    routines: {
+      lifecycle: routineLifecycle,
+      wake: () => routineWorkerReference.current?.wake(),
+    },
   });
   const transcriptionProvider = createSpeechTranscriptionProvider(
     config.transcription,
@@ -452,6 +475,16 @@ export function createApp(
     leaseMs: developmentCampaignLeaseMs,
     observer: lifecycleObserver,
   });
+  const routineWorker = createRoutineWorker({
+    store: routineStore,
+    leases,
+    lifecycle: routineLifecycle,
+    concurrency: 1,
+    pollIntervalMs: Math.max(config.worker.pollIntervalMs, 1_000),
+    leaseMs: config.worker.leaseMs,
+    observer: lifecycleObserver,
+  });
+  routineWorkerReference.current = routineWorker;
   const dispatchedLifecycle: TaskLifecycle = {
     async submit(input) {
       const aggregate = await lifecycle.submit(input);
@@ -507,6 +540,10 @@ export function createApp(
     missions: {
       ...missionLifecycle,
       wake: () => missionWorker.wake(),
+    },
+    routines: {
+      ...routineLifecycle,
+      wake: () => routineWorker.wake(),
     },
     readinessChecks: [
       {
@@ -584,8 +621,11 @@ export function createApp(
         check: () => attentionDecisions.checkReadiness(),
       },
       { name: 'mission_worker', check: () => missionWorker.checkReadiness() },
+      { name: 'routine_store', check: () => routineStore.checkReadiness() },
+      { name: 'routine_worker', check: () => routineWorker.checkReadiness() },
     ],
     close: async () => {
+      await routineWorker.stop();
       await missionWorker.stop();
       await developmentCampaignWorker.stop();
       await worker.stop();
@@ -605,6 +645,7 @@ export function createApp(
         projectMutationLeases.close(),
         attachmentStore.close(),
         attentionDecisions.close(),
+        routineStore.close(),
       ]);
     },
     logger: runtime.logger ?? true,
@@ -616,5 +657,6 @@ export function createApp(
   softwareChangePublicationWorker.start();
   developmentCampaignWorker.start();
   missionWorker.start();
+  routineWorker.start();
   return app;
 }

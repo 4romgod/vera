@@ -312,6 +312,21 @@ are append-only owner disposition decisions over an exact attention identity.
 A source transition may create a new identity, while an expired snooze makes
 the same current identity active again.
 
+### Routine and routine run
+
+A routine is a durable, owner-approved standing instruction. Its approval
+freezes the human title, civil-time schedule, closed action, exact target, and
+explicit authority and prohibitions. A routine is inactive while awaiting
+approval, executable only while active, and non-executable while paused or
+rejected. Changing its effect requires a new routine rather than silently
+reusing approval.
+
+A routine run is one durable occurrence of that instruction. It has a stable
+identity derived from the routine and scheduled occurrence or manual
+idempotency key, an immutable action snapshot, trigger, state, result or
+failure, and timestamps. Healthy machine checks remain authoritative history
+without becoming attention; unhealthy or failed runs are attention sources.
+
 ### Event
 
 An immutable fact recording something that occurred.

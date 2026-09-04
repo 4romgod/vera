@@ -17,6 +17,9 @@ knowledge library built from deliberately promoted documents and analyzed
 images. A deterministic attention projector now turns approvals, failures,
 open work, reminders, missions, and campaigns into one current owner briefing
 for the universal Today surface and ordinary conversation.
+Durable standing routines now let Vera run exact, owner-approved registered
+machine health checks on a civil-time schedule, recover after restart, stay
+quiet while healthy, and surface only unhealthy or failed checks in Today.
 
 The orchestration brain is selected at startup through a provider registry.
 Ollama remains the default owner-controlled provider; OpenAI and Gemini are
@@ -35,7 +38,7 @@ catalog. The implemented declarations are `development_planning@1`,
 `software_change@1`, project-independent `web_research@1`, and owner-scoped
 `personal_task_management@1`, `personal_reminder_management@1`, and
 `attachment_analysis@1`, plus grounded `knowledge_management@1` and read-only
-`attention_management@1`; Vera's code
+`attention_management@1` and standing-instruction `routine_management@1`; Vera's code
 validates the closed, versioned proposal and routing arguments, then returns a
 direct response, one approval requirement, a validated fixed goal, an adaptive
 goal's first step, or a rejection. A disabled capability is absent from the

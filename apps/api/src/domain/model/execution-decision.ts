@@ -19,6 +19,7 @@ import {
 import { MissionProposalArgumentsSchema } from '../missions/mission.ts';
 import { KnowledgeActionArgumentsSchema } from '../knowledge/knowledge.ts';
 import { AttentionActionArgumentsSchema } from '../attention/attention.ts';
+import { RoutineManagementArgumentsSchema } from '../routines/routine.ts';
 
 const ResponseDecisionSchema = z
   .object({
@@ -38,6 +39,17 @@ const AttentionManagementApprovalDecisionSchema = z
       })
       .strict(),
     proposedArguments: AttentionActionArgumentsSchema,
+  })
+  .strict();
+
+const RoutineManagementApprovalDecisionSchema = z
+  .object({
+    kind: z.literal('approval_required'),
+    reason: z.literal('specialist_capability_invocation'),
+    capability: z
+      .object({ name: z.literal('routine_management'), version: z.literal(1) })
+      .strict(),
+    proposedArguments: RoutineManagementArgumentsSchema,
   })
   .strict();
 
@@ -218,6 +230,7 @@ const AdaptiveGoalPlannedDecisionSchema = z
 
 export const ExecutionDecisionSchema = z.union([
   ResponseDecisionSchema,
+  RoutineManagementApprovalDecisionSchema,
   AttentionManagementApprovalDecisionSchema,
   MissionManagementApprovalDecisionSchema,
   DevelopmentPlanningApprovalDecisionSchema,

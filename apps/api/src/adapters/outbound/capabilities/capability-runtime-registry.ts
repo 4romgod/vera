@@ -83,6 +83,11 @@ import {
   AttentionResultSchema,
 } from '../../../domain/attention/attention.ts';
 import type { AttentionService } from '../../../ports/attention/attention-service.ts';
+import {
+  RoutineManagementArgumentsSchema,
+  RoutineManagementResultSchema,
+} from '../../../domain/routines/routine.ts';
+import type { RoutineManagementService } from '../../../ports/routines/routine-management-service.ts';
 
 function definition(name: string): CapabilityDefinition {
   const value = CapabilityDefinitions.find(
@@ -140,6 +145,70 @@ function attentionRegistration(
         model: {
           provider: 'vera',
           model: 'deterministic_attention_v1',
+          durationMs: Date.now() - started,
+        },
+      };
+    },
+  });
+  return {
+    definition: capabilityDefinition,
+    selected: runtime,
+    resolve(candidate) {
+      return sameCapabilityDestination(destination, candidate)
+        ? runtime()
+        : null;
+    },
+  };
+}
+
+function routineRegistration(
+  routines: RoutineManagementService,
+  wake: () => void,
+): CapabilityRuntimeRegistration {
+  const capabilityDefinition = definition('routine_management');
+  const destination = {
+    schemaVersion: 1 as const,
+    adapterId: 'vera_routines',
+    provider: 'vera',
+    transport: 'local_store',
+    dataBoundary: 'owner_controlled' as const,
+  };
+  const runtime = (): CapabilityRuntime => ({
+    definition: capabilityDefinition,
+    destination,
+    authority: capabilityDefinition.authority,
+    authorityFor({ arguments: arguments_ }) {
+      RoutineManagementArgumentsSchema.parse(arguments_);
+      return capabilityDefinition.authority;
+    },
+    checkReadiness: () => Promise.resolve(),
+    async execute(invocation) {
+      if (
+        invocation.project !== undefined ||
+        invocation.context !== undefined ||
+        invocation.artifacts !== undefined ||
+        invocation.attachments !== undefined
+      ) {
+        throw new Error(
+          'Routine management must not receive external context.',
+        );
+      }
+      const started = Date.now();
+      const result = await routines.invoke({
+        principalId: invocation.principalId,
+        requestKey: invocation.invocationId,
+        arguments: RoutineManagementArgumentsSchema.parse(invocation.arguments),
+      });
+      wake();
+      return {
+        artifact: {
+          type: 'routine_management_result',
+          mediaType: 'application/vnd.vera.routine-management-result+json',
+          content: RoutineManagementResultSchema.parse(result),
+        },
+        model: {
+          provider: 'vera',
+          model: 'deterministic_routines_v1',
           durationMs: Date.now() - started,
         },
       };
@@ -1455,11 +1524,20 @@ export function createCapabilityRuntimeRegistry(options: {
   >;
   machines?: MachineOperations;
   attention?: AttentionService;
+  routines?: { lifecycle: RoutineManagementService; wake: () => void };
 }): CapabilityRuntimeRegistry {
   const registrations = [
     ...(options.attention === undefined
       ? []
       : [attentionRegistration(options.attention)]),
+    ...(options.routines === undefined
+      ? []
+      : [
+          routineRegistration(
+            options.routines.lifecycle,
+            options.routines.wake,
+          ),
+        ]),
     attachmentAnalysisRegistration({
       provider: options.attachmentAnalysisProvider ?? options.provider,
       attachments: options.attachments,

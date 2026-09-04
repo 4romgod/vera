@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { InMemoryAttentionDecisionStore } from '../../../src/adapters/outbound/persistence/memory/in-memory-attention-decision-store.ts';
+import { InMemoryRoutineStore } from '../../../src/adapters/outbound/persistence/memory/in-memory-routine-store.ts';
 import { InMemoryDevelopmentCampaignStore } from '../../../src/adapters/outbound/persistence/memory/in-memory-development-campaign-store.ts';
 import { InMemoryExecutionStore } from '../../../src/adapters/outbound/persistence/memory/in-memory-execution-store.ts';
 import { InMemoryMissionStore } from '../../../src/adapters/outbound/persistence/memory/in-memory-mission-store.ts';
@@ -19,6 +20,7 @@ void describe('attention service', () => {
       missions: new InMemoryMissionStore(),
       campaigns: new InMemoryDevelopmentCampaignStore(),
       decisions,
+      routines: new InMemoryRoutineStore(),
       clock: () => now,
     });
     await resources.createPersonalTask({
@@ -98,6 +100,7 @@ void describe('attention service', () => {
       missions: new InMemoryMissionStore(),
       campaigns: new InMemoryDevelopmentCampaignStore(),
       decisions: new InMemoryAttentionDecisionStore(),
+      routines: new InMemoryRoutineStore(),
       clock: () => now,
     });
     await resources.createPersonalTask({
@@ -141,6 +144,7 @@ void describe('attention service', () => {
       missions: new InMemoryMissionStore(),
       campaigns: new InMemoryDevelopmentCampaignStore(),
       decisions: new InMemoryAttentionDecisionStore(),
+      routines: new InMemoryRoutineStore(),
       clock: () => now,
     });
     await resources.createPersonalTask({

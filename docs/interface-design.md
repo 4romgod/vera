@@ -131,6 +131,13 @@ The UI never computes urgency and never treats local component state as truth.
 Refresh and inbox events re-fetch the API projection. Consequential action is
 performed at the source resource under its existing approval rules.
 
+The Routines workspace is the owner surface for standing instructions. It
+shows status, schedule, time zone, machine/service scope, next occurrence,
+latest run outcome, and the authority boundary before approval. Active routines expose Run now and
+Pause; paused routines expose Resume. Routine failures opened from Today land
+back on this source surface. Healthy runs intentionally create no badge or
+notification.
+
 ## Software delivery in conversation
 
 A completed software-change artifact is not a terminal blob. Its result card

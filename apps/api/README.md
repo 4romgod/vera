@@ -32,6 +32,7 @@ src/
 │   ├── model-decisions/
 │   ├── projects/
 │   ├── reminders/                   # Reminder queries, inbox, and scheduler
+│   ├── routines/                    # Standing-instruction lifecycle and worker
 │   ├── shared/
 │   └── tasks/
 ├── bootstrap/                       # Environment, configuration, composition, process startup
@@ -70,6 +71,9 @@ src/
 - Attention contracts live in `domain/attention`, projection policy lives in
   `application/attention`, the conversational adapter depends on the
   `ports/attention` boundary, and only append-only dispositions are persisted.
+- Routine contracts live in `domain/routines`, scheduling and execution policy
+  live in `application/routines`, and MongoDB stores routine definitions and
+  run history separately through `ports/persistence/routine-store.ts`.
 
 The architecture test in
 `test/architecture/module-boundaries.test.ts` enforces the inward dependency

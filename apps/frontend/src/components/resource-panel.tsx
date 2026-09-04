@@ -15,6 +15,7 @@ import {
   Library,
   Search,
   CircleAlert,
+  Repeat2,
 } from 'lucide-react-native';
 import {
   Linking,
@@ -40,6 +41,8 @@ import type {
   KnowledgeSourceResource,
   AttentionBriefing,
   AttentionItem,
+  RoutineResource,
+  RoutineRunResource,
 } from '@vera/client';
 
 import { IconButton } from '@/components/ui/icon-button';
@@ -47,6 +50,7 @@ import { layout, palette, radius, shadow, spacing } from '@/design/tokens';
 import { humanizeIdentifier } from './assistant/presentation';
 import { isSafeGitHubPullRequestUrl } from './assistant/software-delivery/model';
 import { AttentionPanel } from './attention/attention-panel';
+import { RoutinesPanel } from './routines/routines-panel';
 
 export type ResourceTab =
   | 'attention'
@@ -56,6 +60,7 @@ export type ResourceTab =
   | 'reminders'
   | 'notifications'
   | 'machines'
+  | 'routines'
   | 'missions'
   | 'campaigns';
 
@@ -67,6 +72,7 @@ const tabs: { id: ResourceTab; label: string; icon: typeof Brain }[] = [
   { id: 'reminders', label: 'Reminders', icon: CalendarClock },
   { id: 'notifications', label: 'Activity', icon: Bell },
   { id: 'machines', label: 'Machines', icon: ServerCog },
+  { id: 'routines', label: 'Routines', icon: Repeat2 },
   { id: 'missions', label: 'Missions', icon: Rocket },
   { id: 'campaigns', label: 'Campaigns', icon: Rocket },
 ];
@@ -85,6 +91,9 @@ export function ResourcePanel(props: {
   campaigns: DevelopmentCampaignResource[];
   campaignPolicies: DevelopmentCampaignPolicyResource[];
   missions: MissionResource[];
+  routines: RoutineResource[];
+  routineRuns: Partial<Record<string, RoutineRunResource[]>>;
+  routineActionId?: string;
   onTab: (tab: ResourceTab) => void;
   onAttentionDecision: (
     item: AttentionItem,
@@ -112,6 +121,23 @@ export function ResourcePanel(props: {
     decision: 'approved' | 'rejected',
   ) => Promise<boolean>;
   onMissionCancel: (missionId: string) => Promise<boolean>;
+  onCreateRoutine: (input: {
+    title: string;
+    machineId: string;
+    serviceIds?: string[];
+    localTime: string;
+    daysOfWeek: number[];
+    timeZone: string;
+  }) => Promise<boolean>;
+  onRoutineDecision: (
+    routineId: string,
+    decision: 'approved' | 'rejected',
+  ) => Promise<boolean>;
+  onPauseRoutine: (routineId: string) => Promise<boolean>;
+  onResumeRoutine: (routineId: string) => Promise<boolean>;
+  onRunRoutineNow: (
+    routineId: string,
+  ) => Promise<RoutineRunResource | undefined>;
 }) {
   if (!props.open) return null;
   const content = <PanelContent {...props} />;
@@ -339,6 +365,19 @@ function PanelContent(props: Parameters<typeof ResourcePanel>[0]) {
             briefing={props.attention}
             onDecision={props.onAttentionDecision}
             onOpen={props.onOpenAttention}
+          />
+        ) : null}
+        {props.tab === 'routines' ? (
+          <RoutinesPanel
+            actionId={props.routineActionId}
+            machines={props.machines}
+            routines={props.routines}
+            runs={props.routineRuns}
+            onCreate={props.onCreateRoutine}
+            onDecision={props.onRoutineDecision}
+            onPause={props.onPauseRoutine}
+            onResume={props.onResumeRoutine}
+            onRunNow={props.onRunRoutineNow}
           />
         ) : null}
         {props.tab === 'memory' && props.memories.length === 0 ? (

@@ -143,6 +143,7 @@ export type Approval = {
       | 'mission_data'
       | 'personal_knowledge'
       | 'owner_attention'
+      | 'routine_data'
     )[];
     sideEffects: (
       | 'third_party_disclosure'
@@ -153,6 +154,7 @@ export type Approval = {
       | 'machine_service_control'
       | 'mission_draft_write'
       | 'knowledge_write'
+      | 'standing_instruction_write'
     )[];
     credentials: 'none' | 'server_managed';
     maxWebSearchCalls?: number;
@@ -218,6 +220,10 @@ export type ArtifactReference = ArtifactReferenceIdentity &
     | {
         type: 'mission_management_result';
         mediaType: 'application/vnd.vera.mission-management-result+json';
+      }
+    | {
+        type: 'routine_management_result';
+        mediaType: 'application/vnd.vera.routine-management-result+json';
       }
   );
 
@@ -482,7 +488,13 @@ export type AttentionTarget =
   | { kind: 'personal_task'; personalTaskId: string }
   | { kind: 'reminder'; reminderId: string }
   | { kind: 'mission'; missionId: string }
-  | { kind: 'campaign'; campaignId: string };
+  | { kind: 'campaign'; campaignId: string }
+  | {
+      kind: 'routine';
+      routineId: string;
+      routineRunId?: string;
+      approvalId?: string;
+    };
 
 export type AttentionItem = {
   schemaVersion: 1;
@@ -703,6 +715,21 @@ export type TaskResource = {
         >;
       }
     | {
+        kind: 'routine_management_result';
+        result?: {
+          schemaVersion: 1;
+          action: 'create' | 'list' | 'pause' | 'resume' | 'run_now';
+          summary: string;
+          routine?: RoutineSummaryResource;
+          routines?: RoutineSummaryResource[];
+          run?: RoutineRunResource;
+        };
+        artifact?: Extract<
+          ArtifactReference,
+          { type: 'routine_management_result' }
+        >;
+      }
+    | {
         kind: 'goal_result';
         objective: string;
         summary: string;
@@ -908,6 +935,18 @@ export type ArtifactResource = ArtifactResourceIdentity &
             status: 'awaiting_approval';
             objective: string;
           };
+        };
+      }
+    | {
+        type: 'routine_management_result';
+        mediaType: 'application/vnd.vera.routine-management-result+json';
+        content: {
+          schemaVersion: 1;
+          action: 'create' | 'list' | 'pause' | 'resume' | 'run_now';
+          summary: string;
+          routine?: RoutineSummaryResource;
+          routines?: RoutineSummaryResource[];
+          run?: RoutineRunResource;
         };
       }
   );
@@ -1363,6 +1402,77 @@ export type MissionPolicyListResource = {
   policies: MissionPolicyResource[];
 };
 
+export type RoutineScheduleResource = {
+  kind: 'daily';
+  timeZone: string;
+  localTime: string;
+  daysOfWeek: number[];
+};
+
+export type RoutineResource = {
+  schemaVersion: 1;
+  version: number;
+  id: string;
+  requestKey: string;
+  principalId: string;
+  status: 'awaiting_approval' | 'active' | 'paused' | 'rejected';
+  approval: {
+    id: string;
+    status: 'pending' | 'approved' | 'rejected';
+    reason: 'standing_instruction';
+    effect: {
+      title: string;
+      schedule: RoutineScheduleResource;
+      action: {
+        kind: 'machine_health_check';
+        machineId: string;
+        serviceIds?: string[];
+      };
+      authority: {
+        recurringExecution: true;
+        inspectRegisteredMachine: true;
+        controlMachineServices: false;
+        modifyRoutine: false;
+      };
+    };
+    requestedAt: string;
+    decidedAt?: string;
+    decidedBy?: string;
+  };
+  nextRunAt?: string;
+  lastRunAt?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type RoutineSummaryResource = Omit<
+  RoutineResource,
+  'requestKey' | 'principalId'
+>;
+
+export type RoutineRunResource = {
+  schemaVersion: 1;
+  version: number;
+  id: string;
+  routineId: string;
+  principalId: string;
+  occurrenceKey: string;
+  trigger: 'scheduled' | 'manual';
+  scheduledFor: string;
+  action: RoutineResource['approval']['effect']['action'];
+  status: 'queued' | 'executing' | 'succeeded' | 'failed' | 'cancelled';
+  startedAt?: string;
+  completedAt?: string;
+  result?: {
+    outcome: 'healthy' | 'attention_required';
+    summary: string;
+    diagnostic: MachineDiagnosticContent;
+  };
+  failure?: { code: string; message: string };
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type DevelopmentCampaignListResource = {
   schemaVersion: 1;
   campaigns: DevelopmentCampaignResource[];
@@ -1614,7 +1724,43 @@ export type VeraApi = {
     missionId: string,
     options?: WaitForMissionOptions,
   ): Promise<MissionResource>;
+  listRoutines(): Promise<{ schemaVersion: 1; routines: RoutineResource[] }>;
+  createRoutine(input: {
+    title: string;
+    schedule: RoutineScheduleResource;
+    action: RoutineResource['approval']['effect']['action'];
+    idempotencyKey: string;
+  }): Promise<RoutineResource>;
+  decideRoutine(input: {
+    routineId: string;
+    decision: 'approved' | 'rejected';
+  }): Promise<RoutineResource>;
+  pauseRoutine(routineId: string): Promise<RoutineResource>;
+  resumeRoutine(routineId: string): Promise<RoutineResource>;
+  runRoutineNow(input: {
+    routineId: string;
+    idempotencyKey: string;
+  }): Promise<RoutineRunResource>;
+  listRoutineRuns(
+    routineId: string,
+  ): Promise<{ schemaVersion: 1; runs: RoutineRunResource[] }>;
+  getRoutineRun(
+    runId: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<RoutineRunResource>;
+  waitForRoutineRun(
+    runId: string,
+    options?: WaitForRoutineRunOptions,
+  ): Promise<RoutineRunResource>;
   waitForRun(runId: string, options?: WaitForRunOptions): Promise<TaskResource>;
+};
+
+export type WaitForRoutineRunOptions = {
+  until?: (run: RoutineRunResource) => boolean;
+  onUpdate?: (run: RoutineRunResource) => void;
+  intervalMs?: number;
+  timeoutMs?: number;
+  signal?: AbortSignal;
 };
 
 export type WaitForRunOptions = {
@@ -2274,6 +2420,97 @@ function assertMissionPolicyListResource(
   }
 }
 
+function assertRoutineResource(
+  value: unknown,
+): asserts value is RoutineResource {
+  const validStatus = new Set([
+    'awaiting_approval',
+    'active',
+    'paused',
+    'rejected',
+  ]);
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== 1 ||
+    typeof value.id !== 'string' ||
+    !value.id.startsWith('routine_') ||
+    typeof value.version !== 'number' ||
+    typeof value.requestKey !== 'string' ||
+    typeof value.principalId !== 'string' ||
+    typeof value.status !== 'string' ||
+    !validStatus.has(value.status) ||
+    !isRecord(value.approval) ||
+    typeof value.approval.id !== 'string' ||
+    !value.approval.id.startsWith('approval_') ||
+    value.approval.reason !== 'standing_instruction' ||
+    !['pending', 'approved', 'rejected'].includes(
+      String(value.approval.status),
+    ) ||
+    !isRecord(value.approval.effect) ||
+    typeof value.approval.effect.title !== 'string' ||
+    !isRecord(value.approval.effect.schedule) ||
+    value.approval.effect.schedule.kind !== 'daily' ||
+    typeof value.approval.effect.schedule.timeZone !== 'string' ||
+    typeof value.approval.effect.schedule.localTime !== 'string' ||
+    !Array.isArray(value.approval.effect.schedule.daysOfWeek) ||
+    !isRecord(value.approval.effect.action) ||
+    value.approval.effect.action.kind !== 'machine_health_check' ||
+    typeof value.approval.effect.action.machineId !== 'string' ||
+    !isRecord(value.approval.effect.authority) ||
+    value.approval.effect.authority.recurringExecution !== true ||
+    value.approval.effect.authority.inspectRegisteredMachine !== true ||
+    value.approval.effect.authority.controlMachineServices !== false ||
+    value.approval.effect.authority.modifyRoutine !== false ||
+    typeof value.createdAt !== 'string' ||
+    typeof value.updatedAt !== 'string'
+  )
+    throw new Error('Vera returned an invalid routine resource.');
+}
+
+function assertRoutineRunResource(
+  value: unknown,
+): asserts value is RoutineRunResource {
+  const validStatuses = new Set([
+    'queued',
+    'executing',
+    'succeeded',
+    'failed',
+    'cancelled',
+  ]);
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== 1 ||
+    typeof value.id !== 'string' ||
+    !value.id.startsWith('routine_run_') ||
+    typeof value.routineId !== 'string' ||
+    !value.routineId.startsWith('routine_') ||
+    typeof value.principalId !== 'string' ||
+    typeof value.occurrenceKey !== 'string' ||
+    !['scheduled', 'manual'].includes(String(value.trigger)) ||
+    typeof value.scheduledFor !== 'string' ||
+    !isRecord(value.action) ||
+    value.action.kind !== 'machine_health_check' ||
+    typeof value.action.machineId !== 'string' ||
+    typeof value.status !== 'string' ||
+    !validStatuses.has(value.status) ||
+    typeof value.createdAt !== 'string' ||
+    typeof value.updatedAt !== 'string' ||
+    (value.status === 'succeeded' &&
+      (!isRecord(value.result) ||
+        !['healthy', 'attention_required'].includes(
+          String(value.result.outcome),
+        ) ||
+        typeof value.result.summary !== 'string' ||
+        !isRecord(value.result.diagnostic))) ||
+    (value.status === 'failed' &&
+      (!isRecord(value.failure) ||
+        typeof value.failure.code !== 'string' ||
+        typeof value.failure.message !== 'string'))
+  ) {
+    throw new Error('Vera returned an invalid routine-run resource.');
+  }
+}
+
 async function delay(
   milliseconds: number,
   signal?: AbortSignal,
@@ -2361,6 +2598,8 @@ function isAttentionTarget(value: Record<string, unknown>): boolean {
       return typeof value.missionId === 'string';
     case 'campaign':
       return typeof value.campaignId === 'string';
+    case 'routine':
+      return typeof value.routineId === 'string';
     default:
       return false;
   }
@@ -3222,6 +3461,147 @@ export class VeraClient implements VeraApi {
     return value;
   }
 
+  public async listRoutines() {
+    const value: unknown = await this.request('/v1/routines');
+    if (
+      !isRecord(value) ||
+      value.schemaVersion !== 1 ||
+      !Array.isArray(value.routines)
+    )
+      throw new Error('Vera returned an invalid routine list.');
+    for (const routine of value.routines) assertRoutineResource(routine);
+    return value as { schemaVersion: 1; routines: RoutineResource[] };
+  }
+
+  public async createRoutine(input: {
+    title: string;
+    schedule: RoutineScheduleResource;
+    action: RoutineResource['approval']['effect']['action'];
+    idempotencyKey: string;
+  }) {
+    return this.routineRequest('/v1/routines', {
+      method: 'POST',
+      idempotencyKey: input.idempotencyKey,
+      body: {
+        title: input.title,
+        schedule: input.schedule,
+        action: input.action,
+      },
+    });
+  }
+
+  public decideRoutine(input: {
+    routineId: string;
+    decision: 'approved' | 'rejected';
+  }) {
+    return this.routineRequest(
+      `/v1/routines/${encodeURIComponent(input.routineId)}/decision`,
+      { method: 'POST', body: { decision: input.decision } },
+    );
+  }
+
+  public pauseRoutine(routineId: string) {
+    return this.routineRequest(
+      `/v1/routines/${encodeURIComponent(routineId)}/pause`,
+      { method: 'POST' },
+    );
+  }
+
+  public resumeRoutine(routineId: string) {
+    return this.routineRequest(
+      `/v1/routines/${encodeURIComponent(routineId)}/resume`,
+      { method: 'POST' },
+    );
+  }
+
+  public async runRoutineNow(input: {
+    routineId: string;
+    idempotencyKey: string;
+  }) {
+    const value: unknown = await this.request(
+      `/v1/routines/${encodeURIComponent(input.routineId)}/runs`,
+      { method: 'POST', idempotencyKey: input.idempotencyKey },
+    );
+    assertRoutineRunResource(value);
+    return value;
+  }
+
+  public async listRoutineRuns(routineId: string) {
+    const value: unknown = await this.request(
+      `/v1/routines/${encodeURIComponent(routineId)}/runs`,
+    );
+    if (
+      !isRecord(value) ||
+      value.schemaVersion !== 1 ||
+      !Array.isArray(value.runs)
+    )
+      throw new Error('Vera returned an invalid routine-run list.');
+    for (const run of value.runs) assertRoutineRunResource(run);
+    return value as { schemaVersion: 1; runs: RoutineRunResource[] };
+  }
+
+  public async getRoutineRun(
+    runId: string,
+    options?: { signal?: AbortSignal },
+  ) {
+    const value: unknown = await this.request(
+      `/v1/routine-runs/${encodeURIComponent(runId)}`,
+      options?.signal === undefined ? undefined : { signal: options.signal },
+    );
+    assertRoutineRunResource(value);
+    return value;
+  }
+
+  public async waitForRoutineRun(
+    runId: string,
+    options?: WaitForRoutineRunOptions,
+  ): Promise<RoutineRunResource> {
+    const startedAt = Date.now();
+    const timeoutMs = options?.timeoutMs ?? 120_000;
+    const intervalMs = options?.intervalMs ?? 250;
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0)
+      throw new Error('waitForRoutineRun timeoutMs must be a positive number.');
+    if (!Number.isFinite(intervalMs) || intervalMs <= 0)
+      throw new Error(
+        'waitForRoutineRun intervalMs must be a positive number.',
+      );
+    const terminal = new Set<RoutineRunResource['status']>([
+      'succeeded',
+      'failed',
+      'cancelled',
+    ]);
+    for (;;) {
+      const elapsedMs = Date.now() - startedAt;
+      if (elapsedMs >= timeoutMs)
+        throw new Error(`Timed out waiting for routine run ${runId}.`);
+      const timeoutSignal = AbortSignal.timeout(
+        Math.max(1, timeoutMs - elapsedMs),
+      );
+      const signal =
+        options?.signal === undefined
+          ? timeoutSignal
+          : AbortSignal.any([options.signal, timeoutSignal]);
+      let run: RoutineRunResource;
+      try {
+        run = await this.getRoutineRun(runId, { signal });
+      } catch (error) {
+        if (options?.signal?.aborted === true) throw error;
+        if (timeoutSignal.aborted)
+          throw new Error(`Timed out waiting for routine run ${runId}.`, {
+            cause: error,
+          });
+        throw error;
+      }
+      options?.onUpdate?.(run);
+      if ((options?.until ?? ((current) => terminal.has(current.status)))(run))
+        return run;
+      await delay(
+        Math.min(intervalMs, Math.max(1, timeoutMs - (Date.now() - startedAt))),
+        options?.signal,
+      );
+    }
+  }
+
   public createMission(input: {
     projectId: string;
     policyId: string;
@@ -3449,6 +3829,15 @@ export class VeraClient implements VeraApi {
   ): Promise<MissionResource> {
     const value: unknown = await this.request(path, options);
     assertMissionResource(value);
+    return value;
+  }
+
+  private async routineRequest(
+    path: string,
+    options?: RequestOptions,
+  ): Promise<RoutineResource> {
+    const value: unknown = await this.request(path, options);
+    assertRoutineResource(value);
     return value;
   }
 

@@ -32,6 +32,7 @@ import { AdaptiveGoalPlanSchema } from '../goals/adaptive-goal.ts';
 import { KnowledgeActionArgumentsSchema } from '../knowledge/knowledge.ts';
 import { KnowledgeManagementGoalStepSchema } from '../goals/goal-plan.ts';
 import { AttentionActionArgumentsSchema } from '../attention/attention.ts';
+import { RoutineManagementArgumentsSchema } from '../routines/routine.ts';
 
 const DecisionSummarySchema = z.string().trim().min(1).max(500);
 
@@ -61,6 +62,19 @@ const AttentionManagementProposalSchema = z
       version: z.literal(1),
     }),
     arguments: AttentionActionArgumentsSchema,
+  })
+  .strict();
+
+const RoutineManagementProposalSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    kind: z.literal('invoke_capability'),
+    decisionSummary: DecisionSummarySchema,
+    capability: CapabilityReferenceSchema.extend({
+      name: z.literal('routine_management'),
+      version: z.literal(1),
+    }),
+    arguments: RoutineManagementArgumentsSchema,
   })
   .strict();
 
@@ -227,6 +241,7 @@ const PursueAdaptiveGoalProposalSchema = z
 
 export const ModelProposalSchema = z.union([
   RespondProposalSchema,
+  RoutineManagementProposalSchema,
   AttentionManagementProposalSchema,
   MissionManagementProposalSchema,
   DevelopmentPlanningProposalSchema,
@@ -256,6 +271,10 @@ export function createModelProposalSchema(options: {
   const attentionManagementEnabled = options.enabledCapabilities.some(
     (capability) =>
       capability.name === 'attention_management' && capability.version === 1,
+  );
+  const routineManagementEnabled = options.enabledCapabilities.some(
+    (capability) =>
+      capability.name === 'routine_management' && capability.version === 1,
   );
   const missionManagementEnabled = options.enabledCapabilities.some(
     (capability) =>
@@ -321,6 +340,7 @@ export function createModelProposalSchema(options: {
   const schemas: z.ZodType[] = [RespondProposalSchema];
   if (attentionManagementEnabled)
     schemas.push(AttentionManagementProposalSchema);
+  if (routineManagementEnabled) schemas.push(RoutineManagementProposalSchema);
   if (missionManagementEnabled) schemas.push(MissionManagementProposalSchema);
   if (developmentPlanningEnabled) {
     schemas.push(DevelopmentPlanningProposalSchema);

@@ -11,6 +11,7 @@ import {
 import { MissionProposalArgumentsSchema } from '../missions/mission-proposal.ts';
 import { KnowledgeActionArgumentsSchema } from '../knowledge/knowledge.ts';
 import { AttentionActionArgumentsSchema } from '../attention/attention.ts';
+import { RoutineManagementArgumentsSchema } from '../routines/routine.ts';
 export { AttachmentAnalysisArgumentsSchema } from '../attachments/attachment-analysis.ts';
 
 export const DevelopmentPlanningProposalArgumentsSchema = z
@@ -84,6 +85,7 @@ export const CapabilityAuthoritySchema = z
         'mission_data',
         'personal_knowledge',
         'owner_attention',
+        'routine_data',
       ]),
     ),
     sideEffects: z.array(
@@ -96,6 +98,7 @@ export const CapabilityAuthoritySchema = z
         'machine_service_control',
         'mission_draft_write',
         'knowledge_write',
+        'standing_instruction_write',
       ]),
     ),
     credentials: z.enum(['none', 'server_managed']),
@@ -119,6 +122,37 @@ export type CapabilityDefinition = {
 };
 
 export const CapabilityDefinitions = [
+  {
+    name: 'routine_management',
+    version: 1,
+    description:
+      'Create, list, pause, resume, or manually trigger owner-approved recurring standing instructions.',
+    proposalArgumentsSchema: RoutineManagementArgumentsSchema,
+    effect: 'owner_state',
+    artifact: {
+      type: 'routine_management_result',
+      mediaType: 'application/vnd.vera.routine-management-result+json',
+    },
+    acceptedInputArtifacts: [],
+    explicitAdaptiveOutcome: {
+      patterns: [
+        /\b(every (?:day|morning|evening)|daily|routine|standing instruction|on a schedule)\b/u,
+      ],
+      description: 'Manage a recurring owner-approved Vera routine.',
+    },
+    authority: {
+      approval: 'never',
+      projectContext: 'none',
+      networkAccess: 'owner_machine',
+      dataClasses: [
+        'owner_request',
+        'routine_data',
+        'machine_operational_data',
+      ],
+      sideEffects: ['standing_instruction_write'],
+      credentials: 'server_managed',
+    },
+  },
   {
     name: 'attention_management',
     version: 1,

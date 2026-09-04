@@ -61,6 +61,11 @@ import { registerMachineRoutes } from './routes/machine-routes.ts';
 import { registerDevelopmentCampaignRoutes } from './routes/development-campaign-routes.ts';
 import { registerMissionRoutes } from './routes/mission-routes.ts';
 import { registerAttentionRoutes } from './routes/attention-routes.ts';
+import { registerRoutineRoutes } from './routes/routine-routes.ts';
+import {
+  RoutineError,
+  type RoutineLifecycle,
+} from '../../../application/routines/routine-lifecycle.ts';
 import {
   MissionError,
   type MissionLifecycle,
@@ -107,6 +112,7 @@ export type BuildAppOptions = {
   };
   developmentCampaigns?: DevelopmentCampaignLifecycle & { wake(): void };
   missions?: MissionLifecycle & { wake(): void };
+  routines?: RoutineLifecycle & { wake(): void };
   readinessChecks?: {
     name: string;
     check(): Promise<void>;
@@ -422,6 +428,9 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   if (options.missions !== undefined) {
     registerMissionRoutes(app, { principalId, missions: options.missions });
   }
+  if (options.routines !== undefined) {
+    registerRoutineRoutes(app, { principalId, routines: options.routines });
+  }
 
   if (options.close !== undefined) app.addHook('onClose', options.close);
 
@@ -524,6 +533,19 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
         error.code === 'mission_not_found' ||
         error.code === 'mission_project_not_found' ||
         error.code === 'mission_policy_not_found'
+          ? 404
+          : 409;
+      void reply.status(statusCode).send({
+        error: { code: error.code, message: error.message },
+      });
+      return;
+    }
+    if (error instanceof RoutineError) {
+      const statusCode =
+        error.code === 'routine_not_found' ||
+        error.code === 'routine_run_not_found' ||
+        error.code === 'routine_machine_not_found' ||
+        error.code === 'routine_service_not_found'
           ? 404
           : 409;
       void reply.status(statusCode).send({
