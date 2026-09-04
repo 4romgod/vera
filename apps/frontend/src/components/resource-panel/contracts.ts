@@ -69,6 +69,12 @@ export type ResourcePanelProps = {
     decision: 'approved' | 'rejected',
   ) => Promise<boolean>;
   onCampaignCancel: (campaignId: string) => Promise<boolean>;
+  onCampaignRepairRequest: (campaignId: string) => Promise<boolean>;
+  onCampaignRepairDecision: (
+    campaignId: string,
+    repairId: string,
+    decision: 'approved' | 'rejected',
+  ) => Promise<boolean>;
   onMissionDecision: (
     missionId: string,
     decision: 'approved' | 'rejected',

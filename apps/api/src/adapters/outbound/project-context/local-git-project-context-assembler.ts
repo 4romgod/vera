@@ -375,9 +375,33 @@ async function runGit(rootPath: string, args: string[]): Promise<string> {
   return result.stdout;
 }
 
+async function runGitBuffer(rootPath: string, args: string[]): Promise<Buffer> {
+  return new Promise((resolvePromise, reject) => {
+    execFile(
+      'git',
+      ['-C', rootPath, ...args],
+      {
+        encoding: 'buffer',
+        maxBuffer: 10 * 1024 * 1024,
+        timeout: gitCommandTimeoutMs,
+      },
+      (error, stdout) => {
+        if (error !== null) {
+          const reason =
+            error instanceof Error
+              ? error
+              : new Error('The Git command failed without an Error result.');
+          reject(reason);
+        } else resolvePromise(stdout);
+      },
+    );
+  });
+}
+
 async function grepTrackedPaths(
   rootPath: string,
   term: string,
+  revision?: string,
 ): Promise<string[]> {
   try {
     return (
@@ -390,11 +414,15 @@ async function grepTrackedPaths(
         '-F',
         '-e',
         term,
+        ...(revision === undefined ? [] : [revision]),
         '--',
       ])
     )
       .split('\u0000')
-      .filter(Boolean);
+      .filter(Boolean)
+      .map((path) =>
+        revision === undefined ? path : path.replace(`${revision}:`, ''),
+      );
   } catch (error) {
     if ((error as { code?: number }).code === 1) return [];
     throw error;
@@ -404,12 +432,13 @@ async function grepTrackedPaths(
 async function discoverContentMatches(
   rootPath: string,
   terms: Set<string>,
+  revision?: string,
 ): Promise<Map<string, Set<string>>> {
   const matches = new Map<string, Set<string>>();
   const discoveries = await Promise.all(
     [...terms].map(async (term) => ({
       term,
-      paths: await grepTrackedPaths(rootPath, term),
+      paths: await grepTrackedPaths(rootPath, term, revision),
     })),
   );
   for (const discovery of discoveries) {
@@ -447,14 +476,31 @@ export class LocalGitProjectContextAssembler
     project: Parameters<ProjectContextAssembler['assemble']>[0]['project'];
     objective: string;
     ticket: { reference: string; details: string };
+    revision?: string;
     limits: { maxFiles: number; maxBytes: number; maxFileBytes: number };
   }): Promise<ProjectContextBundle> {
     const configuredRoot = await resolveLocalGitRoot(
       input.project.source.rootPath,
     );
 
-    const head = (await runGit(configuredRoot, ['rev-parse', 'HEAD'])).trim();
+    const requestedRevision = input.revision;
+    if (
+      requestedRevision !== undefined &&
+      !/^[a-f0-9]{40,64}$/u.test(requestedRevision)
+    ) {
+      throw new Error('The requested project revision is invalid.');
+    }
+    const head = (
+      await runGit(configuredRoot, [
+        'rev-parse',
+        `${requestedRevision ?? 'HEAD'}^{commit}`,
+      ])
+    ).trim();
+    if (requestedRevision !== undefined && head !== requestedRevision) {
+      throw new Error('The requested project revision is not an exact commit.');
+    }
     const dirty =
+      requestedRevision === undefined &&
       (
         await runGit(configuredRoot, [
           'status',
@@ -463,17 +509,42 @@ export class LocalGitProjectContextAssembler
         ])
       ).trim().length > 0;
     const tracked = (
-      await runGit(configuredRoot, ['ls-files', '--cached', '-z'])
-    )
-      .split('\u0000')
-      .filter((path) => path.length > 0 && isEligiblePath(path));
+      requestedRevision === undefined
+        ? (await runGit(configuredRoot, ['ls-files', '--cached', '-z']))
+            .split('\u0000')
+            .filter(Boolean)
+        : (
+            await runGit(configuredRoot, [
+              'ls-tree',
+              '-r',
+              '-z',
+              requestedRevision,
+            ])
+          )
+            .split('\u0000')
+            .filter(Boolean)
+            .flatMap((entry) => {
+              const [metadata, path] = entry.split('\t');
+              return metadata?.startsWith('100') === true && path !== undefined
+                ? [path]
+                : [];
+            })
+    ).filter((path) => isEligiblePath(path));
     const requestText = `${input.objective} ${input.ticket.reference} ${input.ticket.details}`;
     const rawRequestTokens = tokenize(requestText);
     const relevantRequestTokens = requestTokens(requestText);
     const relevantRequestAnchors = requestAnchors(requestText);
     const [contentMatches, anchorMatches] = await Promise.all([
-      discoverContentMatches(configuredRoot, relevantRequestTokens),
-      discoverContentMatches(configuredRoot, relevantRequestAnchors),
+      discoverContentMatches(
+        configuredRoot,
+        relevantRequestTokens,
+        requestedRevision,
+      ),
+      discoverContentMatches(
+        configuredRoot,
+        relevantRequestAnchors,
+        requestedRevision,
+      ),
     ]);
     const pathMatchedPaths = new Set<string>();
     for (const path of tracked) {
@@ -566,42 +637,45 @@ export class LocalGitProjectContextAssembler
     for (const candidate of candidates) {
       if (documents.length >= input.limits.maxFiles) break;
       const { relativePath } = candidate;
-      const absolutePath = resolve(configuredRoot, relativePath);
-      const relativeToRoot = relative(configuredRoot, absolutePath);
-      if (
-        relativeToRoot.startsWith(`..${sep}`) ||
-        relativeToRoot === '..' ||
-        isAbsolute(relativeToRoot)
-      ) {
-        skippedUnsafe += 1;
-        continue;
-      }
-      let fileInfo;
-      try {
-        fileInfo = await lstat(absolutePath);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-          // `git ls-files --cached` includes tracked files deleted in the
-          // working tree. The bundle represents the current working tree, so
-          // an absent path is intentionally omitted.
+      let buffer: Buffer;
+      if (requestedRevision !== undefined) {
+        buffer = await runGitBuffer(configuredRoot, [
+          'show',
+          `${requestedRevision}:${relativePath}`,
+        ]);
+      } else {
+        const absolutePath = resolve(configuredRoot, relativePath);
+        const relativeToRoot = relative(configuredRoot, absolutePath);
+        if (
+          relativeToRoot.startsWith(`..${sep}`) ||
+          relativeToRoot === '..' ||
+          isAbsolute(relativeToRoot)
+        ) {
+          skippedUnsafe += 1;
           continue;
         }
-        throw error;
+        let fileInfo;
+        try {
+          fileInfo = await lstat(absolutePath);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+          throw error;
+        }
+        if (!fileInfo.isFile() || fileInfo.isSymbolicLink()) {
+          skippedUnsafe += 1;
+          continue;
+        }
+        const canonicalFile = await realpath(absolutePath);
+        if (!canonicalFile.startsWith(`${configuredRoot}${sep}`)) {
+          skippedUnsafe += 1;
+          continue;
+        }
+        if (fileInfo.size > input.limits.maxFileBytes) {
+          skippedOversize += 1;
+          continue;
+        }
+        buffer = await readFile(canonicalFile);
       }
-      if (!fileInfo.isFile() || fileInfo.isSymbolicLink()) {
-        skippedUnsafe += 1;
-        continue;
-      }
-      const canonicalFile = await realpath(absolutePath);
-      if (!canonicalFile.startsWith(`${configuredRoot}${sep}`)) {
-        skippedUnsafe += 1;
-        continue;
-      }
-      if (fileInfo.size > input.limits.maxFileBytes) {
-        skippedOversize += 1;
-        continue;
-      }
-      const buffer = await readFile(canonicalFile);
       if (buffer.byteLength > input.limits.maxFileBytes) {
         skippedOversize += 1;
         continue;

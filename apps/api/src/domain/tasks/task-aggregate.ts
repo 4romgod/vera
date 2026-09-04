@@ -568,6 +568,10 @@ export const TaskAggregateSchema = z
         conversationId: z.string().startsWith('conversation_').optional(),
         messageId: z.string().startsWith('message_').optional(),
         projectId: z.string().startsWith('project_').optional(),
+        projectRevision: z
+          .string()
+          .regex(/^[a-f0-9]{40,64}$/u)
+          .optional(),
         attachments: z.array(AttachmentReferenceSchema).max(5).optional(),
         message: z.string().min(1),
         status: TaskStatusSchema,

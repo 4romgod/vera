@@ -73,6 +73,7 @@ export class InMemoryDevelopmentCampaignStore
             'verifying',
             'publishing',
             'observing',
+            'repairing',
             'merging',
             'synchronizing',
           ].includes(campaign.status),

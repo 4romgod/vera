@@ -944,6 +944,8 @@ flowchart TB
     APP --> GATES["Independent configured gates"]
     GATES --> PUB["Exact publication lifecycle"]
     PUB --> OBS["GitHub checks and review observation"]
+    OBS -->|"failed checks / changes requested"| REPAIR["Exact owner-approved PR-head repair"]
+    REPAIR --> APP
     OBS --> MERGE["Policy-gated exact-head merge"]
     MERGE --> SYNC["Registered base synchronization"]
     CAMPAIGN --> OPS["MongoDB aggregate and project lease"]
@@ -956,6 +958,11 @@ publication, and synchronization with ordinary repository operations. Provider
 selection remains late-bound in the capability runtime; test, merge, and policy
 authority remain deterministic code. See
 [ADR-0034](decisions/0034-delegate-bounded-development-campaigns-through-one-owner-approval.md).
+Remote repair adds a second, narrower approval rather than widening the first:
+GitHub evidence is bounded untrusted input, historical context is assembled
+from the exact PR head, and only a non-forced fast-forward of the existing PR
+branch is permitted. See
+[ADR-0041](decisions/0041-repair-review-required-pull-requests-through-exact-approved-fast-forwards.md).
 
 ## Bounded mission coordination
 

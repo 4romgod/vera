@@ -211,6 +211,21 @@ function setup() {
         completedAt: now,
       };
     },
+    requireCampaignReview() {
+      current = structuredClone(current);
+      current.status = 'review_required';
+      current.version += 1;
+      current.failure = {
+        code: 'checks_failed',
+        message: 'A required pull-request check failed.',
+      };
+    },
+    resumeCampaignRepair() {
+      current = structuredClone(current);
+      current.status = 'repairing';
+      current.version += 1;
+      delete current.failure;
+    },
   };
 }
 
@@ -338,5 +353,48 @@ void describe('mission lifecycle', () => {
     const executing = await value.lifecycle.progress('owner_v1', approved.id);
 
     assert.equal(executing.status, 'executing');
+  });
+
+  void it('keeps a mission recoverable while its campaign awaits an approved repair', async () => {
+    const value = setup();
+    const created = await value.lifecycle.createFromProposal({
+      principalId: 'owner_v1',
+      requestKey: 'repairable-mission',
+      proposal: {
+        action: 'create',
+        objective: 'Deliver one repairable improvement.',
+        completionCriteria: 'One verified pull request.',
+        project: { name: 'Vera' },
+        delivery: {
+          commitMessage: 'feat: deliver repairable improvement',
+          pullRequestTitle: 'Deliver repairable improvement',
+        },
+      },
+    });
+    const approved = await value.lifecycle.decideApproval({
+      principalId: 'owner_v1',
+      missionId: created.id,
+      decision: 'approved',
+    });
+    await value.lifecycle.progress('owner_v1', approved.id);
+
+    value.requireCampaignReview();
+    const awaitingRepair = await value.lifecycle.progress(
+      'owner_v1',
+      approved.id,
+    );
+    assert.equal(awaitingRepair.status, 'executing');
+    assert.equal(awaitingRepair.failure?.code, 'campaign_review_required');
+    assert.equal(awaitingRepair.notification?.outcome, 'review_required');
+
+    value.resumeCampaignRepair();
+    const repairing = await value.lifecycle.progress('owner_v1', approved.id);
+    assert.equal(repairing.status, 'executing');
+    assert.equal(repairing.failure, undefined);
+
+    value.completeCampaign();
+    const completed = await value.lifecycle.progress('owner_v1', approved.id);
+    assert.equal(completed.status, 'succeeded');
+    assert.equal(completed.result?.pullRequestNumber, 77);
   });
 });

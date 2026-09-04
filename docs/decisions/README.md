@@ -62,6 +62,7 @@ erasing why a choice was made.
 | [0038](0038-run-recurring-work-as-approved-standing-instructions.md) | Accepted | Execute recurring work from durable, frozen standing instructions with exact authority, recoverable runs, and quiet healthy outcomes. |
 | [0039](0039-deliver-attention-to-owner-devices-through-a-durable-outbox.md) | Accepted | Project active attention into a privacy-safe, preference-aware, durable device push outbox. |
 | [0040](0040-install-vera-as-a-user-scoped-mac-mini-service.md) | Accepted | Install the compiled API, static frontend, and daily MongoDB backup as private user-scoped Mac Mini services. |
+| [0041](0041-repair-review-required-pull-requests-through-exact-approved-fast-forwards.md) | Accepted | Repair failed-check and reviewer-blocked pull requests through separately approved, exact-head, non-forced branch updates. |
 
 ADRs 0001–0008 were accepted 24 August 2026 following the owner's review of
 the foundation documentation. ADR-0007 accepted a semantic boundary without
@@ -145,6 +146,10 @@ ADR-0040 turns the accepted Mac Mini perimeter into a repeatable installation:
 user LaunchAgents run compiled output, Tailscale remains the only remote
 ingress, daily backups preserve MongoDB, and explicit candidate verification
 keeps deployment separate from pull-request creation and merge.
+ADR-0041 replaces ADR-0034's deferred remote-repair boundary with an exact,
+owner-approved loop: bounded untrusted GitHub evidence becomes one repair
+attempt against the frozen PR head, followed by local gates, a non-forced
+fast-forward of the existing branch, and renewed observation.
 
 ## ADR rules
 

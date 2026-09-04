@@ -4,6 +4,7 @@ import type {
   DevelopmentCampaign,
   DevelopmentCampaignCatalog,
   DevelopmentCampaignEffect,
+  DevelopmentCampaignRepair,
   DevelopmentCampaignPolicySummary,
   PullRequestObservation,
 } from '../../domain/development-campaigns/development-campaign.ts';
@@ -53,6 +54,12 @@ export type DevelopmentCampaignOperations = {
     campaign: DevelopmentCampaign;
     publication: SoftwareChangePublication;
   }): Promise<PullRequestObservation>;
+  updatePullRequest(input: {
+    campaign: DevelopmentCampaign;
+    repair: DevelopmentCampaignRepair;
+    application: SoftwareChangeApplication;
+    publication: SoftwareChangePublication;
+  }): Promise<{ headRevision: string; previousRevision: string }>;
   merge(input: {
     campaign: DevelopmentCampaign;
     project: Project;

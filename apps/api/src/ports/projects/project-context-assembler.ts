@@ -6,6 +6,7 @@ export type ProjectContextAssembler = {
     project: Project;
     objective: string;
     ticket: { reference: string; details: string };
+    revision?: string;
     limits: { maxFiles: number; maxBytes: number; maxFileBytes: number };
   }): Promise<ProjectContextBundle>;
 };

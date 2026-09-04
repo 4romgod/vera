@@ -21,6 +21,7 @@ import type { DevelopmentCampaignOperations } from '../../../src/ports/developme
 const now = '2026-08-27T12:00:00.000Z';
 const baseRevision = 'a'.repeat(40);
 const headRevision = 'b'.repeat(40);
+const repairRevision = 'd'.repeat(40);
 const mergeRevision = 'c'.repeat(40);
 const softwareAuthority = {
   approval: 'always' as const,
@@ -66,6 +67,14 @@ function requireValue<K, V>(values: Map<K, V>, key: K): V {
 function task(
   attempt: number,
   status: TaskAggregate['run']['status'],
+  requested = {
+    objective: 'Add a visible status endpoint.',
+    ticket: {
+      reference: 'VERA-401',
+      details: 'Add a visible status endpoint.',
+    },
+  },
+  projectRevision = baseRevision,
 ): TaskAggregate {
   const artifactId = `artifact_attempt_${String(attempt)}`;
   const approval =
@@ -76,11 +85,7 @@ function task(
           reason: 'specialist_capability_invocation' as const,
           capability: { name: 'software_change' as const, version: 1 as const },
           proposedArguments: {
-            objective: 'Add a visible status endpoint.',
-            ticket: {
-              reference: 'VERA-401',
-              details: 'Add a visible status endpoint.',
-            },
+            ...requested,
             project: { name: 'Vera' },
           },
           project: { id: 'project_campaign', displayName: 'Vera' },
@@ -88,7 +93,7 @@ function task(
             schemaVersion: 1 as const,
             projectId: 'project_campaign',
             sourceKind: 'local_git' as const,
-            revision: baseRevision,
+            revision: projectRevision,
             generatedAt: now,
             entries: [],
             totalFiles: 0,
@@ -107,6 +112,7 @@ function task(
       requestKey: `task-key-${String(attempt)}`,
       principalId: 'owner_v1',
       projectId: 'project_campaign',
+      projectRevision,
       message: 'fixture',
       status: status === 'succeeded' ? 'completed' : 'active',
       createdAt: now,
@@ -143,13 +149,10 @@ function task(
                 project: {
                   id: 'project_campaign',
                   name: 'Vera',
-                  revision: baseRevision,
+                  revision: projectRevision,
                 },
-                ticket: {
-                  reference: 'VERA-401',
-                  details: 'Add a visible status endpoint.',
-                },
-                objective: 'Add a visible status endpoint.',
+                ticket: requested.ticket,
+                objective: requested.objective,
                 summary: 'Fixture.',
                 patch: 'fixture',
                 files: [],
@@ -177,6 +180,7 @@ function task(
 function application(
   attempt: number,
   protectedPath = false,
+  sourceRevision = baseRevision,
 ): SoftwareChangeApplication {
   const file = {
     relativePath: protectedPath
@@ -209,7 +213,7 @@ function application(
       project: { id: 'project_campaign', displayName: 'Vera' },
       effect: {
         adapterId: 'local_git_worktree',
-        baseRevision,
+        baseRevision: sourceRevision,
         branchName: `vera/change-attempt-${String(attempt)}`,
         workspacePath: `/tmp/worktree-${String(attempt)}`,
         patchSha256: 'f'.repeat(64),
@@ -297,10 +301,44 @@ async function setup(
   const store = new InMemoryDevelopmentCampaignStore();
   let taskAttempt = 0;
   const tasks = new Map<string, TaskAggregate>();
+  const submissions = new Map<
+    number,
+    {
+      requested: {
+        objective: string;
+        ticket: { reference: string; details: string };
+      };
+      revision: string;
+    }
+  >();
   const taskLifecycle = {
-    submit() {
+    submit(input: { message: string; projectRevision?: string }) {
       taskAttempt += 1;
-      const aggregate = task(taskAttempt, 'deciding');
+      const objective = /Use objective exactly: ([^\n]+)/u.exec(
+        input.message,
+      )?.[1];
+      const reference = /Use ticket reference exactly: ([^\n]+)/u.exec(
+        input.message,
+      )?.[1];
+      const details =
+        /Use ticket details exactly:\n([\s\S]+?)\n\nUse the registered/u.exec(
+          input.message,
+        )?.[1];
+      const requested =
+        objective !== undefined &&
+        reference !== undefined &&
+        details !== undefined
+          ? { objective, ticket: { reference, details } }
+          : {
+              objective: 'Add a visible status endpoint.',
+              ticket: {
+                reference: 'VERA-401',
+                details: 'Add a visible status endpoint.',
+              },
+            };
+      const revision = input.projectRevision ?? baseRevision;
+      submissions.set(taskAttempt, { requested, revision });
+      const aggregate = task(taskAttempt, 'deciding', requested, revision);
       tasks.set(aggregate.task.id, aggregate);
       return Promise.resolve(aggregate);
     },
@@ -309,13 +347,25 @@ async function setup(
     },
     progressTask(_principalId: string, taskId: string) {
       const attempt = Number(taskId.split('_').at(-1));
-      const aggregate = task(attempt, 'awaiting_approval');
+      const submission = requireValue(submissions, attempt);
+      const aggregate = task(
+        attempt,
+        'awaiting_approval',
+        submission.requested,
+        submission.revision,
+      );
       tasks.set(taskId, aggregate);
       return Promise.resolve(structuredClone(aggregate));
     },
     decideApproval(input: { approvalId: string }) {
       const attempt = Number(input.approvalId.split('_').at(-1));
-      const aggregate = task(attempt, 'succeeded');
+      const submission = requireValue(submissions, attempt);
+      const aggregate = task(
+        attempt,
+        'succeeded',
+        submission.requested,
+        submission.revision,
+      );
       tasks.set(aggregate.task.id, aggregate);
       return Promise.resolve(structuredClone(aggregate));
     },
@@ -326,7 +376,11 @@ async function setup(
   const applicationLifecycle = {
     create(input: { artifactId: string }) {
       const attempt = Number(input.artifactId.split('_').at(-1));
-      const value = application(attempt, options.protectedPath === true);
+      const value = application(
+        attempt,
+        options.protectedPath === true,
+        requireValue(submissions, attempt).revision,
+      );
       applications.set(value.id, value);
       return Promise.resolve(structuredClone(value));
     },
@@ -400,9 +454,18 @@ async function setup(
   let verificationCalls = 0;
   let observationCalls = 0;
   let mergeCalls = 0;
+  let currentHeadRevision = headRevision;
   const operations: DevelopmentCampaignOperations = {
     adapterId: 'local_git_github',
     listPolicies: () => [],
+    updatePullRequest: () => {
+      const previousRevision = currentHeadRevision;
+      currentHeadRevision = repairRevision;
+      return Promise.resolve({
+        previousRevision,
+        headRevision: currentHeadRevision,
+      });
+    },
     prepare(input) {
       const effect: DevelopmentCampaignEffect = {
         adapterId: 'local_git_github',
@@ -487,15 +550,28 @@ async function setup(
       return Promise.resolve({
         checkedAt,
         state: 'OPEN',
-        headRevision,
+        headRevision: currentHeadRevision,
         baseRevision,
-        checks: options.failedRemoteChecks
-          ? { total: 1, pending: 0, passed: 0, failed: 1 }
-          : options.pendingRemoteChecks || observationCalls === 1
-            ? { total: 1, pending: 1, passed: 0, failed: 0 }
-            : { total: 1, pending: 0, passed: 1, failed: 0 },
+        checks:
+          options.failedRemoteChecks && currentHeadRevision === headRevision
+            ? { total: 1, pending: 0, passed: 0, failed: 1 }
+            : options.pendingRemoteChecks || observationCalls === 1
+              ? { total: 1, pending: 1, passed: 0, failed: 0 }
+              : { total: 1, pending: 0, passed: 1, failed: 0 },
         reviewDecision: 'NONE',
         mergeState: 'CLEAN',
+        ...(options.failedRemoteChecks && currentHeadRevision === headRevision
+          ? {
+              failedChecks: [
+                {
+                  name: 'quality',
+                  status: 'COMPLETED',
+                  conclusion: 'FAILURE',
+                  summary: 'The status endpoint assertion failed.',
+                },
+              ],
+            }
+          : {}),
       });
     },
     merge: () => {
@@ -721,6 +797,48 @@ void describe('development campaign lifecycle', () => {
     assert.equal(completed.status, 'review_required');
     assert.equal(completed.failure?.code, 'checks_failed');
     assert.equal(completed.pullRequest?.number, 44);
+  });
+
+  void it('freezes, approves, applies, and re-observes one exact PR repair', async () => {
+    const value = await setup({ failedRemoteChecks: true });
+    const approved = await createApproved(value.lifecycle);
+    const reviewRequired = await runToTerminal(value.lifecycle, approved.id);
+
+    const awaitingRepair = await value.lifecycle.requestRepair({
+      principalId: 'owner_v1',
+      campaignId: reviewRequired.id,
+      requestKey: 'repair-request-1',
+    });
+    const repair = awaitingRepair.repairs?.at(-1);
+    assert.ok(repair);
+    assert.equal(awaitingRepair.status, 'repair_awaiting_approval');
+    assert.equal(repair.status, 'pending');
+    assert.equal(repair.effect.sourceRevision, headRevision);
+    assert.equal(repair.evidence.failedChecks?.[0]?.name, 'quality');
+    assert.equal(repair.effect.authority.forcePush, false);
+
+    const idempotent = await value.lifecycle.requestRepair({
+      principalId: 'owner_v1',
+      campaignId: reviewRequired.id,
+      requestKey: 'repair-request-1',
+    });
+    assert.equal(idempotent.version, awaitingRepair.version);
+
+    const repairApproved = await value.lifecycle.decideRepair({
+      principalId: 'owner_v1',
+      campaignId: reviewRequired.id,
+      repairId: repair.id,
+      decision: 'approved',
+    });
+    const completed = await runToTerminal(value.lifecycle, repairApproved.id);
+
+    assert.equal(completed.status, 'succeeded');
+    assert.equal(completed.attempts.length, 2);
+    assert.equal(completed.attempts[1]?.kind, 'pull_request_repair');
+    assert.equal(completed.attempts[1].sourceRevision, headRevision);
+    assert.equal(completed.repairs?.[0]?.status, 'applied');
+    assert.equal(completed.pullRequest?.headRevision, repairRevision);
+    assert.equal(completed.result?.outcome, 'merged');
   });
 
   void it('does not persist or immediately repeat an unchanged pending observation', async () => {

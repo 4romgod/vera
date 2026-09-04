@@ -1025,6 +1025,70 @@ void describe('Vera HTTP client', () => {
     assert.equal(polls, 2);
   });
 
+  void it('requests and decides an exact development-campaign repair', async () => {
+    const requests: {
+      url: string;
+      method: string;
+      headers: Headers;
+      body?: string;
+    }[] = [];
+    const campaign = {
+      schemaVersion: 1,
+      version: 8,
+      id: 'campaign_repair',
+      status: 'repair_awaiting_approval',
+      approval: { reason: 'development_campaign', effect: {} },
+      attempts: [],
+      repairs: [],
+      events: [],
+    };
+    const client = new VeraClient({
+      baseUrl: 'http://vera.test',
+      fetch: (input, init) => {
+        const url =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        requests.push({
+          url,
+          method: init?.method ?? 'GET',
+          headers: new Headers(init?.headers),
+          ...(typeof init?.body === 'string' ? { body: init.body } : {}),
+        });
+        return Promise.resolve(Response.json(campaign, { status: 202 }));
+      },
+    });
+
+    await client.requestDevelopmentCampaignRepair({
+      campaignId: 'campaign_repair',
+      idempotencyKey: 'repair-key',
+    });
+    await client.decideDevelopmentCampaignRepair({
+      campaignId: 'campaign_repair',
+      repairId: 'repair_one',
+      decision: 'approved',
+    });
+
+    const repairRequest = requests[0];
+    const decisionRequest = requests[1];
+    assert.ok(repairRequest);
+    assert.ok(decisionRequest);
+    assert.equal(repairRequest.headers.get('idempotency-key'), 'repair-key');
+    assert.equal(
+      repairRequest.url,
+      'http://vera.test/v1/development-campaigns/campaign_repair/repairs',
+    );
+    assert.equal(
+      decisionRequest.url,
+      'http://vera.test/v1/development-campaigns/campaign_repair/repairs/repair_one/decision',
+    );
+    assert.deepEqual(JSON.parse(decisionRequest.body ?? ''), {
+      decision: 'approved',
+    });
+  });
+
   void it('creates, approves, and waits for one bounded mission', async () => {
     const requests: { url: string; method: string; body?: string }[] = [];
     let polls = 0;

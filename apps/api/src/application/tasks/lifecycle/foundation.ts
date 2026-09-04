@@ -648,6 +648,7 @@ export function createTaskLifecycleFoundation(runtime: TaskLifecycleRuntime) {
       aggregate.task.message !== input.message ||
       aggregate.task.principalId !== input.principalId ||
       aggregate.task.projectId !== input.projectId ||
+      aggregate.task.projectRevision !== input.projectRevision ||
       aggregate.task.conversationId !== input.conversationId ||
       aggregate.task.messageId !== input.messageId ||
       JSON.stringify(aggregate.task.attachments ?? []) !==

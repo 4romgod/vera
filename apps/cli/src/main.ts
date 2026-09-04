@@ -54,6 +54,10 @@ const usage = `Usage:
   vera publication wait <publication-id> [--timeout-ms <milliseconds>]
   vera publication events <publication-id>
   vera publication cancel <publication-id>
+  vera campaign list
+  vera campaign show <campaign-id>
+  vera campaign repair <campaign-id> [--key <key>]
+  vera campaign repair-decision <campaign-id> <repair-id> <approved|rejected>
   vera plan --project <project-id> --message <message> [--key <key>] [--approve]
   vera change --project <project-id> --message <message> [--key <key>] [--approve]
   vera research --message <message> [--key <key>] [--approve]
@@ -246,6 +250,43 @@ export async function runCli(
       throw new Error(`Capability ${name} was not found.`);
     }
     print(stdout, capability);
+    return 0;
+  }
+
+  if (resource === 'campaign' && action === 'list') {
+    print(stdout, await client.listDevelopmentCampaigns());
+    return 0;
+  }
+  if (resource === 'campaign' && action === 'show') {
+    print(
+      stdout,
+      await client.getDevelopmentCampaign(positional(args, 2, 'campaign-id')),
+    );
+    return 0;
+  }
+  if (resource === 'campaign' && action === 'repair') {
+    print(
+      stdout,
+      await client.requestDevelopmentCampaignRepair({
+        campaignId: positional(args, 2, 'campaign-id'),
+        idempotencyKey: option(args, '--key') ?? createKey(),
+      }),
+    );
+    return 0;
+  }
+  if (resource === 'campaign' && action === 'repair-decision') {
+    const decision = positional(args, 4, 'decision');
+    if (!['approved', 'rejected'].includes(decision)) {
+      throw new Error('decision must be approved or rejected.');
+    }
+    print(
+      stdout,
+      await client.decideDevelopmentCampaignRepair({
+        campaignId: positional(args, 2, 'campaign-id'),
+        repairId: positional(args, 3, 'repair-id'),
+        decision: decision as 'approved' | 'rejected',
+      }),
+    );
     return 0;
   }
 

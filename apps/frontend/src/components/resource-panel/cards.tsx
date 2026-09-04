@@ -14,10 +14,16 @@ export function CampaignCard(props: {
   busy: boolean;
   onDecision: (decision: 'approved' | 'rejected') => void;
   onCancel: () => void;
+  onRepairRequest: () => void;
+  onRepairDecision: (
+    repairId: string,
+    decision: 'approved' | 'rejected',
+  ) => void;
 }) {
   const campaign = props.campaign;
   const effect = campaign.approval.effect;
   const missionControlled = effect.approvalController?.kind === 'mission';
+  const repair = campaign.repairs?.at(-1);
   const cancellable = [
     'awaiting_approval',
     'approved',
@@ -114,6 +120,60 @@ export function CampaignCard(props: {
           {campaign.failure.message}
         </Text>
       )}
+      {campaign.status === 'repair_awaiting_approval' &&
+      repair?.status === 'pending' ? (
+        <View style={{ gap: spacing.sm }}>
+          <Text
+            selectable
+            style={{ color: palette.text, fontSize: 14, fontWeight: '700' }}
+          >
+            Repair approval · exact PR head
+          </Text>
+          <Text selectable style={{ color: palette.textSoft, lineHeight: 20 }}>
+            {repair.effect.requestedChange.objective}
+          </Text>
+          {(repair.evidence.failedChecks ?? []).map((check, index) => (
+            <Text
+              key={`${repair.id}-${check.name}-${String(index)}`}
+              selectable
+              style={{ color: palette.danger, lineHeight: 20 }}
+            >
+              {check.name}: {check.summary ?? check.conclusion}
+            </Text>
+          ))}
+          {(repair.evidence.reviewFeedback ?? []).map((feedback, index) => (
+            <Text
+              key={`${repair.id}-feedback-${String(index)}`}
+              selectable
+              style={{ color: palette.textSoft, lineHeight: 20 }}
+            >
+              {feedback.author}
+              {feedback.path === undefined ? '' : ` · ${feedback.path}`}:{' '}
+              {feedback.body}
+            </Text>
+          ))}
+          <Text selectable style={{ color: palette.muted, fontSize: 11 }}>
+            Source {repair.effect.sourceRevision.slice(0, 12)} · fast-forward
+            existing PR branch only · no force push · no merge
+          </Text>
+          <View
+            style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}
+          >
+            <SmallButton
+              disabled={props.busy}
+              label="Reject repair"
+              onPress={() => props.onRepairDecision(repair.id, 'rejected')}
+            />
+            <SmallButton
+              disabled={props.busy}
+              icon={Check}
+              label="Approve exact repair"
+              primary
+              onPress={() => props.onRepairDecision(repair.id, 'approved')}
+            />
+          </View>
+        </View>
+      ) : null}
       {campaign.status === 'awaiting_approval' &&
       campaign.approval.status === 'pending' &&
       !missionControlled ? (
@@ -133,6 +193,13 @@ export function CampaignCard(props: {
             onPress={() => props.onDecision('approved')}
           />
         </View>
+      ) : campaign.status === 'review_required' ? (
+        <SmallButton
+          disabled={props.busy}
+          label="Prepare repair approval"
+          primary
+          onPress={props.onRepairRequest}
+        />
       ) : cancellable && !missionControlled ? (
         <SmallButton
           disabled={props.busy}

@@ -47,6 +47,7 @@ export type TaskLifecycle = {
     requestKey: string;
     principalId: string;
     projectId?: string;
+    projectRevision?: string;
     conversationId?: string;
     messageId?: string;
     attachments?: AttachmentReference[];

@@ -408,6 +408,65 @@ export function AssistantScreen() {
     [client],
   );
 
+  const requestCampaignRepair = useCallback(
+    async (campaignId: string) => {
+      try {
+        const campaign = await client.requestDevelopmentCampaignRepair({
+          campaignId,
+          idempotencyKey: requestKey(),
+        });
+        if (mounted.current) {
+          setCampaigns((current) =>
+            current.map((candidate) =>
+              candidate.id === campaign.id ? campaign : candidate,
+            ),
+          );
+          setError(undefined);
+        }
+        return true;
+      } catch (cause) {
+        if (mounted.current) {
+          setError(errorMessage(cause, 'Vera could not prepare that repair.'));
+        }
+        return false;
+      }
+    },
+    [client],
+  );
+
+  const decideCampaignRepair = useCallback(
+    async (
+      campaignId: string,
+      repairId: string,
+      decision: 'approved' | 'rejected',
+    ) => {
+      try {
+        const campaign = await client.decideDevelopmentCampaignRepair({
+          campaignId,
+          repairId,
+          decision,
+        });
+        if (mounted.current) {
+          setCampaigns((current) =>
+            current.map((candidate) =>
+              candidate.id === campaign.id ? campaign : candidate,
+            ),
+          );
+          setError(undefined);
+        }
+        return true;
+      } catch (cause) {
+        if (mounted.current) {
+          setError(
+            errorMessage(cause, 'Vera could not record that repair decision.'),
+          );
+        }
+        return false;
+      }
+    },
+    [client],
+  );
+
   const decideMission = useCallback(
     async (missionId: string, decision: 'approved' | 'rejected') => {
       try {
@@ -1111,6 +1170,8 @@ export function AssistantScreen() {
           onCreateCampaign={createCampaign}
           onCampaignDecision={decideCampaign}
           onCampaignCancel={cancelCampaign}
+          onCampaignRepairRequest={requestCampaignRepair}
+          onCampaignRepairDecision={decideCampaignRepair}
           onMissionDecision={decideMission}
           onMissionCancel={cancelMission}
           onCreateRoutine={createRoutine}

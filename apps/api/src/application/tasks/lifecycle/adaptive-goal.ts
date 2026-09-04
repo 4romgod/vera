@@ -122,6 +122,9 @@ export function createAdaptiveGoalOperations(
     const runBudget = aggregate.run.budget ?? budget;
     const context = await options.contextAssembler.assemble({
       project,
+      ...(aggregate.task.projectRevision === undefined
+        ? {}
+        : { revision: aggregate.task.projectRevision }),
       objective: step.arguments.objective,
       ticket: step.arguments.ticket,
       limits: {
@@ -131,6 +134,14 @@ export function createAdaptiveGoalOperations(
       },
     });
     assertProjectContextIntegrity(context, project.id);
+    if (
+      aggregate.task.projectRevision !== undefined &&
+      context.manifest.revision !== aggregate.task.projectRevision
+    ) {
+      throw new Error(
+        'Adaptive project context does not match the requested revision.',
+      );
+    }
     return { project, context };
   }
 

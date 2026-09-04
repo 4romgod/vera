@@ -195,6 +195,67 @@ afterEach(async () => {
 });
 
 void describe('generic repository-aware planning journey', () => {
+  void it('assembles immutable context from an exact historical commit', async () => {
+    const rootPath = await createRepository({
+      name: 'historical',
+      sourceMarker: 'historical-first',
+    });
+    const revision = (
+      await executeFile('git', ['rev-parse', 'HEAD'], { cwd: rootPath })
+    ).stdout.trim();
+    await writeFile(
+      join(rootPath, 'src', 'request-tracing.ts'),
+      'export const marker = "working-tree-second";\n',
+    );
+    await executeFile('git', ['add', '-A'], { cwd: rootPath });
+    await executeFile(
+      'git',
+      [
+        '-c',
+        'user.name=Vera Test',
+        '-c',
+        'user.email=vera-test@example.invalid',
+        'commit',
+        '--quiet',
+        '-m',
+        'second revision',
+      ],
+      { cwd: rootPath },
+    );
+
+    const bundle = await new LocalGitProjectContextAssembler().assemble({
+      project: {
+        schemaVersion: 1,
+        id: 'project_historical_context',
+        principalId: 'owner_v1',
+        registrationKey: 'historical-context',
+        displayName: 'Historical',
+        normalizedName: 'historical',
+        source: { kind: 'local_git', rootPath },
+        status: 'active',
+        createdAt: '2026-08-25T00:00:00.000Z',
+        updatedAt: '2026-08-25T00:00:00.000Z',
+      },
+      revision,
+      objective: 'Repair historical-first request tracing.',
+      ticket: {
+        reference: 'HISTORICAL-1',
+        details: 'Repair historical-first request tracing.',
+      },
+      limits: { maxFiles: 10, maxBytes: 20_000, maxFileBytes: 5_000 },
+    });
+
+    assert.equal(bundle.manifest.revision, revision);
+    assert.match(
+      bundle.documents.map((document) => document.content).join('\n'),
+      /historical-first/u,
+    );
+    assert.doesNotMatch(
+      bundle.documents.map((document) => document.content).join('\n'),
+      /working-tree-second/u,
+    );
+  });
+
   void it('selects endpoint implementation evidence without documentation saturation or substring false positives', async () => {
     const endpointName = ['hea', 'lth'].join('');
     const route = `/${endpointName}`;

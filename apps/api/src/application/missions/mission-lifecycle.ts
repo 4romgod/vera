@@ -508,13 +508,44 @@ export function createMissionLifecycle(options: {
       });
     }
     if (campaign.status === 'review_required') {
-      return terminate(mission, 'review_required', {
-        failure: {
+      const now = clock();
+      return update(principalId, missionId, (candidate) => {
+        if (candidate.status !== 'executing') return false;
+        const last = candidate.events.at(-1);
+        if (
+          last?.type === 'mission_progress_observed' &&
+          last.data.campaignVersion === campaign.version
+        )
+          return false;
+        candidate.failure = {
           code: 'campaign_review_required',
           message:
             campaign.failure?.message ?? 'The campaign requires owner review.',
-        },
-        event: 'mission_review_required',
+        };
+        candidate.updatedAt = now;
+        appendEvent(
+          candidate,
+          'mission_progress_observed',
+          now,
+          {
+            campaignStatus: campaign.status,
+            campaignVersion: campaign.version,
+            ownerAction: 'review_or_repair_campaign',
+          },
+          createId,
+        );
+        candidate.notification = missionNotification(
+          { ...candidate, status: 'review_required' },
+          now,
+        );
+        appendEvent(
+          candidate,
+          'mission_notification_delivered',
+          now,
+          { notificationId: candidate.notification.id },
+          createId,
+        );
+        return true;
       });
     }
     if (campaign.status === 'failed') {
@@ -545,6 +576,7 @@ export function createMissionLifecycle(options: {
       )
         return false;
       candidate.updatedAt = now;
+      if (campaign.status !== 'review_required') delete candidate.failure;
       appendEvent(
         candidate,
         'mission_progress_observed',

@@ -17,6 +17,10 @@ export type DevelopmentCampaignErrorCode =
   | 'development_campaign_capability_unavailable'
   | 'development_campaign_approval_already_decided'
   | 'development_campaign_approval_managed_by_mission'
+  | 'development_campaign_repair_not_available'
+  | 'development_campaign_repair_not_found'
+  | 'development_campaign_repair_already_decided'
+  | 'development_campaign_repair_conflict'
   | 'development_campaign_concurrent_transition_failed'
   | 'development_campaign_not_cancellable';
 
@@ -76,6 +80,17 @@ export type DevelopmentCampaignLifecycle = {
     principalId: string;
     campaignId: string;
     missionId: string;
+    decision: 'approved' | 'rejected';
+  }): Promise<DevelopmentCampaign>;
+  requestRepair(input: {
+    principalId: string;
+    campaignId: string;
+    requestKey: string;
+  }): Promise<DevelopmentCampaign>;
+  decideRepair(input: {
+    principalId: string;
+    campaignId: string;
+    repairId: string;
     decision: 'approved' | 'rejected';
   }): Promise<DevelopmentCampaign>;
   cancel(input: {

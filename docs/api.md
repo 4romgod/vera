@@ -89,6 +89,8 @@ must not be exposed to an untrusted or shared network.
 | `GET /v1/development-campaigns` | List the latest owner-scoped campaigns | `200` |
 | `GET /v1/development-campaigns/{campaignId}` | Retrieve frozen authority, attempts, PR observation, and result | `200` |
 | `POST /v1/development-campaigns/{campaignId}/decision` | Approve or reject the complete campaign envelope | `202` |
+| `POST /v1/development-campaigns/{campaignId}/repairs` | Freeze current failed-check/review evidence into one exact repair approval | `202` |
+| `POST /v1/development-campaigns/{campaignId}/repairs/{repairId}/decision` | Approve or reject one exact PR-head repair | `202` |
 | `POST /v1/development-campaigns/{campaignId}/cancellation` | Cancel a campaign before publication begins | `202` |
 | `GET /v1/mission-policies` | List safe bounded-mission policy summaries | `200` |
 | `GET /v1/missions` | List owner-scoped missions | `200` |
@@ -858,11 +860,13 @@ then polls GitHub and merges only when the exact approved head/base, minimum
 check count, zero pending/failed checks, configured review decision, and clean
 merge state all hold.
 
-Remote CI failure, reviewer change request, moved refs, or ambiguous remote
-state becomes `review_required`. V1 does not update an already published branch
-or re-run implementation after remote review. Campaign cancellation is truthful
-only through `verifying`; after publication begins the owner handles the pull
-request and any external state directly.
+Remote CI failure or reviewer change request becomes `review_required` with a
+bounded evidence snapshot. The owner may then prepare and separately approve
+one repair against that exact PR head. Vera assembles context from that commit,
+stages a new bounded patch, reruns configured local gates, creates one exact
+repair commit, and fast-forwards the existing PR branch without force. It then
+observes the same PR again. A moved head/base, closed PR, exhausted attempt
+ceiling, non-fast-forward, or ambiguous state remains owner-controlled.
 
 ```mermaid
 flowchart LR
@@ -873,6 +877,7 @@ flowchart LR
     P --> C{"Checks and review"}
     C -->|pending| C
     C -->|failed or changed| R["review_required"]
+    R -->|freeze + approve exact repair| I
     C -->|policy satisfied| M["Exact-head merge"]
     M --> S["Fast-forward local base"]
 ```
@@ -899,14 +904,15 @@ shows the one approval containing objective, completion criteria, campaign
 effect, delivery metadata, time ceiling, and explicit no-merge/no-recurrence
 authority.
 
-Approval starts the embedded `pull_request_only` campaign. A terminal mission
-is the only approval route for that subordinate campaign; direct campaign
+Approval starts the embedded `pull_request_only` campaign. The mission is the
+only approval route for that subordinate campaign; direct campaign
 approval returns a conflict because its frozen approval controller is the
-mission. A terminal mission
-is `succeeded` only when that campaign reports `pull_request_ready`; a merged
-campaign is an integrity conflict. Expiry, failed checks, changed refs, or any
-campaign review boundary becomes `review_required` or `failed` and delivers an
-inbox notification. The owner opens and merges the resulting PR manually.
+mission. A mission is `succeeded` only when that campaign reports
+`pull_request_ready`; a merged campaign is an integrity conflict. Failed checks
+and reviewer requests notify the owner while the mission remains recoverable
+through the campaign's separately approved repair loop. Expiry or an
+irreconcilable boundary becomes `review_required` or `failed`. The owner opens
+and merges the resulting PR manually.
 
 ## Events
 
@@ -966,8 +972,8 @@ Error envelopes use:
 | Status | Codes | Meaning |
 |---:|---|---|
 | `400` | `invalid_request` | Missing, malformed, too large, or unknown request input. |
-| `404` | `task_not_found`, `run_not_found`, `approval_not_found`, `project_not_found`, `conversation_not_found`, `conversation_message_not_found`, `artifact_not_found`, `attention_item_not_found`, `routine_not_found`, `routine_run_not_found`, `routine_machine_not_found`, `routine_service_not_found`, `change_application_not_found`, `software_change_publication_not_found`, `development_campaign_not_found`, `development_campaign_project_not_found` | The addressed resource, routine target, or current attention generation does not exist. |
-| `409` | `idempotency_key_reused`, `approval_already_decided`, `concurrent_transition_failed`, `conversation_message_mismatch`, `routine_idempotency_key_reused`, `routine_approval_already_decided`, `routine_invalid_transition`, `routine_concurrent_transition_failed`, `change_application_idempotency_key_reused`, `change_application_approval_already_decided`, `change_application_concurrent_transition_failed`, `change_application_not_cancellable`, `software_change_publication_idempotency_key_reused`, `software_change_publication_approval_already_decided`, `software_change_publication_concurrent_transition_failed`, `software_change_publication_not_cancellable`, `development_campaign_idempotency_key_reused`, `development_campaign_approval_already_decided`, `development_campaign_concurrent_transition_failed`, `development_campaign_not_cancellable`, `stale_source`, `application_conflict`, `publication_conflict`, `campaign_conflict`, `review_required` | The request conflicts with durable, filesystem, or remote state. |
+| `404` | `task_not_found`, `run_not_found`, `approval_not_found`, `project_not_found`, `conversation_not_found`, `conversation_message_not_found`, `artifact_not_found`, `attention_item_not_found`, `routine_not_found`, `routine_run_not_found`, `routine_machine_not_found`, `routine_service_not_found`, `change_application_not_found`, `software_change_publication_not_found`, `development_campaign_not_found`, `development_campaign_project_not_found`, `development_campaign_repair_not_found` | The addressed resource, routine target, repair approval, or current attention generation does not exist. |
+| `409` | `idempotency_key_reused`, `approval_already_decided`, `concurrent_transition_failed`, `conversation_message_mismatch`, `routine_idempotency_key_reused`, `routine_approval_already_decided`, `routine_invalid_transition`, `routine_concurrent_transition_failed`, `change_application_idempotency_key_reused`, `change_application_approval_already_decided`, `change_application_concurrent_transition_failed`, `change_application_not_cancellable`, `software_change_publication_idempotency_key_reused`, `software_change_publication_approval_already_decided`, `software_change_publication_concurrent_transition_failed`, `software_change_publication_not_cancellable`, `development_campaign_idempotency_key_reused`, `development_campaign_approval_already_decided`, `development_campaign_repair_not_available`, `development_campaign_repair_already_decided`, `development_campaign_repair_conflict`, `development_campaign_concurrent_transition_failed`, `development_campaign_not_cancellable`, `stale_source`, `application_conflict`, `publication_conflict`, `campaign_conflict`, `review_required` | The request conflicts with durable, filesystem, or remote state. |
 | `422` | `invalid_attention_decision`, `invalid_project_source`, `software_change_artifact_required`, `software_change_publication_source_required` | An attention snooze is invalid, a project source is invalid, or the selected artifact/application cannot be used for the requested effect. |
 | `502` | `provider_request_rejected`, `provider_response_invalid` | Provider boundary failed while using the diagnostic endpoint. |
 | `503` | `model_not_found`, `provider_unavailable`, `publication_unavailable`, `operational_store_unavailable`, `scratchpad_unavailable`, `planning_capability_unavailable`, `software_change_capability_unavailable`, `development_campaign_capability_unavailable`, `capability_unavailable` | A required runtime dependency is unavailable. The response `dependency` identifies a generic capability runtime when applicable. |
