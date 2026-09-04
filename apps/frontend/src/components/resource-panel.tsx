@@ -51,6 +51,8 @@ import { humanizeIdentifier } from './assistant/presentation';
 import { isSafeGitHubPullRequestUrl } from './assistant/software-delivery/model';
 import { AttentionPanel } from './attention/attention-panel';
 import { RoutinesPanel } from './routines/routines-panel';
+import { NotificationSettings } from './notifications/notification-settings';
+import type { PushNotificationController } from '@/notifications/use-push-notifications';
 
 export type ResourceTab =
   | 'attention'
@@ -82,11 +84,13 @@ export function ResourcePanel(props: {
   open: boolean;
   tab: ResourceTab;
   attention?: AttentionBriefing;
+  focusedAttentionItemId?: string;
   memories: MemoryResource[];
   knowledgeSources: KnowledgeSourceResource[];
   tasks: PersonalTaskResource[];
   reminders: ReminderResource[];
   notifications: NotificationResource[];
+  pushNotifications: PushNotificationController;
   machines: MachineCatalogResource['machines'];
   campaigns: DevelopmentCampaignResource[];
   campaignPolicies: DevelopmentCampaignPolicyResource[];
@@ -363,6 +367,7 @@ function PanelContent(props: Parameters<typeof ResourcePanel>[0]) {
         {props.tab === 'attention' ? (
           <AttentionPanel
             briefing={props.attention}
+            focusedItemId={props.focusedAttentionItemId}
             onDecision={props.onAttentionDecision}
             onOpen={props.onOpenAttention}
           />
@@ -748,6 +753,9 @@ function PanelContent(props: Parameters<typeof ResourcePanel>[0]) {
             ))
           : null}
 
+        {props.tab === 'notifications' ? (
+          <NotificationSettings controller={props.pushNotifications} />
+        ) : null}
         {props.tab === 'notifications' && props.notifications.length === 0 ? (
           <Empty
             icon={Bell}

@@ -52,6 +52,7 @@ import { ResourcePanel, type ResourceTab } from '@/components/resource-panel';
 import { layout, palette, radius, shadow, spacing } from '@/design/tokens';
 import { useSpokenReply } from '@/voice/use-spoken-reply';
 import { useVoiceInput } from '@/voice/use-voice-input';
+import { usePushNotifications } from '@/notifications/use-push-notifications';
 
 const configuredApiUrl = process.env.EXPO_PUBLIC_VERA_API_URL?.trim();
 const defaultApiUrl =
@@ -189,6 +190,8 @@ export function AssistantScreen() {
   >({});
   const [routineActionId, setRoutineActionId] = useState<string>();
   const [attention, setAttention] = useState<AttentionBriefing>();
+  const [focusedAttentionItemId, setFocusedAttentionItemId] =
+    useState<string>();
   const [resources, setResources] = useState<{
     open: boolean;
     tab: ResourceTab;
@@ -358,6 +361,17 @@ export function AssistantScreen() {
     );
     if (mounted.current) setRoutineRuns(Object.fromEntries(runEntries));
   }, [client]);
+
+  const openPushAttention = useCallback((attentionItemId?: string) => {
+    setFocusedAttentionItemId(attentionItemId);
+    setResources({ open: true, tab: 'attention' });
+  }, []);
+  const pushNotifications = usePushNotifications({
+    client,
+    onAttention: openPushAttention,
+    onRefresh: refreshNotifications,
+    onError: setError,
+  });
 
   const createCampaign = useCallback(
     async (input: {
@@ -1265,6 +1279,7 @@ export function AssistantScreen() {
 
         <ResourcePanel
           attention={attention}
+          focusedAttentionItemId={focusedAttentionItemId}
           compact={compact}
           memories={memories}
           knowledgeSources={knowledgeSources}
@@ -1276,6 +1291,7 @@ export function AssistantScreen() {
           routineActionId={routineActionId}
           campaignPolicies={campaignPolicies}
           notifications={notifications}
+          pushNotifications={pushNotifications}
           open={resources.open}
           reminders={reminders}
           tab={resources.tab}

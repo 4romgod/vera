@@ -1404,4 +1404,63 @@ void describe('Vera HTTP client', () => {
       clearTimeout(keepEventLoopAlive);
     }
   });
+
+  void it('validates the private device-notification boundary', async () => {
+    const device = {
+      schemaVersion: 1,
+      version: 1,
+      id: 'notification_device_test',
+      installationId: 'installation-test',
+      provider: 'expo',
+      projectId: 'project-test',
+      platform: 'android',
+      name: 'Phone',
+      status: 'active',
+      preferences: {
+        approvals: true,
+        reminders: true,
+        tasks: true,
+        failures: true,
+        results: true,
+      },
+      registeredAt: '2026-09-04T00:00:00.000Z',
+      updatedAt: '2026-09-04T00:00:00.000Z',
+      tokenSuffix: 'token]',
+    };
+    const client = new VeraClient({
+      baseUrl: 'http://vera.test',
+      fetch: (input) => {
+        if (input === 'http://vera.test/v1/push-notifications/status') {
+          return Promise.resolve(
+            Response.json({
+              schemaVersion: 1,
+              enabled: true,
+              provider: 'expo',
+              projectId: 'project-test',
+            }),
+          );
+        }
+        return Promise.resolve(
+          Response.json({ schemaVersion: 1, devices: [device] }),
+        );
+      },
+    });
+    assert.equal((await client.getPushNotificationStatus()).enabled, true);
+    assert.equal(
+      (await client.listNotificationDevices()).devices[0]?.id,
+      device.id,
+    );
+    await assert.rejects(
+      new VeraClient({
+        fetch: () =>
+          Promise.resolve(
+            Response.json({
+              schemaVersion: 1,
+              devices: [{ ...device, status: 'invented' }],
+            }),
+          ),
+      }).listNotificationDevices(),
+      /invalid notification device/u,
+    );
+  });
 });

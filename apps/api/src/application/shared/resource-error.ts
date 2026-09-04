@@ -16,7 +16,13 @@ export type ResourceErrorCode =
   | 'invalid_attention_decision'
   | 'invalid_notification_cursor'
   | 'idempotency_key_reused'
-  | 'invalid_project_source';
+  | 'invalid_project_source'
+  | 'notification_device_not_found'
+  | 'push_notifications_disabled'
+  | 'notification_project_mismatch'
+  | 'notification_device_inactive'
+  | 'invalid_notification_preferences'
+  | 'concurrent_transition_failed';
 
 export class ResourceError extends Error {
   public constructor(

@@ -3,7 +3,7 @@
 **Status:** Accepted (logical architecture, component responsibilities,
 request lifecycle, architectural invariants, initial modular API shape, and V1
 operational storage); general progress transport and deployment topology remain open
-**Version:** 1.3
+**Version:** 1.4
 **Last updated:** 4 September 2026
 **Accepted:** 24 August 2026 (owner) — post-V1 progress transport and deployment
 topology are deferred; V1 uses HTTP polling. The initial Fastify/Zod modular API
@@ -27,6 +27,8 @@ Owner-scoped attachments and approval-gated document analysis are accepted by
 ADR-0031.
 Grounded personal knowledge, source integrity, bounded retrieval, and cited
 answers are accepted by ADR-0036.
+Deterministic attention delivery through an owner-device registry, durable
+outbox, and provider-neutral push worker is accepted by ADR-0039.
 
 ## Purpose
 
@@ -310,6 +312,8 @@ contract without making the capability or model proposal vendor-specific.
 - expose long-term memory through its own governance rules;
 - project current attention deterministically from authoritative resources and
   combine it with generation-scoped owner dispositions;
+- project eligible attention into an idempotent per-device push outbox, while
+  retaining Today and the source stores as truth;
 - persist recurring routine definitions separately from their bounded run
   history, and recover due or interrupted runs through durable leases;
 - correlate logs, metrics, traces, and domain identifiers.
@@ -319,6 +323,13 @@ campaign status. MongoDB stores only append-only snooze, dismiss, and restore
 decisions. API, conversational capability, and universal frontend consume the
 same projector, so restart and client reconnection cannot produce competing
 briefings.
+
+The push projector reads that briefing and creates at most one delivery for an
+exact `(device, attention item)` pair. A lease-coordinated worker sends a
+category-only payload through a replaceable provider adapter, records the
+provider ticket, and later resolves the delivery receipt. Registration time,
+device status, category preferences, and quiet hours are enforced server-side;
+the device token and provider ticket never cross the public API boundary.
 
 The routine scheduler treats MongoDB as both schedule and authorization truth.
 It materializes a deterministic run before advancing a daily civil-time
@@ -1027,7 +1038,8 @@ restarts, loses connectivity, or becomes unavailable.
 
 ### Later
 
-- multiple clients including mobile, web, voice, and notifications;
+- additional clients and delivery channels beyond the implemented universal
+  web/mobile, voice, inbox, and device-push surfaces;
 - richer capability discovery and routing;
 - multiple execution environments;
 - governed long-term memory;

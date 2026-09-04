@@ -76,6 +76,9 @@ async function startServer(port) {
       REMINDER_WORKER_CONCURRENCY: '2',
       REMINDER_POLL_INTERVAL_MS: '25',
       REMINDER_LEASE_MS: '1000',
+      VERA_PUSH_ADAPTER: 'deterministic',
+      PUSH_POLL_INTERVAL_MS: '250',
+      PUSH_RECEIPT_DELAY_MS: '1000',
       ...(machineCatalogFile === undefined
         ? {}
         : { VERA_MACHINE_CATALOG_FILE: machineCatalogFile }),
@@ -646,6 +649,52 @@ async function verifyScenarios(mongo, redis) {
   child = started.processHandle;
   let client = new VeraClient({ baseUrl: started.baseUrl });
 
+  const pushStatus = await client.getPushNotificationStatus();
+  assert.equal(pushStatus.enabled, true);
+  assert.equal(pushStatus.provider, 'deterministic');
+  assert.equal(pushStatus.projectId, 'deterministic-project');
+  const notificationDevice = await client.registerNotificationDevice({
+    installationId: 'persistent-verification-device',
+    provider: 'expo',
+    projectId: 'deterministic-project',
+    pushToken: 'ExpoPushToken[persistent-private-token]',
+    platform: 'android',
+    name: 'Persistent verification device',
+  });
+  const pushDelivery = await client.testNotificationDevice(
+    notificationDevice.id,
+    'persistent-verification-push',
+  );
+  assert.equal(
+    (
+      await client.testNotificationDevice(
+        notificationDevice.id,
+        'persistent-verification-push',
+      )
+    ).id,
+    pushDelivery.id,
+  );
+  let deliveredPush;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    deliveredPush = (await client.listPushDeliveries()).deliveries.find(
+      (candidate) => candidate.id === pushDelivery.id,
+    );
+    if (deliveredPush?.status === 'delivered') break;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  assert.equal(deliveredPush?.status, 'delivered');
+  assert.equal(JSON.stringify(deliveredPush).includes('ticket'), false);
+  assert.equal(
+    JSON.stringify(await client.listNotificationDevices()).includes(
+      'persistent-private-token',
+    ),
+    false,
+  );
+  assert.equal(
+    (await client.revokeNotificationDevice(notificationDevice.id)).status,
+    'revoked',
+  );
+
   const routineInput = {
     title: 'Persistent verification health check',
     schedule: {
@@ -768,6 +817,20 @@ async function verifyScenarios(mongo, redis) {
   started = await startServer(port);
   child = started.processHandle;
   client = new VeraClient({ baseUrl: started.baseUrl });
+  assert.equal(
+    (await client.listPushDeliveries()).deliveries.find(
+      (candidate) => candidate.id === pushDelivery.id,
+    )?.status,
+    'delivered',
+  );
+  assert.equal(
+    (await client.listNotificationDevices()).devices[0]?.id,
+    notificationDevice.id,
+  );
+  assert.equal(
+    (await client.listNotificationDevices()).devices[0]?.status,
+    'revoked',
+  );
   assert.equal((await client.listRoutines()).routines[0]?.id, routine.id);
   assert.equal((await client.getRoutineRun(routineRun.id)).status, 'succeeded');
   assert.equal(
@@ -1642,6 +1705,7 @@ async function verifyScenarios(mongo, redis) {
     attentionDispositionRestartVerified: true,
     durableStandingRoutineVerified: true,
     restartSafeNotificationDeliveryVerified: true,
+    durableDevicePushVerified: true,
     legacyConversationUpgradeVerified: true,
     roleScopedMessageIdempotencyVerified: true,
   };

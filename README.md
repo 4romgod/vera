@@ -381,6 +381,17 @@ Run `npm run dev:frontend` to open Expo's interactive launcher for web, iOS, or
 Android simulators. `expo-audio` is included in Expo Go, so recording works
 without a custom development build when the API has a transcription adapter.
 
+Remote push notifications deliberately use the same universal frontend, but
+Expo Go cannot receive them. Configure `VERA_PUSH_ADAPTER=expo` and the EAS
+project UUID as `EXPO_PUSH_PROJECT_ID`, then create an internal development
+build from `apps/frontend` with `npx eas-cli build --profile development
+--platform android` (or `--platform ios`). Install that build, start Vera over
+the tailnet, and open **Activity → Enable alerts**. The server returns its
+expected project ID to the native client; no push token or provider credential
+is stored in the Expo public environment. **Send test** verifies the complete
+outbox, Expo ticket, device delivery, and receipt path. Web and Expo Go remain
+usable and show why push is unavailable instead of failing.
+
 To use a physical phone already enrolled in the same private tailnet as the Mac
 Mini, keep the API running above and start the private phone frontend:
 

@@ -89,11 +89,29 @@ import { MongoDbRoutineStore } from '../adapters/outbound/persistence/mongodb/mo
 import type { RoutineStore } from '../ports/persistence/routine-store.ts';
 import { createRoutineLifecycle } from '../application/routines/routine-lifecycle.ts';
 import { createRoutineWorker } from '../application/routines/routine-worker.ts';
+import { InMemoryPushNotificationStore } from '../adapters/outbound/persistence/memory/in-memory-push-notification-store.ts';
+import { MongoDbPushNotificationStore } from '../adapters/outbound/persistence/mongodb/mongodb-push-notification-store.ts';
+import { createPushNotificationProvider } from '../adapters/outbound/notifications/push-notification-provider-registry.ts';
+import { createPushNotificationService } from '../application/notifications/push-notification-service.ts';
+import { createPushNotificationWorker } from '../application/notifications/push-notification-worker.ts';
 
 export function createApp(
   config: AppConfig,
   runtime: { logger?: Parameters<typeof buildApp>[0]['logger'] } = {},
 ) {
+  const pushConfig = config.push ?? {
+    provider: { adapterId: 'disabled' as const },
+    pollIntervalMs: 5_000,
+    receiptDelayMs: 900_000,
+    maxAttempts: 5,
+    leaseMs: 60_000,
+  };
+  if (
+    pushConfig.provider.adapterId === 'expo' &&
+    pushConfig.leaseMs <= pushConfig.provider.timeoutMs
+  ) {
+    throw new Error('PUSH_LEASE_MS must exceed PUSH_TIMEOUT_MS.');
+  }
   if (config.worker.leaseMs <= DefaultRunBudget.limits.maxDurationMs) {
     throw new Error(
       'WORKER_LEASE_MS must exceed the maximum configured run duration.',
@@ -212,6 +230,14 @@ export function createApp(
           database: config.storage.mongodbDatabase,
           timeoutMs: config.storage.dependencyTimeoutMs,
         });
+  const pushNotificationStore =
+    config.storage.mode === 'memory'
+      ? new InMemoryPushNotificationStore()
+      : new MongoDbPushNotificationStore({
+          uri: config.storage.mongodbUri,
+          database: config.storage.mongodbDatabase,
+          timeoutMs: config.storage.dependencyTimeoutMs,
+        });
   const projectMutationLeases: ProjectMutationLeaseStore =
     config.storage.mode === 'memory'
       ? new InMemoryProjectMutationLeaseStore()
@@ -265,6 +291,15 @@ export function createApp(
   });
   const memoryService = createMemoryService({ store: resources });
   const machineService = createMachineService(machineOperations.catalog);
+  const appReference: { current?: ReturnType<typeof buildApp> } = {};
+  const lifecycleObserver = {
+    warning(error: unknown, context: Record<string, unknown>) {
+      appReference.current?.log.warn(
+        { err: error, ...context },
+        'Task lifecycle warning',
+      );
+    },
+  };
   const attentionService = createAttentionService({
     executions: store,
     resources,
@@ -273,6 +308,37 @@ export function createApp(
     decisions: attentionDecisions,
     routines: routineStore,
   });
+  const pushProvider = createPushNotificationProvider(pushConfig.provider);
+  const pushWorkerReference: { current: { wake(): void } | undefined } = {
+    current: undefined,
+  };
+  const pushNotificationService = createPushNotificationService({
+    store: pushNotificationStore,
+    attention: attentionService,
+    ...(pushProvider === undefined ? {} : { provider: pushProvider }),
+    ...(pushConfig.provider.adapterId === 'expo'
+      ? { projectId: pushConfig.provider.projectId }
+      : pushConfig.provider.adapterId === 'deterministic'
+        ? { projectId: 'deterministic-project' }
+        : {}),
+    wake: () => pushWorkerReference.current?.wake(),
+  });
+  const pushWorker =
+    pushProvider === undefined
+      ? undefined
+      : createPushNotificationWorker({
+          store: pushNotificationStore,
+          service: pushNotificationService,
+          provider: pushProvider,
+          leases,
+          pollIntervalMs: pushConfig.pollIntervalMs,
+          receiptDelayMs: pushConfig.receiptDelayMs,
+          maxAttempts: pushConfig.maxAttempts,
+          leaseMs: pushConfig.leaseMs,
+          warning: (error, context) =>
+            lifecycleObserver.warning(error, context),
+        });
+  pushWorkerReference.current = pushWorker;
   const routineLifecycle = createRoutineLifecycle({
     store: routineStore,
     machines: machineOperations,
@@ -351,15 +417,6 @@ export function createApp(
     maximumCampaignVerificationMs + 60_000,
   );
 
-  const appReference: { current?: ReturnType<typeof buildApp> } = {};
-  const lifecycleObserver = {
-    warning(error: unknown, context: Record<string, unknown>) {
-      appReference.current?.log.warn(
-        { err: error, ...context },
-        'Task lifecycle warning',
-      );
-    },
-  };
   const lifecycle = createTaskLifecycle({
     store,
     scratchpad,
@@ -545,6 +602,7 @@ export function createApp(
       ...routineLifecycle,
       wake: () => routineWorker.wake(),
     },
+    pushNotifications: pushNotificationService,
     readinessChecks: [
       {
         name: 'mongodb_operational_store',
@@ -623,8 +681,21 @@ export function createApp(
       { name: 'mission_worker', check: () => missionWorker.checkReadiness() },
       { name: 'routine_store', check: () => routineStore.checkReadiness() },
       { name: 'routine_worker', check: () => routineWorker.checkReadiness() },
+      {
+        name: 'push_notification_store',
+        check: () => pushNotificationStore.checkReadiness(),
+      },
+      ...(pushWorker === undefined
+        ? []
+        : [
+            {
+              name: 'push_notification_worker',
+              check: () => pushWorker.checkReadiness(),
+            },
+          ]),
     ],
     close: async () => {
+      await pushWorker?.stop();
       await routineWorker.stop();
       await missionWorker.stop();
       await developmentCampaignWorker.stop();
@@ -646,6 +717,7 @@ export function createApp(
         attachmentStore.close(),
         attentionDecisions.close(),
         routineStore.close(),
+        pushNotificationStore.close(),
       ]);
     },
     logger: runtime.logger ?? true,
@@ -658,5 +730,6 @@ export function createApp(
   developmentCampaignWorker.start();
   missionWorker.start();
   routineWorker.start();
+  pushWorker?.start();
   return app;
 }

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import type { ModelConfig } from '../adapters/outbound/model/model-provider-registry.ts';
 import type { WebResearchAdapterConfig } from '../adapters/outbound/capabilities/web-research/web-research-adapter-registry.ts';
 import type { SpeechTranscriptionConfig } from '../adapters/outbound/transcription/speech-transcription-provider-registry.ts';
+import type { PushProviderConfig } from '../adapters/outbound/notifications/push-notification-provider-registry.ts';
 import {
   MachineCatalogSchema,
   type MachineCatalog,
@@ -131,6 +132,17 @@ const EnvironmentSchema = z.object({
     .default(2),
   REMINDER_POLL_INTERVAL_MS: z.coerce.number().int().min(25).default(500),
   REMINDER_LEASE_MS: z.coerce.number().int().min(1_000).default(30_000),
+  VERA_PUSH_ADAPTER: z
+    .enum(['disabled', 'expo', 'deterministic'])
+    .default('disabled'),
+  EXPO_PUSH_PROJECT_ID: z.string().trim().min(1).optional(),
+  EXPO_PUSH_ACCESS_TOKEN: z.string().trim().min(1).optional(),
+  EXPO_PUSH_BASE_URL: z.url().default('https://exp.host'),
+  PUSH_TIMEOUT_MS: z.coerce.number().int().min(1_000).default(10_000),
+  PUSH_POLL_INTERVAL_MS: z.coerce.number().int().min(250).default(5_000),
+  PUSH_RECEIPT_DELAY_MS: z.coerce.number().int().min(1_000).default(900_000),
+  PUSH_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(5),
+  PUSH_LEASE_MS: z.coerce.number().int().min(10_000).default(60_000),
   VERA_MACHINE_CATALOG_FILE: z.string().trim().min(1).optional(),
   VERA_DEVELOPMENT_CAMPAIGN_CATALOG_FILE: z.string().trim().min(1).optional(),
   VERA_MISSION_CATALOG_FILE: z.string().trim().min(1).optional(),
@@ -217,6 +229,13 @@ export type AppConfig = {
     ownerTimeZone: string;
     concurrency: number;
     pollIntervalMs: number;
+    leaseMs: number;
+  };
+  push?: {
+    provider: PushProviderConfig;
+    pollIntervalMs: number;
+    receiptDelayMs: number;
+    maxAttempts: number;
     leaseMs: number;
   };
   machines?: MachineCatalog;
@@ -497,6 +516,20 @@ export function loadConfig(
   const parsed = EnvironmentSchema.parse(environment);
 
   const changeCodexModel = parsed.CHANGE_CODEX_MODEL ?? parsed.CODEX_MODEL;
+  const pushProvider: PushProviderConfig =
+    parsed.VERA_PUSH_ADAPTER === 'disabled'
+      ? { adapterId: 'disabled' }
+      : parsed.VERA_PUSH_ADAPTER === 'deterministic'
+        ? { adapterId: 'deterministic' }
+        : {
+            adapterId: 'expo',
+            baseUrl: normalizePushBaseUrl(parsed.EXPO_PUSH_BASE_URL),
+            projectId: requirePushProjectId(parsed.EXPO_PUSH_PROJECT_ID),
+            timeoutMs: parsed.PUSH_TIMEOUT_MS,
+            ...(parsed.EXPO_PUSH_ACCESS_TOKEN === undefined
+              ? {}
+              : { accessToken: parsed.EXPO_PUSH_ACCESS_TOKEN }),
+          };
 
   return {
     host: parsed.HOST,
@@ -561,10 +594,41 @@ export function loadConfig(
       pollIntervalMs: parsed.REMINDER_POLL_INTERVAL_MS,
       leaseMs: parsed.REMINDER_LEASE_MS,
     },
+    push: {
+      provider: pushProvider,
+      pollIntervalMs: parsed.PUSH_POLL_INTERVAL_MS,
+      receiptDelayMs: parsed.PUSH_RECEIPT_DELAY_MS,
+      maxAttempts: parsed.PUSH_MAX_ATTEMPTS,
+      leaseMs: parsed.PUSH_LEASE_MS,
+    },
     machines: loadMachineCatalog(parsed.VERA_MACHINE_CATALOG_FILE),
     developmentCampaigns: loadDevelopmentCampaignCatalog(
       parsed.VERA_DEVELOPMENT_CAMPAIGN_CATALOG_FILE,
     ),
     missions: loadMissionCatalog(parsed.VERA_MISSION_CATALOG_FILE),
   };
+}
+
+function requirePushProjectId(value: string | undefined): string {
+  if (value === undefined)
+    throw new Error(
+      'EXPO_PUSH_PROJECT_ID is required when VERA_PUSH_ADAPTER=expo.',
+    );
+  return value;
+}
+
+function normalizePushBaseUrl(value: string): string {
+  const url = new URL(value);
+  if (
+    url.protocol !== 'https:' ||
+    url.username.length > 0 ||
+    url.password.length > 0 ||
+    url.search.length > 0 ||
+    url.hash.length > 0
+  ) {
+    throw new Error(
+      'EXPO_PUSH_BASE_URL must be a credential-free HTTPS origin.',
+    );
+  }
+  return value.replace(/\/+$/u, '');
 }

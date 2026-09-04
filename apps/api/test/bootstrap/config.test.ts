@@ -380,4 +380,32 @@ void describe('application configuration', () => {
       /Could not read VERA_MISSION_CATALOG_FILE/u,
     );
   });
+
+  void it('configures push independently and protects its HTTPS credential boundary', () => {
+    assert.deepEqual(loadConfig({}).push?.provider, { adapterId: 'disabled' });
+    const push = loadConfig({
+      VERA_PUSH_ADAPTER: 'expo',
+      EXPO_PUSH_PROJECT_ID: 'project-one',
+      EXPO_PUSH_ACCESS_TOKEN: 'secret',
+    }).push;
+    assert.ok(push);
+    const provider = push.provider;
+    if (provider.adapterId !== 'expo')
+      throw new Error('Expo push fixture was not selected.');
+    assert.equal(provider.projectId, 'project-one');
+    assert.equal(provider.accessToken, 'secret');
+    assert.throws(
+      () => loadConfig({ VERA_PUSH_ADAPTER: 'expo' }),
+      /EXPO_PUSH_PROJECT_ID/u,
+    );
+    assert.throws(
+      () =>
+        loadConfig({
+          VERA_PUSH_ADAPTER: 'expo',
+          EXPO_PUSH_PROJECT_ID: 'project-one',
+          EXPO_PUSH_BASE_URL: 'http://exp.host',
+        }),
+      /HTTPS/u,
+    );
+  });
 });
