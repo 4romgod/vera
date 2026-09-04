@@ -14,6 +14,7 @@ import {
 } from '../machines/machine.ts';
 import { MissionManagementResultSchema } from '../missions/mission.ts';
 import { KnowledgeResultSchema } from '../knowledge/knowledge.ts';
+import { AttentionResultSchema } from '../attention/attention.ts';
 
 export const ArtifactLineageReferenceSchema = z
   .object({
@@ -31,6 +32,7 @@ export const ArtifactLineageReferenceSchema = z
       'machine_service_action_result',
       'mission_management_result',
       'knowledge_result',
+      'attention_result',
     ]),
     mediaType: z.string().min(1),
     sha256: z.string().regex(/^[a-f0-9]{64}$/),
@@ -144,6 +146,12 @@ export const KnowledgeResultArtifactSchema = ArtifactIdentitySchema.extend({
   content: KnowledgeResultSchema,
 }).strict();
 
+export const AttentionResultArtifactSchema = ArtifactIdentitySchema.extend({
+  type: z.literal('attention_result'),
+  mediaType: z.literal('application/vnd.vera.attention-result+json'),
+  content: AttentionResultSchema,
+}).strict();
+
 export const ArtifactSchema = z.discriminatedUnion('type', [
   ImplementationPlanArtifactSchema,
   SoftwareChangeArtifactSchema,
@@ -156,6 +164,7 @@ export const ArtifactSchema = z.discriminatedUnion('type', [
   MachineServiceActionResultArtifactSchema,
   MissionManagementResultArtifactSchema,
   KnowledgeResultArtifactSchema,
+  AttentionResultArtifactSchema,
 ]);
 
 const ArtifactReferenceBaseSchema = ArtifactIdentitySchema.pick({
@@ -233,6 +242,12 @@ export const KnowledgeResultArtifactReferenceSchema =
     mediaType: z.literal('application/vnd.vera.knowledge-result+json'),
   }).strict();
 
+export const AttentionResultArtifactReferenceSchema =
+  ArtifactReferenceBaseSchema.extend({
+    type: z.literal('attention_result'),
+    mediaType: z.literal('application/vnd.vera.attention-result+json'),
+  }).strict();
+
 export const ArtifactReferenceSchema = z.discriminatedUnion('type', [
   ImplementationPlanArtifactReferenceSchema,
   SoftwareChangeArtifactReferenceSchema,
@@ -245,6 +260,7 @@ export const ArtifactReferenceSchema = z.discriminatedUnion('type', [
   MachineServiceActionResultArtifactReferenceSchema,
   MissionManagementResultArtifactReferenceSchema,
   KnowledgeResultArtifactReferenceSchema,
+  AttentionResultArtifactReferenceSchema,
 ]);
 
 export type Artifact = z.infer<typeof ArtifactSchema>;

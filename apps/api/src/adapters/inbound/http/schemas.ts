@@ -20,6 +20,7 @@ import {
   MemoryResultArtifactSchema,
   AttachmentAnalysisArtifactSchema,
   KnowledgeResultArtifactSchema,
+  AttentionResultArtifactSchema,
 } from '../../../domain/artifacts/artifact.ts';
 import {
   ConversationSchema,
@@ -57,6 +58,10 @@ import {
   KnowledgeSearchResponseSchema,
   KnowledgeSourceResourceSchema,
 } from '../../../domain/knowledge/knowledge.ts';
+import {
+  AttentionBriefingSchema,
+  AttentionDecisionRequestSchema,
+} from '../../../domain/attention/attention.ts';
 
 export const EvaluateRequestSchema = z
   .object({
@@ -65,6 +70,10 @@ export const EvaluateRequestSchema = z
   .strict();
 
 export type EvaluateRequest = z.infer<typeof EvaluateRequestSchema>;
+
+export type AttentionDecisionRequest = z.infer<
+  typeof AttentionDecisionRequestSchema
+>;
 
 export const SubmitTaskRequestSchema = z
   .object({
@@ -337,6 +346,7 @@ export const ArtifactResponseSchema = z.discriminatedUnion('type', [
   MemoryResultArtifactSchema.omit({ principalId: true }),
   AttachmentAnalysisArtifactSchema.omit({ principalId: true }),
   KnowledgeResultArtifactSchema.omit({ principalId: true }),
+  AttentionResultArtifactSchema.omit({ principalId: true }),
 ]);
 
 export const PersonalTaskListQuerySchema = z
@@ -763,5 +773,15 @@ export const SpeechTranscriptionResponseSchema = z
 
 export const SpeechTranscriptionResponseJsonSchema = z.toJSONSchema(
   SpeechTranscriptionResponseSchema,
+  { target: 'draft-7' },
+);
+
+export const AttentionBriefingJsonSchema = z.toJSONSchema(
+  AttentionBriefingSchema,
+  { target: 'draft-7' },
+);
+
+export const AttentionDecisionRequestJsonSchema = z.toJSONSchema(
+  AttentionDecisionRequestSchema,
   { target: 'draft-7' },
 );

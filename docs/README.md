@@ -65,6 +65,9 @@ boundary; review and durable reply playback remain unchanged.
 ADR-0034 composes the exact implementation, application, and publication
 boundaries into one owner-approved, operator-policy-bounded development
 campaign with independent gates and exact-head merge control.
+ADR-0037 adds deterministic proactive attention over authoritative resources,
+generation-scoped snooze and dismissal decisions, and one shared Today and
+conversational briefing boundary without asking a model to invent status.
 
 Implementation began on the same date. ADR-0009 accepts the first production
 source layout and model decision boundary. ADR-0010 accepts the durable

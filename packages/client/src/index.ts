@@ -142,6 +142,7 @@ export type Approval = {
       | 'machine_operational_data'
       | 'mission_data'
       | 'personal_knowledge'
+      | 'owner_attention'
     )[];
     sideEffects: (
       | 'third_party_disclosure'
@@ -197,6 +198,10 @@ export type ArtifactReference = ArtifactReferenceIdentity &
     | {
         type: 'knowledge_result';
         mediaType: 'application/vnd.vera.knowledge-result+json';
+      }
+    | {
+        type: 'attention_result';
+        mediaType: 'application/vnd.vera.attention-result+json';
       }
     | {
         type: 'attachment_analysis';
@@ -464,6 +469,58 @@ export type NotificationStreamEvent = {
   notification: NotificationResource;
 };
 
+export type AttentionPriority = 'urgent' | 'high' | 'normal';
+export type AttentionState = 'active' | 'snoozed' | 'dismissed';
+export type AttentionTarget =
+  | {
+      kind: 'task';
+      taskId: string;
+      runId: string;
+      conversationId?: string;
+      approvalId?: string;
+    }
+  | { kind: 'personal_task'; personalTaskId: string }
+  | { kind: 'reminder'; reminderId: string }
+  | { kind: 'mission'; missionId: string }
+  | { kind: 'campaign'; campaignId: string };
+
+export type AttentionItem = {
+  schemaVersion: 1;
+  id: string;
+  reason: string;
+  priority: AttentionPriority;
+  title: string;
+  summary: string;
+  occurredAt: string;
+  target: AttentionTarget;
+  state: AttentionState;
+  snoozedUntil?: string;
+};
+
+export type AttentionBriefing = {
+  schemaVersion: 1;
+  generatedAt: string;
+  headline: string;
+  summary: string;
+  counts: {
+    urgent: number;
+    high: number;
+    normal: number;
+    snoozed: number;
+    dismissed: number;
+  };
+  items: AttentionItem[];
+  snoozedItems: AttentionItem[];
+  dismissedItems: AttentionItem[];
+};
+
+export type AttentionResultContent = {
+  schemaVersion: 1;
+  action: 'brief';
+  summary: string;
+  briefing: AttentionBriefing;
+};
+
 export type SpeechTranscriptionResource = {
   schemaVersion: 1;
   text: string;
@@ -604,6 +661,11 @@ export type TaskResource = {
         kind: 'knowledge_result';
         result?: KnowledgeResultContent;
         artifact?: Extract<ArtifactReference, { type: 'knowledge_result' }>;
+      }
+    | {
+        kind: 'attention_result';
+        result?: AttentionResultContent;
+        artifact?: Extract<ArtifactReference, { type: 'attention_result' }>;
       }
     | {
         kind: 'attachment_analysis';
@@ -813,6 +875,11 @@ export type ArtifactResource = ArtifactResourceIdentity &
         type: 'knowledge_result';
         mediaType: 'application/vnd.vera.knowledge-result+json';
         content: KnowledgeResultContent;
+      }
+    | {
+        type: 'attention_result';
+        mediaType: 'application/vnd.vera.attention-result+json';
+        content: AttentionResultContent;
       }
     | {
         type: 'attachment_analysis';
@@ -1355,6 +1422,13 @@ export type VeraApi = {
   }): Promise<SpeechTranscriptionResource>;
   listCapabilities(): Promise<CapabilityCatalogResource>;
   listMachines(): Promise<MachineCatalogResource>;
+  getAttentionBriefing(): Promise<AttentionBriefing>;
+  decideAttention(input: {
+    attentionItemId: string;
+    decision: 'dismiss' | 'snooze' | 'restore';
+    snoozedUntil?: string;
+    idempotencyKey: string;
+  }): Promise<AttentionBriefing>;
   listPersonalTasks(options?: {
     status?: 'all' | 'open' | 'completed';
     limit?: number;
@@ -2228,6 +2302,70 @@ async function delay(
   });
 }
 
+function assertAttentionBriefing(
+  value: unknown,
+): asserts value is AttentionBriefing {
+  const counts = isRecord(value) && isRecord(value.counts) ? value.counts : {};
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== 1 ||
+    typeof value.generatedAt !== 'string' ||
+    typeof value.headline !== 'string' ||
+    typeof value.summary !== 'string' ||
+    !['urgent', 'high', 'normal', 'snoozed', 'dismissed'].every(
+      (key) => typeof counts[key] === 'number' && counts[key] >= 0,
+    ) ||
+    !Array.isArray(value.items) ||
+    !Array.isArray(value.snoozedItems) ||
+    !Array.isArray(value.dismissedItems)
+  ) {
+    throw new Error('Vera returned an invalid attention briefing.');
+  }
+  const collections = [
+    value.items,
+    value.snoozedItems,
+    value.dismissedItems,
+  ] as unknown[][];
+  for (const collection of collections) {
+    for (const item of collection) {
+      if (
+        !isRecord(item) ||
+        item.schemaVersion !== 1 ||
+        typeof item.id !== 'string' ||
+        !item.id.startsWith('attention_') ||
+        !['urgent', 'high', 'normal'].includes(String(item.priority)) ||
+        !['active', 'snoozed', 'dismissed'].includes(String(item.state)) ||
+        typeof item.title !== 'string' ||
+        typeof item.summary !== 'string' ||
+        !isRecord(item.target) ||
+        !isAttentionTarget(item.target) ||
+        (item.state === 'snoozed' && typeof item.snoozedUntil !== 'string')
+      ) {
+        throw new Error('Vera returned an invalid attention item.');
+      }
+    }
+  }
+}
+
+function isAttentionTarget(value: Record<string, unknown>): boolean {
+  switch (value.kind) {
+    case 'task':
+      return (
+        typeof value.taskId === 'string' && typeof value.runId === 'string'
+      );
+    case 'personal_task':
+      return typeof value.personalTaskId === 'string';
+    case 'reminder':
+      return typeof value.reminderId === 'string';
+    case 'mission':
+      return typeof value.missionId === 'string';
+    case 'campaign':
+      return typeof value.campaignId === 'string';
+    default:
+      return false;
+  }
+}
+
 export class VeraClient implements VeraApi {
   private readonly baseUrl: string;
   private readonly fetch: Fetch;
@@ -2251,6 +2389,35 @@ export class VeraClient implements VeraApi {
     const catalog = await this.request<unknown>('/v1/machines');
     assertMachineCatalogResource(catalog);
     return catalog;
+  }
+
+  public async getAttentionBriefing(): Promise<AttentionBriefing> {
+    const briefing = await this.request<unknown>('/v1/attention');
+    assertAttentionBriefing(briefing);
+    return briefing;
+  }
+
+  public async decideAttention(input: {
+    attentionItemId: string;
+    decision: 'dismiss' | 'snooze' | 'restore';
+    snoozedUntil?: string;
+    idempotencyKey: string;
+  }): Promise<AttentionBriefing> {
+    const briefing = await this.request<unknown>(
+      `/v1/attention-items/${encodeURIComponent(input.attentionItemId)}/decision`,
+      {
+        method: 'POST',
+        idempotencyKey: input.idempotencyKey,
+        body: {
+          decision: input.decision,
+          ...(input.snoozedUntil === undefined
+            ? {}
+            : { snoozedUntil: input.snoozedUntil }),
+        },
+      },
+    );
+    assertAttentionBriefing(briefing);
+    return briefing;
   }
 
   public async uploadAttachment(input: {

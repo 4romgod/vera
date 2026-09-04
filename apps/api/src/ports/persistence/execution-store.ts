@@ -25,6 +25,7 @@ export type ExecutionStore = {
   replace(aggregate: TaskAggregate, expectedVersion: number): Promise<boolean>;
   findDispatchable(limit: number): Promise<TaskAggregate[]>;
   findRecoverable(): Promise<TaskAggregate[]>;
+  listByPrincipal(principalId: string, limit: number): Promise<TaskAggregate[]>;
   checkReadiness(): Promise<void>;
   close(): Promise<void>;
 };

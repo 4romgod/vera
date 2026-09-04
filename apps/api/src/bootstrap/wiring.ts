@@ -81,6 +81,9 @@ import { ConfiguredMachineOperations } from '../adapters/outbound/machines/confi
 import { createMachineService } from '../application/machines/machine-service.ts';
 import { LocalMissionActionExecutor } from '../adapters/outbound/integrations/missions/local-mission-action-executor.ts';
 import type { MissionDraftServiceReference } from '../ports/missions/mission-draft-service.ts';
+import { InMemoryAttentionDecisionStore } from '../adapters/outbound/persistence/memory/in-memory-attention-decision-store.ts';
+import { MongoDbAttentionDecisionStore } from '../adapters/outbound/persistence/mongodb/mongodb-attention-decision-store.ts';
+import { createAttentionService } from '../application/attention/attention-service.ts';
 
 export function createApp(
   config: AppConfig,
@@ -188,6 +191,14 @@ export function createApp(
           database: config.storage.mongodbDatabase,
           timeoutMs: config.storage.dependencyTimeoutMs,
         });
+  const attentionDecisions =
+    config.storage.mode === 'memory'
+      ? new InMemoryAttentionDecisionStore()
+      : new MongoDbAttentionDecisionStore({
+          uri: config.storage.mongodbUri,
+          database: config.storage.mongodbDatabase,
+          timeoutMs: config.storage.dependencyTimeoutMs,
+        });
   const projectMutationLeases: ProjectMutationLeaseStore =
     config.storage.mode === 'memory'
       ? new InMemoryProjectMutationLeaseStore()
@@ -233,6 +244,21 @@ export function createApp(
   const missionExecutor = new LocalMissionActionExecutor(
     missionLifecycleReference,
   );
+  const personalTaskService = createPersonalTaskService({ store: resources });
+  const reminderService = createReminderService({ store: resources });
+  const notificationService = createNotificationService({
+    store: resources,
+    missions: missionStore,
+  });
+  const memoryService = createMemoryService({ store: resources });
+  const machineService = createMachineService(machineOperations.catalog);
+  const attentionService = createAttentionService({
+    executions: store,
+    resources,
+    missions: missionStore,
+    campaigns: campaignStore,
+    decisions: attentionDecisions,
+  });
   const capabilities = createCapabilityRuntimeRegistry({
     provider,
     attachmentAnalysisProvider: visionProvider,
@@ -248,15 +274,8 @@ export function createApp(
       ? {}
       : { missions: missionExecutor }),
     machines: machineOperations,
+    attention: attentionService,
   });
-  const personalTaskService = createPersonalTaskService({ store: resources });
-  const reminderService = createReminderService({ store: resources });
-  const notificationService = createNotificationService({
-    store: resources,
-    missions: missionStore,
-  });
-  const memoryService = createMemoryService({ store: resources });
-  const machineService = createMachineService(machineOperations.catalog);
   const transcriptionProvider = createSpeechTranscriptionProvider(
     config.transcription,
   );
@@ -469,6 +488,7 @@ export function createApp(
     notifications: notificationService,
     memories: memoryService,
     knowledge: knowledgeService,
+    attention: attentionService,
     transcriptions: transcriptionService,
     attachments: attachmentService,
     machines: machineService,
@@ -559,6 +579,10 @@ export function createApp(
       },
       { name: 'mission_store', check: () => missionStore.checkReadiness() },
       { name: 'knowledge_store', check: () => knowledgeStore.checkReadiness() },
+      {
+        name: 'attention_decision_store',
+        check: () => attentionDecisions.checkReadiness(),
+      },
       { name: 'mission_worker', check: () => missionWorker.checkReadiness() },
     ],
     close: async () => {
@@ -580,6 +604,7 @@ export function createApp(
         knowledgeStore.close(),
         projectMutationLeases.close(),
         attachmentStore.close(),
+        attentionDecisions.close(),
       ]);
     },
     logger: runtime.logger ?? true,

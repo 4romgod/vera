@@ -78,6 +78,11 @@ import {
 import type { KnowledgeService } from '../../../ports/knowledge/knowledge-service.ts';
 import type { Artifact } from '../../../domain/artifacts/artifact.ts';
 import { z } from 'zod';
+import {
+  AttentionActionArgumentsSchema,
+  AttentionResultSchema,
+} from '../../../domain/attention/attention.ts';
+import type { AttentionService } from '../../../ports/attention/attention-service.ts';
 
 function definition(name: string): CapabilityDefinition {
   const value = CapabilityDefinitions.find(
@@ -85,6 +90,70 @@ function definition(name: string): CapabilityDefinition {
   );
   if (value === undefined) throw new Error(`Capability ${name}@1 is missing.`);
   return value;
+}
+
+function attentionRegistration(
+  attention: AttentionService,
+): CapabilityRuntimeRegistration {
+  const capabilityDefinition = definition('attention_management');
+  const destination = {
+    schemaVersion: 1 as const,
+    adapterId: 'vera_attention',
+    provider: 'vera',
+    transport: 'local_store',
+    dataBoundary: 'owner_controlled' as const,
+  };
+  const runtime = (): CapabilityRuntime => ({
+    definition: capabilityDefinition,
+    destination,
+    authority: capabilityDefinition.authority,
+    authorityFor({ arguments: arguments_ }) {
+      AttentionActionArgumentsSchema.parse(arguments_);
+      return capabilityDefinition.authority;
+    },
+    checkReadiness: () => Promise.resolve(),
+    async execute(invocation) {
+      if (
+        invocation.project !== undefined ||
+        invocation.context !== undefined ||
+        invocation.artifacts !== undefined ||
+        invocation.attachments !== undefined
+      ) {
+        throw new Error(
+          'Attention briefing must not receive external context.',
+        );
+      }
+      AttentionActionArgumentsSchema.parse(invocation.arguments);
+      const started = Date.now();
+      const briefing = await attention.getBriefing(invocation.principalId);
+      return {
+        artifact: {
+          type: 'attention_result',
+          mediaType: 'application/vnd.vera.attention-result+json',
+          content: AttentionResultSchema.parse({
+            schemaVersion: 1,
+            action: 'brief',
+            summary: briefing.summary,
+            briefing,
+          }),
+        },
+        model: {
+          provider: 'vera',
+          model: 'deterministic_attention_v1',
+          durationMs: Date.now() - started,
+        },
+      };
+    },
+  });
+  return {
+    definition: capabilityDefinition,
+    selected: runtime,
+    resolve(candidate) {
+      return sameCapabilityDestination(destination, candidate)
+        ? runtime()
+        : null;
+    },
+  };
 }
 
 function requireProjectInvocation(
@@ -1385,8 +1454,12 @@ export function createCapabilityRuntimeRegistry(options: {
     MissionManagementResult
   >;
   machines?: MachineOperations;
+  attention?: AttentionService;
 }): CapabilityRuntimeRegistry {
   const registrations = [
+    ...(options.attention === undefined
+      ? []
+      : [attentionRegistration(options.attention)]),
     attachmentAnalysisRegistration({
       provider: options.attachmentAnalysisProvider ?? options.provider,
       attachments: options.attachments,

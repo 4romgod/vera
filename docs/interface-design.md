@@ -34,6 +34,7 @@ flowchart TD
     SHELL --> CONTEXT["Personal or project context"]
     SHELL --> OWNER["Owner data: secondary"]
     OWNER --> MEMORY["Memory"]
+    OWNER --> TODAY["Today: current attention"]
     OWNER --> TASKS["Tasks"]
     OWNER --> REMINDERS["Reminders"]
     OWNER --> ACTIVITY["Activity"]
@@ -112,6 +113,23 @@ destinations.
   allowed actions. Inspect creates a read-only approval; start, stop, and
   restart create a distinct mutation approval. Completed cards show service
   health or the before/after postcondition rather than raw command output.
+
+## Today and proactive attention
+
+Today is the first owner-workspace destination and the default target of the
+header's Vera control. It is a calm decision surface, not a feed:
+
+- a compact briefing states the number of urgent, high-priority, and later
+  items;
+- cards explain why an authoritative source needs attention and link back to
+  that task, conversation, reminder, mission, or campaign;
+- snooze hides one exact generation for one hour from the quick action;
+- dismiss removes one exact generation from the active briefing; and
+- snoozed and dismissed items remain inspectable and restorable.
+
+The UI never computes urgency and never treats local component state as truth.
+Refresh and inbox events re-fetch the API projection. Consequential action is
+performed at the source resource under its existing approval rules.
 
 ## Software delivery in conversation
 

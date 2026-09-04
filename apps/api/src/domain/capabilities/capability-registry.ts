@@ -10,6 +10,7 @@ import {
 } from '../machines/machine.ts';
 import { MissionProposalArgumentsSchema } from '../missions/mission-proposal.ts';
 import { KnowledgeActionArgumentsSchema } from '../knowledge/knowledge.ts';
+import { AttentionActionArgumentsSchema } from '../attention/attention.ts';
 export { AttachmentAnalysisArgumentsSchema } from '../attachments/attachment-analysis.ts';
 
 export const DevelopmentPlanningProposalArgumentsSchema = z
@@ -82,6 +83,7 @@ export const CapabilityAuthoritySchema = z
         'machine_operational_data',
         'mission_data',
         'personal_knowledge',
+        'owner_attention',
       ]),
     ),
     sideEffects: z.array(
@@ -117,6 +119,33 @@ export type CapabilityDefinition = {
 };
 
 export const CapabilityDefinitions = [
+  {
+    name: 'attention_management',
+    version: 1,
+    description:
+      'Build a deterministic owner briefing from current approvals, failures, tasks, reminders, missions, and campaigns.',
+    proposalArgumentsSchema: AttentionActionArgumentsSchema,
+    effect: 'owner_state',
+    artifact: {
+      type: 'attention_result',
+      mediaType: 'application/vnd.vera.attention-result+json',
+    },
+    acceptedInputArtifacts: [],
+    explicitAdaptiveOutcome: {
+      patterns: [
+        /\b(what needs my attention|brief me|my briefing|what should i focus on|what needs me)\b/u,
+      ],
+      description: 'Show the owner what currently needs attention.',
+    },
+    authority: {
+      approval: 'never',
+      projectContext: 'none',
+      networkAccess: 'none',
+      dataClasses: ['owner_request', 'owner_attention'],
+      sideEffects: [],
+      credentials: 'none',
+    },
+  },
   {
     name: 'knowledge_management',
     version: 1,

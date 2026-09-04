@@ -298,6 +298,20 @@ scheduled and delivered instants, channel, and unread or acknowledged state.
 A server-sent event is only transport for a notification. Losing the connection
 does not delete the notification; clients resume from an opaque ordered cursor.
 
+### Attention item and briefing
+
+An attention item is a current, deterministic claim that one authoritative
+resource needs owner awareness or action. It contains a reason, priority,
+human-readable explanation, occurrence time, and typed link to the exact source.
+Its identity binds the source generation and reason; it is not the source
+resource and cannot mutate that resource.
+
+An attention briefing is the owner-scoped projection of active, snoozed, and
+dismissed current items at one generation time. Snooze, dismiss, and restore
+are append-only owner disposition decisions over an exact attention identity.
+A source transition may create a new identity, while an expired snooze makes
+the same current identity active again.
+
 ### Event
 
 An immutable fact recording something that occurred.

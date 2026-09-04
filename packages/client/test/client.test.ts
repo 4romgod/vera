@@ -1234,4 +1234,88 @@ void describe('Vera HTTP client', () => {
 
     assert.equal(observedSignal, controller.signal);
   });
+
+  void it('loads and validates the deterministic attention briefing', async () => {
+    const briefing = {
+      schemaVersion: 1 as const,
+      generatedAt: '2026-09-04T12:00:00.000Z',
+      headline: 'One thing needs your attention',
+      summary: 'Nothing is urgent.',
+      counts: { urgent: 0, high: 0, normal: 1, snoozed: 0, dismissed: 0 },
+      items: [
+        {
+          schemaVersion: 1 as const,
+          id: 'attention_test',
+          reason: 'open_task',
+          priority: 'normal' as const,
+          title: 'Review Vera',
+          summary: 'This task is still open.',
+          occurredAt: '2026-09-04T10:00:00.000Z',
+          target: {
+            kind: 'personal_task' as const,
+            personalTaskId: 'personal_task_test',
+          },
+          state: 'active' as const,
+        },
+      ],
+      snoozedItems: [],
+      dismissedItems: [],
+    };
+    const client = new VeraClient({
+      baseUrl: 'http://vera.test',
+      fetch: (input) => {
+        assert.equal(input, 'http://vera.test/v1/attention');
+        return Promise.resolve(Response.json(briefing));
+      },
+    });
+
+    assert.deepEqual(await client.getAttentionBriefing(), briefing);
+  });
+
+  void it('sends an idempotent attention decision and validates the result', async () => {
+    const client = new VeraClient({
+      baseUrl: 'http://vera.test',
+      fetch: (input, init) => {
+        assert.equal(
+          input,
+          'http://vera.test/v1/attention-items/attention_test/decision',
+        );
+        if (init === undefined) throw new Error('Expected request options.');
+        assert.equal(init.method, 'POST');
+        assert.equal(
+          new Headers(init.headers).get('idempotency-key'),
+          'attention-decision-test',
+        );
+        assert.equal(typeof init.body, 'string');
+        assert.deepEqual(JSON.parse(init.body as string), {
+          decision: 'dismiss',
+        });
+        return Promise.resolve(
+          Response.json({
+            schemaVersion: 1,
+            generatedAt: '2026-09-04T12:00:00.000Z',
+            headline: "You're all caught up",
+            summary: 'No current items.',
+            counts: {
+              urgent: 0,
+              high: 0,
+              normal: 0,
+              snoozed: 0,
+              dismissed: 0,
+            },
+            items: [],
+            snoozedItems: [],
+            dismissedItems: [],
+          }),
+        );
+      },
+    });
+
+    const result = await client.decideAttention({
+      attentionItemId: 'attention_test',
+      decision: 'dismiss',
+      idempotencyKey: 'attention-decision-test',
+    });
+    assert.equal(result.items.length, 0);
+  });
 });

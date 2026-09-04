@@ -488,6 +488,20 @@ function resultPresentation(output: NonNullable<TaskResource['output']>): {
             </View>
           ),
       };
+    case 'attention_result':
+      return {
+        title: output.result?.briefing.headline ?? 'Your briefing',
+        summary: output.result?.briefing.summary,
+        icon: BellRing,
+        content: output.result?.briefing.items.map((item) => (
+          <ResultRow
+            detail={item.summary}
+            key={item.id}
+            status={humanizeIdentifier(item.priority)}
+            title={item.title}
+          />
+        )),
+      };
     case 'research_report':
       return {
         title: 'Research complete',

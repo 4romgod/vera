@@ -22,6 +22,7 @@ src/
 │       └── project-context/         # Read-only project-source implementation
 ├── application/                     # Use cases and lifecycle coordination
 │   ├── artifacts/
+│   ├── attention/                    # Current-attention projection and dispositions
 │   ├── capabilities/                # Owner-visible runtime catalog
 │   ├── change-applications/
 │   ├── development-campaigns/       # Durable bounded delivery coordination
@@ -36,6 +37,7 @@ src/
 ├── bootstrap/                       # Environment, configuration, composition, process startup
 ├── domain/                          # Versioned business concepts and invariants
 ├── ports/                           # Provider-neutral boundaries required by the application
+│   ├── attention/                    # Attention boundary shared with capability adapters
 └── server.ts                        # Stable process entry point; delegates to bootstrap
 ```
 
@@ -65,6 +67,9 @@ src/
 - Grounded knowledge contracts live in `domain/knowledge`, orchestration uses
   the `ports/knowledge` application boundary, durable and in-memory stores live
   under `adapters/outbound/persistence`, and HTTP routes remain transport-only.
+- Attention contracts live in `domain/attention`, projection policy lives in
+  `application/attention`, the conversational adapter depends on the
+  `ports/attention` boundary, and only append-only dispositions are persisted.
 
 The architecture test in
 `test/architecture/module-boundaries.test.ts` enforces the inward dependency

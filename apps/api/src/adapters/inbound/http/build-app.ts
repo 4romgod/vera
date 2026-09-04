@@ -20,6 +20,7 @@ import type { ReminderService } from '../../../application/reminders/reminder-se
 import type { NotificationService } from '../../../application/reminders/notification-service.ts';
 import type { MemoryService } from '../../../application/memories/memory-service.ts';
 import type { KnowledgeService } from '../../../ports/knowledge/knowledge-service.ts';
+import type { AttentionService } from '../../../ports/attention/attention-service.ts';
 import type { MachineService } from '../../../application/machines/machine-service.ts';
 import { ResourceError } from '../../../application/shared/resource-error.ts';
 import {
@@ -59,6 +60,7 @@ import { registerAttachmentRoutes } from './routes/attachment-routes.ts';
 import { registerMachineRoutes } from './routes/machine-routes.ts';
 import { registerDevelopmentCampaignRoutes } from './routes/development-campaign-routes.ts';
 import { registerMissionRoutes } from './routes/mission-routes.ts';
+import { registerAttentionRoutes } from './routes/attention-routes.ts';
 import {
   MissionError,
   type MissionLifecycle,
@@ -93,6 +95,7 @@ export type BuildAppOptions = {
   notifications?: NotificationService;
   memories?: MemoryService;
   knowledge?: KnowledgeService;
+  attention?: AttentionService;
   transcriptions?: TranscriptionService;
   attachments?: AttachmentService;
   machines?: MachineService;
@@ -374,6 +377,12 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       knowledge: options.knowledge,
     });
   }
+  if (options.attention !== undefined) {
+    registerAttentionRoutes(app, {
+      principalId,
+      attention: options.attention,
+    });
+  }
   if (options.transcriptions !== undefined) {
     registerTranscriptionRoutes(app, options.transcriptions);
   }
@@ -437,13 +446,15 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
           ? 409
           : error.code === 'invalid_notification_cursor'
             ? 400
-            : error.code === 'invalid_project_source' ||
-                error.code === 'invalid_knowledge_source' ||
-                error.code === 'invalid_knowledge_evidence' ||
-                error.code === 'knowledge_analysis_required' ||
-                error.code === 'knowledge_integrity_failure'
+            : error.code === 'invalid_attention_decision'
               ? 422
-              : 404;
+              : error.code === 'invalid_project_source' ||
+                  error.code === 'invalid_knowledge_source' ||
+                  error.code === 'invalid_knowledge_evidence' ||
+                  error.code === 'knowledge_analysis_required' ||
+                  error.code === 'knowledge_integrity_failure'
+                ? 422
+                : 404;
       void reply.status(statusCode).send({
         error: { code: error.code, message: error.message },
       });

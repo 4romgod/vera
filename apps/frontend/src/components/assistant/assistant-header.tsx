@@ -13,7 +13,7 @@ export function AssistantHeader(props: {
   title?: string;
   projects: ProjectResource[];
   selectedProjectId?: string;
-  unreadNotifications: number;
+  attentionItems: number;
   refreshing: boolean;
   onMenu: () => void;
   onRefresh: () => void;
@@ -80,7 +80,7 @@ export function AssistantHeader(props: {
               label="Open your Vera"
               onPress={props.onResources}
             />
-            {props.unreadNotifications > 0 ? (
+            {props.attentionItems > 0 ? (
               <View
                 style={{
                   position: 'absolute',
@@ -105,8 +105,8 @@ export function AssistantHeader(props: {
                     fontVariant: ['tabular-nums'],
                   }}
                 >
-                  {Math.min(props.unreadNotifications, 9)}
-                  {props.unreadNotifications > 9 ? '+' : ''}
+                  {Math.min(props.attentionItems, 9)}
+                  {props.attentionItems > 9 ? '+' : ''}
                 </Text>
               </View>
             ) : null}

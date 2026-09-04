@@ -21,7 +21,10 @@ const mongodbUri = process.env.MONGODB_URI ?? 'mongodb://127.0.0.1:27017';
 const redisUrl = process.env.REDIS_URL ?? 'redis://127.0.0.1:6379';
 const database = `vera_verify_${randomUUID().replaceAll('-', '_')}`;
 const changeApplicationRoot = join(tmpdir(), `${database}_applications`);
-const operationTimeoutMs = 10_000;
+// A hosted runner can spend one full dependency timeout falling back from the
+// rebuildable Redis projection to MongoDB. Leave enough budget for that
+// fallback plus the next poll without relaxing the workflow-level time bound.
+const operationTimeoutMs = 30_000;
 const runIds = new Set();
 const temporaryDirectories = new Set([changeApplicationRoot]);
 let child;
@@ -935,6 +938,24 @@ async function verifyScenarios(mongo, redis) {
   const personalTaskId = personalTaskCreated.output.result.tasks[0]?.id;
   assert.ok(personalTaskId);
   assert.equal((await client.getPersonalTask(personalTaskId)).status, 'open');
+  const attentionBeforeRestart = await client.getAttentionBriefing();
+  const personalTaskAttention = attentionBeforeRestart.items.find(
+    (item) =>
+      item.target.kind === 'personal_task' &&
+      item.target.personalTaskId === personalTaskId,
+  );
+  assert.ok(personalTaskAttention);
+  const attentionItemId = personalTaskAttention.id;
+  const dismissedAttention = await client.decideAttention({
+    attentionItemId,
+    decision: 'dismiss',
+    idempotencyKey: 'persistent-verification-attention-dismiss',
+  });
+  assert.ok(
+    dismissedAttention.dismissedItems.some(
+      (item) => item.id === attentionItemId,
+    ),
+  );
 
   const reminderSubmitted = rememberRun(
     await client.submitTask({
@@ -1139,6 +1160,12 @@ async function verifyScenarios(mongo, redis) {
   assert.equal((await client.getPersonalTask(personalTaskId)).status, 'open');
   assert.equal((await client.getReminder(reminderId)).status, 'scheduled');
   assert.equal((await client.getMemory(memoryId)).revision, 1);
+  const attentionAfterRestart = await client.getAttentionBriefing();
+  assert.ok(
+    attentionAfterRestart.dismissedItems.some(
+      (item) => item.id === attentionItemId,
+    ),
+  );
 
   const rescheduleSubmitted = rememberRun(
     await client.submitTask({
@@ -1539,6 +1566,7 @@ async function verifyScenarios(mongo, redis) {
     durableRemindersVerified: true,
     governedMemoryVerified: true,
     groundedKnowledgePersistenceVerified: true,
+    attentionDispositionRestartVerified: true,
     restartSafeNotificationDeliveryVerified: true,
     legacyConversationUpgradeVerified: true,
     roleScopedMessageIdempotencyVerified: true,

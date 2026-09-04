@@ -319,9 +319,12 @@ concurrent runtime transitions.
 MongoDB is the selected V1 authoritative operational store. The implemented V1
 shape is one versioned task-execution aggregate per task, transitioned with
 optimistic compare-and-swap and protected by unique identity and idempotency
-indexes. It may also fit future structured long-term memory, provided
-operational records and governed memory remain logically separate and follow
-different access, retention, and promotion rules.
+indexes. Governed memory, grounded knowledge, and attention dispositions use
+separate versioned collections and contracts. Attention stores only append-only
+snooze, dismiss, and restore decisions; its current items are recomputed from
+the authoritative operational records. MongoDB may also fit future structured
+long-term memory, provided operational records and governed memory remain
+logically separate and follow different access, retention, and promotion rules.
 
 Vera must not treat document flexibility as permission for schema drift.
 Application schemas, database validation, explicit document versions, unique
@@ -349,6 +352,7 @@ flowchart LR
     CORE <-->|"temporary working state"| WORK["Redis<br/>execution scratchpad"]
     OPS -. "rehydrate after loss" .-> WORK
     CORE -->|"approved memory mutation"| MEMORY["MongoDB<br/>governed memory records"]
+    CORE -->|"owner attention disposition"| ATTENTION["MongoDB<br/>attention decisions"]
 ```
 
 The arrows express authority. MongoDB and Redis are selected for the V1

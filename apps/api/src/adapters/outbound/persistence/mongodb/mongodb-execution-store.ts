@@ -166,6 +166,16 @@ export class MongoDbExecutionStore implements ExecutionStore {
     return documents.map((document) => this.parse(document));
   }
 
+  public async listByPrincipal(principalId: string, limit: number) {
+    await this.ensureConnected();
+    const documents = await this.collection
+      .find({ 'task.principalId': principalId })
+      .sort({ 'task.updatedAt': -1, 'task.id': -1 })
+      .limit(limit)
+      .toArray();
+    return documents.map((document) => this.parse(document));
+  }
+
   public async checkReadiness(): Promise<void> {
     await this.ensureConnected();
     await this.client.db().command({ ping: 1 });
@@ -254,6 +264,10 @@ export class MongoDbExecutionStore implements ExecutionStore {
       ),
       this.collection.createIndex({ 'run.status': 1 }),
       this.collection.createIndex({ 'run.status': 1, 'run.createdAt': 1 }),
+      this.collection.createIndex({
+        'task.principalId': 1,
+        'task.updatedAt': -1,
+      }),
     ]);
   }
 

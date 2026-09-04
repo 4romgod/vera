@@ -2,6 +2,7 @@ import { useDeferredValue, useMemo, useState } from 'react';
 import {
   Bell,
   Brain,
+  CircleAlert,
   ListChecks,
   MessageSquarePlus,
   Search,
@@ -34,6 +35,7 @@ export function ConversationSidebar(props: {
   open: boolean;
   conversationId?: string;
   conversations: ConversationSummaryResource[];
+  attention: number;
   memories: number;
   tasks: number;
   notifications: number;
@@ -311,6 +313,12 @@ function SidebarContent(props: Parameters<typeof ConversationSidebar>[0]) {
           paddingTop: spacing.md,
         }}
       >
+        <ResourceLink
+          icon={CircleAlert}
+          label="Today"
+          count={props.attention}
+          onPress={() => props.onOpenResources('attention')}
+        />
         <ResourceLink
           icon={Brain}
           label="Memory"

@@ -14,7 +14,9 @@ evidence-adaptive bounded goal execution, an asynchronous worker, a
 browser-neutral TypeScript client, an owner CLI, a universal Expo React Native
 frontend, explicit owner-governed long-term memory, and a grounded personal
 knowledge library built from deliberately promoted documents and analyzed
-images.
+images. A deterministic attention projector now turns approvals, failures,
+open work, reminders, missions, and campaigns into one current owner briefing
+for the universal Today surface and ordinary conversation.
 
 The orchestration brain is selected at startup through a provider registry.
 Ollama remains the default owner-controlled provider; OpenAI and Gemini are
@@ -32,7 +34,8 @@ propose a direct response or one of the capabilities enabled in the runtime
 catalog. The implemented declarations are `development_planning@1`,
 `software_change@1`, project-independent `web_research@1`, and owner-scoped
 `personal_task_management@1`, `personal_reminder_management@1`, and
-`attachment_analysis@1`, plus grounded `knowledge_management@1`; Vera's code
+`attachment_analysis@1`, plus grounded `knowledge_management@1` and read-only
+`attention_management@1`; Vera's code
 validates the closed, versioned proposal and routing arguments, then returns a
 direct response, one approval requirement, a validated fixed goal, an adaptive
 goal's first step, or a rejection. A disabled capability is absent from the
@@ -428,7 +431,7 @@ Required CI runs the same compiled journey against ephemeral MongoDB 8.2 and
 Redis 8 service containers in the existing Linux job. CI builds once and calls
 `npm run verify:persistent:compiled`; it does not install Ollama, download model
 weights, or contact Codex or another third-party specialist. The job has a
-nine-minute hard limit and superseded runs are cancelled. Real Ollama
+twelve-minute hard limit and superseded runs are cancelled. Real Ollama
 conformance and real specialist acceptance remain separate, deliberate checks.
 The persistent gate runs once on the pull request, not again for the resulting
 `main` push; it can also be started manually. The normal deterministic quality
