@@ -18,10 +18,10 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     # A cold dependency install plus the complete quality, multi-platform
-    # build, and persistent-infrastructure gates currently needs about ten
+    # build, and persistent-infrastructure gates currently needs about thirteen
     # minutes on a two-core hosted runner. Keep a bounded two-minute margin for
     # runner and cleanup variance without weakening or skipping verification.
-    timeout-minutes: 12
+    timeout-minutes: 15
     services:
       mongodb:
         # The PR already verifies the merge tree. Avoid pulling service images
