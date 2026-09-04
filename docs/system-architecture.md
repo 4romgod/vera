@@ -310,6 +310,8 @@ contract without making the capability or model proposal vendor-specific.
 - expose long-term memory through its own governance rules;
 - project current attention deterministically from authoritative resources and
   combine it with generation-scoped owner dispositions;
+- persist recurring routine definitions separately from their bounded run
+  history, and recover due or interrupted runs through durable leases;
 - correlate logs, metrics, traces, and domain identifiers.
 
 The attention projector stores no duplicate task, reminder, run, mission, or
@@ -317,6 +319,13 @@ campaign status. MongoDB stores only append-only snooze, dismiss, and restore
 decisions. API, conversational capability, and universal frontend consume the
 same projector, so restart and client reconnection cannot produce competing
 briefings.
+
+The routine scheduler treats MongoDB as both schedule and authorization truth.
+It materializes a deterministic run before advancing a daily civil-time
+occurrence, then a lease-coordinated worker executes only the frozen registered
+action snapshot. The first routine action reuses the machine operations port
+for inspection only. Healthy results stay out of Today; unhealthy and failed
+runs join the attention projection without creating duplicate mutable status.
 
 ## Request lifecycle
 

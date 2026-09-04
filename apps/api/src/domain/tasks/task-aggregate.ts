@@ -14,6 +14,7 @@ import {
   MissionManagementResultArtifactReferenceSchema,
   KnowledgeResultArtifactReferenceSchema,
   AttentionResultArtifactReferenceSchema,
+  RoutineManagementResultArtifactReferenceSchema,
 } from '../artifacts/artifact.ts';
 import { CapabilityDestinationSchema } from '../capabilities/capability-destination.ts';
 import { ConversationContextBundleSchema } from '../conversations/conversation-context.ts';
@@ -68,6 +69,10 @@ import {
   AttentionActionArgumentsSchema,
   AttentionResultSchema,
 } from '../attention/attention.ts';
+import {
+  RoutineManagementArgumentsSchema,
+  RoutineManagementResultSchema,
+} from '../routines/routine.ts';
 
 export const TaskStatusSchema = z.enum([
   'active',
@@ -113,6 +118,12 @@ const ApprovalIdentitySchema = z
   .strict();
 
 export const ApprovalSchema = z.union([
+  ApprovalIdentitySchema.extend({
+    capability: z
+      .object({ name: z.literal('routine_management'), version: z.literal(1) })
+      .strict(),
+    proposedArguments: RoutineManagementArgumentsSchema,
+  }).strict(),
   ApprovalIdentitySchema.extend({
     capability: z
       .object({
@@ -251,6 +262,12 @@ const CapabilityInvocationIdentitySchema = z
 export const CapabilityInvocationSchema = z.union([
   CapabilityInvocationIdentitySchema.extend({
     capability: z
+      .object({ name: z.literal('routine_management'), version: z.literal(1) })
+      .strict(),
+    arguments: RoutineManagementArgumentsSchema,
+  }).strict(),
+  CapabilityInvocationIdentitySchema.extend({
+    capability: z
       .object({
         name: z.literal('attention_management'),
         version: z.literal(1),
@@ -348,6 +365,13 @@ export const CapabilityInvocationSchema = z.union([
 ]);
 
 export const TaskOutputSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('routine_management_result'),
+      result: RoutineManagementResultSchema,
+      artifact: RoutineManagementResultArtifactReferenceSchema.optional(),
+    })
+    .strict(),
   z
     .object({
       kind: z.literal('attention_result'),

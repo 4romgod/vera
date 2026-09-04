@@ -44,6 +44,7 @@ import {
 import { MissionProposalArgumentsSchema } from '../../domain/missions/mission.ts';
 import { KnowledgeActionArgumentsSchema } from '../../domain/knowledge/knowledge.ts';
 import { AttentionActionArgumentsSchema } from '../../domain/attention/attention.ts';
+import { RoutineManagementArgumentsSchema } from '../../domain/routines/routine.ts';
 
 export type EvaluateModelDecision = (
   message: string,
@@ -710,6 +711,31 @@ function decide(
       proposedArguments: AttentionActionArgumentsSchema.parse(
         proposal.arguments,
       ),
+    };
+  }
+  if (proposal.capability.name === 'routine_management') {
+    const arguments_ = RoutineManagementArgumentsSchema.parse(
+      proposal.arguments,
+    );
+    if (
+      arguments_.action === 'create' &&
+      !machineArgumentsAreRegistered(
+        'machine_inspection',
+        arguments_.routine.action,
+      )
+    ) {
+      return {
+        kind: 'rejected',
+        code: 'invalid_capability_arguments',
+        message:
+          'The proposed routine targets an unregistered machine or service.',
+      };
+    }
+    return {
+      kind: 'approval_required',
+      reason: 'specialist_capability_invocation',
+      capability: proposal.capability,
+      proposedArguments: arguments_,
     };
   }
   return {

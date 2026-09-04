@@ -13,6 +13,7 @@ import type { ExecutionStore } from '../../ports/persistence/execution-store.ts'
 import type { MissionStore } from '../../ports/persistence/mission-store.ts';
 import type { OwnerResourceStore } from '../../ports/persistence/owner-resource-store.ts';
 import type { AttentionDecisionStore } from '../../ports/persistence/attention-decision-store.ts';
+import type { RoutineStore } from '../../ports/persistence/routine-store.ts';
 import { ResourceError } from '../shared/resource-error.ts';
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
@@ -28,25 +29,35 @@ export function createAttentionService(options: {
   missions: MissionStore;
   campaigns: DevelopmentCampaignStore;
   decisions: AttentionDecisionStore;
+  routines: RoutineStore;
   clock?: () => Date;
 }): AttentionService {
   const clock = options.clock ?? (() => new Date());
 
   async function candidates(principalId: string, now: Date) {
-    const [executions, personalTasks, reminders, missions, campaigns] =
-      await Promise.all([
-        options.executions.listByPrincipal(principalId, SOURCE_LIMIT),
-        options.resources.listPersonalTasks(principalId, {
-          status: 'open',
-          limit: SOURCE_LIMIT,
-        }),
-        options.resources.listReminders(principalId, {
-          status: 'all',
-          limit: SOURCE_LIMIT,
-        }),
-        options.missions.list(principalId, SOURCE_LIMIT),
-        options.campaigns.list(principalId, SOURCE_LIMIT),
-      ]);
+    const [
+      executions,
+      personalTasks,
+      reminders,
+      missions,
+      campaigns,
+      routines,
+      routineRuns,
+    ] = await Promise.all([
+      options.executions.listByPrincipal(principalId, SOURCE_LIMIT),
+      options.resources.listPersonalTasks(principalId, {
+        status: 'open',
+        limit: SOURCE_LIMIT,
+      }),
+      options.resources.listReminders(principalId, {
+        status: 'all',
+        limit: SOURCE_LIMIT,
+      }),
+      options.missions.list(principalId, SOURCE_LIMIT),
+      options.campaigns.list(principalId, SOURCE_LIMIT),
+      options.routines.list(principalId, SOURCE_LIMIT),
+      options.routines.listAttentionRuns(principalId, SOURCE_LIMIT),
+    ]);
     const items: Candidate[] = [];
 
     for (const aggregate of executions) {
@@ -258,6 +269,49 @@ export function createAttentionService(options: {
           }),
         );
       }
+    }
+    for (const routine of routines) {
+      if (routine.status !== 'awaiting_approval') continue;
+      items.push(
+        candidate({
+          source: `routine:${routine.id}:${String(routine.version)}`,
+          reason: 'routine_approval_required',
+          priority: 'urgent',
+          title: concise(routine.approval.effect.title, 500),
+          summary:
+            'This recurring standing instruction is waiting for your approval.',
+          occurredAt: routine.updatedAt,
+          target: {
+            kind: 'routine',
+            routineId: routine.id,
+            approvalId: routine.approval.id,
+          },
+        }),
+      );
+    }
+    for (const run of routineRuns) {
+      const routine = routines.find(({ id }) => id === run.routineId);
+      items.push(
+        candidate({
+          source: `routine_run:${run.id}:${String(run.version)}`,
+          reason:
+            run.status === 'failed'
+              ? 'routine_check_failed'
+              : 'routine_attention_required',
+          priority: 'high',
+          title: routine?.approval.effect.title ?? 'Routine health check',
+          summary:
+            run.failure?.message ??
+            run.result?.summary ??
+            'A routine check needs your attention.',
+          occurredAt: run.updatedAt,
+          target: {
+            kind: 'routine',
+            routineId: run.routineId,
+            routineRunId: run.id,
+          },
+        }),
+      );
     }
     return items;
   }

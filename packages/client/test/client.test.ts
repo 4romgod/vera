@@ -1318,4 +1318,90 @@ void describe('Vera HTTP client', () => {
     });
     assert.equal(result.items.length, 0);
   });
+
+  void it('waits for a durable routine run to reach a terminal state', async () => {
+    let calls = 0;
+    const client = new VeraClient({
+      baseUrl: 'http://vera.test',
+      fetch: (input) => {
+        assert.equal(
+          input,
+          'http://vera.test/v1/routine-runs/routine_run_test',
+        );
+        calls += 1;
+        const status = calls === 1 ? 'executing' : 'succeeded';
+        return Promise.resolve(
+          Response.json({
+            schemaVersion: 1,
+            version: calls,
+            id: 'routine_run_test',
+            routineId: 'routine_test',
+            principalId: 'owner_v1',
+            occurrenceKey: 'manual:test',
+            trigger: 'manual',
+            scheduledFor: '2026-09-04T12:00:00.000Z',
+            action: {
+              kind: 'machine_health_check',
+              machineId: 'macmini',
+            },
+            status,
+            startedAt: '2026-09-04T12:00:00.000Z',
+            ...(status === 'succeeded'
+              ? {
+                  completedAt: '2026-09-04T12:00:01.000Z',
+                  result: {
+                    outcome: 'healthy',
+                    summary: 'Mac mini passed the health check.',
+                    diagnostic: {
+                      schemaVersion: 1,
+                      machine: {
+                        id: 'macmini',
+                        displayName: 'Mac mini',
+                        adapter: { kind: 'local' },
+                      },
+                      diagnostics: [],
+                      services: [],
+                      observedAt: '2026-09-04T12:00:01.000Z',
+                    },
+                  },
+                }
+              : {}),
+            createdAt: '2026-09-04T12:00:00.000Z',
+            updatedAt: '2026-09-04T12:00:01.000Z',
+          }),
+        );
+      },
+    });
+
+    const completed = await client.waitForRoutineRun('routine_run_test', {
+      intervalMs: 1,
+    });
+
+    assert.equal(completed.status, 'succeeded');
+    assert.equal(completed.result?.outcome, 'healthy');
+    assert.equal(calls, 2);
+  });
+
+  void it('bounds an in-flight routine-run poll by its wait timeout', async () => {
+    const client = new VeraClient({
+      fetch: (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            'abort',
+            () => reject(new Error('request aborted')),
+            { once: true },
+          );
+        }),
+    });
+
+    const keepEventLoopAlive = setTimeout(() => undefined, 50);
+    try {
+      await assert.rejects(
+        client.waitForRoutineRun('routine_run_stuck', { timeoutMs: 5 }),
+        /Timed out waiting for routine run routine_run_stuck/u,
+      );
+    } finally {
+      clearTimeout(keepEventLoopAlive);
+    }
+  });
 });

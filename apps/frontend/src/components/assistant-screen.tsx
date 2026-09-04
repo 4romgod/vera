@@ -33,6 +33,8 @@ import {
   type KnowledgeSourceResource,
   type AttentionBriefing,
   type AttentionItem,
+  type RoutineResource,
+  type RoutineRunResource,
 } from '@vera/client';
 
 import { ApprovalCard } from '@/components/approval-card';
@@ -181,6 +183,11 @@ export function AssistantScreen() {
     DevelopmentCampaignPolicyResource[]
   >([]);
   const [missions, setMissions] = useState<MissionResource[]>([]);
+  const [routines, setRoutines] = useState<RoutineResource[]>([]);
+  const [routineRuns, setRoutineRuns] = useState<
+    Partial<Record<string, RoutineRunResource[]>>
+  >({});
+  const [routineActionId, setRoutineActionId] = useState<string>();
   const [attention, setAttention] = useState<AttentionBriefing>();
   const [resources, setResources] = useState<{
     open: boolean;
@@ -258,6 +265,7 @@ export function AssistantScreen() {
       campaignPage,
       missionPage,
       attentionBriefing,
+      routinePage,
     ] = await Promise.all([
       client.listConversations(),
       client.listProjects(),
@@ -271,6 +279,7 @@ export function AssistantScreen() {
       client.listDevelopmentCampaigns(),
       client.listMissions(),
       client.getAttentionBriefing(),
+      client.listRoutines(),
     ]);
     if (!mounted.current) return;
     setConversations(conversationPage.conversations);
@@ -285,6 +294,18 @@ export function AssistantScreen() {
     setCampaigns(campaignPage.campaigns);
     setMissions(missionPage.missions);
     setAttention((current) => newestAttention(current, attentionBriefing));
+    setRoutines(routinePage.routines);
+    const runEntries = await Promise.all(
+      routinePage.routines.map(async (routine) => {
+        try {
+          const page = await client.listRoutineRuns(routine.id);
+          return [routine.id, page.runs] as const;
+        } catch {
+          return [routine.id, [] as RoutineRunResource[]] as const;
+        }
+      }),
+    );
+    setRoutineRuns(Object.fromEntries(runEntries));
   }, [client]);
 
   const searchKnowledge = useCallback(
@@ -310,19 +331,32 @@ export function AssistantScreen() {
   );
 
   const refreshNotifications = useCallback(async () => {
-    const [inbox, campaignPage, missionPage, attentionBriefing] =
+    const [inbox, campaignPage, missionPage, attentionBriefing, routinePage] =
       await Promise.all([
         client.listNotifications({ limit: 50 }),
         client.listDevelopmentCampaigns(),
         client.listMissions(),
         client.getAttentionBriefing(),
+        client.listRoutines(),
       ]);
     if (mounted.current) {
       setNotifications([...inbox.notifications].reverse());
       setCampaigns(campaignPage.campaigns);
       setMissions(missionPage.missions);
       setAttention((current) => newestAttention(current, attentionBriefing));
+      setRoutines(routinePage.routines);
     }
+    const runEntries = await Promise.all(
+      routinePage.routines.map(async (routine) => {
+        try {
+          const page = await client.listRoutineRuns(routine.id);
+          return [routine.id, page.runs] as const;
+        } catch {
+          return [routine.id, [] as RoutineRunResource[]] as const;
+        }
+      }),
+    );
+    if (mounted.current) setRoutineRuns(Object.fromEntries(runEntries));
   }, [client]);
 
   const createCampaign = useCallback(
@@ -829,8 +863,154 @@ export function AssistantScreen() {
         return;
       case 'campaign':
         openResources('campaigns');
+        return;
+      case 'routine':
+        openResources('routines');
     }
   }
+
+  const createRoutine = useCallback(
+    async (input: {
+      title: string;
+      machineId: string;
+      serviceIds?: string[];
+      localTime: string;
+      daysOfWeek: number[];
+      timeZone: string;
+    }): Promise<boolean> => {
+      setRoutineActionId('create');
+      try {
+        await client.createRoutine({
+          title: input.title,
+          schedule: {
+            kind: 'daily',
+            timeZone: input.timeZone,
+            localTime: input.localTime,
+            daysOfWeek: input.daysOfWeek,
+          },
+          action: {
+            kind: 'machine_health_check',
+            machineId: input.machineId,
+            ...(input.serviceIds === undefined
+              ? {}
+              : { serviceIds: input.serviceIds }),
+          },
+          idempotencyKey: requestKey(),
+        });
+        await refreshResources();
+        return true;
+      } catch (cause) {
+        if (mounted.current)
+          setError(errorMessage(cause, 'Vera could not create that routine.'));
+        return false;
+      } finally {
+        if (mounted.current) setRoutineActionId(undefined);
+      }
+    },
+    [client, refreshResources],
+  );
+
+  const routineDecision = useCallback(
+    async (
+      routineId: string,
+      decision: 'approved' | 'rejected',
+    ): Promise<boolean> => {
+      setRoutineActionId(routineId);
+      try {
+        await client.decideRoutine({ routineId, decision });
+        await refreshResources();
+        return true;
+      } catch (cause) {
+        if (mounted.current)
+          setError(errorMessage(cause, 'Vera could not decide that routine.'));
+        return false;
+      } finally {
+        if (mounted.current) setRoutineActionId(undefined);
+      }
+    },
+    [client, refreshResources],
+  );
+
+  const pauseRoutine = useCallback(
+    async (routineId: string): Promise<boolean> => {
+      setRoutineActionId(routineId);
+      try {
+        await client.pauseRoutine(routineId);
+        await refreshResources();
+        return true;
+      } catch (cause) {
+        if (mounted.current)
+          setError(errorMessage(cause, 'Vera could not pause that routine.'));
+        return false;
+      } finally {
+        if (mounted.current) setRoutineActionId(undefined);
+      }
+    },
+    [client, refreshResources],
+  );
+
+  const resumeRoutine = useCallback(
+    async (routineId: string): Promise<boolean> => {
+      setRoutineActionId(routineId);
+      try {
+        await client.resumeRoutine(routineId);
+        await refreshResources();
+        return true;
+      } catch (cause) {
+        if (mounted.current)
+          setError(errorMessage(cause, 'Vera could not resume that routine.'));
+        return false;
+      } finally {
+        if (mounted.current) setRoutineActionId(undefined);
+      }
+    },
+    [client, refreshResources],
+  );
+
+  const runRoutineNow = useCallback(
+    async (routineId: string): Promise<RoutineRunResource | undefined> => {
+      setRoutineActionId(routineId);
+      try {
+        const run = await client.runRoutineNow({
+          routineId,
+          idempotencyKey: requestKey(),
+        });
+        if (mounted.current)
+          setRoutineRuns((current) => ({
+            ...current,
+            [routineId]: [
+              run,
+              ...(current[routineId] ?? []).filter(
+                (candidate) => candidate.id !== run.id,
+              ),
+            ],
+          }));
+        const completed = await client.waitForRoutineRun(run.id, {
+          onUpdate: (update) => {
+            if (mounted.current)
+              setRoutineRuns((current) => ({
+                ...current,
+                [routineId]: [
+                  update,
+                  ...(current[routineId] ?? []).filter(
+                    (candidate) => candidate.id !== update.id,
+                  ),
+                ],
+              }));
+          },
+        });
+        await refreshResources();
+        return completed;
+      } catch (cause) {
+        if (mounted.current)
+          setError(errorMessage(cause, 'Vera could not run that routine.'));
+        return undefined;
+      } finally {
+        if (mounted.current) setRoutineActionId(undefined);
+      }
+    },
+    [client, refreshResources],
+  );
 
   async function toggleVoiceInput(): Promise<void> {
     setError(undefined);
@@ -1091,6 +1271,9 @@ export function AssistantScreen() {
           machines={machines}
           campaigns={campaigns}
           missions={missions}
+          routines={routines}
+          routineRuns={routineRuns}
+          routineActionId={routineActionId}
           campaignPolicies={campaignPolicies}
           notifications={notifications}
           open={resources.open}
@@ -1122,6 +1305,11 @@ export function AssistantScreen() {
           onCampaignCancel={cancelCampaign}
           onMissionDecision={decideMission}
           onMissionCancel={cancelMission}
+          onCreateRoutine={createRoutine}
+          onRoutineDecision={routineDecision}
+          onPauseRoutine={pauseRoutine}
+          onResumeRoutine={resumeRoutine}
+          onRunRoutineNow={runRoutineNow}
           onTab={(tab) => setResources({ open: true, tab })}
         />
 

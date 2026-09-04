@@ -37,6 +37,14 @@ export const AttentionTargetSchema = z.discriminatedUnion('kind', [
       campaignId: z.string().startsWith('campaign_'),
     })
     .strict(),
+  z
+    .object({
+      kind: z.literal('routine'),
+      routineId: z.string().startsWith('routine_'),
+      routineRunId: z.string().startsWith('routine_run_').optional(),
+      approvalId: z.string().startsWith('approval_').optional(),
+    })
+    .strict(),
 ]);
 
 export const AttentionItemSchema = z
@@ -57,6 +65,9 @@ export const AttentionItemSchema = z
       'campaign_review_required',
       'campaign_failed',
       'campaign_result_ready',
+      'routine_approval_required',
+      'routine_check_failed',
+      'routine_attention_required',
     ]),
     priority: AttentionPrioritySchema,
     title: z.string().trim().min(1).max(500),

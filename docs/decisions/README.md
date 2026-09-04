@@ -59,6 +59,7 @@ erasing why a choice was made.
 | [0035](0035-run-bounded-software-missions-that-stop-at-a-pull-request.md) | Accepted | Run one bounded unattended software mission that stops at a verified pull request and never merges. |
 | [0036](0036-build-grounded-personal-knowledge-from-owner-approved-sources.md) | Accepted | Promote explicitly approved attachments into an integrity-checked personal knowledge library and answer only from cited evidence. |
 | [0037](0037-project-attention-from-authoritative-resources.md) | Accepted | Compute a deterministic current briefing from authoritative resources and persist only generation-scoped owner dispositions. |
+| [0038](0038-run-recurring-work-as-approved-standing-instructions.md) | Accepted | Execute recurring work from durable, frozen standing instructions with exact authority, recoverable runs, and quiet healthy outcomes. |
 
 ADRs 0001–0008 were accepted 24 August 2026 following the owner's review of
 the foundation documentation. ADR-0007 accepted a semantic boundary without
@@ -134,6 +135,10 @@ memory. Explicit source promotion, integrity-checked chunks, deterministic
 retrieval, minimal provider disclosure, and application-mapped citations make
 owner files reusable without turning all attachment history into implicit
 context.
+ADR-0038 adds durable recurring standing instructions. An exact owner approval
+freezes schedule, target, and read-only authority; idempotent run
+materialization and leases recover after restart, while only unhealthy or
+failed outcomes enter Today.
 
 ## ADR rules
 

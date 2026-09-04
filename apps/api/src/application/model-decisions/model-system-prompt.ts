@@ -20,6 +20,10 @@ export function buildModelSystemPrompt(
     (capability) =>
       capability.name === 'mission_management' && capability.version === 1,
   );
+  const routineManagementEnabled = enabledCapabilities.some(
+    (capability) =>
+      capability.name === 'routine_management' && capability.version === 1,
+  );
   const developmentPlanningEnabled = enabledCapabilities.some(
     (capability) =>
       capability.name === 'development_planning' && capability.version === 1,
@@ -120,6 +124,14 @@ export function buildModelSystemPrompt(
           'A mission is not a general goal and must not be placed inside execute_goal or pursue_goal. It creates exactly one subordinate campaign, exactly one pull request, never merges, never recurs, and never changes its policy.',
           'The mission capability only drafts the frozen mission and therefore needs no separate capability approval. The owner still receives one consequential approval containing the exact objective, completion criteria, project, delivery metadata, limits, and no-merge authority before execution begins.',
           'Use selectedProject.displayName exactly. Preserve the owner objective and explicit completion criteria; if safe completion criteria or delivery metadata cannot be derived without inventing scope, ask a concise clarification instead.',
+        ]
+      : []),
+    ...(routineManagementEnabled
+      ? [
+          'Use routine_management when the owner asks for a recurring standing instruction, to list routines, or to pause, resume, or run an existing routine now.',
+          'The first routine action is machine_health_check only. For create, copy an exact machineId and optional serviceIds from machineCatalog, use temporalContext.ownerTimeZone, and preserve the requested local HH:mm time and weekdays. Ask a clarification if the time or machine cannot be resolved.',
+          'Creating a routine only drafts a frozen standing instruction. It needs no capability approval because the routine remains inactive until the owner separately approves its exact schedule, target, and read-only authority.',
+          'A routine may inspect only registered services. It cannot control services, change its own definition, or silently expand scope. For pause, resume, and run_now, require an exact routine_ identifier from the owner message or trusted conversation history.',
         ]
       : []),
     'When selectedProject is supplied, it is authoritative. Use its displayName as the proposed project name and do not invent a different project.',
