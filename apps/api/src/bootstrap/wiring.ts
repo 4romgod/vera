@@ -16,6 +16,8 @@ import { InMemoryDevelopmentCampaignStore } from '../adapters/outbound/persisten
 import { MongoDbDevelopmentCampaignStore } from '../adapters/outbound/persistence/mongodb/mongodb-development-campaign-store.ts';
 import { InMemoryMissionStore } from '../adapters/outbound/persistence/memory/in-memory-mission-store.ts';
 import { MongoDbMissionStore } from '../adapters/outbound/persistence/mongodb/mongodb-mission-store.ts';
+import { InMemoryKnowledgeStore } from '../adapters/outbound/persistence/memory/in-memory-knowledge-store.ts';
+import { MongoDbKnowledgeStore } from '../adapters/outbound/persistence/mongodb/mongodb-knowledge-store.ts';
 import { InMemoryProjectMutationLeaseStore } from '../adapters/outbound/persistence/memory/in-memory-project-mutation-lease-store.ts';
 import { MongoDbProjectMutationLeaseStore } from '../adapters/outbound/persistence/mongodb/mongodb-project-mutation-lease-store.ts';
 import { LocalGitSoftwareChangeApplicationExecutor } from '../adapters/outbound/change-applications/local-git-software-change-application-executor.ts';
@@ -58,6 +60,7 @@ import type { ChangeApplicationStore } from '../ports/persistence/change-applica
 import type { SoftwareChangePublicationStore } from '../ports/persistence/software-change-publication-store.ts';
 import type { DevelopmentCampaignStore } from '../ports/persistence/development-campaign-store.ts';
 import type { MissionStore } from '../ports/persistence/mission-store.ts';
+import type { KnowledgeStore } from '../ports/persistence/knowledge-store.ts';
 import type { ProjectMutationLeaseStore } from '../ports/persistence/project-mutation-lease-store.ts';
 import { LocalPersonalTaskActionExecutor } from '../adapters/outbound/integrations/personal-tasks/local-personal-task-action-executor.ts';
 import { createPersonalTaskService } from '../application/personal-tasks/personal-task-service.ts';
@@ -68,6 +71,7 @@ import { createNotificationService } from '../application/reminders/notification
 import { createReminderWorker } from '../application/reminders/reminder-worker.ts';
 import { LocalMemoryActionExecutor } from '../adapters/outbound/integrations/memories/local-memory-action-executor.ts';
 import { createMemoryService } from '../application/memories/memory-service.ts';
+import { createKnowledgeService } from '../application/knowledge/knowledge-service.ts';
 import { createTranscriptionService } from '../application/transcriptions/transcription-service.ts';
 import { createSpeechTranscriptionProvider } from '../adapters/outbound/transcription/speech-transcription-provider-registry.ts';
 import { InMemoryAttachmentStore } from '../adapters/outbound/persistence/memory/in-memory-attachment-store.ts';
@@ -176,6 +180,14 @@ export function createApp(
           database: config.storage.mongodbDatabase,
           timeoutMs: config.storage.dependencyTimeoutMs,
         });
+  const knowledgeStore: KnowledgeStore =
+    config.storage.mode === 'memory'
+      ? new InMemoryKnowledgeStore()
+      : new MongoDbKnowledgeStore({
+          uri: config.storage.mongodbUri,
+          database: config.storage.mongodbDatabase,
+          timeoutMs: config.storage.dependencyTimeoutMs,
+        });
   const projectMutationLeases: ProjectMutationLeaseStore =
     config.storage.mode === 'memory'
       ? new InMemoryProjectMutationLeaseStore()
@@ -208,6 +220,12 @@ export function createApp(
   const personalTaskExecutor = new LocalPersonalTaskActionExecutor(resources);
   const reminderExecutor = new LocalReminderActionExecutor(resources);
   const memoryExecutor = new LocalMemoryActionExecutor(resources);
+  const knowledgeService = createKnowledgeService({
+    store: knowledgeStore,
+    attachments: attachmentStore,
+    artifacts: resources,
+    projects: resources,
+  });
   const machineOperations = new ConfiguredMachineOperations(
     config.machines ?? { schemaVersion: 1, machines: [] },
   );
@@ -225,6 +243,7 @@ export function createApp(
     personalTasks: personalTaskExecutor,
     reminders: reminderExecutor,
     memories: memoryExecutor,
+    knowledge: knowledgeService,
     ...((config.missions?.policies.length ?? 0) === 0
       ? {}
       : { missions: missionExecutor }),
@@ -449,6 +468,7 @@ export function createApp(
     reminders: reminderService,
     notifications: notificationService,
     memories: memoryService,
+    knowledge: knowledgeService,
     transcriptions: transcriptionService,
     attachments: attachmentService,
     machines: machineService,
@@ -538,6 +558,7 @@ export function createApp(
         check: () => developmentCampaignWorker.checkReadiness(),
       },
       { name: 'mission_store', check: () => missionStore.checkReadiness() },
+      { name: 'knowledge_store', check: () => knowledgeStore.checkReadiness() },
       { name: 'mission_worker', check: () => missionWorker.checkReadiness() },
     ],
     close: async () => {
@@ -556,6 +577,7 @@ export function createApp(
         publicationStore.close(),
         campaignStore.close(),
         missionStore.close(),
+        knowledgeStore.close(),
         projectMutationLeases.close(),
         attachmentStore.close(),
       ]);

@@ -1,8 +1,8 @@
 # Vera HTTP API
 
 **Status:** Accepted for implemented V1 paths
-**Version:** 1.4
-**Last updated:** 27 August 2026
+**Version:** 1.5
+**Last updated:** 4 September 2026
 
 ## Purpose
 
@@ -33,6 +33,11 @@ must not be exposed to an untrusted or shared network.
 | `GET /v1/reminders/{reminderId}` | Retrieve one owner-scoped reminder | `200` |
 | `GET /v1/memories` | List owner-scoped memories; filters: `status`, `kind`, `scopeKind`, `projectId`, `limit` | `200` |
 | `GET /v1/memories/{memoryId}` | Retrieve one owner-scoped memory including revision history | `200` |
+| `POST /v1/knowledge-sources` | Promote exact owner attachments into one durable knowledge source | `200` or `201` |
+| `GET /v1/knowledge-sources` | List active or removed knowledge-source projections | `200` |
+| `GET /v1/knowledge-sources/{sourceId}` | Retrieve one source projection and provenance | `200` |
+| `DELETE /v1/knowledge-sources/{sourceId}` | Tombstone a source and erase its searchable chunks | `200` |
+| `POST /v1/knowledge-search` | Retrieve bounded, integrity-checked citations from active sources | `200` |
 | `GET /v1/notifications` | Page durable inbox notifications after an opaque cursor | `200` |
 | `GET /v1/notifications/stream` | Watch the durable inbox as resumable server-sent events | `200` |
 | `POST /v1/projects` | Register an owner-controlled project source | `201` |
@@ -536,6 +541,10 @@ authoritative memory records immediately before provider disclosure. For a
 third-party provider the manifest is absent because long-term memory is not
 disclosed.
 
+The conversation-list endpoint returns bounded summaries: identity, title,
+status, timestamps, `messageCount`, and the most recent message without its
+internal idempotency key.
+
 ## Governed memory
 
 Memory mutations are requested through an ordinary task or conversation
@@ -550,9 +559,33 @@ validated against the project registry. `GET /v1/memories/{memoryId}` returns
 the current revision and immutable correction history. Creation-invocation
 idempotency metadata remains internal.
 
-The list endpoint returns bounded summaries instead: identity, title, status,
-timestamps, `messageCount`, and the most recent message without its internal
-idempotency key.
+## Grounded personal knowledge
+
+`POST /v1/knowledge-sources` requires `idempotency-key`, a title, global or
+exact-project scope, one to five unique attachment IDs, optional sensitivity,
+and an attachment-analysis artifact ID when visual evidence is present. A
+replayed key returns the original source with `200`; first creation returns
+`201`. Original bytes, extracted text, chunks, request keys, and principal IDs
+are never returned by source endpoints.
+
+`GET /v1/knowledge-sources` defaults to active sources and accepts `status`,
+`scopeKind`, `projectId`, and `limit`. `DELETE` is idempotent after removal and
+returns a tombstone with `chunkCount: 0`.
+
+`POST /v1/knowledge-search` accepts a query, optional scope, and a maximum of 12
+matches. Omitting scope searches the owner's complete active library. Global
+scope searches only global sources; project scope searches global sources plus
+the exact registered project and never another project's sources. Each citation contains the durable source and chunk identities,
+human-readable source title and locator, a bounded excerpt, relevance score,
+and exact attachment provenance. Search validates the stored whole-source and
+per-chunk hashes before returning any evidence and fails closed on mismatch.
+
+Conversation requests use `knowledge_management@1`. Add and remove actions
+require approval. Attachment-driven adds first approve analysis, then present a
+separate save approval with the analysis artifact frozen as input. Local
+owner-controlled answering may execute read-only search without approval;
+third-party answering requires approval for the disclosed excerpts. Successful
+answer artifacts contain only citations selected from the retrieved closed set.
 
 ## Capability catalog
 

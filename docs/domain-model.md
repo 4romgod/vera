@@ -2,8 +2,8 @@
 
 **Status:** Accepted (core vocabulary and critical distinctions); the open
 questions below are explicitly excluded from this acceptance
-**Version:** 0.7
-**Last updated:** 26 August 2026
+**Version:** 0.8
+**Last updated:** 4 September 2026
 **Accepted:** 24 August 2026 (owner) — accepts the Core concepts and
 Critical distinctions sections as Vera's shared language.
 
@@ -396,6 +396,24 @@ excludes the record from model context. Every conversational memory action is
 an exact, approval-gated `memory_management@1` capability action; trusted owner
 clients may inspect the same records through read-only API projections. See
 ADR-0025.
+
+### Knowledge source
+
+An explicitly promoted, evidence-bearing body of owner information that Vera
+may search beyond the task in which it was supplied.
+
+A knowledge source is not memory and an attachment is not automatically a
+knowledge source. The source freezes stable identity, revision, owner, title,
+global or exact-project scope, sensitivity, active or removed status, exact
+attachment provenance, optional visual-analysis provenance, bounded searchable
+chunks, and content hashes. Document chunks come from deterministic extraction;
+image text comes only from a cited attachment-analysis artifact. Removal clears
+searchable chunks and leaves an audit tombstone.
+
+A knowledge citation binds a source ID, source title, chunk ID, locator,
+excerpt, score, and attachment provenance. Retrieval code chooses and verifies
+the closed citation set; an answering model may select only from that set. See
+ADR-0036.
 
 ### Model context
 

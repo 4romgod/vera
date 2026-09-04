@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Bell,
   Brain,
@@ -12,6 +12,8 @@ import {
   Activity,
   ExternalLink,
   Rocket,
+  Library,
+  Search,
 } from 'lucide-react-native';
 import {
   Linking,
@@ -33,6 +35,8 @@ import type {
   DevelopmentCampaignResource,
   DevelopmentCampaignPolicyResource,
   MissionResource,
+  KnowledgeSearchResponse,
+  KnowledgeSourceResource,
 } from '@vera/client';
 
 import { IconButton } from '@/components/ui/icon-button';
@@ -42,6 +46,7 @@ import { isSafeGitHubPullRequestUrl } from './assistant/software-delivery/model'
 
 export type ResourceTab =
   | 'memory'
+  | 'knowledge'
   | 'tasks'
   | 'reminders'
   | 'notifications'
@@ -51,6 +56,7 @@ export type ResourceTab =
 
 const tabs: { id: ResourceTab; label: string; icon: typeof Brain }[] = [
   { id: 'memory', label: 'Memory', icon: Brain },
+  { id: 'knowledge', label: 'Knowledge', icon: Library },
   { id: 'tasks', label: 'Tasks', icon: ListChecks },
   { id: 'reminders', label: 'Reminders', icon: CalendarClock },
   { id: 'notifications', label: 'Activity', icon: Bell },
@@ -64,6 +70,7 @@ export function ResourcePanel(props: {
   open: boolean;
   tab: ResourceTab;
   memories: MemoryResource[];
+  knowledgeSources: KnowledgeSourceResource[];
   tasks: PersonalTaskResource[];
   reminders: ReminderResource[];
   notifications: NotificationResource[];
@@ -74,6 +81,9 @@ export function ResourcePanel(props: {
   onTab: (tab: ResourceTab) => void;
   onClose: () => void;
   onMemoryCommand: (command: string) => void;
+  onKnowledgeCommand: (command: string) => void;
+  onSearchKnowledge: (query: string) => Promise<KnowledgeSearchResponse>;
+  onRemoveKnowledge: (sourceId: string) => Promise<boolean>;
   onMachineCommand: (command: string) => void;
   onCreateCampaign: (input: {
     projectId: string;
@@ -132,6 +142,14 @@ function PanelContent(props: Parameters<typeof ResourcePanel>[0]) {
   const [creatingCampaign, setCreatingCampaign] = useState(false);
   const [campaignActionId, setCampaignActionId] = useState<string>();
   const [missionActionId, setMissionActionId] = useState<string>();
+  const [knowledgeQuery, setKnowledgeQuery] = useState('');
+  const [knowledgeSearch, setKnowledgeSearch] =
+    useState<KnowledgeSearchResponse>();
+  const [knowledgeSearchError, setKnowledgeSearchError] = useState<string>();
+  const [knowledgeSearching, setKnowledgeSearching] = useState(false);
+  const [confirmingKnowledgeId, setConfirmingKnowledgeId] = useState<string>();
+  const [removingKnowledgeId, setRemovingKnowledgeId] = useState<string>();
+  const knowledgeSearchGeneration = useRef(0);
   const campaignPolicy = props.campaignPolicies.find(
     (policy) => policy.id === campaignPolicyId,
   );
@@ -143,6 +161,39 @@ function PanelContent(props: Parameters<typeof ResourcePanel>[0]) {
       setCampaignPolicyId(props.campaignPolicies[0]?.id ?? '');
     }
   }, [campaignPolicyId, props.campaignPolicies]);
+  useEffect(
+    () => () => {
+      knowledgeSearchGeneration.current += 1;
+    },
+    [],
+  );
+
+  function runKnowledgeSearch(): void {
+    const query = knowledgeQuery.trim();
+    if (query.length === 0 || knowledgeSearching) return;
+    const generation = ++knowledgeSearchGeneration.current;
+    setKnowledgeSearching(true);
+    setKnowledgeSearchError(undefined);
+    void props
+      .onSearchKnowledge(query)
+      .then((result) => {
+        if (knowledgeSearchGeneration.current === generation) {
+          setKnowledgeSearch(result);
+        }
+      })
+      .catch(() => {
+        if (knowledgeSearchGeneration.current === generation) {
+          setKnowledgeSearchError(
+            'Vera could not search your knowledge right now.',
+          );
+        }
+      })
+      .finally(() => {
+        if (knowledgeSearchGeneration.current === generation) {
+          setKnowledgeSearching(false);
+        }
+      });
+  }
   return (
     <View
       style={{
@@ -387,6 +438,187 @@ function PanelContent(props: Parameters<typeof ResourcePanel>[0]) {
                       }
                     />
                   </View>
+                )}
+              </ResourceCard>
+            ))
+          : null}
+
+        {props.tab === 'knowledge' ? (
+          <ResourceCard>
+            <Tag label="Grounded library" />
+            <Text
+              selectable
+              style={{ color: palette.text, fontSize: 17, fontWeight: '700' }}
+            >
+              Ask your own sources
+            </Text>
+            <Text
+              selectable
+              style={{ color: palette.textSoft, lineHeight: 20 }}
+            >
+              Searches stay grounded in the files you deliberately saved. Every
+              match includes the exact source and location.
+            </Text>
+            <SmallButton
+              icon={Library}
+              label="Add files to knowledge"
+              onPress={() =>
+                props.onKnowledgeCommand(
+                  'Save the files I attach to my knowledge library as ',
+                )
+              }
+            />
+            <TextInput
+              accessibilityLabel="Search Vera knowledge"
+              maxLength={2_000}
+              onChangeText={setKnowledgeQuery}
+              onSubmitEditing={runKnowledgeSearch}
+              placeholder="What did my sources say about…"
+              placeholderTextColor={palette.faint}
+              returnKeyType="search"
+              style={inputStyle}
+              value={knowledgeQuery}
+            />
+            <SmallButton
+              disabled={
+                knowledgeSearching || knowledgeQuery.trim().length === 0
+              }
+              icon={Search}
+              label={knowledgeSearching ? 'Searching…' : 'Search sources'}
+              primary
+              onPress={runKnowledgeSearch}
+            />
+            {knowledgeSearchError === undefined ? null : (
+              <Text accessibilityRole="alert" style={{ color: palette.danger }}>
+                {knowledgeSearchError}
+              </Text>
+            )}
+            {knowledgeSearch === undefined ? null : knowledgeSearch.citations
+                .length === 0 ? (
+              <Text selectable style={{ color: palette.muted, lineHeight: 20 }}>
+                No active source matched that query.
+              </Text>
+            ) : (
+              <View style={{ gap: spacing.md }}>
+                {knowledgeSearch.citations.map((citation) => (
+                  <View
+                    key={citation.chunkId}
+                    style={{
+                      gap: 5,
+                      borderLeftWidth: 2,
+                      borderLeftColor: palette.accentLine,
+                      paddingLeft: spacing.md,
+                    }}
+                  >
+                    <Text
+                      selectable
+                      style={{ color: palette.accent, fontWeight: '700' }}
+                    >
+                      {citation.sourceTitle}
+                    </Text>
+                    <Text
+                      selectable
+                      style={{ color: palette.muted, fontSize: 11 }}
+                    >
+                      {citation.locator}
+                    </Text>
+                    <Text
+                      selectable
+                      style={{
+                        color: palette.textSoft,
+                        fontSize: 13,
+                        lineHeight: 19,
+                      }}
+                    >
+                      “{citation.excerpt}”
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </ResourceCard>
+        ) : null}
+
+        {props.tab === 'knowledge' && props.knowledgeSources.length === 0 ? (
+          <Empty
+            icon={Library}
+            title="Your knowledge library is empty"
+            description="Attach a document or image in a conversation, then ask Vera to save it to your knowledge library. Vera will show the evidence and ask before writing."
+          />
+        ) : null}
+        {props.tab === 'knowledge'
+          ? props.knowledgeSources.map((source) => (
+              <ResourceCard key={source.id}>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: spacing.sm,
+                  }}
+                >
+                  <Tag
+                    label={
+                      source.scope.kind === 'global' ? 'Personal' : 'Project'
+                    }
+                  />
+                  <Text
+                    selectable
+                    style={{ color: palette.faint, fontSize: 10 }}
+                  >
+                    {source.chunkCount} evidence chunk
+                    {source.chunkCount === 1 ? '' : 's'}
+                  </Text>
+                </View>
+                <Text
+                  selectable
+                  style={{
+                    color: palette.text,
+                    fontSize: 16,
+                    fontWeight: '700',
+                  }}
+                >
+                  {source.title}
+                </Text>
+                <Text
+                  selectable
+                  style={{ color: palette.textSoft, lineHeight: 20 }}
+                >
+                  {source.provenance.attachments
+                    .map(({ filename }) => filename)
+                    .join(', ')}
+                </Text>
+                <Text selectable style={{ color: palette.muted, fontSize: 11 }}>
+                  Added {formatDate(source.createdAt)} ·{' '}
+                  {humanizeIdentifier(source.sensitivity)}
+                </Text>
+                {confirmingKnowledgeId === source.id ? (
+                  <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                    <SmallButton
+                      label="Keep"
+                      onPress={() => setConfirmingKnowledgeId(undefined)}
+                    />
+                    <SmallButton
+                      disabled={removingKnowledgeId !== undefined}
+                      icon={Trash2}
+                      label="Confirm removal"
+                      onPress={() => {
+                        setRemovingKnowledgeId(source.id);
+                        void props
+                          .onRemoveKnowledge(source.id)
+                          .then((removed) => {
+                            if (removed) setConfirmingKnowledgeId(undefined);
+                          })
+                          .finally(() => setRemovingKnowledgeId(undefined));
+                      }}
+                    />
+                  </View>
+                ) : (
+                  <SmallButton
+                    icon={Trash2}
+                    label="Remove source"
+                    onPress={() => setConfirmingKnowledgeId(source.id)}
+                  />
                 )}
               </ResourceCard>
             ))

@@ -4,7 +4,7 @@
 request lifecycle, architectural invariants, initial modular API shape, and V1
 operational storage); general progress transport and deployment topology remain open
 **Version:** 1.3
-**Last updated:** 27 August 2026
+**Last updated:** 4 September 2026
 **Accepted:** 24 August 2026 (owner) — post-V1 progress transport and deployment
 topology are deferred; V1 uses HTTP polling. The initial Fastify/Zod modular API
 is accepted by ADR-0009. MongoDB operational truth and the Redis scratchpad are
@@ -25,6 +25,8 @@ ingress through Tailscale Serve is accepted by ADR-0027, and reviewed device
 voice input and output are accepted by ADR-0028.
 Owner-scoped attachments and approval-gated document analysis are accepted by
 ADR-0031.
+Grounded personal knowledge, source integrity, bounded retrieval, and cited
+answers are accepted by ADR-0036.
 
 ## Purpose
 
@@ -112,6 +114,7 @@ flowchart TB
         WORK["Rebuildable active working set"]
         EVENTS["Event journal and projections"]
         MEMORY["Governed long-term memory"]
+        KNOWLEDGE["Grounded personal knowledge<br/>(sources, chunks, citations)"]
         ART["Artifact metadata and content"]
         DOC["Owner attachments<br/>(metadata, extraction, original bytes)"]
         OBS["Logs, metrics, traces"]
@@ -138,6 +141,8 @@ flowchart TB
     ORCH --> EVENTS
     CONTEXT --> WORK
     CONTEXT --> MEMORY
+    REG --> KNOWLEDGE
+    KNOWLEDGE --> MODEL
     CONTEXT --> DOC
     CAP --> ART
     CAP --> DOC

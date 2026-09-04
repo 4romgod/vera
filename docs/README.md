@@ -1,7 +1,7 @@
 # Vera Documentation Guide
 
 **Status:** Active index
-**Last updated:** 27 August 2026
+**Last updated:** 4 September 2026
 
 ## Purpose
 
@@ -234,6 +234,9 @@ Bounded development campaigns are accepted in
 [ADR-0034](decisions/0034-delegate-bounded-development-campaigns-through-one-owner-approval.md).
 Bounded unattended missions that stop at one pull request are accepted in
 [ADR-0035](decisions/0035-run-bounded-software-missions-that-stop-at-a-pull-request.md).
+Grounded personal knowledge promoted from explicit owner-approved attachments
+is accepted in
+[ADR-0036](decisions/0036-build-grounded-personal-knowledge-from-owner-approved-sources.md).
 
 ## Documentation and implementation cadence
 

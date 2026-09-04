@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Version:** 0.8
-**Last updated:** 27 August 2026
+**Last updated:** 4 September 2026
 **Accepted:** 24 August 2026 (owner); V1 perimeter clarified by ADR-0014 and
 cloud-provider policy clarified by ADR-0015 and bounded conversation disclosure
 accepted by ADR-0016 on 25 August 2026
@@ -14,7 +14,8 @@ ADR-0024; governed memory and the universal frontend boundary are accepted by
 ADRs 0025 and 0026; private physical-device ingress is accepted by ADR-0027;
 reviewed device voice interaction is accepted by ADR-0028; and governed
 software-change publication is accepted by ADR-0029 on 27 August 2026. Durable
-owner attachments and approval-scoped analysis are accepted by ADR-0031.
+owner attachments and approval-scoped analysis are accepted by ADR-0031;
+grounded personal knowledge is accepted by ADR-0036 on 4 September 2026.
 
 ## Purpose
 
@@ -128,6 +129,25 @@ receives the complete artifact only when its declared contract accepts the type
 and a second approval also lists it under `inputArtifacts`. Planning or change
 steps that cite attachment analysis must bind it as an input or fail closed;
 owner-state actions receive only the derived values.
+
+Grounded personal knowledge is a separate durable data class under
+[ADR-0036](decisions/0036-build-grounded-personal-knowledge-from-owner-approved-sources.md).
+The knowledge store retains immutable source provenance, bounded searchable
+chunks, per-chunk hashes, and a whole-source content hash. Reads are always
+principal-scoped. Search verifies those hashes before returning evidence and
+fails closed if stored text has changed. Removal tombstones the source and
+erases its searchable chunks so later retrieval cannot disclose removed text.
+
+Knowledge retrieval never grants authority. Local retrieval selects candidate
+excerpts deterministically; a model may only synthesize an answer from those
+bounded excerpts. Owner-controlled model execution is read-only and can run
+without another prompt. Third-party synthesis requires an exact approval whose
+authority declares `personal_knowledge` and `third_party_disclosure`. Provider
+input uses synthetic source IDs plus title, locator, and excerpt only. Vera
+rejects missing, invented, or out-of-set citations and maps accepted synthetic
+IDs back to owner-visible provenance itself. Images cannot enter the knowledge
+index until an integrity-checked attachment-analysis artifact covers the exact
+approved attachment set.
 
 ## Threat categories
 

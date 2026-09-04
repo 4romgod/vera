@@ -8,6 +8,7 @@ import {
   PersonalReminderManagementGoalStepSchema,
   PersonalTaskManagementGoalStepSchema,
   MemoryManagementGoalStepSchema,
+  KnowledgeManagementGoalStepSchema,
   SoftwareChangeGoalStepSchema,
   WebResearchGoalStepSchema,
   MachineInspectionGoalStepSchema,
@@ -199,6 +200,11 @@ export function createAdaptiveGoalContinuationProposalSchema(options: {
       ({ name, version }) => name === 'memory_management' && version === 1,
     )
       ? [constrainStepId(MemoryManagementGoalStepSchema)]
+      : []),
+    ...(options.enabledCapabilities.some(
+      ({ name, version }) => name === 'knowledge_management' && version === 1,
+    )
+      ? [constrainStepId(KnowledgeManagementGoalStepSchema)]
       : []),
     ...(options.enabledCapabilities.some(
       ({ name, version }) => name === 'machine_inspection' && version === 1,

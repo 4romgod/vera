@@ -9,6 +9,7 @@ import {
   MachineServiceActionArgumentsSchema,
 } from '../machines/machine.ts';
 import { MissionProposalArgumentsSchema } from '../missions/mission-proposal.ts';
+import { KnowledgeActionArgumentsSchema } from '../knowledge/knowledge.ts';
 export { AttachmentAnalysisArgumentsSchema } from '../attachments/attachment-analysis.ts';
 
 export const DevelopmentPlanningProposalArgumentsSchema = z
@@ -80,6 +81,7 @@ export const CapabilityAuthoritySchema = z
         'attachment_content',
         'machine_operational_data',
         'mission_data',
+        'personal_knowledge',
       ]),
     ),
     sideEffects: z.array(
@@ -91,6 +93,7 @@ export const CapabilityAuthoritySchema = z
         'scheduled_notification',
         'machine_service_control',
         'mission_draft_write',
+        'knowledge_write',
       ]),
     ),
     credentials: z.enum(['none', 'server_managed']),
@@ -114,6 +117,43 @@ export type CapabilityDefinition = {
 };
 
 export const CapabilityDefinitions = [
+  {
+    name: 'knowledge_management',
+    version: 1,
+    description:
+      'Add, list, search, or remove owner-governed knowledge with exact source citations.',
+    proposalArgumentsSchema: KnowledgeActionArgumentsSchema,
+    effect: 'owner_state',
+    artifact: {
+      type: 'knowledge_result',
+      mediaType: 'application/vnd.vera.knowledge-result+json',
+    },
+    acceptedInputArtifacts: ['attachment_analysis'],
+    explicitAdaptiveOutcome: {
+      patterns: [
+        /\b(add|save|store|search|find|look up|remove|delete)\b.{0,80}\b(knowledge|knowledge library|library source|my documents|my files)\b/u,
+      ],
+      description:
+        'Manage or search the owner-governed personal knowledge library.',
+    },
+    authority: {
+      approval: 'always',
+      projectContext: 'none',
+      networkAccess: 'provider_api',
+      dataClasses: [
+        'owner_request',
+        'artifact_content',
+        'attachment_content',
+        'personal_knowledge',
+      ],
+      sideEffects: [
+        'third_party_disclosure',
+        'personal_data_write',
+        'knowledge_write',
+      ],
+      credentials: 'server_managed',
+    },
+  },
   {
     name: 'mission_management',
     version: 1,

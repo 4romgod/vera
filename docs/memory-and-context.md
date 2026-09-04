@@ -3,8 +3,8 @@
 **Status:** Accepted for the implemented information layers, explicit governed
 memory, deterministic retrieval, and provider disclosure boundary; physical
 erasure and third-party-provider memory disclosure remain open
-**Version:** 0.6
-**Last updated:** 26 August 2026
+**Version:** 0.7
+**Last updated:** 4 September 2026
 
 ## Purpose
 
@@ -242,6 +242,23 @@ Examples include:
 Retrieved content is untrusted data. It may be inaccurate, outdated, or contain
 instructions intended to manipulate a model. Retrieval does not grant the
 content authority over Vera.
+
+The first durable personal-knowledge path is now implemented. The owner must
+explicitly promote one to five attachments into a named knowledge source.
+Documents contribute bounded extracted segments; images contribute only the
+summary and findings of an integrity-checked attachment-analysis artifact.
+Every source retains exact attachment provenance, scope, sensitivity, revision,
+and hashes for each chunk and the complete indexed representation.
+
+Knowledge is retrieved only for an explicit search. It is not appended to every
+conversation and it is never silently converted into memory. Application code
+validates hashes, scopes candidates, ranks bounded lexical matches, and gives an
+answering model only synthetic labels plus titles, locators, and excerpts. The
+answer must cite that closed set; Vera maps citations back to durable source
+identities. Third-party answering requires a new disclosure approval, while an
+owner-controlled local provider may answer read-only searches directly.
+Removal tombstones the source and clears all searchable chunks. See
+[ADR-0036](decisions/0036-build-grounded-personal-knowledge-from-owner-approved-sources.md).
 
 ## Context assembly
 

@@ -12,6 +12,8 @@ import { LocalMemoryActionExecutor } from '../../src/adapters/outbound/integrati
 import { DeterministicModelProvider } from '../../src/adapters/outbound/model/deterministic-model-provider.ts';
 import { InMemoryAttachmentStore } from '../../src/adapters/outbound/persistence/memory/in-memory-attachment-store.ts';
 import { createAttachmentService } from '../../src/application/attachments/attachment-service.ts';
+import type { KnowledgeService } from '../../src/ports/knowledge/knowledge-service.ts';
+import type { ModelProvider } from '../../src/ports/model/model-provider.ts';
 
 export function createTestCapabilityRuntime(options: {
   developmentPlanning: DevelopmentPlanningCapabilityRegistry;
@@ -19,9 +21,11 @@ export function createTestCapabilityRuntime(options: {
   webResearch?: 'disabled' | 'deterministic_research';
   personalTaskStore?: PersonalTaskStore;
   reminderStore?: ReminderStore;
+  provider?: ModelProvider;
+  knowledge?: KnowledgeService;
 }): CapabilityRuntimeRegistry {
   const defaultStore = new InMemoryOwnerResourceStore();
-  const provider = new DeterministicModelProvider();
+  const provider = options.provider ?? new DeterministicModelProvider();
   return createCapabilityRuntimeRegistry({
     provider,
     attachments: createAttachmentService({
@@ -39,5 +43,8 @@ export function createTestCapabilityRuntime(options: {
       options.reminderStore ?? defaultStore,
     ),
     memories: new LocalMemoryActionExecutor(defaultStore),
+    ...(options.knowledge === undefined
+      ? {}
+      : { knowledge: options.knowledge }),
   });
 }

@@ -141,6 +141,7 @@ export type Approval = {
       | 'attachment_content'
       | 'machine_operational_data'
       | 'mission_data'
+      | 'personal_knowledge'
     )[];
     sideEffects: (
       | 'third_party_disclosure'
@@ -150,6 +151,7 @@ export type Approval = {
       | 'scheduled_notification'
       | 'machine_service_control'
       | 'mission_draft_write'
+      | 'knowledge_write'
     )[];
     credentials: 'none' | 'server_managed';
     maxWebSearchCalls?: number;
@@ -191,6 +193,10 @@ export type ArtifactReference = ArtifactReferenceIdentity &
     | {
         type: 'memory_result';
         mediaType: 'application/vnd.vera.memory-result+json';
+      }
+    | {
+        type: 'knowledge_result';
+        mediaType: 'application/vnd.vera.knowledge-result+json';
       }
     | {
         type: 'attachment_analysis';
@@ -374,6 +380,61 @@ export type MemoryResultContent = {
   memories: MemoryResource[];
 };
 
+export type KnowledgeScope =
+  | { kind: 'global' }
+  | { kind: 'project'; projectId: string };
+
+export type KnowledgeSourceResource = {
+  schemaVersion: 1;
+  id: string;
+  revision: number;
+  title: string;
+  scope: KnowledgeScope;
+  sensitivity: 'personal' | 'sensitive';
+  status: 'active' | 'removed';
+  provenance: {
+    kind: 'owner_attachments';
+    attachments: AttachmentReference[];
+    analysisArtifact?: Extract<
+      ArtifactReference,
+      { type: 'attachment_analysis' }
+    >;
+  };
+  contentSha256: string;
+  chunkCount: number;
+  createdAt: string;
+  updatedAt: string;
+  removedAt?: string;
+};
+
+export type KnowledgeSearchCitation = {
+  sourceId: string;
+  sourceTitle: string;
+  chunkId: string;
+  locator: string;
+  excerpt: string;
+  score: number;
+  attachments: AttachmentReference[];
+};
+
+export type KnowledgeSearchResponse = {
+  schemaVersion: 1;
+  query: string;
+  citations: KnowledgeSearchCitation[];
+  searchedAt: string;
+};
+
+export type KnowledgeResultContent = {
+  schemaVersion: 1;
+  action: 'add' | 'search' | 'list' | 'remove';
+  summary: string;
+  sources: KnowledgeSourceResource[];
+  query?: string;
+  answer?: string;
+  citations?: KnowledgeSearchCitation[];
+  limitations?: string[];
+};
+
 export type MemoryContextManifest = {
   schemaVersion: 1;
   principalId: string;
@@ -538,6 +599,11 @@ export type TaskResource = {
         kind: 'memory_result';
         result?: MemoryResultContent;
         artifact?: Extract<ArtifactReference, { type: 'memory_result' }>;
+      }
+    | {
+        kind: 'knowledge_result';
+        result?: KnowledgeResultContent;
+        artifact?: Extract<ArtifactReference, { type: 'knowledge_result' }>;
       }
     | {
         kind: 'attachment_analysis';
@@ -742,6 +808,11 @@ export type ArtifactResource = ArtifactResourceIdentity &
         type: 'memory_result';
         mediaType: 'application/vnd.vera.memory-result+json';
         content: MemoryResultContent;
+      }
+    | {
+        type: 'knowledge_result';
+        mediaType: 'application/vnd.vera.knowledge-result+json';
+        content: KnowledgeResultContent;
       }
     | {
         type: 'attachment_analysis';
@@ -1301,6 +1372,27 @@ export type VeraApi = {
     limit?: number;
   }): Promise<{ schemaVersion: 1; memories: MemoryResource[] }>;
   getMemory(memoryId: string): Promise<MemoryResource>;
+  createKnowledgeSource(input: {
+    title: string;
+    scope: KnowledgeScope;
+    sensitivity?: 'personal' | 'sensitive';
+    attachmentIds: string[];
+    analysisArtifactId?: string;
+    idempotencyKey: string;
+  }): Promise<KnowledgeSourceResource>;
+  listKnowledgeSources(options?: {
+    status?: 'active' | 'all';
+    scope?: KnowledgeScope;
+    limit?: number;
+  }): Promise<{ schemaVersion: 1; sources: KnowledgeSourceResource[] }>;
+  getKnowledgeSource(sourceId: string): Promise<KnowledgeSourceResource>;
+  removeKnowledgeSource(sourceId: string): Promise<KnowledgeSourceResource>;
+  searchKnowledge(input: {
+    query: string;
+    scope?: KnowledgeScope;
+    limit?: number;
+    signal?: AbortSignal;
+  }): Promise<KnowledgeSearchResponse>;
   listNotifications(options?: {
     after?: string;
     limit?: number;
@@ -1768,6 +1860,82 @@ function assertMemoryResource(value: unknown): asserts value is MemoryResource {
     (value.forgottenAt !== undefined && typeof value.forgottenAt !== 'string')
   ) {
     throw new Error('Vera returned an invalid memory resource.');
+  }
+}
+
+function isAttachmentReference(value: unknown): value is AttachmentReference {
+  return (
+    isRecord(value) &&
+    typeof value.id === 'string' &&
+    value.id.startsWith('attachment_') &&
+    ['document', 'image'].includes(String(value.kind)) &&
+    typeof value.filename === 'string' &&
+    typeof value.mediaType === 'string' &&
+    typeof value.byteLength === 'number' &&
+    typeof value.sha256 === 'string'
+  );
+}
+
+function assertKnowledgeSourceResource(
+  value: unknown,
+): asserts value is KnowledgeSourceResource {
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== 1 ||
+    typeof value.id !== 'string' ||
+    !value.id.startsWith('knowledge_') ||
+    typeof value.revision !== 'number' ||
+    !Number.isInteger(value.revision) ||
+    value.revision < 1 ||
+    typeof value.title !== 'string' ||
+    !isMemoryScope(value.scope) ||
+    !['personal', 'sensitive'].includes(String(value.sensitivity)) ||
+    !['active', 'removed'].includes(String(value.status)) ||
+    !isRecord(value.provenance) ||
+    value.provenance.kind !== 'owner_attachments' ||
+    !Array.isArray(value.provenance.attachments) ||
+    value.provenance.attachments.length === 0 ||
+    value.provenance.attachments.some(
+      (reference) => !isAttachmentReference(reference),
+    ) ||
+    typeof value.contentSha256 !== 'string' ||
+    typeof value.chunkCount !== 'number' ||
+    !Number.isInteger(value.chunkCount) ||
+    value.chunkCount < 0 ||
+    typeof value.createdAt !== 'string' ||
+    typeof value.updatedAt !== 'string' ||
+    (value.removedAt !== undefined && typeof value.removedAt !== 'string')
+  ) {
+    throw new Error('Vera returned an invalid knowledge source.');
+  }
+}
+
+function assertKnowledgeSearchResponse(
+  value: unknown,
+): asserts value is KnowledgeSearchResponse {
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== 1 ||
+    typeof value.query !== 'string' ||
+    typeof value.searchedAt !== 'string' ||
+    !Array.isArray(value.citations) ||
+    value.citations.some(
+      (citation) =>
+        !isRecord(citation) ||
+        typeof citation.sourceId !== 'string' ||
+        !citation.sourceId.startsWith('knowledge_') ||
+        typeof citation.sourceTitle !== 'string' ||
+        typeof citation.chunkId !== 'string' ||
+        typeof citation.locator !== 'string' ||
+        typeof citation.excerpt !== 'string' ||
+        typeof citation.score !== 'number' ||
+        !Array.isArray(citation.attachments) ||
+        citation.attachments.some(
+          (reference) => !isAttachmentReference(reference),
+        ),
+    )
+  ) {
+    throw new Error('Vera returned invalid knowledge search results.');
   }
 }
 
@@ -2259,6 +2427,106 @@ export class VeraClient implements VeraApi {
       `/v1/memories/${encodeURIComponent(memoryId)}`,
     );
     assertMemoryResource(value);
+    return value;
+  }
+
+  public async createKnowledgeSource(input: {
+    title: string;
+    scope: KnowledgeScope;
+    sensitivity?: 'personal' | 'sensitive';
+    attachmentIds: string[];
+    analysisArtifactId?: string;
+    idempotencyKey: string;
+  }): Promise<KnowledgeSourceResource> {
+    const value = await this.request<unknown>('/v1/knowledge-sources', {
+      method: 'POST',
+      idempotencyKey: input.idempotencyKey,
+      body: {
+        title: input.title,
+        scope: input.scope,
+        attachmentIds: input.attachmentIds,
+        ...(input.sensitivity === undefined
+          ? {}
+          : { sensitivity: input.sensitivity }),
+        ...(input.analysisArtifactId === undefined
+          ? {}
+          : { analysisArtifactId: input.analysisArtifactId }),
+      },
+    });
+    assertKnowledgeSourceResource(value);
+    return value;
+  }
+
+  public async listKnowledgeSources(
+    options: {
+      status?: 'active' | 'all';
+      scope?: KnowledgeScope;
+      limit?: number;
+    } = {},
+  ): Promise<{ schemaVersion: 1; sources: KnowledgeSourceResource[] }> {
+    const query = new URLSearchParams();
+    if (options.status !== undefined) query.set('status', options.status);
+    if (options.scope !== undefined) {
+      query.set('scopeKind', options.scope.kind);
+      if (options.scope.kind === 'project') {
+        query.set('projectId', options.scope.projectId);
+      }
+    }
+    if (options.limit !== undefined) query.set('limit', String(options.limit));
+    const value = await this.request<unknown>(
+      `/v1/knowledge-sources${query.size === 0 ? '' : `?${query.toString()}`}`,
+    );
+    if (
+      !isRecord(value) ||
+      value.schemaVersion !== 1 ||
+      !Array.isArray(value.sources)
+    ) {
+      throw new Error('Vera returned an invalid knowledge collection.');
+    }
+    const sources = value.sources.map((source): KnowledgeSourceResource => {
+      assertKnowledgeSourceResource(source);
+      return source;
+    });
+    return { schemaVersion: 1, sources };
+  }
+
+  public async getKnowledgeSource(
+    sourceId: string,
+  ): Promise<KnowledgeSourceResource> {
+    const value = await this.request<unknown>(
+      `/v1/knowledge-sources/${encodeURIComponent(sourceId)}`,
+    );
+    assertKnowledgeSourceResource(value);
+    return value;
+  }
+
+  public async removeKnowledgeSource(
+    sourceId: string,
+  ): Promise<KnowledgeSourceResource> {
+    const value = await this.request<unknown>(
+      `/v1/knowledge-sources/${encodeURIComponent(sourceId)}`,
+      { method: 'DELETE' },
+    );
+    assertKnowledgeSourceResource(value);
+    return value;
+  }
+
+  public async searchKnowledge(input: {
+    query: string;
+    scope?: KnowledgeScope;
+    limit?: number;
+    signal?: AbortSignal;
+  }): Promise<KnowledgeSearchResponse> {
+    const value = await this.request<unknown>('/v1/knowledge-search', {
+      method: 'POST',
+      body: {
+        query: input.query,
+        ...(input.scope === undefined ? {} : { scope: input.scope }),
+        ...(input.limit === undefined ? {} : { limit: input.limit }),
+      },
+      ...(input.signal === undefined ? {} : { signal: input.signal }),
+    });
+    assertKnowledgeSearchResponse(value);
     return value;
   }
 
@@ -3066,7 +3334,7 @@ export class VeraClient implements VeraApi {
 }
 
 type RequestOptions = {
-  method?: 'GET' | 'POST';
+  method?: 'GET' | 'POST' | 'DELETE';
   idempotencyKey?: string;
   body?: Record<string, unknown>;
   signal?: AbortSignal;

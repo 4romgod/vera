@@ -19,6 +19,7 @@ import {
   PersonalReminderResultArtifactSchema,
   MemoryResultArtifactSchema,
   AttachmentAnalysisArtifactSchema,
+  KnowledgeResultArtifactSchema,
 } from '../../../domain/artifacts/artifact.ts';
 import {
   ConversationSchema,
@@ -52,6 +53,10 @@ import {
   AttachmentReferenceSchema,
   AttachmentResponseSchema,
 } from '../../../domain/attachments/attachment.ts';
+import {
+  KnowledgeSearchResponseSchema,
+  KnowledgeSourceResourceSchema,
+} from '../../../domain/knowledge/knowledge.ts';
 
 export const EvaluateRequestSchema = z
   .object({
@@ -331,6 +336,7 @@ export const ArtifactResponseSchema = z.discriminatedUnion('type', [
   PersonalReminderResultArtifactSchema.omit({ principalId: true }),
   MemoryResultArtifactSchema.omit({ principalId: true }),
   AttachmentAnalysisArtifactSchema.omit({ principalId: true }),
+  KnowledgeResultArtifactSchema.omit({ principalId: true }),
 ]);
 
 export const PersonalTaskListQuerySchema = z
@@ -422,6 +428,77 @@ export const MemoriesResponseSchema = z
   })
   .strict();
 
+export const CreateKnowledgeSourceRequestSchema = z
+  .object({
+    title: z.string().trim().min(1).max(200),
+    scope: z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('global') }).strict(),
+      z
+        .object({
+          kind: z.literal('project'),
+          projectId: z.string().startsWith('project_'),
+        })
+        .strict(),
+    ]),
+    sensitivity: z.enum(['personal', 'sensitive']).optional(),
+    attachmentIds: z
+      .array(z.string().startsWith('attachment_'))
+      .min(1)
+      .max(5)
+      .refine((values) => new Set(values).size === values.length),
+    analysisArtifactId: z.string().startsWith('artifact_').optional(),
+  })
+  .strict();
+
+export const KnowledgeListQuerySchema = z
+  .object({
+    status: z.enum(['active', 'all']).optional(),
+    scopeKind: z.enum(['global', 'project']).optional(),
+    projectId: z.string().startsWith('project_').optional(),
+    limit: z.coerce.number().int().positive().max(100).optional(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.scopeKind === 'project' && value.projectId === undefined) {
+      context.addIssue({
+        code: 'custom',
+        path: ['projectId'],
+        message: 'projectId is required for project knowledge scope.',
+      });
+    }
+    if (value.scopeKind !== 'project' && value.projectId !== undefined) {
+      context.addIssue({
+        code: 'custom',
+        path: ['projectId'],
+        message: 'projectId requires scopeKind=project.',
+      });
+    }
+  });
+
+export const KnowledgeSearchRequestSchema = z
+  .object({
+    query: z.string().trim().min(1).max(2_000),
+    scope: CreateKnowledgeSourceRequestSchema.shape.scope.optional(),
+    limit: z.number().int().positive().max(12).optional(),
+  })
+  .strict();
+
+export const KnowledgeSourceResponseSchema = KnowledgeSourceResourceSchema;
+export const KnowledgeSourcesResponseSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    sources: z.array(KnowledgeSourceResourceSchema).max(100),
+  })
+  .strict();
+
+export type CreateKnowledgeSourceRequest = z.infer<
+  typeof CreateKnowledgeSourceRequestSchema
+>;
+export type KnowledgeListQuery = z.infer<typeof KnowledgeListQuerySchema>;
+export type KnowledgeSearchRequest = z.infer<
+  typeof KnowledgeSearchRequestSchema
+>;
+
 export const EvaluateRequestJsonSchema = z.toJSONSchema(EvaluateRequestSchema, {
   target: 'draft-7',
 });
@@ -503,6 +580,30 @@ export const MemoryResponseJsonSchema = z.toJSONSchema(MemoryResponseSchema, {
 });
 export const MemoriesResponseJsonSchema = z.toJSONSchema(
   MemoriesResponseSchema,
+  { target: 'draft-7' },
+);
+export const CreateKnowledgeSourceRequestJsonSchema = z.toJSONSchema(
+  CreateKnowledgeSourceRequestSchema,
+  { target: 'draft-7' },
+);
+export const KnowledgeListQueryJsonSchema = z.toJSONSchema(
+  KnowledgeListQuerySchema,
+  { target: 'draft-7' },
+);
+export const KnowledgeSearchRequestJsonSchema = z.toJSONSchema(
+  KnowledgeSearchRequestSchema,
+  { target: 'draft-7' },
+);
+export const KnowledgeSourceResponseJsonSchema = z.toJSONSchema(
+  KnowledgeSourceResponseSchema,
+  { target: 'draft-7' },
+);
+export const KnowledgeSourcesResponseJsonSchema = z.toJSONSchema(
+  KnowledgeSourcesResponseSchema,
+  { target: 'draft-7' },
+);
+export const KnowledgeSearchResponseJsonSchema = z.toJSONSchema(
+  KnowledgeSearchResponseSchema,
   { target: 'draft-7' },
 );
 

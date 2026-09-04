@@ -42,6 +42,10 @@ export function buildModelSystemPrompt(
     (capability) =>
       capability.name === 'memory_management' && capability.version === 1,
   );
+  const knowledgeManagementEnabled = enabledCapabilities.some(
+    (capability) =>
+      capability.name === 'knowledge_management' && capability.version === 1,
+  );
   const documentAnalysisEnabled = enabledCapabilities.some(
     (capability) =>
       capability.name === 'attachment_analysis' && capability.version === 1,
@@ -54,6 +58,7 @@ export function buildModelSystemPrompt(
       personalTaskManagementEnabled,
       personalReminderManagementEnabled,
       memoryManagementEnabled,
+      knowledgeManagementEnabled,
       documentAnalysisEnabled,
     ].filter(Boolean).length >= 2;
   const adaptiveGoalEnabled =
@@ -162,6 +167,14 @@ export function buildModelSystemPrompt(
           'For remember, faithfully preserve the owner-stated subject and content. Use preference for a stated preference, instruction for a durable way Vera should work, fact for an owner fact, and project_knowledge only for knowledge explicitly scoped to a selected project.',
           'Use global scope unless the owner explicitly scopes the memory to selectedProject. For project scope, copy selectedProject.id exactly. Default sensitivity to personal; use sensitive for credentials, health, financial, legal, identity, or similarly high-risk personal material.',
           'For correct or forget, require an exact memory_ identifier from the owner message or trusted conversation history. Never claim memory changed before Vera code executes the approved action.',
+        ]
+      : []),
+    ...(knowledgeManagementEnabled
+      ? [
+          'Use knowledge_management only when the owner explicitly asks to add files to, search, list, or remove material from their durable knowledge library. An attachment alone is never consent for permanent indexing.',
+          'For add, preserve the requested title, use global scope unless the owner explicitly selects project scope, and copy selectedProject.id exactly for project scope. When attachments are present, the first action must remain attachment_analysis and the knowledge add must be a later separately approved pursue_goal requirement.',
+          'For search, preserve the complete question as query. Search is an explicit retrieval action; never claim that ordinary conversation context or memory came from the knowledge library.',
+          'For remove, require an exact knowledge_ source identifier from the owner message or trusted conversation history. Never claim a source was added or removed before Vera code records it.',
         ]
       : []),
     ...(documentAnalysisEnabled

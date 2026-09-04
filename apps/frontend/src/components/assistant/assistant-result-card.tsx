@@ -12,6 +12,7 @@ import {
   Search,
   ServerCog,
   Wrench,
+  Library,
 } from 'lucide-react-native';
 import { Pressable, Text, View } from 'react-native';
 
@@ -401,6 +402,91 @@ function resultPresentation(output: NonNullable<TaskResource['output']>): {
             detail={memory.content}
           />
         )),
+      };
+    case 'knowledge_result':
+      return {
+        title:
+          output.result?.action === 'search'
+            ? 'Answer from your knowledge'
+            : 'Knowledge library updated',
+        summary: output.result?.summary,
+        icon: Library,
+        content:
+          output.result === undefined ? undefined : (
+            <View style={{ gap: spacing.md }}>
+              {output.result.answer === undefined ? null : (
+                <Text
+                  selectable
+                  style={{
+                    color: palette.textSoft,
+                    fontSize: 15,
+                    lineHeight: 22,
+                  }}
+                >
+                  {output.result.answer}
+                </Text>
+              )}
+              {(output.result.citations ?? []).map((citation, index) => (
+                <View
+                  key={citation.chunkId}
+                  style={{
+                    gap: 4,
+                    borderLeftWidth: 2,
+                    borderLeftColor: palette.accentLine,
+                    paddingLeft: spacing.md,
+                  }}
+                >
+                  <Text
+                    selectable
+                    style={{
+                      color: palette.accent,
+                      fontSize: 11,
+                      fontWeight: '700',
+                    }}
+                  >
+                    [{String(index + 1)}] {citation.sourceTitle}
+                  </Text>
+                  <Text
+                    selectable
+                    style={{ color: palette.muted, fontSize: 11 }}
+                  >
+                    {citation.locator}
+                  </Text>
+                  <Text
+                    selectable
+                    style={{
+                      color: palette.textSoft,
+                      fontSize: 12,
+                      lineHeight: 18,
+                    }}
+                  >
+                    “{citation.excerpt}”
+                  </Text>
+                </View>
+              ))}
+              {output.result.answer === undefined
+                ? output.result.sources.map((source) => (
+                    <ResultRow
+                      detail={source.provenance.attachments
+                        .map(({ filename }) => filename)
+                        .join(', ')}
+                      key={source.id}
+                      status={source.status}
+                      title={source.title}
+                    />
+                  ))
+                : null}
+              {(output.result.limitations ?? []).map((limitation) => (
+                <Text
+                  key={limitation}
+                  selectable
+                  style={{ color: palette.muted, fontSize: 12, lineHeight: 18 }}
+                >
+                  Limitation: {limitation}
+                </Text>
+              ))}
+            </View>
+          ),
       };
     case 'research_report':
       return {

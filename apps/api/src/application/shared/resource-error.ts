@@ -5,6 +5,13 @@ export type ResourceErrorCode =
   | 'personal_task_not_found'
   | 'reminder_not_found'
   | 'memory_not_found'
+  | 'attachment_not_found'
+  | 'knowledge_source_not_found'
+  | 'knowledge_source_conflict'
+  | 'invalid_knowledge_source'
+  | 'invalid_knowledge_evidence'
+  | 'knowledge_analysis_required'
+  | 'knowledge_integrity_failure'
   | 'invalid_notification_cursor'
   | 'idempotency_key_reused'
   | 'invalid_project_source';

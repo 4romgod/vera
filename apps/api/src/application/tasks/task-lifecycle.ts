@@ -540,6 +540,22 @@ export function createTaskLifecycle(options: {
           : [`Artifact: ${aggregate.run.output.artifact.id}`]),
       ].join('\n\n');
     }
+    if (aggregate.run.output?.kind === 'knowledge_result') {
+      const result = aggregate.run.output.result;
+      return [
+        result.answer ?? result.summary,
+        ...(result.citations ?? []).map(
+          (citation, index) =>
+            `[${String(index + 1)}] ${citation.sourceTitle} — ${citation.locator}: ${citation.excerpt}`,
+        ),
+        ...(result.limitations ?? []).map(
+          (limitation) => `Limitation: ${limitation}`,
+        ),
+        ...(aggregate.run.output.artifact === undefined
+          ? []
+          : [`Artifact: ${aggregate.run.output.artifact.id}`]),
+      ].join('\n\n');
+    }
     if (aggregate.run.output?.kind === 'goal_result') {
       return [
         `I completed the goal through ${String(aggregate.run.output.artifacts.length)} approved capability steps.`,
@@ -2272,18 +2288,31 @@ export function createTaskLifecycle(options: {
                                     byteLength: artifact.byteLength,
                                   },
                                 }
-                              : {
-                                  kind: 'mission_management_result',
-                                  result: artifact.content,
-                                  artifact: {
-                                    id: artifact.id,
-                                    version: artifact.version,
-                                    type: artifact.type,
-                                    mediaType: artifact.mediaType,
-                                    sha256: artifact.sha256,
-                                    byteLength: artifact.byteLength,
-                                  },
-                                };
+                              : artifact.type === 'mission_management_result'
+                                ? {
+                                    kind: 'mission_management_result',
+                                    result: artifact.content,
+                                    artifact: {
+                                      id: artifact.id,
+                                      version: artifact.version,
+                                      type: artifact.type,
+                                      mediaType: artifact.mediaType,
+                                      sha256: artifact.sha256,
+                                      byteLength: artifact.byteLength,
+                                    },
+                                  }
+                                : {
+                                    kind: 'knowledge_result',
+                                    result: artifact.content,
+                                    artifact: {
+                                      id: artifact.id,
+                                      version: artifact.version,
+                                      type: artifact.type,
+                                      mediaType: artifact.mediaType,
+                                      sha256: artifact.sha256,
+                                      byteLength: artifact.byteLength,
+                                    },
+                                  };
           appendEvent(candidate, 'run_succeeded', completedAt, {}, createId);
           return true;
         },

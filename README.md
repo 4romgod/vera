@@ -12,7 +12,9 @@ for HTTP and Zod for runtime and JSON Schema contracts. It implements a durable
 request-to-decision-to-approval-to-capability lifecycle, fixed and
 evidence-adaptive bounded goal execution, an asynchronous worker, a
 browser-neutral TypeScript client, an owner CLI, a universal Expo React Native
-frontend, and explicit owner-governed long-term memory.
+frontend, explicit owner-governed long-term memory, and a grounded personal
+knowledge library built from deliberately promoted documents and analyzed
+images.
 
 The orchestration brain is selected at startup through a provider registry.
 Ollama remains the default owner-controlled provider; OpenAI and Gemini are
@@ -30,7 +32,7 @@ propose a direct response or one of the capabilities enabled in the runtime
 catalog. The implemented declarations are `development_planning@1`,
 `software_change@1`, project-independent `web_research@1`, and owner-scoped
 `personal_task_management@1`, `personal_reminder_management@1`, and
-`attachment_analysis@1`; Vera's code
+`attachment_analysis@1`, plus grounded `knowledge_management@1`; Vera's code
 validates the closed, versioned proposal and routing arguments, then returns a
 direct response, one approval requirement, a validated fixed goal, an adaptive
 goal's first step, or a rejection. A disabled capability is absent from the
@@ -143,6 +145,17 @@ only derived typed arguments; planning and software change can consume the
 analysis artifact only when that disclosure is named and approved. See
 [ADR-0032](docs/decisions/0032-compose-attachment-evidence-into-separately-approved-actions.md).
 
+Files can also become reusable personal knowledge through an explicit second
+decision: the owner asks Vera to save them, approves permanent promotion, and
+receives a durable source with exact attachment provenance and integrity-checked
+search chunks. The Knowledge workspace lists those sources, searches them
+locally, shows source/locator/excerpt citations, and confirms removal before
+clearing searchable text. Local answer models receive only a bounded retrieved
+evidence set; cloud answer models require a disclosure approval. Knowledge is
+separate from concise governed memory and never enters ordinary conversation
+context automatically. See
+[ADR-0036](docs/decisions/0036-build-grounded-personal-knowledge-from-owner-approved-sources.md).
+
 MongoDB is selected as V1's authoritative operational store and Redis as the
 rebuildable, expiring scratchpad through
 [ADR-0010](docs/decisions/0010-use-mongodb-for-operational-truth-and-redis-for-scratchpads.md).
@@ -223,6 +236,8 @@ which supersedes ADR-0028's platform speech recognizer.
 Registered local and SSH machine operations, exact service-action approvals,
 and verified postconditions are accepted in
 [ADR-0033](docs/decisions/0033-govern-machine-operations-through-registered-actions.md).
+Grounded personal knowledge from explicitly promoted sources is accepted in
+[ADR-0036](docs/decisions/0036-build-grounded-personal-knowledge-from-owner-approved-sources.md).
 Explicit owner-governed long-term memory is now implemented through ADR-0025.
 Physical erasure, retention beyond tombstones, and third-party-provider memory
 disclosure remain deliberately open.

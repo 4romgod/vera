@@ -19,6 +19,7 @@ import type { PersonalTaskService } from '../../../application/personal-tasks/pe
 import type { ReminderService } from '../../../application/reminders/reminder-service.ts';
 import type { NotificationService } from '../../../application/reminders/notification-service.ts';
 import type { MemoryService } from '../../../application/memories/memory-service.ts';
+import type { KnowledgeService } from '../../../ports/knowledge/knowledge-service.ts';
 import type { MachineService } from '../../../application/machines/machine-service.ts';
 import { ResourceError } from '../../../application/shared/resource-error.ts';
 import {
@@ -52,6 +53,7 @@ import { registerPersonalTaskRoutes } from './routes/personal-task-routes.ts';
 import { registerReminderRoutes } from './routes/reminder-routes.ts';
 import { registerNotificationRoutes } from './routes/notification-routes.ts';
 import { registerMemoryRoutes } from './routes/memory-routes.ts';
+import { registerKnowledgeRoutes } from './routes/knowledge-routes.ts';
 import { registerTranscriptionRoutes } from './routes/transcription-routes.ts';
 import { registerAttachmentRoutes } from './routes/attachment-routes.ts';
 import { registerMachineRoutes } from './routes/machine-routes.ts';
@@ -90,6 +92,7 @@ export type BuildAppOptions = {
   reminders?: ReminderService;
   notifications?: NotificationService;
   memories?: MemoryService;
+  knowledge?: KnowledgeService;
   transcriptions?: TranscriptionService;
   attachments?: AttachmentService;
   machines?: MachineService;
@@ -365,6 +368,12 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       memories: options.memories,
     });
   }
+  if (options.knowledge !== undefined) {
+    registerKnowledgeRoutes(app, {
+      principalId,
+      knowledge: options.knowledge,
+    });
+  }
   if (options.transcriptions !== undefined) {
     registerTranscriptionRoutes(app, options.transcriptions);
   }
@@ -423,11 +432,16 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     }
     if (error instanceof ResourceError) {
       const statusCode =
-        error.code === 'idempotency_key_reused'
+        error.code === 'idempotency_key_reused' ||
+        error.code === 'knowledge_source_conflict'
           ? 409
           : error.code === 'invalid_notification_cursor'
             ? 400
-            : error.code === 'invalid_project_source'
+            : error.code === 'invalid_project_source' ||
+                error.code === 'invalid_knowledge_source' ||
+                error.code === 'invalid_knowledge_evidence' ||
+                error.code === 'knowledge_analysis_required' ||
+                error.code === 'knowledge_integrity_failure'
               ? 422
               : 404;
       void reply.status(statusCode).send({

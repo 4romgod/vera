@@ -26,6 +26,7 @@ src/
 │   ├── change-applications/
 │   ├── development-campaigns/       # Durable bounded delivery coordination
 │   ├── conversations/
+│   ├── knowledge/                   # Source ingestion, integrity, retrieval, and citations
 │   ├── memories/                    # Governed memory commands, retrieval, and context integrity
 │   ├── model-decisions/
 │   ├── projects/
@@ -61,6 +62,9 @@ src/
   the runtime port and must not branch on capability or provider names.
 - Tests mirror source roles where practical. Cross-boundary journeys live in
   `test/journeys`, and reusable test doubles live in `test/support`.
+- Grounded knowledge contracts live in `domain/knowledge`, orchestration uses
+  the `ports/knowledge` application boundary, durable and in-memory stores live
+  under `adapters/outbound/persistence`, and HTTP routes remain transport-only.
 
 The architecture test in
 `test/architecture/module-boundaries.test.ts` enforces the inward dependency
