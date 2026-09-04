@@ -21,7 +21,10 @@ const mongodbUri = process.env.MONGODB_URI ?? 'mongodb://127.0.0.1:27017';
 const redisUrl = process.env.REDIS_URL ?? 'redis://127.0.0.1:6379';
 const database = `vera_verify_${randomUUID().replaceAll('-', '_')}`;
 const changeApplicationRoot = join(tmpdir(), `${database}_applications`);
-const operationTimeoutMs = 10_000;
+// A hosted runner can spend one full dependency timeout falling back from the
+// rebuildable Redis projection to MongoDB. Leave enough budget for that
+// fallback plus the next poll without relaxing the workflow-level time bound.
+const operationTimeoutMs = 30_000;
 const runIds = new Set();
 const temporaryDirectories = new Set([changeApplicationRoot]);
 let child;
