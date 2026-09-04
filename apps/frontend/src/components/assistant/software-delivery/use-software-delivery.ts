@@ -11,7 +11,7 @@ import {
   selectDeliveryApplication,
   selectDeliveryPublication,
   type PublicationDraft,
-} from './model';
+} from './model.ts';
 
 type SoftwareChangeArtifact = Extract<
   ArtifactResource,

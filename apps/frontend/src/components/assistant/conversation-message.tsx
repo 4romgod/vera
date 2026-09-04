@@ -13,7 +13,7 @@ import { palette, radius, spacing } from '@/design/tokens';
 import {
   AssistantResultCard,
   hasStructuredResult,
-} from './assistant-result-card';
+} from './assistant-result-card.tsx';
 
 export function ConversationMessage(props: {
   message: ConversationMessageResource;

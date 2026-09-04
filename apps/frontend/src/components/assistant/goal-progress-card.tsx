@@ -10,7 +10,7 @@ import { Text, View } from 'react-native';
 import type { TaskResource } from '@vera/client';
 
 import { palette, radius, spacing } from '@/design/tokens';
-import { goalProgressStages, humanizeIdentifier } from './presentation';
+import { goalProgressStages, humanizeIdentifier } from './presentation.ts';
 
 type Goal = NonNullable<TaskResource['goal']>;
 type Step = Goal['steps'][number];

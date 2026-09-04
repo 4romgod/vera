@@ -14,7 +14,7 @@ import {
   selectDeliveryApplication,
   selectDeliveryPublication,
   softwareChangeArtifactReference,
-} from '../src/components/assistant/software-delivery/model';
+} from '../src/components/assistant/software-delivery/model.ts';
 
 function application(
   id: string,

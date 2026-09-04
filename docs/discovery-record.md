@@ -470,10 +470,10 @@ evidence-linked final response, budgets, artifacts, and owner resource after a
 later restart.
 
 The workflow remains one job, reuses one install and build, cancels superseded
-runs, and has a twelve-minute hard limit. The persistent tier runs on the pull
+runs, and has a fifteen-minute hard limit. The complete gate runs on the pull
 request and is not repeated for its resulting `main` push, although it remains
-manually triggerable. Static, unit, boundary, and build checks still run for
-both events. This gate strengthens reproducible V1 evidence but does not replace
+manually triggerable. This gate strengthens reproducible V1 evidence but does
+not replace
 manual real-provider and specialist conformance; the owner separately completed
 the required V1 Codex disclosure and artifact evaluation on 25 August 2026.
 

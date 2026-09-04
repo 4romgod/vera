@@ -11,7 +11,7 @@ import type {
   PushPreferences,
   VeraClient,
 } from '@vera/client';
-import { parseAttentionDeepLink } from './attention-deep-link';
+import { parseAttentionDeepLink } from './attention-deep-link.ts';
 
 const INSTALLATION_KEY = 'vera.notificationInstallationId.v1';
 Notifications.setNotificationHandler({

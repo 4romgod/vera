@@ -15,7 +15,7 @@ import {
   goalProgressStages,
   latestConversationProjectId,
   projectContextLabel,
-} from '../src/components/assistant/presentation';
+} from '../src/components/assistant/presentation.ts';
 
 function summary(
   id: string,

@@ -9,7 +9,7 @@ import {
   VOICE_RECORDING_CHANNELS,
   VOICE_RECORDING_SAMPLE_RATE,
   voiceRecordingContentType,
-} from '../src/voice/voice-recording';
+} from '../src/voice/voice-recording.ts';
 
 void describe('voice recording', () => {
   void it('appends one final transcription to an existing reviewed draft', () => {

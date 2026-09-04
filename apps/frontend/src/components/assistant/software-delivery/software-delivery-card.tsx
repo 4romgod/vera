@@ -34,14 +34,14 @@ import {
   formatBytes,
   humanStatus,
   shortRevision,
-} from './delivery-controls';
+} from './delivery-controls.tsx';
 import { palette, radius, spacing } from '@/design/tokens';
 import {
   isSafeGitHubPullRequestUrl,
   publicationDraftForArtifact,
   type PublicationDraft,
-} from './model';
-import { useSoftwareDelivery } from './use-software-delivery';
+} from './model.ts';
+import { useSoftwareDelivery } from './use-software-delivery.ts';
 
 export function SoftwareDeliveryCard(props: {
   artifactId: string;

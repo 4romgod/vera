@@ -5,7 +5,7 @@ import {
   PULL_REFRESH_TRIGGER_DISTANCE,
   pullRefreshDistance,
   shouldTriggerPullRefresh,
-} from '../src/components/assistant/pull-to-refresh';
+} from '../src/components/assistant/pull-to-refresh.ts';
 
 void describe('pull to refresh', () => {
   void it('applies resistance and bounds the visible pull distance', () => {

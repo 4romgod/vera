@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { splitSpeech } from '../src/voice/split-speech';
+import { splitSpeech } from '../src/voice/split-speech.ts';
 
 void describe('spoken reply chunking', () => {
   void it('normalizes one short utterance and ignores empty input', () => {
