@@ -51,6 +51,13 @@ must not be exposed to an untrusted or shared network.
 | `POST /v1/knowledge-search` | Retrieve bounded, integrity-checked citations from active sources | `200` |
 | `GET /v1/notifications` | Page durable inbox notifications after an opaque cursor | `200` |
 | `GET /v1/notifications/stream` | Watch the durable inbox as resumable server-sent events | `200` |
+| `GET /v1/push-notifications/status` | Read server push capability and Expo project identity | `200` |
+| `GET /v1/notification-devices` | List registered devices without push tokens | `200` |
+| `POST /v1/notification-devices` | Idempotently register or refresh one installation | `200` |
+| `PUT /v1/notification-devices/:id/preferences` | Replace category and quiet-hour preferences | `200` |
+| `POST /v1/notification-devices/:id/revoke` | Revoke one installation | `200` |
+| `POST /v1/notification-devices/:id/test` | Queue one idempotent setup test | `200` |
+| `GET /v1/push-deliveries` | Inspect durable delivery history | `200` |
 | `POST /v1/projects` | Register an owner-controlled project source | `201` |
 | `GET /v1/projects` | List registered projects | `200` |
 | `GET /v1/projects/{projectId}` | Retrieve a registered project | `200` |

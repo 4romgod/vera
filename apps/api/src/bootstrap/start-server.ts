@@ -110,6 +110,17 @@ app.log.info(
               timeoutMs: config.transcription.timeoutMs,
             }),
       },
+      push:
+        config.push?.provider.adapterId === 'expo'
+          ? {
+              adapterId: 'expo',
+              origin: new URL(config.push.provider.baseUrl).origin,
+              projectId: config.push.provider.projectId,
+              pollIntervalMs: config.push.pollIntervalMs,
+              receiptDelayMs: config.push.receiptDelayMs,
+              maxAttempts: config.push.maxAttempts,
+            }
+          : { adapterId: config.push?.provider.adapterId ?? 'disabled' },
       worker: config.worker,
       reminders: config.reminders,
       machines: {

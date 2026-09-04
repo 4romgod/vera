@@ -15,6 +15,7 @@ import { palette, radius, spacing } from '@/design/tokens';
 
 export function AttentionPanel(props: {
   briefing?: AttentionBriefing;
+  focusedItemId?: string;
   onDecision: (
     item: AttentionItem,
     decision: 'dismiss' | 'snooze' | 'restore',
@@ -137,6 +138,7 @@ export function AttentionPanel(props: {
           <AttentionCard
             busy={busyId === item.id}
             item={item}
+            focused={item.id === props.focusedItemId}
             key={item.id}
             onDismiss={() => void decide(item, 'dismiss')}
             onOpen={() => props.onOpen(item)}
@@ -214,6 +216,7 @@ export function AttentionPanel(props: {
 
 function AttentionCard(props: {
   item: AttentionItem;
+  focused: boolean;
   busy: boolean;
   onOpen: () => void;
   onSnooze: () => void;
@@ -231,12 +234,21 @@ function AttentionCard(props: {
         gap: spacing.md,
         borderWidth: 1,
         borderColor:
-          props.item.priority === 'urgent' ? palette.accentLine : palette.line,
+          props.focused || props.item.priority === 'urgent'
+            ? palette.accentLine
+            : palette.line,
         borderRadius: radius.lg,
         padding: spacing.lg,
         backgroundColor: palette.surface,
       }}
     >
+      {props.focused ? (
+        <Text
+          style={{ color: palette.accent, fontSize: 10, fontWeight: '800' }}
+        >
+          OPENED FROM NOTIFICATION
+        </Text>
+      ) : null}
       <View
         style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}
       >

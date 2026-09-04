@@ -62,6 +62,8 @@ import { registerDevelopmentCampaignRoutes } from './routes/development-campaign
 import { registerMissionRoutes } from './routes/mission-routes.ts';
 import { registerAttentionRoutes } from './routes/attention-routes.ts';
 import { registerRoutineRoutes } from './routes/routine-routes.ts';
+import { registerPushNotificationRoutes } from './routes/push-notification-routes.ts';
+import type { PushNotificationService } from '../../../application/notifications/push-notification-service.ts';
 import {
   RoutineError,
   type RoutineLifecycle,
@@ -113,6 +115,7 @@ export type BuildAppOptions = {
   developmentCampaigns?: DevelopmentCampaignLifecycle & { wake(): void };
   missions?: MissionLifecycle & { wake(): void };
   routines?: RoutineLifecycle & { wake(): void };
+  pushNotifications?: PushNotificationService;
   readinessChecks?: {
     name: string;
     check(): Promise<void>;
@@ -431,6 +434,12 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   if (options.routines !== undefined) {
     registerRoutineRoutes(app, { principalId, routines: options.routines });
   }
+  if (options.pushNotifications !== undefined) {
+    registerPushNotificationRoutes(app, {
+      principalId,
+      service: options.pushNotifications,
+    });
+  }
 
   if (options.close !== undefined) app.addHook('onClose', options.close);
 
@@ -457,13 +466,21 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
             ? 400
             : error.code === 'invalid_attention_decision'
               ? 422
-              : error.code === 'invalid_project_source' ||
-                  error.code === 'invalid_knowledge_source' ||
-                  error.code === 'invalid_knowledge_evidence' ||
-                  error.code === 'knowledge_analysis_required' ||
-                  error.code === 'knowledge_integrity_failure'
-                ? 422
-                : 404;
+              : error.code === 'push_notifications_disabled'
+                ? 503
+                : error.code === 'notification_project_mismatch' ||
+                    error.code === 'invalid_notification_preferences'
+                  ? 422
+                  : error.code === 'notification_device_inactive' ||
+                      error.code === 'concurrent_transition_failed'
+                    ? 409
+                    : error.code === 'invalid_project_source' ||
+                        error.code === 'invalid_knowledge_source' ||
+                        error.code === 'invalid_knowledge_evidence' ||
+                        error.code === 'knowledge_analysis_required' ||
+                        error.code === 'knowledge_integrity_failure'
+                      ? 422
+                      : 404;
       void reply.status(statusCode).send({
         error: { code: error.code, message: error.message },
       });

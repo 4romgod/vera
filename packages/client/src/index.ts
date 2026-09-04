@@ -475,6 +475,63 @@ export type NotificationStreamEvent = {
   notification: NotificationResource;
 };
 
+export type PushPreferences = {
+  approvals: boolean;
+  reminders: boolean;
+  tasks: boolean;
+  failures: boolean;
+  results: boolean;
+  quietHours?: {
+    timeZone: string;
+    startLocalTime: string;
+    endLocalTime: string;
+  };
+};
+export type NotificationDeviceResource = {
+  schemaVersion: 1;
+  version: number;
+  id: string;
+  installationId: string;
+  provider: 'expo';
+  projectId: string;
+  platform: 'ios' | 'android';
+  name: string;
+  status: 'active' | 'revoked' | 'invalid';
+  preferences: PushPreferences;
+  registeredAt: string;
+  updatedAt: string;
+  revokedAt?: string;
+  invalidatedAt?: string;
+  tokenSuffix: string;
+};
+export type PushDeliveryResource = {
+  schemaVersion: 1;
+  version: number;
+  id: string;
+  deviceId: string;
+  sourceId: string;
+  category:
+    | 'approvals'
+    | 'reminders'
+    | 'tasks'
+    | 'failures'
+    | 'results'
+    | 'test';
+  deepLink: string;
+  status: 'queued' | 'accepted' | 'delivered' | 'failed' | 'cancelled';
+  attempts: number;
+  nextAttemptAt: string;
+  failureCode?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+export type PushNotificationStatus = {
+  schemaVersion: 1;
+  enabled: boolean;
+  provider?: string;
+  projectId?: string;
+};
+
 export type AttentionPriority = 'urgent' | 'high' | 'normal';
 export type AttentionState = 'active' | 'snoozed' | 'dismissed';
 export type AttentionTarget =
@@ -2605,6 +2662,96 @@ function isAttentionTarget(value: Record<string, unknown>): boolean {
   }
 }
 
+function assertPushNotificationStatus(
+  value: unknown,
+): asserts value is PushNotificationStatus {
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== 1 ||
+    typeof value.enabled !== 'boolean' ||
+    (value.provider !== undefined && typeof value.provider !== 'string') ||
+    (value.projectId !== undefined && typeof value.projectId !== 'string')
+  ) {
+    throw new Error('Vera returned invalid push-notification status.');
+  }
+}
+
+function isPushPreferences(value: unknown): value is PushPreferences {
+  if (!isRecord(value)) return false;
+  for (const key of [
+    'approvals',
+    'reminders',
+    'tasks',
+    'failures',
+    'results',
+  ]) {
+    if (typeof value[key] !== 'boolean') return false;
+  }
+  if (value.quietHours === undefined) return true;
+  return (
+    isRecord(value.quietHours) &&
+    typeof value.quietHours.timeZone === 'string' &&
+    typeof value.quietHours.startLocalTime === 'string' &&
+    typeof value.quietHours.endLocalTime === 'string'
+  );
+}
+
+function assertNotificationDeviceResource(
+  value: unknown,
+): asserts value is NotificationDeviceResource {
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== 1 ||
+    typeof value.version !== 'number' ||
+    typeof value.id !== 'string' ||
+    !value.id.startsWith('notification_device_') ||
+    typeof value.installationId !== 'string' ||
+    value.provider !== 'expo' ||
+    typeof value.projectId !== 'string' ||
+    !['ios', 'android'].includes(String(value.platform)) ||
+    typeof value.name !== 'string' ||
+    !['active', 'revoked', 'invalid'].includes(String(value.status)) ||
+    !isPushPreferences(value.preferences) ||
+    typeof value.registeredAt !== 'string' ||
+    typeof value.updatedAt !== 'string' ||
+    typeof value.tokenSuffix !== 'string'
+  ) {
+    throw new Error('Vera returned an invalid notification device.');
+  }
+}
+
+function assertPushDeliveryResource(
+  value: unknown,
+): asserts value is PushDeliveryResource {
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== 1 ||
+    typeof value.version !== 'number' ||
+    typeof value.id !== 'string' ||
+    !value.id.startsWith('push_delivery_') ||
+    typeof value.deviceId !== 'string' ||
+    typeof value.sourceId !== 'string' ||
+    ![
+      'approvals',
+      'reminders',
+      'tasks',
+      'failures',
+      'results',
+      'test',
+    ].includes(String(value.category)) ||
+    typeof value.deepLink !== 'string' ||
+    !['queued', 'accepted', 'delivered', 'failed', 'cancelled'].includes(
+      String(value.status),
+    ) ||
+    typeof value.attempts !== 'number' ||
+    typeof value.nextAttemptAt !== 'string' ||
+    typeof value.createdAt !== 'string' ||
+    typeof value.updatedAt !== 'string'
+  ) {
+    throw new Error('Vera returned an invalid push delivery.');
+  }
+}
+
 export class VeraClient implements VeraApi {
   private readonly baseUrl: string;
   private readonly fetch: Fetch;
@@ -2966,6 +3113,93 @@ export class VeraClient implements VeraApi {
         ? {}
         : { nextCursor: value.nextCursor }),
     };
+  }
+
+  public async getPushNotificationStatus(): Promise<PushNotificationStatus> {
+    const value = await this.request<unknown>('/v1/push-notifications/status');
+    assertPushNotificationStatus(value);
+    return value;
+  }
+  public async listNotificationDevices(): Promise<{
+    schemaVersion: 1;
+    devices: NotificationDeviceResource[];
+  }> {
+    const value = await this.request<unknown>('/v1/notification-devices');
+    if (
+      !isRecord(value) ||
+      value.schemaVersion !== 1 ||
+      !Array.isArray(value.devices)
+    )
+      throw new Error('Vera returned an invalid notification-device list.');
+    const devices = value.devices.map((device: unknown) => {
+      assertNotificationDeviceResource(device);
+      return device;
+    });
+    return { schemaVersion: 1, devices };
+  }
+  public async registerNotificationDevice(input: {
+    installationId: string;
+    provider: 'expo';
+    projectId: string;
+    pushToken: string;
+    platform: 'ios' | 'android';
+    name: string;
+  }): Promise<NotificationDeviceResource> {
+    const value = await this.request<unknown>('/v1/notification-devices', {
+      method: 'POST',
+      body: input,
+    });
+    assertNotificationDeviceResource(value);
+    return value;
+  }
+  public async updateNotificationPreferences(
+    deviceId: string,
+    preferences: PushPreferences,
+  ): Promise<NotificationDeviceResource> {
+    const value = await this.request<unknown>(
+      `/v1/notification-devices/${encodeURIComponent(deviceId)}/preferences`,
+      { method: 'PUT', body: preferences },
+    );
+    assertNotificationDeviceResource(value);
+    return value;
+  }
+  public async revokeNotificationDevice(
+    deviceId: string,
+  ): Promise<NotificationDeviceResource> {
+    const value = await this.request<unknown>(
+      `/v1/notification-devices/${encodeURIComponent(deviceId)}/revoke`,
+      { method: 'POST' },
+    );
+    assertNotificationDeviceResource(value);
+    return value;
+  }
+  public async testNotificationDevice(
+    deviceId: string,
+    idempotencyKey: string,
+  ): Promise<PushDeliveryResource> {
+    const value = await this.request<unknown>(
+      `/v1/notification-devices/${encodeURIComponent(deviceId)}/test`,
+      { method: 'POST', idempotencyKey },
+    );
+    assertPushDeliveryResource(value);
+    return value;
+  }
+  public async listPushDeliveries(): Promise<{
+    schemaVersion: 1;
+    deliveries: PushDeliveryResource[];
+  }> {
+    const value = await this.request<unknown>('/v1/push-deliveries');
+    if (
+      !isRecord(value) ||
+      value.schemaVersion !== 1 ||
+      !Array.isArray(value.deliveries)
+    )
+      throw new Error('Vera returned an invalid push-delivery list.');
+    const deliveries = value.deliveries.map((delivery: unknown) => {
+      assertPushDeliveryResource(delivery);
+      return delivery;
+    });
+    return { schemaVersion: 1, deliveries };
   }
 
   public async *streamNotifications(
@@ -3890,7 +4124,7 @@ export class VeraClient implements VeraApi {
 }
 
 type RequestOptions = {
-  method?: 'GET' | 'POST' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
   idempotencyKey?: string;
   body?: Record<string, unknown>;
   signal?: AbortSignal;

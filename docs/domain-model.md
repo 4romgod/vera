@@ -2,7 +2,7 @@
 
 **Status:** Accepted (core vocabulary and critical distinctions); the open
 questions below are explicitly excluded from this acceptance
-**Version:** 0.8
+**Version:** 0.9
 **Last updated:** 4 September 2026
 **Accepted:** 24 August 2026 (owner) — accepts the Core concepts and
 Critical distinctions sections as Vera's shared language.
@@ -38,6 +38,9 @@ erDiagram
     PRINCIPAL ||--o{ PERSONAL_TASK : owns
     PRINCIPAL ||--o{ REMINDER : owns
     REMINDER ||--o| NOTIFICATION : delivers_as
+    PRINCIPAL ||--o{ NOTIFICATION_DEVICE : registers
+    NOTIFICATION_DEVICE ||--o{ PUSH_DELIVERY : receives
+    ATTENTION_ITEM ||--o{ PUSH_DELIVERY : projects_as
     TASK ||--o{ RUN : attempted_by
     RUN o|--|| GOAL : pursues
     GOAL ||--|{ STEP : orders
@@ -297,6 +300,20 @@ scheduled and delivered instants, channel, and unread or acknowledged state.
 
 A server-sent event is only transport for a notification. Losing the connection
 does not delete the notification; clients resume from an opaque ordered cursor.
+
+### Notification device and push delivery
+
+A notification device is one owner-scoped app installation and its current
+push-token binding, lifecycle state, category preferences, and optional quiet
+hours. The token is private provider-routing data, not a client-readable
+resource. Re-registering the same installation rotates that binding without
+creating a second logical device.
+
+A push delivery is a durable, idempotent projection of one eligible attention
+generation to one device. Queued, provider-accepted, delivered, failed, and
+cancelled are distinct states. A provider submission ticket is not evidence of
+delivery; only its later receipt can settle delivery. Push is at-least-once
+transport and never replaces the inbox, Today briefing, or source resource.
 
 ### Attention item and briefing
 

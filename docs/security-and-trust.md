@@ -1,7 +1,7 @@
 # Vera Security and Trust Model
 
 **Status:** Accepted
-**Version:** 0.8
+**Version:** 0.9
 **Last updated:** 4 September 2026
 **Accepted:** 24 August 2026 (owner); V1 perimeter clarified by ADR-0014 and
 cloud-provider policy clarified by ADR-0015 and bounded conversation disclosure
@@ -16,6 +16,8 @@ reviewed device voice interaction is accepted by ADR-0028; and governed
 software-change publication is accepted by ADR-0029 on 27 August 2026. Durable
 owner attachments and approval-scoped analysis are accepted by ADR-0031;
 grounded personal knowledge is accepted by ADR-0036 on 4 September 2026.
+Privacy-safe proactive device delivery is accepted by ADR-0039 on 4 September
+2026.
 
 ## Purpose
 
@@ -100,6 +102,16 @@ owner Send or Stop-and-send action. Provider error bodies are discarded because
 they may echo audio-derived content. Supported content types and a 25 MB limit
 bound memory use before inference. Spoken output is visible and stoppable
 because it can disclose conversation content to nearby people.
+
+Remote push delivery is a third-party transport boundary, not a trusted state
+store. Expo receives only the device token, a fixed Vera title, a
+category-level body, an opaque delivery ID, and an opaque attention deep link.
+Conversation text, work titles, summaries, project identities, and approval
+details do not enter the lock-screen payload. Push tokens and provider tickets
+remain server-only; the Expo access token is server-held configuration and is
+never returned to the universal frontend. The durable outbox, bounded retries,
+receipt checks, and device invalidation are governed by
+[ADR-0039](decisions/0039-deliver-attention-to-owner-devices-through-a-durable-outbox.md).
 
 Uploaded documents and images are durable owner data under
 [ADR-0031](decisions/0031-store-owner-attachments-and-analyze-them-through-exact-approval.md).

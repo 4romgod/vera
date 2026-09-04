@@ -131,6 +131,14 @@ The UI never computes urgency and never treats local component state as truth.
 Refresh and inbox events re-fetch the API projection. Consequential action is
 performed at the source resource under its existing approval rules.
 
+The Activity surface owns device-alert setup. The owner explicitly enables an
+installed device, chooses category preferences and optional quiet hours, sends
+a setup test, sees recent delivery state, and can revoke the installation.
+Unsupported web and Expo Go runtimes explain the development-build requirement
+instead of presenting a broken permission flow. Opening an alert goes to Today
+and emphasizes the exact opaque attention target; private work content is
+loaded only after the app opens.
+
 The Routines workspace is the owner surface for standing instructions. It
 shows status, schedule, time zone, machine/service scope, next occurrence,
 latest run outcome, and the authority boundary before approval. Active routines expose Run now and

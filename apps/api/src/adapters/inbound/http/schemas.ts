@@ -62,6 +62,12 @@ import {
   AttentionBriefingSchema,
   AttentionDecisionRequestSchema,
 } from '../../../domain/attention/attention.ts';
+import {
+  NotificationDeviceRegistrationSchema,
+  NotificationDeviceResponseSchema,
+  PushDeliverySchema,
+  PushPreferencesSchema,
+} from '../../../domain/notifications/push-notification.ts';
 
 export const EvaluateRequestSchema = z
   .object({
@@ -783,5 +789,53 @@ export const AttentionBriefingJsonSchema = z.toJSONSchema(
 
 export const AttentionDecisionRequestJsonSchema = z.toJSONSchema(
   AttentionDecisionRequestSchema,
+  { target: 'draft-7' },
+);
+
+export const NotificationDeviceRegistrationJsonSchema = z.toJSONSchema(
+  NotificationDeviceRegistrationSchema,
+  { target: 'draft-7' },
+);
+export const PushPreferencesJsonSchema = z.toJSONSchema(PushPreferencesSchema, {
+  target: 'draft-7',
+});
+export const NotificationDeviceJsonSchema = z.toJSONSchema(
+  NotificationDeviceResponseSchema,
+  { target: 'draft-7' },
+);
+export const NotificationDeviceListJsonSchema = z.toJSONSchema(
+  z
+    .object({
+      schemaVersion: z.literal(1),
+      devices: z.array(NotificationDeviceResponseSchema),
+    })
+    .strict(),
+  { target: 'draft-7' },
+);
+const PublicPushDeliverySchema = PushDeliverySchema.omit({
+  principalId: true,
+  providerTicketId: true,
+});
+export const PushDeliveryJsonSchema = z.toJSONSchema(PublicPushDeliverySchema, {
+  target: 'draft-7',
+});
+export const PushDeliveryListJsonSchema = z.toJSONSchema(
+  z
+    .object({
+      schemaVersion: z.literal(1),
+      deliveries: z.array(PublicPushDeliverySchema),
+    })
+    .strict(),
+  { target: 'draft-7' },
+);
+export const PushNotificationStatusJsonSchema = z.toJSONSchema(
+  z
+    .object({
+      schemaVersion: z.literal(1),
+      enabled: z.boolean(),
+      provider: z.string().optional(),
+      projectId: z.string().optional(),
+    })
+    .strict(),
   { target: 'draft-7' },
 );
