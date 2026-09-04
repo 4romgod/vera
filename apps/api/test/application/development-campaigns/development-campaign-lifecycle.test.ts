@@ -3,7 +3,10 @@ import { describe, it } from 'node:test';
 
 import { InMemoryDevelopmentCampaignStore } from '../../../src/adapters/outbound/persistence/memory/in-memory-development-campaign-store.ts';
 import { InMemoryOwnerResourceStore } from '../../../src/adapters/outbound/persistence/memory/in-memory-owner-resource-store.ts';
-import { createDevelopmentCampaignLifecycle } from '../../../src/application/development-campaigns/development-campaign-lifecycle.ts';
+import {
+  createDevelopmentCampaignLifecycle,
+  DevelopmentCampaignError,
+} from '../../../src/application/development-campaigns/development-campaign-lifecycle.ts';
 import type { SoftwareChangeApplicationLifecycle } from '../../../src/application/change-applications/software-change-application-lifecycle.ts';
 import type { SoftwareChangePublicationLifecycle } from '../../../src/application/change-applications/software-change-publication-lifecycle.ts';
 import type { TaskLifecycle } from '../../../src/application/tasks/task-lifecycle.ts';
@@ -396,12 +399,15 @@ async function setup(
 
   let verificationCalls = 0;
   let observationCalls = 0;
+  let mergeCalls = 0;
   const operations: DevelopmentCampaignOperations = {
     adapterId: 'local_git_github',
     listPolicies: () => [],
     prepare(input) {
       const effect: DevelopmentCampaignEffect = {
         adapterId: 'local_git_github',
+        completionMode: input.completionMode ?? 'policy',
+        approvalController: input.approvalController ?? { kind: 'owner' },
         policyId: input.policyId,
         project: { id: 'project_campaign', displayName: 'Vera' },
         repository: { owner: 'owner', name: 'vera' },
@@ -431,9 +437,10 @@ async function setup(
           minimumRequiredChecks: 1,
         },
         merge: {
+          enabled: input.completionMode !== 'pull_request_only',
           method: 'squash',
           requireReviewApproval: false,
-          synchronizeLocalBase: true,
+          synchronizeLocalBase: input.completionMode !== 'pull_request_only',
         },
         authority: {
           implementation: 'bounded_capabilities',
@@ -441,7 +448,10 @@ async function setup(
           verification: 'configured_commands',
           publication: 'create_one_pull_request',
           observation: 'github_checks_and_reviews',
-          merge: 'policy_gated_exact_head',
+          merge:
+            input.completionMode === 'pull_request_only'
+              ? 'prohibited'
+              : 'policy_gated_exact_head',
           directBasePush: false,
           forcePush: false,
           policyMutation: false,
@@ -488,12 +498,14 @@ async function setup(
         mergeState: 'CLEAN',
       });
     },
-    merge: () =>
-      Promise.resolve({
+    merge: () => {
+      mergeCalls += 1;
+      return Promise.resolve({
         mergeRevision,
         baseRevision: mergeRevision,
         mergedAt: now,
-      }),
+      });
+    },
     synchronize: () =>
       Promise.resolve({ baseRevision: mergeRevision, synchronizedAt: now }),
     checkReadiness: () => Promise.resolve(),
@@ -521,6 +533,7 @@ async function setup(
     lifecycle,
     verificationCalls: () => verificationCalls,
     observationCalls: () => observationCalls,
+    mergeCalls: () => mergeCalls,
   };
 }
 
@@ -580,13 +593,102 @@ void describe('development campaign lifecycle', () => {
     const approved = await createApproved(value.lifecycle);
     const completed = await runToTerminal(value.lifecycle, approved.id);
 
-    assert.equal(completed.status, 'succeeded');
+    assert.equal(
+      completed.status,
+      'succeeded',
+      JSON.stringify(completed.failure),
+    );
     assert.equal(completed.attempts.length, 1);
     assert.equal(completed.attempts[0]?.verification?.status, 'passed');
     assert.equal(completed.pullRequest?.number, 44);
-    assert.equal(completed.result?.mergeRevision, mergeRevision);
+    assert.equal(completed.result?.outcome, 'merged');
+    assert.equal(completed.result.mergeRevision, mergeRevision);
     assert.equal(completed.result.baseRevision, mergeRevision);
     assert.equal(completed.approval.effect.authority.directBasePush, false);
+  });
+
+  void it('stops at a verified pull request when merge authority is prohibited', async () => {
+    const value = await setup();
+    const created = await value.lifecycle.create({
+      principalId: 'owner_v1',
+      requestKey: 'no-merge-campaign',
+      projectId: 'project_campaign',
+      policyId: 'vera-policy',
+      objective: 'Add a visible status endpoint.',
+      ticket: {
+        reference: 'VERA-401',
+        details: 'Add a visible status endpoint.',
+      },
+      delivery: {
+        commitMessage: 'feat: add status endpoint',
+        pullRequest: {
+          title: 'feat: add status endpoint',
+          body: 'Campaign fixture',
+          draft: false,
+        },
+      },
+      completionMode: 'pull_request_only',
+    });
+    const approved = await value.lifecycle.decideApproval({
+      principalId: 'owner_v1',
+      campaignId: created.id,
+      decision: 'approved',
+    });
+    const completed = await runToTerminal(value.lifecycle, approved.id);
+
+    assert.equal(
+      completed.status,
+      'succeeded',
+      JSON.stringify(completed.failure),
+    );
+    assert.equal(completed.result?.outcome, 'pull_request_ready');
+    assert.equal(completed.approval.effect.merge.enabled, false);
+    assert.equal(completed.approval.effect.authority.merge, 'prohibited');
+    assert.equal(value.mergeCalls(), 0);
+  });
+
+  void it('rejects direct approval of a mission-controlled campaign', async () => {
+    const value = await setup();
+    const created = await value.lifecycle.create({
+      principalId: 'owner_v1',
+      requestKey: 'mission-controlled-campaign',
+      projectId: 'project_campaign',
+      policyId: 'vera-policy',
+      objective: 'Deliver one mission-controlled change.',
+      ticket: { reference: 'MISSION', details: 'Bounded mission.' },
+      delivery: {
+        commitMessage: 'feat: bounded mission',
+        pullRequest: {
+          title: 'Bounded mission',
+          body: 'Mission',
+          draft: false,
+        },
+      },
+      completionMode: 'pull_request_only',
+      approvalController: {
+        kind: 'mission',
+        missionId: 'mission_controller',
+      },
+    });
+
+    await assert.rejects(
+      value.lifecycle.decideApproval({
+        principalId: 'owner_v1',
+        campaignId: created.id,
+        decision: 'approved',
+      }),
+      (error: unknown) =>
+        error instanceof DevelopmentCampaignError &&
+        error.code === 'development_campaign_approval_managed_by_mission',
+    );
+    const approved = await value.lifecycle.decideMissionApproval({
+      principalId: 'owner_v1',
+      campaignId: created.id,
+      missionId: 'mission_controller',
+      decision: 'approved',
+    });
+    assert.equal(approved.status, 'approved');
+    assert.equal(approved.approval.decidedBy, 'mission_controller');
   });
 
   void it('retires a failed local attempt and produces one complete replacement', async () => {

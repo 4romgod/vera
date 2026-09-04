@@ -391,6 +391,8 @@ export class LocalGitGitHubDevelopmentCampaignOperations
     ticket: { reference: string; details: string };
     delivery: DevelopmentCampaignEffect['delivery'];
     capabilities: DevelopmentCampaignEffect['capabilities'];
+    completionMode?: 'policy' | 'pull_request_only';
+    approvalController?: DevelopmentCampaignEffect['approvalController'];
   }): Promise<DevelopmentCampaignEffect> {
     const projectRoot = resolve(input.project.source.rootPath);
     const policy = this.options.catalog.policies.find(
@@ -443,6 +445,8 @@ export class LocalGitGitHubDevelopmentCampaignOperations
     ].sort();
     return DevelopmentCampaignEffectSchema.parse({
       adapterId: this.adapterId,
+      completionMode: input.completionMode ?? 'policy',
+      approvalController: input.approvalController ?? { kind: 'owner' },
       policyId: policy.id,
       project: { id: input.project.id, displayName: input.project.displayName },
       repository: parseGitHubRemote(remote.stdout),
@@ -455,14 +459,31 @@ export class LocalGitGitHubDevelopmentCampaignOperations
       qualityGates: policy.qualityGates,
       protectedPathPrefixes,
       limits: policy.limits,
-      merge: policy.merge,
+      merge: {
+        ...policy.merge,
+        enabled:
+          input.completionMode === 'pull_request_only'
+            ? false
+            : policy.merge.enabled,
+        requireReviewApproval:
+          input.completionMode === 'pull_request_only'
+            ? false
+            : policy.merge.requireReviewApproval,
+        synchronizeLocalBase:
+          input.completionMode === 'pull_request_only'
+            ? false
+            : policy.merge.synchronizeLocalBase,
+      },
       authority: {
         implementation: 'bounded_capabilities',
         application: 'exact_generated_patch',
         verification: 'configured_commands',
         publication: 'create_one_pull_request',
         observation: 'github_checks_and_reviews',
-        merge: 'policy_gated_exact_head',
+        merge:
+          input.completionMode === 'pull_request_only'
+            ? 'prohibited'
+            : 'policy_gated_exact_head',
         directBasePush: false,
         forcePush: false,
         policyMutation: false,

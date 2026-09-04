@@ -4,6 +4,7 @@ import {
   type NotificationResource,
 } from '../../domain/reminders/reminder.ts';
 import type { ReminderStore } from '../../ports/persistence/reminder-store.ts';
+import type { MissionStore } from '../../ports/persistence/mission-store.ts';
 import { ResourceError } from '../shared/resource-error.ts';
 
 export type NotificationPage = {
@@ -21,6 +22,7 @@ export type NotificationService = {
 
 export function createNotificationService(options: {
   store: ReminderStore;
+  missions?: MissionStore;
 }): NotificationService {
   return {
     async list(principalId, query = {}) {
@@ -36,10 +38,31 @@ export function createNotificationService(options: {
           'invalid_notification_cursor',
         );
       }
-      const notifications = await options.store.listNotifications(principalId, {
+      const limit = query.limit ?? 100;
+      const notificationOptions = {
         ...(after === undefined ? {} : { after }),
-        limit: query.limit ?? 100,
-      });
+        limit,
+      };
+      const notifications = (
+        await Promise.all([
+          options.store.listNotifications(principalId, notificationOptions),
+          ...(options.missions === undefined
+            ? []
+            : [
+                options.missions.listNotifications(
+                  principalId,
+                  notificationOptions,
+                ),
+              ]),
+        ])
+      )
+        .flat()
+        .sort(
+          (left, right) =>
+            left.deliveredAt.localeCompare(right.deliveredAt) ||
+            left.id.localeCompare(right.id),
+        )
+        .slice(0, limit);
       const last = notifications.at(-1);
       return {
         schemaVersion: 1,

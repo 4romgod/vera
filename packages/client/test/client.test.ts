@@ -863,7 +863,7 @@ void describe('Vera HTTP client', () => {
                     { id: 'quality', label: 'Quality', timeoutMs: 1_000 },
                   ],
                   limits: {},
-                  merge: {},
+                  merge: { enabled: true },
                 },
               ],
             }),
@@ -909,6 +909,77 @@ void describe('Vera HTTP client', () => {
     assert.ok(creation);
     assert.equal(creation.headers.get('idempotency-key'), 'campaign-key');
     assert.doesNotMatch(creation.body ?? '', /qualityGates|directBasePush/u);
+    assert.equal(polls, 2);
+  });
+
+  void it('creates, approves, and waits for one bounded mission', async () => {
+    const requests: { url: string; method: string; body?: string }[] = [];
+    let polls = 0;
+    const mission = (
+      status: 'awaiting_approval' | 'executing' | 'succeeded',
+    ) => ({
+      schemaVersion: 1,
+      version: status === 'succeeded' ? 3 : 1,
+      id: 'mission_test',
+      status,
+      approval: {
+        reason: 'bounded_mission',
+        effect: {},
+      },
+    });
+    const client = new VeraClient({
+      baseUrl: 'http://vera.test',
+      fetch: (input, init) => {
+        const url =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        const method = init?.method ?? 'GET';
+        requests.push({
+          url,
+          method,
+          ...(typeof init?.body === 'string' ? { body: init.body } : {}),
+        });
+        if (method === 'POST') {
+          return Promise.resolve(
+            Response.json(mission('awaiting_approval'), { status: 202 }),
+          );
+        }
+        polls += 1;
+        return Promise.resolve(
+          Response.json(mission(polls === 1 ? 'executing' : 'succeeded')),
+        );
+      },
+    });
+
+    const created = await client.createMission({
+      projectId: 'project_vera',
+      policyId: 'vera-bounded-mission',
+      objective: 'Deliver one bounded improvement.',
+      completionCriteria: 'One verified pull request is ready.',
+      delivery: {
+        commitMessage: 'feat: deliver bounded improvement',
+        pullRequestTitle: 'Deliver bounded improvement',
+      },
+      idempotencyKey: 'mission-key',
+    });
+    await client.decideMission({
+      missionId: created.id,
+      decision: 'approved',
+    });
+    const completed = await client.waitForMission(created.id, {
+      intervalMs: 1,
+    });
+
+    assert.equal(completed.status, 'succeeded');
+    const creation = requests.find(
+      (request) =>
+        request.method === 'POST' && request.url.endsWith('/v1/missions'),
+    );
+    assert.ok(creation);
+    assert.match(creation.body ?? '', /"action":"create"/u);
     assert.equal(polls, 2);
   });
 

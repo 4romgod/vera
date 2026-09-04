@@ -1,12 +1,17 @@
 import { z } from 'zod';
 
+import { ReminderNotificationResourceSchema } from '../notifications/notification.ts';
+export {
+  NotificationIdSchema,
+  NotificationResourceSchema,
+  notificationCursor,
+  parseNotificationCursor,
+  type NotificationResource,
+} from '../notifications/notification.ts';
+
 export const ReminderIdSchema = z
   .string()
   .regex(/^reminder_[a-z0-9][a-z0-9_-]*$/u);
-
-export const NotificationIdSchema = z
-  .string()
-  .regex(/^notification_[a-z0-9][a-z0-9_-]*$/u);
 
 export const ReminderStatusSchema = z.enum([
   'scheduled',
@@ -14,20 +19,6 @@ export const ReminderStatusSchema = z.enum([
   'acknowledged',
   'cancelled',
 ]);
-
-export const NotificationResourceSchema = z
-  .object({
-    schemaVersion: z.literal(1),
-    id: NotificationIdSchema,
-    reminderId: ReminderIdSchema,
-    message: z.string().trim().min(1).max(1_000),
-    scheduledFor: z.iso.datetime(),
-    deliveredAt: z.iso.datetime(),
-    status: z.enum(['unread', 'acknowledged']),
-    channel: z.literal('vera_inbox'),
-    acknowledgedAt: z.iso.datetime().optional(),
-  })
-  .strict();
 
 const ReminderMutationSchema = z
   .object({
@@ -59,7 +50,7 @@ const ReminderBaseSchema = z
     creationInvocationId: z.string().startsWith('invocation_'),
     lastMutation: ReminderMutationSchema,
     claim: ReminderClaimSchema.optional(),
-    notification: NotificationResourceSchema.optional(),
+    notification: ReminderNotificationResourceSchema.optional(),
     cancelledAt: z.iso.datetime().optional(),
     acknowledgedAt: z.iso.datetime().optional(),
   })
@@ -232,7 +223,6 @@ export type ReminderActionArguments = z.infer<
   typeof ReminderActionArgumentsSchema
 >;
 export type ReminderResult = z.infer<typeof ReminderResultSchema>;
-export type NotificationResource = z.infer<typeof NotificationResourceSchema>;
 
 export function reminderResource(reminder: Reminder): ReminderResource {
   const {
@@ -247,28 +237,4 @@ export function reminderResource(reminder: Reminder): ReminderResource {
   void ignoredMutation;
   void ignoredClaim;
   return ReminderResourceSchema.parse(resource);
-}
-
-export function notificationCursor(notification: NotificationResource): string {
-  return Buffer.from(
-    JSON.stringify([notification.deliveredAt, notification.id]),
-    'utf8',
-  ).toString('base64url');
-}
-
-export function parseNotificationCursor(cursor: string): {
-  deliveredAt: string;
-  id: string;
-} {
-  let value: unknown;
-  try {
-    value = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
-  } catch {
-    throw new Error('Notification cursor is invalid.');
-  }
-  const parsed = z
-    .tuple([z.iso.datetime(), NotificationIdSchema])
-    .safeParse(value);
-  if (!parsed.success) throw new Error('Notification cursor is invalid.');
-  return { deliveredAt: parsed.data[0], id: parsed.data[1] };
 }

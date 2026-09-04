@@ -407,6 +407,14 @@ export class DeterministicModelProvider implements ModelProvider {
     const requestsChange = /\b(implement|fix|modify|edit|write)\b/u.test(
       normalizedMessage,
     );
+    const requestsMission =
+      JSON.stringify(input.outputSchema).includes('mission_management') &&
+      projectId !== undefined &&
+      (/\bmission\b/u.test(normalizedMessage) ||
+        (/\b(while i(?:'m| am) away|independently|autonomously)\b/u.test(
+          normalizedMessage,
+        ) &&
+          /\b(pull request|pr)\b/u.test(normalizedMessage)));
     const requestsPlan = normalizedMessage.includes('plan');
     const requestsResearch =
       /\b(research|investigate|look up|verify|compare)\b/u.test(
@@ -763,127 +771,149 @@ export class DeterministicModelProvider implements ModelProvider {
               },
             },
           }
-        : executeBoundedGoal
+        : requestsMission
           ? {
               schemaVersion: 1,
-              kind: 'execute_goal',
+              kind: 'invoke_capability',
               decisionSummary:
-                'The owner requested multiple dependent outcomes that require a bounded capability sequence.',
-              goal: {
-                schemaVersion: 1,
+                'The owner requested one bounded autonomous software outcome ending at a reviewable pull request.',
+              capability: { name: 'mission_management', version: 1 },
+              arguments: {
+                action: 'create',
                 objective: ownerMessage,
-                summary: `Execute ${String(boundedGoalSteps.length)} bounded capability steps and carry approved artifacts forward.`,
-                steps: boundedGoalSteps,
+                completionCriteria:
+                  'Produce one verified, non-draft pull request that satisfies the stated objective, and do not merge it.',
+                project: { name: projectName },
+                delivery: {
+                  commitMessage: 'feat: complete bounded mission',
+                  pullRequestTitle: 'Complete bounded mission',
+                },
               },
             }
-          : machineAction !== undefined
+          : executeBoundedGoal
             ? {
                 schemaVersion: 1,
-                kind: 'invoke_capability',
+                kind: 'execute_goal',
                 decisionSummary:
-                  'The owner requested an exact registered service action.',
-                capability: { name: 'machine_service_management', version: 1 },
-                arguments: machineAction,
+                  'The owner requested multiple dependent outcomes that require a bounded capability sequence.',
+                goal: {
+                  schemaVersion: 1,
+                  objective: ownerMessage,
+                  summary: `Execute ${String(boundedGoalSteps.length)} bounded capability steps and carry approved artifacts forward.`,
+                  steps: boundedGoalSteps,
+                },
               }
-            : requestsMachineInspection
+            : machineAction !== undefined
               ? {
                   schemaVersion: 1,
                   kind: 'invoke_capability',
                   decisionSummary:
-                    'The owner requested bounded registered machine diagnostics.',
-                  capability: { name: 'machine_inspection', version: 1 },
-                  arguments: {
-                    machineId: selectedMachine.id,
-                    ...(selectedService === undefined
-                      ? {}
-                      : { serviceIds: [selectedService.id] }),
+                    'The owner requested an exact registered service action.',
+                  capability: {
+                    name: 'machine_service_management',
+                    version: 1,
                   },
+                  arguments: machineAction,
                 }
-              : personalTaskAction !== undefined
+              : requestsMachineInspection
                 ? {
                     schemaVersion: 1,
                     kind: 'invoke_capability',
                     decisionSummary:
-                      'The owner requested an action against durable personal tasks.',
-                    capability: {
-                      name: 'personal_task_management',
-                      version: 1,
+                      'The owner requested bounded registered machine diagnostics.',
+                    capability: { name: 'machine_inspection', version: 1 },
+                    arguments: {
+                      machineId: selectedMachine.id,
+                      ...(selectedService === undefined
+                        ? {}
+                        : { serviceIds: [selectedService.id] }),
                     },
-                    arguments: personalTaskAction,
                   }
-                : reminderAction !== undefined
+                : personalTaskAction !== undefined
                   ? {
                       schemaVersion: 1,
                       kind: 'invoke_capability',
                       decisionSummary:
-                        'The owner requested an action against durable reminders.',
+                        'The owner requested an action against durable personal tasks.',
                       capability: {
-                        name: 'personal_reminder_management',
+                        name: 'personal_task_management',
                         version: 1,
                       },
-                      arguments: reminderAction,
+                      arguments: personalTaskAction,
                     }
-                  : memoryAction !== undefined
+                  : reminderAction !== undefined
                     ? {
                         schemaVersion: 1,
                         kind: 'invoke_capability',
                         decisionSummary:
-                          'The owner requested an explicit governed-memory action.',
-                        capability: { name: 'memory_management', version: 1 },
-                        arguments: memoryAction,
+                          'The owner requested an action against durable reminders.',
+                        capability: {
+                          name: 'personal_reminder_management',
+                          version: 1,
+                        },
+                        arguments: reminderAction,
                       }
-                    : shouldResearch
+                    : memoryAction !== undefined
                       ? {
                           schemaVersion: 1,
                           kind: 'invoke_capability',
                           decisionSummary:
-                            'The request asks for current, source-backed public-web research.',
-                          capability: { name: 'web_research', version: 1 },
-                          arguments: { objective: ownerMessage },
+                            'The owner requested an explicit governed-memory action.',
+                          capability: { name: 'memory_management', version: 1 },
+                          arguments: memoryAction,
                         }
-                      : shouldPlan
+                      : shouldResearch
                         ? {
                             schemaVersion: 1,
                             kind: 'invoke_capability',
                             decisionSummary:
-                              'The request asks for specialist software planning.',
-                            capability: {
-                              name: 'development_planning',
-                              version: 1,
-                            },
-                            arguments: projectArguments,
+                              'The request asks for current, source-backed public-web research.',
+                            capability: { name: 'web_research', version: 1 },
+                            arguments: { objective: ownerMessage },
                           }
-                        : shouldChange
+                        : shouldPlan
                           ? {
                               schemaVersion: 1,
                               kind: 'invoke_capability',
                               decisionSummary:
-                                'The request asks for an isolated specialist software change.',
+                                'The request asks for specialist software planning.',
                               capability: {
-                                name: 'software_change',
+                                name: 'development_planning',
                                 version: 1,
                               },
                               arguments: projectArguments,
                             }
-                          : requestsAttachmentAnalysis
+                          : shouldChange
                             ? {
                                 schemaVersion: 1,
                                 kind: 'invoke_capability',
                                 decisionSummary:
-                                  'The supplied attachments must be analyzed before Vera makes claims about their contents.',
+                                  'The request asks for an isolated specialist software change.',
                                 capability: {
-                                  name: 'attachment_analysis',
+                                  name: 'software_change',
                                   version: 1,
                                 },
-                                arguments: { objective: ownerMessage },
+                                arguments: projectArguments,
                               }
-                            : {
-                                schemaVersion: 1,
-                                kind: 'respond',
-                                decisionSummary:
-                                  'The request can be answered directly.',
-                                message: `Vera received: ${ownerMessage}`,
-                              };
+                            : requestsAttachmentAnalysis
+                              ? {
+                                  schemaVersion: 1,
+                                  kind: 'invoke_capability',
+                                  decisionSummary:
+                                    'The supplied attachments must be analyzed before Vera makes claims about their contents.',
+                                  capability: {
+                                    name: 'attachment_analysis',
+                                    version: 1,
+                                  },
+                                  arguments: { objective: ownerMessage },
+                                }
+                              : {
+                                  schemaVersion: 1,
+                                  kind: 'respond',
+                                  decisionSummary:
+                                    'The request can be answered directly.',
+                                  message: `Vera received: ${ownerMessage}`,
+                                };
 
     return Promise.resolve({
       candidate,

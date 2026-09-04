@@ -330,6 +330,22 @@ roadmap selection, recurring campaigns, and multi-PR programs remain explicit
 future decisions. See
 [ADR-0034](decisions/0034-delegate-bounded-development-campaigns-through-one-owner-approval.md).
 
+### Bounded unattended software missions — implemented
+
+Vera can now accept one assistant-level engineering delegation: select one
+bounded outcome for the selected project, carry it through the existing
+campaign machinery, and return one verified pull request. Draft creation is a
+non-consequential local capability write; one owner approval freezes the exact
+objective, completion criteria, policy, campaign effect, delivery metadata,
+limits, and permanent no-merge/no-recurrence authority.
+
+The mission and campaign are separately durable and restart-discoverable. The
+mission worker verifies that the subordinate campaign still matches the frozen
+effect before authorizing it and treats any merged result as an integrity
+conflict. Terminal outcomes enter the Vera inbox and the frontend Missions tab
+keeps approval, progress, stop reason, and pull-request handoff visible. See
+[ADR-0035](decisions/0035-run-bounded-software-missions-that-stop-at-a-pull-request.md).
+
 ### Deferred calendar integration — explicit backlog
 
 Calendar connection, availability reasoning, event creation, rescheduling, and
@@ -454,7 +470,7 @@ evidence-linked final response, budgets, artifacts, and owner resource after a
 later restart.
 
 The workflow remains one job, reuses one install and build, cancels superseded
-runs, and has a five-minute hard limit. The persistent tier runs on the pull
+runs, and has a nine-minute hard limit. The persistent tier runs on the pull
 request and is not repeated for its resulting `main` push, although it remains
 manually triggerable. Static, unit, boundary, and build checks still run for
 both events. This gate strengthens reproducible V1 evidence but does not replace

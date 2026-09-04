@@ -29,6 +29,7 @@ export type DevelopmentCampaignErrorCode =
   | 'development_campaign_project_not_found'
   | 'development_campaign_capability_unavailable'
   | 'development_campaign_approval_already_decided'
+  | 'development_campaign_approval_managed_by_mission'
   | 'development_campaign_concurrent_transition_failed'
   | 'development_campaign_not_cancellable';
 
@@ -59,12 +60,20 @@ export type DevelopmentCampaignLifecycle = {
     objective: string;
     ticket: { reference: string; details: string };
     delivery: DevelopmentCampaignEffect['delivery'];
+    completionMode?: 'policy' | 'pull_request_only';
+    approvalController?: DevelopmentCampaignEffect['approvalController'];
   }): Promise<DevelopmentCampaign>;
   get(principalId: string, campaignId: string): Promise<DevelopmentCampaign>;
   list(principalId: string): Promise<DevelopmentCampaign[]>;
   decideApproval(input: {
     principalId: string;
     campaignId: string;
+    decision: 'approved' | 'rejected';
+  }): Promise<DevelopmentCampaign>;
+  decideMissionApproval(input: {
+    principalId: string;
+    campaignId: string;
+    missionId: string;
     decision: 'approved' | 'rejected';
   }): Promise<DevelopmentCampaign>;
   cancel(input: {
@@ -400,6 +409,11 @@ export function createDevelopmentCampaignLifecycle(options: {
       effect.project.id === input.projectId &&
       effect.policyId === input.policyId &&
       effect.objective === input.objective.trim() &&
+      effect.completionMode === (input.completionMode ?? 'policy') &&
+      stableEqual(
+        effect.approvalController ?? { kind: 'owner' },
+        input.approvalController ?? { kind: 'owner' },
+      ) &&
       stableEqual(effect.ticket, {
         reference: input.ticket.reference.trim(),
         details: input.ticket.details.trim(),
@@ -444,6 +458,63 @@ export function createDevelopmentCampaignLifecycle(options: {
           : 'development_campaign_repair_started',
         now,
         { attempt: number, taskId: task.task.id, runId: task.run.id },
+        createId,
+      );
+      return true;
+    });
+  }
+
+  async function decideCampaignApproval(input: {
+    principalId: string;
+    campaignId: string;
+    decision: 'approved' | 'rejected';
+    missionId?: string;
+  }) {
+    const now = clock();
+    return update(input.principalId, input.campaignId, (candidate) => {
+      const controller = candidate.approval.effect.approvalController ?? {
+        kind: 'owner' as const,
+      };
+      const expectedDecider =
+        controller.kind === 'mission'
+          ? controller.missionId
+          : input.principalId;
+      if (
+        (controller.kind === 'mission' &&
+          input.missionId !== controller.missionId) ||
+        (controller.kind === 'owner' && input.missionId !== undefined)
+      ) {
+        throw new DevelopmentCampaignError(
+          controller.kind === 'mission'
+            ? `Campaign approval is controlled by mission ${controller.missionId}.`
+            : 'An owner-controlled campaign cannot be approved by a mission.',
+          'development_campaign_approval_managed_by_mission',
+        );
+      }
+      if (candidate.approval.status !== 'pending') {
+        if (
+          candidate.approval.status === input.decision &&
+          candidate.approval.decidedBy === expectedDecider
+        )
+          return false;
+        throw new DevelopmentCampaignError(
+          `Approval ${candidate.approval.id} has already been decided.`,
+          'development_campaign_approval_already_decided',
+        );
+      }
+      candidate.approval.status = input.decision;
+      candidate.approval.decidedAt = now;
+      candidate.approval.decidedBy = expectedDecider;
+      candidate.status =
+        input.decision === 'approved' ? 'approved' : 'rejected';
+      candidate.updatedAt = now;
+      appendEvent(
+        candidate,
+        input.decision === 'approved'
+          ? 'development_campaign_approval_approved'
+          : 'development_campaign_approval_rejected',
+        now,
+        { approvalId: candidate.approval.id, decidedBy: expectedDecider },
         createId,
       );
       return true;
@@ -855,14 +926,34 @@ export function createDevelopmentCampaignLifecycle(options: {
         createId,
       );
       if (ready) {
-        candidate.status = 'merging';
-        appendEvent(
-          candidate,
-          'development_campaign_merge_started',
-          now,
-          { pullRequestNumber: candidate.pullRequest.number },
-          createId,
-        );
+        if (!candidate.approval.effect.merge.enabled) {
+          candidate.status = 'succeeded';
+          candidate.result = {
+            outcome: 'pull_request_ready',
+            pullRequestNumber: candidate.pullRequest.number,
+            pullRequestUrl: candidate.pullRequest.url,
+            headRevision: candidate.pullRequest.headRevision,
+            baseRevision: candidate.approval.effect.baseRevision,
+            attempts: candidate.attempts.length,
+            completedAt: now,
+          };
+          appendEvent(
+            candidate,
+            'development_campaign_succeeded',
+            now,
+            { outcome: 'pull_request_ready' },
+            createId,
+          );
+        } else {
+          candidate.status = 'merging';
+          appendEvent(
+            candidate,
+            'development_campaign_merge_started',
+            now,
+            { pullRequestNumber: candidate.pullRequest.number },
+            createId,
+          );
+        }
       }
       return true;
     });
@@ -902,6 +993,7 @@ export function createDevelopmentCampaignLifecycle(options: {
       } else {
         candidate.status = 'succeeded';
         candidate.result = {
+          outcome: 'merged',
           pullRequestNumber: candidate.pullRequest.number,
           pullRequestUrl: candidate.pullRequest.url,
           mergeRevision: merged.mergeRevision,
@@ -941,6 +1033,7 @@ export function createDevelopmentCampaignLifecycle(options: {
         return false;
       candidate.status = 'succeeded';
       candidate.result = {
+        outcome: 'merged',
         pullRequestNumber: candidate.pullRequest.number,
         pullRequestUrl: candidate.pullRequest.url,
         mergeRevision: candidate.mergeResult.mergeRevision,
@@ -1040,6 +1133,8 @@ export function createDevelopmentCampaignLifecycle(options: {
           },
         },
         capabilities,
+        completionMode: input.completionMode ?? 'policy',
+        approvalController: input.approvalController ?? { kind: 'owner' },
       });
       const now = clock();
       const approvalId = createId('approval');
@@ -1098,38 +1193,9 @@ export function createDevelopmentCampaignLifecycle(options: {
 
     list: (principalId) => options.store.list(principalId, 50),
 
-    async decideApproval(input) {
-      const now = clock();
-      return update(input.principalId, input.campaignId, (candidate) => {
-        if (candidate.approval.status !== 'pending') {
-          if (
-            candidate.approval.status === input.decision &&
-            candidate.approval.decidedBy === input.principalId
-          )
-            return false;
-          throw new DevelopmentCampaignError(
-            `Approval ${candidate.approval.id} has already been decided.`,
-            'development_campaign_approval_already_decided',
-          );
-        }
-        candidate.approval.status = input.decision;
-        candidate.approval.decidedAt = now;
-        candidate.approval.decidedBy = input.principalId;
-        candidate.status =
-          input.decision === 'approved' ? 'approved' : 'rejected';
-        candidate.updatedAt = now;
-        appendEvent(
-          candidate,
-          input.decision === 'approved'
-            ? 'development_campaign_approval_approved'
-            : 'development_campaign_approval_rejected',
-          now,
-          { approvalId: candidate.approval.id },
-          createId,
-        );
-        return true;
-      });
-    },
+    decideApproval: (input) => decideCampaignApproval(input),
+
+    decideMissionApproval: (input) => decideCampaignApproval(input),
 
     async cancel(input) {
       const campaign = await requireCampaign(

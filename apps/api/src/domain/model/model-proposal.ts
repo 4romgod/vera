@@ -6,6 +6,7 @@ import {
   WebResearchProposalArgumentsSchema,
   AttachmentAnalysisArgumentsSchema,
 } from '../capabilities/capability-registry.ts';
+import { MissionProposalArgumentsSchema } from '../missions/mission.ts';
 import { PersonalTaskActionArgumentsSchema } from '../personal-tasks/personal-task.ts';
 import { ReminderActionArgumentsSchema } from '../reminders/reminder.ts';
 import { MemoryActionArgumentsSchema } from '../memories/memory.ts';
@@ -44,6 +45,19 @@ const RespondProposalSchema = z
     kind: z.literal('respond'),
     decisionSummary: DecisionSummarySchema,
     message: z.string().trim().min(1).max(20_000),
+  })
+  .strict();
+
+const MissionManagementProposalSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    kind: z.literal('invoke_capability'),
+    decisionSummary: DecisionSummarySchema,
+    capability: CapabilityReferenceSchema.extend({
+      name: z.literal('mission_management'),
+      version: z.literal(1),
+    }),
+    arguments: MissionProposalArgumentsSchema,
   })
   .strict();
 
@@ -184,6 +198,7 @@ const PursueAdaptiveGoalProposalSchema = z
 
 export const ModelProposalSchema = z.union([
   RespondProposalSchema,
+  MissionManagementProposalSchema,
   DevelopmentPlanningProposalSchema,
   SoftwareChangeProposalSchema,
   WebResearchProposalSchema,
@@ -206,6 +221,10 @@ export function createModelProposalSchema(options: {
   const developmentPlanningEnabled = options.enabledCapabilities.some(
     (capability) =>
       capability.name === 'development_planning' && capability.version === 1,
+  );
+  const missionManagementEnabled = options.enabledCapabilities.some(
+    (capability) =>
+      capability.name === 'mission_management' && capability.version === 1,
   );
   const softwareChangeEnabled = options.enabledCapabilities.some(
     (capability) =>
@@ -260,6 +279,7 @@ export function createModelProposalSchema(options: {
       : []),
   ];
   const schemas: z.ZodType[] = [RespondProposalSchema];
+  if (missionManagementEnabled) schemas.push(MissionManagementProposalSchema);
   if (developmentPlanningEnabled) {
     schemas.push(DevelopmentPlanningProposalSchema);
   }

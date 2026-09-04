@@ -56,6 +56,11 @@ import { registerTranscriptionRoutes } from './routes/transcription-routes.ts';
 import { registerAttachmentRoutes } from './routes/attachment-routes.ts';
 import { registerMachineRoutes } from './routes/machine-routes.ts';
 import { registerDevelopmentCampaignRoutes } from './routes/development-campaign-routes.ts';
+import { registerMissionRoutes } from './routes/mission-routes.ts';
+import {
+  MissionError,
+  type MissionLifecycle,
+} from '../../../application/missions/mission-lifecycle.ts';
 import {
   DevelopmentCampaignError,
   type DevelopmentCampaignLifecycle,
@@ -95,6 +100,7 @@ export type BuildAppOptions = {
     wake(): void;
   };
   developmentCampaigns?: DevelopmentCampaignLifecycle & { wake(): void };
+  missions?: MissionLifecycle & { wake(): void };
   readinessChecks?: {
     name: string;
     check(): Promise<void>;
@@ -395,6 +401,9 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       campaigns: options.developmentCampaigns,
     });
   }
+  if (options.missions !== undefined) {
+    registerMissionRoutes(app, { principalId, missions: options.missions });
+  }
 
   if (options.close !== undefined) app.addHook('onClose', options.close);
 
@@ -480,6 +489,18 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
           : error.code === 'development_campaign_capability_unavailable'
             ? 503
             : 409;
+      void reply.status(statusCode).send({
+        error: { code: error.code, message: error.message },
+      });
+      return;
+    }
+    if (error instanceof MissionError) {
+      const statusCode =
+        error.code === 'mission_not_found' ||
+        error.code === 'mission_project_not_found' ||
+        error.code === 'mission_policy_not_found'
+          ? 404
+          : 409;
       void reply.status(statusCode).send({
         error: { code: error.code, message: error.message },
       });

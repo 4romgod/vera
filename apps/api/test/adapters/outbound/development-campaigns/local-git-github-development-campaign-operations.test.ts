@@ -54,6 +54,7 @@ function operations(options?: {
             minimumRequiredChecks: 1,
           },
           merge: {
+            enabled: true,
             method: 'squash',
             requireReviewApproval: false,
             synchronizeLocalBase: true,

@@ -26,6 +26,8 @@ import type { CapabilityRuntimeRegistry } from '../../../src/ports/capabilities/
 import type { ProjectContextAssembler } from '../../../src/ports/projects/project-context-assembler.ts';
 import { createDeterministicSoftwareChangeRegistry } from '../../support/deterministic-software-change-registry.ts';
 import { createTestCapabilityRuntime } from '../../support/test-capability-runtime.ts';
+import { findCapability } from '../../../src/domain/capabilities/capability-registry.ts';
+import type { CapabilityRuntime } from '../../../src/ports/capabilities/capability-runtime.ts';
 
 const plan: DevelopmentPlan = {
   schemaVersion: 1,
@@ -117,6 +119,88 @@ function softwareChangeDecision(): DecisionResult {
       proposedArguments,
     },
     model: { provider: 'fake', model: 'fake-v1', durationMs: 1 },
+  };
+}
+
+function missionDecision(): DecisionResult {
+  const proposedArguments = {
+    action: 'create' as const,
+    objective: 'Select and deliver one useful Vera improvement.',
+    completionCriteria: 'One verified pull request is ready for review.',
+    project: { name: 'Vera' },
+    delivery: {
+      commitMessage: 'feat: complete bounded mission',
+      pullRequestTitle: 'Complete bounded mission',
+    },
+  };
+  return {
+    decisionId: 'decision_mission_test',
+    proposal: {
+      schemaVersion: 1,
+      kind: 'invoke_capability',
+      decisionSummary: 'Draft one bounded mission.',
+      capability: { name: 'mission_management', version: 1 },
+      arguments: proposedArguments,
+    },
+    decision: {
+      kind: 'approval_required',
+      reason: 'specialist_capability_invocation',
+      capability: { name: 'mission_management', version: 1 },
+      proposedArguments,
+    },
+    model: { provider: 'fake', model: 'fake-v1', durationMs: 1 },
+  };
+}
+
+function missionCapabilityRegistry(): CapabilityRuntimeRegistry {
+  const definition = findCapability('mission_management', 1);
+  assert.ok(definition);
+  const destination = {
+    schemaVersion: 1 as const,
+    adapterId: 'bounded_mission',
+    provider: 'vera',
+    transport: 'in_process' as const,
+    dataBoundary: 'owner_controlled' as const,
+  };
+  const authority = definition.authority;
+  const runtime: CapabilityRuntime = {
+    definition,
+    destination,
+    authority,
+    authorityFor: () => authority,
+    checkReadiness: () => Promise.resolve(),
+    execute: () =>
+      Promise.resolve({
+        artifact: {
+          type: 'mission_management_result',
+          mediaType: 'application/vnd.vera.mission-management-result+json',
+          content: {
+            schemaVersion: 1,
+            action: 'create',
+            summary: 'Mission draft prepared for one owner approval.',
+            mission: {
+              id: 'mission_task_test',
+              status: 'awaiting_approval',
+              objective: 'Select and deliver one useful Vera improvement.',
+            },
+          },
+        },
+        model: { provider: 'vera', model: 'bounded_mission', durationMs: 1 },
+      }),
+  };
+  return {
+    declarations: () => [{ definition, authority, enabled: true, destination }],
+    enabledReferences: () => [{ name: 'mission_management', version: 1 }],
+    selected: (reference) =>
+      reference.name === 'mission_management' && reference.version === 1
+        ? runtime
+        : null,
+    resolve: (reference, candidate) =>
+      reference.name === 'mission_management' &&
+      reference.version === 1 &&
+      sameCapabilityDestination(destination, candidate)
+        ? runtime
+        : null,
   };
 }
 
@@ -425,6 +509,32 @@ function harness(options?: {
 }
 
 void describe('task lifecycle', () => {
+  void it('automatically executes a non-consequential mission draft write but leaves the mission awaiting owner approval', async () => {
+    const test = harness({
+      decision: missionDecision(),
+      capabilities: missionCapabilityRegistry(),
+      executionMode: 'worker',
+    });
+    const submitted = await test.lifecycle.submit({
+      principalId: 'owner_v1',
+      requestKey: 'mission-draft-task',
+      message: 'Run one bounded mission while I am away.',
+    });
+    const decided = await test.lifecycle.progressTask(
+      'owner_v1',
+      submitted.task.id,
+    );
+    assert.equal(decided.run.status, 'awaiting_approval');
+    assert.equal(decided.run.approval?.status, 'approved');
+    assert.equal(decided.run.approval.decidedBy, 'vera_policy');
+
+    const completed = await test.lifecycle.progressTask(
+      'owner_v1',
+      submitted.task.id,
+    );
+    assert.equal(completed.run.status, 'succeeded');
+    assert.equal(completed.run.output?.kind, 'mission_management_result');
+  });
   void it('anchors temporal context to the durable task creation instant', async () => {
     let now = '2026-08-26T10:00:00.000Z';
     let evaluatedContext: Parameters<EvaluateModelDecision>[1];

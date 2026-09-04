@@ -84,6 +84,13 @@ function fakeApi(overrides: Partial<VeraApi>): VeraApi {
     decideDevelopmentCampaign: unavailable,
     cancelDevelopmentCampaign: unavailable,
     waitForDevelopmentCampaign: unavailable,
+    listMissionPolicies: unavailable,
+    createMission: unavailable,
+    listMissions: unavailable,
+    getMission: unavailable,
+    decideMission: unavailable,
+    cancelMission: unavailable,
+    waitForMission: unavailable,
     waitForRun: unavailable,
     ...overrides,
   };

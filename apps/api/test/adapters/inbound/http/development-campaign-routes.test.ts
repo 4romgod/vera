@@ -34,6 +34,7 @@ void describe('development campaign HTTP API', () => {
               minimumRequiredChecks: 1,
             },
             merge: {
+              enabled: true,
               method: 'squash' as const,
               requireReviewApproval: false,
               synchronizeLocalBase: true,
@@ -74,6 +75,7 @@ void describe('development campaign HTTP API', () => {
             minimumRequiredChecks: 1,
           },
           merge: {
+            enabled: true,
             method: 'squash',
             requireReviewApproval: false,
             synchronizeLocalBase: true,

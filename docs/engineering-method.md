@@ -137,7 +137,7 @@ sake.
 Required pull-request CI must be deterministic, bounded, and economical. Vera
 uses one Linux job so checkout, dependency installation, build work, and
 per-job billing granularity are not duplicated. Superseded runs are cancelled,
-and the job has a five-minute hard limit. The real-storage tier runs once for
+and the job has a nine-minute hard limit. The real-storage tier runs once for
 the pull request and is not repeated for the resulting `main` push; the static,
 unit, boundary, and build checks still protect both events. An explicit manual
 run remains available.

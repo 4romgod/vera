@@ -32,6 +32,7 @@ import type {
   MachineCatalogResource,
   DevelopmentCampaignResource,
   DevelopmentCampaignPolicyResource,
+  MissionResource,
 } from '@vera/client';
 
 import { IconButton } from '@/components/ui/icon-button';
@@ -45,6 +46,7 @@ export type ResourceTab =
   | 'reminders'
   | 'notifications'
   | 'machines'
+  | 'missions'
   | 'campaigns';
 
 const tabs: { id: ResourceTab; label: string; icon: typeof Brain }[] = [
@@ -53,6 +55,7 @@ const tabs: { id: ResourceTab; label: string; icon: typeof Brain }[] = [
   { id: 'reminders', label: 'Reminders', icon: CalendarClock },
   { id: 'notifications', label: 'Activity', icon: Bell },
   { id: 'machines', label: 'Machines', icon: ServerCog },
+  { id: 'missions', label: 'Missions', icon: Rocket },
   { id: 'campaigns', label: 'Campaigns', icon: Rocket },
 ];
 
@@ -67,6 +70,7 @@ export function ResourcePanel(props: {
   machines: MachineCatalogResource['machines'];
   campaigns: DevelopmentCampaignResource[];
   campaignPolicies: DevelopmentCampaignPolicyResource[];
+  missions: MissionResource[];
   onTab: (tab: ResourceTab) => void;
   onClose: () => void;
   onMemoryCommand: (command: string) => void;
@@ -81,6 +85,11 @@ export function ResourcePanel(props: {
     decision: 'approved' | 'rejected',
   ) => Promise<boolean>;
   onCampaignCancel: (campaignId: string) => Promise<boolean>;
+  onMissionDecision: (
+    missionId: string,
+    decision: 'approved' | 'rejected',
+  ) => Promise<boolean>;
+  onMissionCancel: (missionId: string) => Promise<boolean>;
 }) {
   if (!props.open) return null;
   const content = <PanelContent {...props} />;
@@ -122,6 +131,7 @@ function PanelContent(props: Parameters<typeof ResourcePanel>[0]) {
   const [campaignObjective, setCampaignObjective] = useState('');
   const [creatingCampaign, setCreatingCampaign] = useState(false);
   const [campaignActionId, setCampaignActionId] = useState<string>();
+  const [missionActionId, setMissionActionId] = useState<string>();
   const campaignPolicy = props.campaignPolicies.find(
     (policy) => policy.id === campaignPolicyId,
   );
@@ -565,6 +575,35 @@ function PanelContent(props: Parameters<typeof ResourcePanel>[0]) {
             ))
           : null}
 
+        {props.tab === 'missions' && props.missions.length === 0 ? (
+          <Empty
+            icon={Rocket}
+            title="No missions yet"
+            description="Ask Vera to take one bounded software objective to a verified pull request while you are away."
+          />
+        ) : null}
+        {props.tab === 'missions'
+          ? props.missions.map((mission) => (
+              <MissionCard
+                busy={missionActionId !== undefined}
+                key={mission.id}
+                mission={mission}
+                onCancel={() => {
+                  setMissionActionId(mission.id);
+                  void props
+                    .onMissionCancel(mission.id)
+                    .finally(() => setMissionActionId(undefined));
+                }}
+                onDecision={(decision) => {
+                  setMissionActionId(mission.id);
+                  void props
+                    .onMissionDecision(mission.id, decision)
+                    .finally(() => setMissionActionId(undefined));
+                }}
+              />
+            ))
+          : null}
+
         {props.tab === 'campaigns' ? (
           <ResourceCard>
             <Tag label="New governed campaign" />
@@ -705,6 +744,7 @@ function CampaignCard(props: {
 }) {
   const campaign = props.campaign;
   const effect = campaign.approval.effect;
+  const missionControlled = effect.approvalController?.kind === 'mission';
   const cancellable = [
     'awaiting_approval',
     'approved',
@@ -741,6 +781,11 @@ function CampaignCard(props: {
         Base: {effect.baseRevision.slice(0, 12)} · Ticket:{' '}
         {effect.ticket.reference}
       </Text>
+      {missionControlled ? (
+        <Text selectable style={{ color: palette.accent, fontSize: 11 }}>
+          Approval is controlled by its bounded mission.
+        </Text>
+      ) : null}
       <Text selectable style={{ color: palette.muted, fontSize: 11 }}>
         Gates: {effect.qualityGates.map((gate) => gate.label).join(', ')}
       </Text>
@@ -797,7 +842,8 @@ function CampaignCard(props: {
         </Text>
       )}
       {campaign.status === 'awaiting_approval' &&
-      campaign.approval.status === 'pending' ? (
+      campaign.approval.status === 'pending' &&
+      !missionControlled ? (
         <View
           style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}
         >
@@ -814,13 +860,100 @@ function CampaignCard(props: {
             onPress={() => props.onDecision('approved')}
           />
         </View>
-      ) : cancellable ? (
+      ) : cancellable && !missionControlled ? (
         <SmallButton
           disabled={props.busy}
           label="Cancel campaign"
           onPress={props.onCancel}
         />
       ) : null}
+    </ResourceCard>
+  );
+}
+
+function MissionCard(props: {
+  mission: MissionResource;
+  busy: boolean;
+  onDecision: (decision: 'approved' | 'rejected') => void;
+  onCancel: () => void;
+}) {
+  const { mission } = props;
+  const effect = mission.approval.effect;
+  const terminal = [
+    'succeeded',
+    'rejected',
+    'review_required',
+    'failed',
+    'cancelled',
+  ].includes(mission.status);
+  return (
+    <ResourceCard>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+        <Tag label={mission.status} />
+        <Text selectable style={{ color: palette.faint, fontSize: 10 }}>
+          one campaign · no merge
+        </Text>
+      </View>
+      <Text
+        selectable
+        style={{ color: palette.text, fontSize: 17, fontWeight: '700' }}
+      >
+        {effect.objective}
+      </Text>
+      <Text selectable style={{ color: palette.textSoft, lineHeight: 20 }}>
+        Done when: {effect.completionCriteria}
+      </Text>
+      <Text selectable style={{ color: palette.muted, fontSize: 11 }}>
+        {effect.project.displayName} · {effect.limits.maxDurationMinutes} minute
+        ceiling · pull request only
+      </Text>
+      <Text selectable style={{ color: palette.muted, fontSize: 11 }}>
+        Commit: {effect.campaign.effect.delivery.commitMessage}
+      </Text>
+      <Text selectable style={{ color: palette.muted, fontSize: 11 }}>
+        PR: {effect.campaign.effect.delivery.pullRequest.title}
+      </Text>
+      {mission.result === undefined ? null : (
+        <SmallButton
+          disabled={!isSafeGitHubPullRequestUrl(mission.result.pullRequestUrl)}
+          icon={ExternalLink}
+          label={`Open pull request #${String(mission.result.pullRequestNumber)}`}
+          onPress={() => {
+            const url = mission.result?.pullRequestUrl ?? '';
+            if (isSafeGitHubPullRequestUrl(url)) void Linking.openURL(url);
+          }}
+        />
+      )}
+      {mission.failure === undefined ? null : (
+        <Text selectable style={{ color: palette.danger, lineHeight: 20 }}>
+          {mission.failure.message}
+        </Text>
+      )}
+      {mission.status === 'awaiting_approval' &&
+      mission.approval.status === 'pending' ? (
+        <View
+          style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}
+        >
+          <SmallButton
+            disabled={props.busy}
+            label="Reject"
+            onPress={() => props.onDecision('rejected')}
+          />
+          <SmallButton
+            disabled={props.busy}
+            icon={Check}
+            label="Approve mission"
+            primary
+            onPress={() => props.onDecision('approved')}
+          />
+        </View>
+      ) : terminal ? null : (
+        <SmallButton
+          disabled={props.busy}
+          label="Cancel mission"
+          onPress={props.onCancel}
+        />
+      )}
     </ResourceCard>
   );
 }

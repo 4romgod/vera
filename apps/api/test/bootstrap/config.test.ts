@@ -48,6 +48,7 @@ void describe('application configuration', () => {
       schemaVersion: 1,
       policies: [],
     });
+    assert.deepEqual(config.missions, { schemaVersion: 1, policies: [] });
   });
 
   void it('configures Ollama reasoning without coupling it to a model name', () => {
@@ -357,6 +358,26 @@ void describe('application configuration', () => {
             'config/development-campaigns-does-not-exist.json',
         }),
       /Could not read VERA_DEVELOPMENT_CAMPAIGN_CATALOG_FILE/u,
+    );
+  });
+
+  void it('loads the operator-owned bounded-mission catalog', () => {
+    const missions = loadConfig({
+      VERA_MISSION_CATALOG_FILE: 'config/missions.example.json',
+    }).missions;
+
+    assert.ok(missions);
+    assert.deepEqual(missions.policies[0], {
+      id: 'vera-bounded-mission',
+      campaignPolicyId: 'vera-supervised-autonomy',
+      limits: { maxCampaigns: 1, maxDurationMinutes: 240 },
+    });
+    assert.throws(
+      () =>
+        loadConfig({
+          VERA_MISSION_CATALOG_FILE: 'config/missions-does-not-exist.json',
+        }),
+      /Could not read VERA_MISSION_CATALOG_FILE/u,
     );
   });
 });
