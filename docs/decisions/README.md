@@ -1,7 +1,7 @@
 # Vera Architecture Decision Records
 
 **Status:** Active index
-**Last updated:** 27 August 2026
+**Last updated:** 4 September 2026
 
 ## Purpose
 
@@ -56,6 +56,8 @@ erasing why a choice was made.
 | [0032](0032-compose-attachment-evidence-into-separately-approved-actions.md) | Accepted | Turn attachment evidence into later actions through bounded adaptive goals, explicit evidence classes, and separate approvals. |
 | [0033](0033-govern-machine-operations-through-registered-actions.md) | Accepted | Inspect and control exact registered services through machine-specific approvals, local/SSH adapters, and verified postconditions. |
 | [0034](0034-delegate-bounded-development-campaigns-through-one-owner-approval.md) | Accepted | Carry one owner-approved engineering objective through bounded implementation, verification, publication, checks, merge, and synchronization. |
+| [0035](0035-run-bounded-software-missions-that-stop-at-a-pull-request.md) | Accepted | Run one bounded unattended software mission that stops at a verified pull request and never merges. |
+| [0036](0036-build-grounded-personal-knowledge-from-owner-approved-sources.md) | Accepted | Promote explicitly approved attachments into an integrity-checked personal knowledge library and answer only from cited evidence. |
 
 ADRs 0001–0008 were accepted 24 August 2026 following the owner's review of
 the foundation documentation. ADR-0007 accepted a semantic boundary without
@@ -126,6 +128,11 @@ review, merge, and control-plane authority.
 ADR-0035 adds one assistant-level software mission above campaigns. The model
 may draft one finite outcome, but one owner approval freezes its exact campaign
 and a permanent no-merge boundary before unattended work begins.
+ADR-0036 separates evidence-bearing personal knowledge from concise governed
+memory. Explicit source promotion, integrity-checked chunks, deterministic
+retrieval, minimal provider disclosure, and application-mapped citations make
+owner files reusable without turning all attachment history into implicit
+context.
 
 ## ADR rules
 

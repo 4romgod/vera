@@ -3,7 +3,7 @@
 **Status:** Accepted (capability declaration shape, invocation lifecycle,
 selection checks, and resource/delegation budget model)
 **Version:** 1.0
-**Last updated:** 27 August 2026
+**Last updated:** 4 September 2026
 **Accepted:** 24 August 2026 (owner); declarative runtime, catalog, and
 `web_research@1` accepted by ADR-0020 on 25 August 2026; bounded composition
 accepted by ADR-0021 on 26 August 2026; provider-neutral integration actions
@@ -12,7 +12,8 @@ evidence-adaptive bounded orchestration accepted by ADR-0024 on 26 August 2026;
 and `memory_management@1` accepted by ADR-0025 on 26 August 2026;
 `attachment_analysis@1` is accepted by ADR-0031 on 27 August 2026; actionable
 attachment composition is accepted by ADR-0032 on 27 August 2026
-and registered machine operations are accepted by ADR-0033 on 27 August 2026
+and registered machine operations are accepted by ADR-0033 on 27 August 2026;
+grounded personal knowledge is accepted by ADR-0036 on 4 September 2026
 
 ## Purpose
 
@@ -149,6 +150,18 @@ effective authority always includes `attachment_content` and adds
 boundary. Output is an `attachment_analysis` artifact whose citations are
 checked against the exact approved document segments or images. See
 [ADR-0031](decisions/0031-store-owner-attachments-and-analyze-them-through-exact-approval.md).
+
+`knowledge_management@1` is the owner-governed evidence-library boundary. Its
+closed actions are add, search, list, and remove. Add and remove always require
+approval and declare `knowledge_write`; list is local and read-only. Search is
+also read-only, but its effective authority depends on the configured model
+destination: an owner-controlled model can answer automatically, while a
+third-party model requires approval that explicitly declares
+`personal_knowledge` and `third_party_disclosure`. The model sees only bounded,
+opaque-ID excerpts selected by Vera. It never receives attachment IDs, hashes,
+internal chunk IDs, or the source manifest, and it may cite only the supplied
+opaque IDs. Vera resolves accepted IDs back to exact stored citations. See
+[ADR-0036](decisions/0036-build-grounded-personal-knowledge-from-owner-approved-sources.md).
 
 `machine_inspection@1` and `machine_service_management@1` are the first
 physical-host operation contracts. Their arguments contain only registered

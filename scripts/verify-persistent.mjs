@@ -605,6 +605,25 @@ async function verifyScenarios(mongo, redis) {
   child = started.processHandle;
   let client = new VeraClient({ baseUrl: started.baseUrl });
 
+  const knowledgeAttachment = await client.uploadAttachment({
+    filename: 'persistent-knowledge.txt',
+    mediaType: 'text/plain',
+    bytes: new Blob([
+      'Project Polaris uses the amber readiness checklist. Its accountable owner is Mira.',
+    ]),
+  });
+  const knowledgeInput = {
+    title: 'Persistent Polaris source',
+    scope: { kind: 'global' },
+    attachmentIds: [knowledgeAttachment.id],
+    idempotencyKey: 'persistent-verification-knowledge',
+  };
+  const knowledgeSource = await client.createKnowledgeSource(knowledgeInput);
+  assert.equal(
+    (await client.createKnowledgeSource(knowledgeInput)).id,
+    knowledgeSource.id,
+  );
+
   const projectInput = {
     displayName: 'Vera persistent verification',
     rootPath: root,
@@ -675,6 +694,15 @@ async function verifyScenarios(mongo, redis) {
   started = await startServer(port);
   child = started.processHandle;
   client = new VeraClient({ baseUrl: started.baseUrl });
+  assert.equal(
+    (await client.getKnowledgeSource(knowledgeSource.id)).id,
+    knowledgeSource.id,
+  );
+  const persistedKnowledge = await client.searchKnowledge({
+    query: 'Who owns Project Polaris?',
+  });
+  assert.equal(persistedKnowledge.citations[0]?.sourceId, knowledgeSource.id);
+  assert.match(persistedKnowledge.citations[0]?.excerpt ?? '', /Mira/u);
   const pendingAfterCrash = await client.getRun(submitted.runId);
   assert.equal(pendingAfterCrash.runStatus, 'awaiting_approval');
   assert.equal(pendingAfterCrash.approval?.id, pending.approval.id);
@@ -1510,6 +1538,7 @@ async function verifyScenarios(mongo, redis) {
     durablePersonalTasksVerified: true,
     durableRemindersVerified: true,
     governedMemoryVerified: true,
+    groundedKnowledgePersistenceVerified: true,
     restartSafeNotificationDeliveryVerified: true,
     legacyConversationUpgradeVerified: true,
     roleScopedMessageIdempotencyVerified: true,

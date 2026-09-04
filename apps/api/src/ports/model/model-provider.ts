@@ -13,7 +13,8 @@ export type StructuredGenerationPurpose =
   | 'orchestration_decision'
   | 'goal_continuation'
   | 'development_plan'
-  | 'attachment_analysis';
+  | 'attachment_analysis'
+  | 'knowledge_answer';
 
 export type ModelImageInput = {
   sourceId: string;

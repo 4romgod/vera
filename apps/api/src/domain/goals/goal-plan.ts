@@ -15,6 +15,7 @@ import {
   MachineInspectionArgumentsSchema,
   MachineServiceActionArgumentsSchema,
 } from '../machines/machine.ts';
+import { KnowledgeActionArgumentsSchema } from '../knowledge/knowledge.ts';
 
 export const GoalStepBaseSchema = z.object({
   id: z.string().regex(/^step_[a-z0-9_]+$/u),
@@ -58,6 +59,11 @@ export const MemoryManagementGoalStepSchema = GoalStepBaseSchema.extend({
   version: z.literal(1),
   arguments: MemoryActionArgumentsSchema,
 }).strict();
+export const KnowledgeManagementGoalStepSchema = GoalStepBaseSchema.extend({
+  capability: z.literal('knowledge_management'),
+  version: z.literal(1),
+  arguments: KnowledgeActionArgumentsSchema,
+}).strict();
 export const MachineInspectionGoalStepSchema = GoalStepBaseSchema.extend({
   capability: z.literal('machine_inspection'),
   version: z.literal(1),
@@ -78,6 +84,7 @@ export const GoalStepSchema = z.discriminatedUnion('capability', [
   PersonalTaskManagementGoalStepSchema,
   PersonalReminderManagementGoalStepSchema,
   MemoryManagementGoalStepSchema,
+  KnowledgeManagementGoalStepSchema,
   AttachmentAnalysisGoalStepSchema,
   MachineInspectionGoalStepSchema,
   MachineServiceManagementGoalStepSchema,
@@ -156,6 +163,7 @@ export const GoalExecutionStepSchema = z.discriminatedUnion('capability', [
   PersonalTaskManagementGoalStepSchema.extend(GoalExecutionFields).strict(),
   PersonalReminderManagementGoalStepSchema.extend(GoalExecutionFields).strict(),
   MemoryManagementGoalStepSchema.extend(GoalExecutionFields).strict(),
+  KnowledgeManagementGoalStepSchema.extend(GoalExecutionFields).strict(),
   AttachmentAnalysisGoalStepSchema.extend(GoalExecutionFields).strict(),
   MachineInspectionGoalStepSchema.extend(GoalExecutionFields).strict(),
   MachineServiceManagementGoalStepSchema.extend(GoalExecutionFields).strict(),

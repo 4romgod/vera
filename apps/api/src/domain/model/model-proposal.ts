@@ -29,6 +29,8 @@ import {
 } from '../goals/goal-plan.ts';
 import type { CapabilityReference } from '../capabilities/capability-registry.ts';
 import { AdaptiveGoalPlanSchema } from '../goals/adaptive-goal.ts';
+import { KnowledgeActionArgumentsSchema } from '../knowledge/knowledge.ts';
+import { KnowledgeManagementGoalStepSchema } from '../goals/goal-plan.ts';
 
 const DecisionSummarySchema = z.string().trim().min(1).max(500);
 
@@ -152,6 +154,19 @@ const MemoryManagementProposalSchema = z
   })
   .strict();
 
+const KnowledgeManagementProposalSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    kind: z.literal('invoke_capability'),
+    decisionSummary: DecisionSummarySchema,
+    capability: CapabilityReferenceSchema.extend({
+      name: z.literal('knowledge_management'),
+      version: z.literal(1),
+    }),
+    arguments: KnowledgeActionArgumentsSchema,
+  })
+  .strict();
+
 const MachineInspectionProposalSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -206,6 +221,7 @@ export const ModelProposalSchema = z.union([
   PersonalTaskManagementProposalSchema,
   PersonalReminderManagementProposalSchema,
   MemoryManagementProposalSchema,
+  KnowledgeManagementProposalSchema,
   MachineInspectionProposalSchema,
   MachineServiceManagementProposalSchema,
   ExecuteGoalProposalSchema,
@@ -252,6 +268,10 @@ export function createModelProposalSchema(options: {
     (capability) =>
       capability.name === 'memory_management' && capability.version === 1,
   );
+  const knowledgeManagementEnabled = options.enabledCapabilities.some(
+    (capability) =>
+      capability.name === 'knowledge_management' && capability.version === 1,
+  );
   const machineInspectionEnabled = options.enabledCapabilities.some(
     (capability) =>
       capability.name === 'machine_inspection' && capability.version === 1,
@@ -272,6 +292,7 @@ export function createModelProposalSchema(options: {
       ? [PersonalReminderManagementGoalStepSchema]
       : []),
     ...(memoryManagementEnabled ? [MemoryManagementGoalStepSchema] : []),
+    ...(knowledgeManagementEnabled ? [KnowledgeManagementGoalStepSchema] : []),
     ...(attachmentAnalysisEnabled ? [AttachmentAnalysisGoalStepSchema] : []),
     ...(machineInspectionEnabled ? [MachineInspectionGoalStepSchema] : []),
     ...(machineServiceManagementEnabled
@@ -293,6 +314,9 @@ export function createModelProposalSchema(options: {
     schemas.push(PersonalReminderManagementProposalSchema);
   }
   if (memoryManagementEnabled) schemas.push(MemoryManagementProposalSchema);
+  if (knowledgeManagementEnabled) {
+    schemas.push(KnowledgeManagementProposalSchema);
+  }
   if (machineInspectionEnabled) schemas.push(MachineInspectionProposalSchema);
   if (machineServiceManagementEnabled) {
     schemas.push(MachineServiceManagementProposalSchema);

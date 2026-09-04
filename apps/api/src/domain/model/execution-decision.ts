@@ -17,6 +17,7 @@ import {
   MachineServiceActionArgumentsSchema,
 } from '../machines/machine.ts';
 import { MissionProposalArgumentsSchema } from '../missions/mission.ts';
+import { KnowledgeActionArgumentsSchema } from '../knowledge/knowledge.ts';
 
 const ResponseDecisionSchema = z
   .object({
@@ -134,6 +135,20 @@ const MemoryManagementApprovalDecisionSchema = z
   })
   .strict();
 
+const KnowledgeManagementApprovalDecisionSchema = z
+  .object({
+    kind: z.literal('approval_required'),
+    reason: z.literal('specialist_capability_invocation'),
+    capability: z
+      .object({
+        name: z.literal('knowledge_management'),
+        version: z.literal(1),
+      })
+      .strict(),
+    proposedArguments: KnowledgeActionArgumentsSchema,
+  })
+  .strict();
+
 const MachineInspectionApprovalDecisionSchema = z
   .object({
     kind: z.literal('approval_required'),
@@ -196,6 +211,7 @@ export const ExecutionDecisionSchema = z.union([
   PersonalTaskManagementApprovalDecisionSchema,
   PersonalReminderManagementApprovalDecisionSchema,
   MemoryManagementApprovalDecisionSchema,
+  KnowledgeManagementApprovalDecisionSchema,
   MachineInspectionApprovalDecisionSchema,
   MachineServiceManagementApprovalDecisionSchema,
   GoalPlannedDecisionSchema,

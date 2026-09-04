@@ -29,6 +29,8 @@ import {
   type DevelopmentCampaignResource,
   type DevelopmentCampaignPolicyResource,
   type MissionResource,
+  type KnowledgeSearchResponse,
+  type KnowledgeSourceResource,
 } from '@vera/client';
 
 import { ApprovalCard } from '@/components/approval-card';
@@ -152,6 +154,9 @@ export function AssistantScreen() {
   const [selectedProjectId, setSelectedProjectId] = useState<string>();
   const [activeRun, setActiveRun] = useState<TaskResource>();
   const [memories, setMemories] = useState<MemoryResource[]>([]);
+  const [knowledgeSources, setKnowledgeSources] = useState<
+    KnowledgeSourceResource[]
+  >([]);
   const [tasks, setTasks] = useState<PersonalTaskResource[]>([]);
   const [reminders, setReminders] = useState<ReminderResource[]>([]);
   const [notifications, setNotifications] = useState<NotificationResource[]>(
@@ -232,6 +237,7 @@ export function AssistantScreen() {
       conversationPage,
       projectPage,
       memoryPage,
+      knowledgePage,
       taskPage,
       reminderPage,
       inbox,
@@ -243,6 +249,7 @@ export function AssistantScreen() {
       client.listConversations(),
       client.listProjects(),
       client.listMemories(),
+      client.listKnowledgeSources(),
       client.listPersonalTasks(),
       client.listReminders(),
       client.listNotifications({ limit: 50 }),
@@ -255,6 +262,7 @@ export function AssistantScreen() {
     setConversations(conversationPage.conversations);
     setProjects(projectPage.projects);
     setMemories(memoryPage.memories);
+    setKnowledgeSources(knowledgePage.sources);
     setTasks(taskPage.tasks);
     setReminders(reminderPage.reminders);
     setNotifications([...inbox.notifications].reverse());
@@ -263,6 +271,28 @@ export function AssistantScreen() {
     setCampaigns(campaignPage.campaigns);
     setMissions(missionPage.missions);
   }, [client]);
+
+  const searchKnowledge = useCallback(
+    (query: string): Promise<KnowledgeSearchResponse> =>
+      client.searchKnowledge({ query, limit: 8 }),
+    [client],
+  );
+
+  const removeKnowledge = useCallback(
+    async (sourceId: string): Promise<boolean> => {
+      try {
+        await client.removeKnowledgeSource(sourceId);
+        await refreshResources();
+        return true;
+      } catch (cause) {
+        if (mounted.current) {
+          setError(errorMessage(cause, 'Vera could not remove that source.'));
+        }
+        return false;
+      }
+    },
+    [client, refreshResources],
+  );
 
   const refreshNotifications = useCallback(async () => {
     const [inbox, campaignPage, missionPage] = await Promise.all([
@@ -974,6 +1004,7 @@ export function AssistantScreen() {
         <ResourcePanel
           compact={compact}
           memories={memories}
+          knowledgeSources={knowledgeSources}
           machines={machines}
           campaigns={campaigns}
           missions={missions}
@@ -990,6 +1021,13 @@ export function AssistantScreen() {
             setResources((current) => ({ ...current, open: false }));
             void send(command);
           }}
+          onKnowledgeCommand={(command) => {
+            setResources((current) => ({ ...current, open: false }));
+            setDraft(command);
+            setDraftFromVoice(false);
+          }}
+          onSearchKnowledge={searchKnowledge}
+          onRemoveKnowledge={removeKnowledge}
           onMachineCommand={(command) => {
             setResources((current) => ({ ...current, open: false }));
             void send(command);

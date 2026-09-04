@@ -48,6 +48,10 @@ export type CapabilityArtifactDraft =
   | Pick<
       Extract<Artifact, { type: 'mission_management_result' }>,
       'type' | 'mediaType' | 'content'
+    >
+  | Pick<
+      Extract<Artifact, { type: 'knowledge_result' }>,
+      'type' | 'mediaType' | 'content'
     >;
 
 export type CapabilityRuntime = {

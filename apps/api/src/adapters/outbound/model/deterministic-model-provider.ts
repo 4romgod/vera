@@ -5,6 +5,14 @@ import type {
   ModelProviderReadiness,
 } from '../../../ports/model/model-provider.ts';
 
+function requestedKnowledgeTitle(message: string): string {
+  const normalized = message.trim();
+  const named = /\b(?:as|named|titled)\s+["“']?(.+?)["”']?[.!?]*$/iu.exec(
+    normalized,
+  )?.[1];
+  return (named ?? normalized).trim().slice(0, 200);
+}
+
 export class DeterministicModelProvider implements ModelProvider {
   public readonly name = 'deterministic';
   public readonly model = 'deterministic-v1';
@@ -22,6 +30,28 @@ export class DeterministicModelProvider implements ModelProvider {
   public generateStructured(
     input: GenerateStructuredInput,
   ): Promise<ModelGeneration> {
+    if (input.purpose === 'knowledge_answer') {
+      const context = JSON.parse(input.message) as {
+        query: string;
+        sources: { sourceId: string; excerpt: string }[];
+      };
+      const firstSource = context.sources[0];
+      if (firstSource === undefined) {
+        throw new Error('Deterministic knowledge answers require evidence.');
+      }
+      return Promise.resolve({
+        candidate: {
+          answer: firstSource.excerpt,
+          citationIds: [firstSource.sourceId],
+          limitations: [],
+        },
+        provider: this.name,
+        model: this.model,
+        durationMs: 0,
+        usage: { inputTokens: 0, outputTokens: 0 },
+      });
+    }
+
     if (input.purpose === 'attachment_analysis') {
       const context = JSON.parse(input.message) as {
         sources: {
@@ -132,18 +162,21 @@ export class DeterministicModelProvider implements ModelProvider {
         context.ownerMessage;
       const compatibleInputStepIds =
         nextRequirement?.capability === 'development_planning' ||
-        nextRequirement?.capability === 'software_change'
+        nextRequirement?.capability === 'software_change' ||
+        nextRequirement?.capability === 'knowledge_management'
           ? context.observations
               .filter(({ artifact }) =>
                 nextRequirement.capability === 'development_planning'
                   ? ['attachment_analysis', 'research_report'].includes(
                       artifact.type,
                     )
-                  : [
-                      'attachment_analysis',
-                      'implementation_plan',
-                      'research_report',
-                    ].includes(artifact.type),
+                  : nextRequirement.capability === 'knowledge_management'
+                    ? artifact.type === 'attachment_analysis'
+                    : [
+                        'attachment_analysis',
+                        'implementation_plan',
+                        'research_report',
+                      ].includes(artifact.type),
               )
               .map(({ stepId }) => stepId)
           : nextRequirement?.capability === 'machine_service_management'
@@ -200,46 +233,61 @@ export class DeterministicModelProvider implements ModelProvider {
                       scope: { kind: 'global' },
                       sensitivity: 'personal',
                     }
-                  : nextRequirement?.capability === 'machine_service_management'
-                    ? (() => {
-                        const diagnosticObservation = context.observations.find(
-                          ({ artifact }) =>
-                            artifact.type === 'machine_diagnostic',
-                        );
-                        const diagnostic = diagnosticObservation?.artifact
-                          .content as
-                          | {
-                              machine?: { id?: string };
-                              services?: {
-                                id?: string;
-                                observation?: { status?: string };
-                              }[];
-                            }
-                          | undefined;
-                        const service = diagnostic?.services?.[0];
-                        if (
-                          diagnostic?.machine?.id === undefined ||
-                          service?.id === undefined ||
-                          service.observation?.status !== 'unhealthy'
-                        ) {
-                          return undefined;
-                        }
-                        const action = /\b(stop)\b/u.test(
-                          context.ownerMessage.toLowerCase(),
-                        )
-                          ? ('stop' as const)
-                          : /\b(start)\b/u.test(
-                                context.ownerMessage.toLowerCase(),
-                              )
-                            ? ('start' as const)
-                            : ('restart' as const);
-                        return {
-                          machineId: diagnostic.machine.id,
-                          serviceId: service.id,
-                          action,
-                        };
-                      })()
-                    : undefined;
+                  : nextRequirement?.capability === 'knowledge_management'
+                    ? {
+                        action: 'add',
+                        title: requestedKnowledgeTitle(context.ownerMessage),
+                        scope:
+                          context.selectedProject === undefined
+                            ? ({ kind: 'global' } as const)
+                            : ({
+                                kind: 'project',
+                                projectId: context.selectedProject.id,
+                              } as const),
+                        sensitivity: 'personal' as const,
+                      }
+                    : nextRequirement?.capability ===
+                        'machine_service_management'
+                      ? (() => {
+                          const diagnosticObservation =
+                            context.observations.find(
+                              ({ artifact }) =>
+                                artifact.type === 'machine_diagnostic',
+                            );
+                          const diagnostic = diagnosticObservation?.artifact
+                            .content as
+                            | {
+                                machine?: { id?: string };
+                                services?: {
+                                  id?: string;
+                                  observation?: { status?: string };
+                                }[];
+                              }
+                            | undefined;
+                          const service = diagnostic?.services?.[0];
+                          if (
+                            diagnostic?.machine?.id === undefined ||
+                            service?.id === undefined ||
+                            service.observation?.status !== 'unhealthy'
+                          ) {
+                            return undefined;
+                          }
+                          const action = /\b(stop)\b/u.test(
+                            context.ownerMessage.toLowerCase(),
+                          )
+                            ? ('stop' as const)
+                            : /\b(start)\b/u.test(
+                                  context.ownerMessage.toLowerCase(),
+                                )
+                              ? ('start' as const)
+                              : ('restart' as const);
+                          return {
+                            machineId: diagnostic.machine.id,
+                            serviceId: service.id,
+                            action,
+                          };
+                        })()
+                      : undefined;
       const evidenceStepIds = context.observations
         .map(({ stepId }) => stepId)
         .slice(-3);
@@ -539,13 +587,60 @@ export class DeterministicModelProvider implements ModelProvider {
                 } as const)
               : undefined;
 
+    const canManageKnowledge = JSON.stringify(input.outputSchema).includes(
+      'knowledge_management',
+    );
+    const knowledgeSourceId = /knowledge_[a-z0-9_-]+/u.exec(ownerMessage)?.[0];
+    const knowledgeAction =
+      canManageKnowledge &&
+      knowledgeSourceId !== undefined &&
+      /\b(remove|delete)\b/u.test(normalizedMessage)
+        ? ({ action: 'remove', sourceId: knowledgeSourceId } as const)
+        : canManageKnowledge &&
+            /\b(list|show)\b.*\b(knowledge|sources|library)\b/u.test(
+              normalizedMessage,
+            )
+          ? ({ action: 'list', status: 'active' } as const)
+          : canManageKnowledge &&
+              /\b(search|find|look up|ask)\b.*\b(knowledge|library|my (?:documents|files))\b/u.test(
+                normalizedMessage,
+              )
+            ? ({
+                action: 'search',
+                query: ownerMessage,
+                ...(projectId === undefined
+                  ? {}
+                  : {
+                      scope: {
+                        kind: 'project' as const,
+                        projectId,
+                      },
+                    }),
+              } as const)
+            : canManageKnowledge &&
+                attachments.length > 0 &&
+                /\b(add|save|store)\b.*\b(knowledge|library|my (?:documents|files))\b/u.test(
+                  normalizedMessage,
+                )
+              ? ({
+                  action: 'add',
+                  title: requestedKnowledgeTitle(ownerMessage),
+                  scope:
+                    projectId === undefined
+                      ? ({ kind: 'global' } as const)
+                      : ({ kind: 'project', projectId } as const),
+                  sensitivity: 'personal' as const,
+                } as const)
+              : undefined;
+
     // Management commands commonly contain words such as "fix", "plan", or
     // "verify" in the task/reminder payload. Those words describe the saved
     // subject; they do not authorize Vera to execute that subject now.
     const hasOwnerDataAction =
       personalTaskAction !== undefined ||
       reminderAction !== undefined ||
-      memoryAction !== undefined;
+      memoryAction !== undefined ||
+      knowledgeAction !== undefined;
     const machineAction =
       requestedMachineAction === undefined ||
       selectedMachine === undefined ||
@@ -585,6 +680,7 @@ export class DeterministicModelProvider implements ModelProvider {
         personalTaskAction !== undefined,
         reminderAction !== undefined,
         memoryAction !== undefined,
+        knowledgeAction !== undefined,
       ].filter(Boolean).length >= 2;
 
     const projectArguments = {
@@ -669,6 +765,18 @@ export class DeterministicModelProvider implements ModelProvider {
               capability: 'memory_management' as const,
               version: 1 as const,
               arguments: memoryAction,
+            },
+          ]),
+      ...(knowledgeAction === undefined
+        ? []
+        : [
+            {
+              id: 'step_knowledge',
+              purpose: 'Apply the requested grounded-knowledge action.',
+              inputStepIds: [],
+              capability: 'knowledge_management' as const,
+              version: 1 as const,
+              arguments: knowledgeAction,
             },
           ]),
     ];
@@ -862,58 +970,70 @@ export class DeterministicModelProvider implements ModelProvider {
                           capability: { name: 'memory_management', version: 1 },
                           arguments: memoryAction,
                         }
-                      : shouldResearch
+                      : knowledgeAction !== undefined
                         ? {
                             schemaVersion: 1,
                             kind: 'invoke_capability',
                             decisionSummary:
-                              'The request asks for current, source-backed public-web research.',
-                            capability: { name: 'web_research', version: 1 },
-                            arguments: { objective: ownerMessage },
+                              'The owner requested an action against grounded personal knowledge.',
+                            capability: {
+                              name: 'knowledge_management',
+                              version: 1,
+                            },
+                            arguments: knowledgeAction,
                           }
-                        : shouldPlan
+                        : shouldResearch
                           ? {
                               schemaVersion: 1,
                               kind: 'invoke_capability',
                               decisionSummary:
-                                'The request asks for specialist software planning.',
-                              capability: {
-                                name: 'development_planning',
-                                version: 1,
-                              },
-                              arguments: projectArguments,
+                                'The request asks for current, source-backed public-web research.',
+                              capability: { name: 'web_research', version: 1 },
+                              arguments: { objective: ownerMessage },
                             }
-                          : shouldChange
+                          : shouldPlan
                             ? {
                                 schemaVersion: 1,
                                 kind: 'invoke_capability',
                                 decisionSummary:
-                                  'The request asks for an isolated specialist software change.',
+                                  'The request asks for specialist software planning.',
                                 capability: {
-                                  name: 'software_change',
+                                  name: 'development_planning',
                                   version: 1,
                                 },
                                 arguments: projectArguments,
                               }
-                            : requestsAttachmentAnalysis
+                            : shouldChange
                               ? {
                                   schemaVersion: 1,
                                   kind: 'invoke_capability',
                                   decisionSummary:
-                                    'The supplied attachments must be analyzed before Vera makes claims about their contents.',
+                                    'The request asks for an isolated specialist software change.',
                                   capability: {
-                                    name: 'attachment_analysis',
+                                    name: 'software_change',
                                     version: 1,
                                   },
-                                  arguments: { objective: ownerMessage },
+                                  arguments: projectArguments,
                                 }
-                              : {
-                                  schemaVersion: 1,
-                                  kind: 'respond',
-                                  decisionSummary:
-                                    'The request can be answered directly.',
-                                  message: `Vera received: ${ownerMessage}`,
-                                };
+                              : requestsAttachmentAnalysis
+                                ? {
+                                    schemaVersion: 1,
+                                    kind: 'invoke_capability',
+                                    decisionSummary:
+                                      'The supplied attachments must be analyzed before Vera makes claims about their contents.',
+                                    capability: {
+                                      name: 'attachment_analysis',
+                                      version: 1,
+                                    },
+                                    arguments: { objective: ownerMessage },
+                                  }
+                                : {
+                                    schemaVersion: 1,
+                                    kind: 'respond',
+                                    decisionSummary:
+                                      'The request can be answered directly.',
+                                    message: `Vera received: ${ownerMessage}`,
+                                  };
 
     return Promise.resolve({
       candidate,

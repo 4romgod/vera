@@ -1,7 +1,7 @@
 # Vera Interface Design
 
 **Status:** Implemented design language
-**Last updated:** 27 August 2026
+**Last updated:** 4 September 2026
 
 ## Purpose
 
@@ -68,7 +68,7 @@ destinations.
   an always-available refresh action, and pulling down from the top of the
   conversation refreshes on native and web surfaces. Refresh preserves the
   message draft while synchronizing the active conversation, active run,
-  projects, conversation history, memory, tasks, reminders, and inbox.
+  projects, conversation history, memory, knowledge, tasks, reminders, and inbox.
 - Voice capture is one continuous recording with elapsed time and no silence
   cutoff. While recording, two distinct controls stop into an editable
   transcript or stop, transcribe, and send through the typed-message path.
@@ -102,6 +102,12 @@ destinations.
 - Completed adaptive results retain the analysis summary and citations beside
   the action ledger, so the owner can inspect what Vera understood and what it
   ultimately did without opening raw JSON.
+- The Knowledge workspace distinguishes evidence from memory. It lists only
+  explicit sources with filenames, scope, sensitivity, date, and chunk count;
+  supports direct evidence search with exact source/locator/excerpt cards; and
+  requires a second confirmation before source removal. “Add files to
+  knowledge” prepares an editable conversation request so attachment analysis
+  and permanent retention remain visible, separately governed actions.
 - The Machines resource tab shows only registered machines, services, and
   allowed actions. Inspect creates a read-only approval; start, stop, and
   restart create a distinct mutation approval. Completed cards show service

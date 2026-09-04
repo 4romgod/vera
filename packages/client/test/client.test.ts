@@ -4,6 +4,33 @@ import { describe, it } from 'node:test';
 import { VeraApiError, VeraClient } from '../src/index.ts';
 
 void describe('Vera HTTP client', () => {
+  const knowledgeSource = {
+    schemaVersion: 1 as const,
+    id: 'knowledge_test',
+    revision: 1,
+    title: 'Vera brief',
+    scope: { kind: 'global' as const },
+    sensitivity: 'personal' as const,
+    status: 'active' as const,
+    provenance: {
+      kind: 'owner_attachments' as const,
+      attachments: [
+        {
+          id: 'attachment_test',
+          kind: 'document' as const,
+          filename: 'brief.txt',
+          mediaType: 'text/plain' as const,
+          byteLength: 12,
+          sha256: 'a'.repeat(64),
+        },
+      ],
+    },
+    chunkCount: 1,
+    contentSha256: 'b'.repeat(64),
+    createdAt: '2026-09-04T00:00:00.000Z',
+    updatedAt: '2026-09-04T00:00:00.000Z',
+  };
+
   void it('uploads document bytes with a transport type separate from the declared media type', async () => {
     const bytes = new TextEncoder().encode('Vera attachment').buffer;
     const client = new VeraClient({
@@ -138,6 +165,92 @@ void describe('Vera HTTP client', () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+
+  void it('creates, searches, lists, and removes grounded knowledge through typed boundaries', async () => {
+    const requests: { url: string; method: string; body?: unknown }[] = [];
+    const client = new VeraClient({
+      baseUrl: 'http://vera.test',
+      fetch: (input, init) => {
+        const url =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        const method = init?.method ?? 'GET';
+        const body: unknown =
+          typeof init?.body === 'string'
+            ? (JSON.parse(init.body) as unknown)
+            : undefined;
+        requests.push({ url, method, body });
+        if (url.endsWith('/v1/knowledge-search')) {
+          return Promise.resolve(
+            Response.json({
+              schemaVersion: 1,
+              query: 'Vera',
+              searchedAt: '2026-09-04T00:01:00.000Z',
+              citations: [
+                {
+                  sourceId: knowledgeSource.id,
+                  sourceTitle: knowledgeSource.title,
+                  chunkId: 'knowledge_chunk_test_1',
+                  locator: 'brief.txt · lines 1-1',
+                  excerpt: 'Vera is a personal orchestration system.',
+                  score: 17,
+                  attachments: knowledgeSource.provenance.attachments,
+                },
+              ],
+            }),
+          );
+        }
+        if (method === 'GET' && url.endsWith('/v1/knowledge-sources')) {
+          return Promise.resolve(
+            Response.json({
+              schemaVersion: 1,
+              sources: [knowledgeSource],
+            }),
+          );
+        }
+        return Promise.resolve(
+          Response.json(
+            method === 'DELETE'
+              ? {
+                  ...knowledgeSource,
+                  revision: 2,
+                  status: 'removed',
+                  chunkCount: 0,
+                }
+              : knowledgeSource,
+            { status: method === 'POST' ? 201 : 200 },
+          ),
+        );
+      },
+    });
+
+    const created = await client.createKnowledgeSource({
+      title: knowledgeSource.title,
+      scope: { kind: 'global' },
+      attachmentIds: ['attachment_test'],
+      idempotencyKey: 'knowledge-client-create',
+    });
+    assert.equal(created.id, knowledgeSource.id);
+    const listed = await client.listKnowledgeSources();
+    assert.equal(listed.sources[0]?.title, knowledgeSource.title);
+    const searched = await client.searchKnowledge({ query: 'Vera' });
+    assert.equal(searched.citations[0]?.sourceId, knowledgeSource.id);
+    const removed = await client.removeKnowledgeSource(knowledgeSource.id);
+    assert.equal(removed.status, 'removed');
+
+    assert.deepEqual(
+      requests.map(({ method }) => method),
+      ['POST', 'GET', 'POST', 'DELETE'],
+    );
+    assert.deepEqual(requests[0]?.body, {
+      title: 'Vera brief',
+      scope: { kind: 'global' },
+      attachmentIds: ['attachment_test'],
+    });
   });
 
   void it('loads and validates the capability catalog', async () => {
