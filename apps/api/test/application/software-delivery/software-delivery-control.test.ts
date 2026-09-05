@@ -13,6 +13,8 @@ import type { DevelopmentCampaign } from '../../../src/domain/development-campai
 import type { Mission } from '../../../src/domain/missions/mission.ts';
 import type { DevelopmentCampaignStore } from '../../../src/ports/persistence/development-campaign-store.ts';
 import type { MissionStore } from '../../../src/ports/persistence/mission-store.ts';
+import { assembleExternalSignalContext } from '../../../src/application/external-awareness/external-signal-context.ts';
+import { ExternalSignalSchema } from '../../../src/domain/external-awareness/external-signal.ts';
 
 const now = '2026-09-05T12:00:00.000Z';
 const earlier = '2026-09-04T12:00:00.000Z';
@@ -157,6 +159,46 @@ function context() {
       },
     ],
   };
+}
+
+function signalContext(
+  overrides: {
+    category?: 'failed_check' | 'review_requested';
+    projectId?: string;
+    owner?: string;
+    url?: string;
+  } = {},
+) {
+  return assembleExternalSignalContext({
+    signal: ExternalSignalSchema.parse({
+      schemaVersion: 1,
+      version: 1,
+      id: 'external_signal_repair_reference',
+      principalId: 'owner_v1',
+      routineId: 'routine_repair_reference',
+      integrationId: 'github',
+      connectionId: 'connection_repair_reference',
+      project: {
+        id: overrides.projectId ?? 'project_vera',
+        displayName: 'Vera',
+      },
+      repository: {
+        provider: 'github',
+        owner: overrides.owner ?? '4romgod',
+        name: 'vera',
+      },
+      externalKey: 'pull:42:failed-checks',
+      category: overrides.category ?? 'failed_check',
+      title: 'Checks failed on #42',
+      summary: 'quality-gate failed.',
+      url: overrides.url ?? 'https://github.com/4romgod/vera/pull/42',
+      occurredAt: now,
+      status: 'active',
+      firstObservedAt: now,
+      lastObservedAt: now,
+    }),
+    assembledAt: now,
+  });
 }
 
 void describe('conversational software delivery control', () => {
@@ -357,5 +399,68 @@ void describe('conversational software delivery control', () => {
       assert.fail('Expected an ambiguous-reference clarification.');
     }
     assert.match(result.message, /more than one/u);
+  });
+
+  void it('binds a failed-check signal to its exact campaign among multiple repair candidates', () => {
+    const other = {
+      ...context().resources[0],
+      id: 'campaign_other',
+      pullRequest: {
+        number: 41,
+        url: 'https://github.com/4romgod/vera/pull/41',
+        headRevision,
+      },
+    } as ReturnType<typeof context>['resources'][number];
+    const deliveryContext = {
+      ...context(),
+      resources: [other, ...context().resources],
+    };
+
+    assert.deepEqual(
+      validateSoftwareDeliveryReference({
+        arguments: {
+          action: 'prepare_repair',
+          campaignId: 'campaign_alpha',
+        },
+        ownerMessage: 'Handle this failed check.',
+        externalSignalContext: signalContext(),
+        context: deliveryContext,
+      }),
+      { accepted: true },
+    );
+    assert.equal(
+      validateSoftwareDeliveryReference({
+        arguments: {
+          action: 'prepare_repair',
+          campaignId: 'campaign_other',
+        },
+        ownerMessage: 'Handle this failed check.',
+        externalSignalContext: signalContext(),
+        context: deliveryContext,
+      }).accepted,
+      false,
+    );
+  });
+
+  void it('fails closed when signal category, project, repository, or PR does not match the repair', () => {
+    for (const externalSignalContext of [
+      signalContext({ category: 'review_requested' }),
+      signalContext({ projectId: 'project_other' }),
+      signalContext({ owner: 'someone-else' }),
+      signalContext({ url: 'https://github.com/4romgod/vera/pull/99' }),
+    ]) {
+      assert.equal(
+        validateSoftwareDeliveryReference({
+          arguments: {
+            action: 'prepare_repair',
+            campaignId: 'campaign_alpha',
+          },
+          ownerMessage: 'Repair campaign_alpha.',
+          externalSignalContext,
+          context: context(),
+        }).accepted,
+        false,
+      );
+    }
   });
 });

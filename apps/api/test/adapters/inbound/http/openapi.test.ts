@@ -24,11 +24,11 @@ void describe('generated OpenAPI contract', () => {
     const documented = operations(document);
 
     assert.equal(document.openapi, '3.1.0');
-    assert.equal(Object.keys(document.paths).length, 78);
-    assert.equal(documented.length, 90);
+    assert.equal(Object.keys(document.paths).length, 79);
+    assert.equal(documented.length, 91);
     assert.equal(
       new Set(documented.map(({ operation }) => operation.operationId)).size,
-      90,
+      91,
     );
     const componentNames = Object.keys(document.components?.schemas ?? {});
     for (const componentName of [
@@ -48,6 +48,7 @@ void describe('generated OpenAPI contract', () => {
       'IntegrationCatalogResource',
       'IntegrationConnectionResource',
       'ExternalSignalListResource',
+      'ExternalSignalResolutionResource',
     ]) {
       assert.ok(
         componentNames.includes(componentName),
@@ -57,6 +58,12 @@ void describe('generated OpenAPI contract', () => {
     assert.ok(componentNames.every((name) => !name.startsWith('Shared')));
     assert.ok(documented.some(({ path }) => path === '/health'));
     assert.ok(documented.some(({ path }) => path === '/ready'));
+    assert.ok(
+      documented.some(
+        ({ method, path }) =>
+          method === 'get' && path === '/v1/external-signals/{id}/resolution',
+      ),
+    );
 
     for (const { method, path, operation } of documented) {
       assert.ok(

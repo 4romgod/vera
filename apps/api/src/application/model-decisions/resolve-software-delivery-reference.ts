@@ -1,4 +1,5 @@
 import type { ConversationContextBundle } from '../../domain/conversations/conversation-context.ts';
+import type { ExternalSignalContextBundle } from '../../domain/external-awareness/external-signal-context.ts';
 import type {
   SoftwareDeliveryContext,
   SoftwareDeliveryActionArguments,
@@ -97,10 +98,33 @@ function resolveExpected(
   return candidates.length === 1 ? candidates[0] : undefined;
 }
 
+function resolveSignalBoundRepair(
+  externalSignalContext: ExternalSignalContextBundle | undefined,
+  candidates: readonly SoftwareDeliveryResourceSummary[],
+) {
+  if (
+    externalSignalContext?.signal.category !== 'failed_check' ||
+    externalSignalContext.signal.status !== 'active'
+  ) {
+    return undefined;
+  }
+  const signal = externalSignalContext.signal;
+  const matches = candidates.filter(
+    (candidate) =>
+      candidate.kind === 'development_campaign' &&
+      candidate.project.id === signal.project.id &&
+      candidate.repository.owner === signal.repository.owner &&
+      candidate.repository.name === signal.repository.name &&
+      candidate.pullRequest?.url === signal.url,
+  );
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
 export function validateSoftwareDeliveryReference(input: {
   arguments: SoftwareDeliveryActionArguments;
   ownerMessage: string;
   conversationContext?: ConversationContextBundle;
+  externalSignalContext?: ExternalSignalContextBundle;
   context?: SoftwareDeliveryContext;
 }): Resolution {
   if (input.arguments.action === 'list') return { accepted: true };
@@ -131,11 +155,31 @@ export function validateSoftwareDeliveryReference(input: {
   if (selected === undefined) {
     return { accepted: false, message: clarification(candidates, purpose) };
   }
-  const expected = resolveExpected(
-    input.ownerMessage,
-    input.conversationContext,
-    candidates,
-  );
+  const expected =
+    arguments_.action === 'prepare_repair'
+      ? input.externalSignalContext === undefined
+        ? resolveExpected(
+            input.ownerMessage,
+            input.conversationContext,
+            candidates,
+          )
+        : resolveSignalBoundRepair(input.externalSignalContext, candidates)
+      : resolveExpected(
+          input.ownerMessage,
+          input.conversationContext,
+          candidates,
+        );
+  if (
+    arguments_.action === 'prepare_repair' &&
+    input.externalSignalContext !== undefined &&
+    expected === undefined
+  ) {
+    return {
+      accepted: false,
+      message:
+        "I couldn't match this signal's exact project, repository, and pull request to one repairable development campaign, so I did not prepare a repair approval.",
+    };
+  }
   if (expected?.id !== selected.id) {
     return { accepted: false, message: clarification(candidates, purpose) };
   }

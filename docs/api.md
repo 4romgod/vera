@@ -48,6 +48,7 @@ must not be exposed to an untrusted or shared network.
 | `GET /v1/routine-runs/{runId}` | Retrieve one durable routine occurrence for completion polling | `200` |
 | `GET /v1/external-signals` | List current active provider-neutral external signals | `200` |
 | `GET /v1/external-signals/{signalId}` | Retrieve one durable external signal generation | `200` |
+| `GET /v1/external-signals/{signalId}/resolution` | Derive current signal-to-work progress from authoritative signal, task, and campaign records | `200` |
 | `POST /v1/external-signals/{signalId}/triage` | Idempotently create a project-scoped conversation and task from one active signal | `202` |
 | `GET /v1/routines/{routineId}/external-signals` | List current and resolved signals observed by one routine | `200` |
 | `POST /v1/audio/transcriptions` | Transcribe one completed bounded audio recording without persisting it | `200` |
@@ -156,6 +157,15 @@ owner `objective`. Provider text is frozen as separate untrusted context; it is
 not copied into the owner message. The task response exposes the source signal
 identity and generation plus a link back to the signal. See
 [ADR-0047](decisions/0047-convert-external-signals-into-owner-directed-work.md).
+
+`GET /v1/external-signals/{signalId}/resolution` is a read model, not another
+workflow store. It joins the signal to its owner-scoped triage task and, when
+an exact repair was prepared, the current development campaign. Failed-check
+repair selection must match the frozen project, GitHub repository, and
+canonical pull-request URL. A successful repair remains
+`awaiting_source_confirmation`; only a later complete external poll may report
+`resolved`. See
+[ADR-0049](decisions/0049-derive-signal-resolution-from-authoritative-work.md).
 
 ## Speech transcription
 

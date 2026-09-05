@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ExternalSignalProgressSchema } from '../external-awareness/external-signal-resolution.ts';
 
 export const AttentionPrioritySchema = z.enum(['urgent', 'high', 'normal']);
 export const AttentionStateSchema = z.enum(['active', 'snoozed', 'dismissed']);
@@ -54,6 +55,7 @@ export const AttentionTargetSchema = z.discriminatedUnion('kind', [
       taskId: z.string().startsWith('task_').optional(),
       runId: z.string().startsWith('run_').optional(),
       conversationId: z.string().startsWith('conversation_').optional(),
+      progress: ExternalSignalProgressSchema,
     })
     .strict(),
 ]);

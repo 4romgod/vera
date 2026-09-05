@@ -116,6 +116,7 @@ function fakeApi(overrides: Partial<VeraApi>): VeraApi {
     listRoutines: unavailable,
     listExternalSignals: unavailable,
     getExternalSignal: unavailable,
+    getExternalSignalResolution: unavailable,
     handleExternalSignal: unavailable,
     listRoutineExternalSignals: unavailable,
     createRoutine: unavailable,
@@ -235,6 +236,40 @@ function publication(
 }
 
 void describe('Vera CLI', () => {
+  void it('shows the derived lifecycle for an external signal', async () => {
+    const writes: string[] = [];
+    const exitCode = await runCli(
+      ['signal', 'status', 'external_signal_test'],
+      {
+        client: fakeApi({
+          getExternalSignalResolution: () =>
+            Promise.resolve({
+              schemaVersion: 1,
+              signal: {} as never,
+              progress: {
+                status: 'repairing',
+                summary: 'Vera is applying the approved repair.',
+                updatedAt: '2026-09-05T10:00:00.000Z',
+              },
+              links: {
+                signal: '/v1/external-signals/external_signal_test',
+                source: 'https://github.com/4romgod/vera/pull/42',
+              },
+            }),
+        }),
+        stdout: {
+          write: (value) => {
+            writes.push(String(value));
+            return true;
+          },
+        },
+      },
+    );
+
+    assert.equal(exitCode, 0);
+    assert.match(writes.join(''), /repairing/u);
+  });
+
   void it('handles an external signal through its durable conversation', async () => {
     const writes: string[] = [];
     const submitted = task('deciding', {

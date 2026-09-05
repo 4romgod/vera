@@ -79,6 +79,28 @@ export class InMemoryExecutionStore implements ExecutionStore {
     );
   }
 
+  public findLatestByExternalSignal(
+    principalId: string,
+    signalId: string,
+    signalVersion: number,
+  ): Promise<TaskAggregate | null> {
+    const aggregate = [...this.byTaskId.values()]
+      .filter(
+        (candidate) =>
+          candidate.task.principalId === principalId &&
+          candidate.task.externalSignal?.id === signalId &&
+          candidate.task.externalSignal.version === signalVersion,
+      )
+      .sort(
+        (left, right) =>
+          right.task.updatedAt.localeCompare(left.task.updatedAt) ||
+          right.task.id.localeCompare(left.task.id),
+      )[0];
+    return Promise.resolve(
+      aggregate === undefined ? null : structuredClone(aggregate),
+    );
+  }
+
   public replace(
     aggregate: TaskAggregate,
     expectedVersion: number,

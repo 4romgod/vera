@@ -16,6 +16,10 @@ import type { AttentionDecisionStore } from '../../ports/persistence/attention-d
 import type { RoutineStore } from '../../ports/persistence/routine-store.ts';
 import type { ExternalSignalStore } from '../../ports/persistence/external-signal-store.ts';
 import { ResourceError } from '../shared/resource-error.ts';
+import {
+  externalSignalCampaignId,
+  externalSignalProgress,
+} from '../external-awareness/external-signal-resolution-service.ts';
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
 const MAX_SNOOZE_MS = 30 * DAY_MS;
@@ -62,6 +66,23 @@ export function createAttentionService(options: {
       options.routines.listAttentionRuns(principalId, SOURCE_LIMIT),
       options.externalSignals?.listActive(principalId, SOURCE_LIMIT) ?? [],
     ]);
+    const externalSignalWork = new Map(
+      await Promise.all(
+        externalSignals.map(async (signal) => {
+          const task = await options.executions.findLatestByExternalSignal(
+            principalId,
+            signal.id,
+            signal.version,
+          );
+          const campaignId = externalSignalCampaignId(task);
+          const campaign =
+            campaignId === undefined
+              ? null
+              : await options.campaigns.findById(principalId, campaignId);
+          return [signal.id, { task, campaign }] as const;
+        }),
+      ),
+    );
     const items: Candidate[] = [];
 
     for (const aggregate of executions) {
@@ -318,9 +339,9 @@ export function createAttentionService(options: {
       );
     }
     for (const signal of externalSignals) {
-      const handling = executions.find(
-        (aggregate) => aggregate.task.externalSignal?.id === signal.id,
-      );
+      const work = externalSignalWork.get(signal.id);
+      const handling = work?.task ?? null;
+      const linkedCampaign = work?.campaign ?? null;
       const reason =
         signal.category === 'review_requested'
           ? 'external_review_requested'
@@ -346,7 +367,7 @@ export function createAttentionService(options: {
             externalSignalId: signal.id,
             routineId: signal.routineId,
             url: signal.url,
-            ...(handling === undefined
+            ...(handling === null
               ? {}
               : {
                   taskId: handling.task.id,
@@ -355,6 +376,7 @@ export function createAttentionService(options: {
                     ? {}
                     : { conversationId: handling.task.conversationId }),
                 }),
+            progress: externalSignalProgress(signal, handling, linkedCampaign),
           },
         }),
       );

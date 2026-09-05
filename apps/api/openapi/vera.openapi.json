@@ -1752,7 +1752,8 @@
               "run": { "type": "string" },
               "events": { "type": "string" },
               "approval": { "type": "string" },
-              "externalSignal": { "type": "string" }
+              "externalSignal": { "type": "string" },
+              "externalSignalResolution": { "type": "string" }
             },
             "required": ["task", "run", "events"],
             "additionalProperties": false
@@ -4045,6 +4046,98 @@
         ],
         "additionalProperties": false
       },
+      "ExternalSignalResolutionResource": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": { "type": "number", "enum": [1] },
+          "signal": {
+            "$ref": "#/components/schemas/ExternalSignalListResourceSignalsItems"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/ExternalSignalResolutionResourceProgress"
+          },
+          "task": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string", "pattern": "^task_.*" },
+              "runId": { "type": "string", "pattern": "^run_.*" },
+              "runStatus": {
+                "type": "string",
+                "enum": [
+                  "deciding",
+                  "awaiting_approval",
+                  "executing",
+                  "succeeded",
+                  "rejected",
+                  "failed",
+                  "cancellation_requested",
+                  "cancelled"
+                ]
+              },
+              "conversationId": {
+                "type": "string",
+                "pattern": "^conversation_.*"
+              }
+            },
+            "required": ["id", "runId", "runStatus"],
+            "additionalProperties": false
+          },
+          "campaign": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string", "pattern": "^campaign_.*" },
+              "status": {
+                "$ref": "#/components/schemas/DevelopmentCampaignResourceStatus"
+              },
+              "objective": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 10000
+              },
+              "pullRequest": {
+                "type": "object",
+                "properties": {
+                  "number": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "url": { "type": "string", "format": "uri" }
+                },
+                "required": ["number", "url"],
+                "additionalProperties": false
+              },
+              "updatedAt": { "$ref": "#/components/schemas/DateTime" }
+            },
+            "required": ["id", "status", "objective", "updatedAt"],
+            "additionalProperties": false
+          },
+          "links": {
+            "type": "object",
+            "properties": {
+              "signal": {
+                "type": "string",
+                "pattern": "^\\/v1\\/external-signals\\/.*"
+              },
+              "source": { "type": "string", "format": "uri" },
+              "task": { "type": "string", "pattern": "^\\/v1\\/tasks\\/.*" },
+              "run": { "type": "string", "pattern": "^\\/v1\\/runs\\/.*" },
+              "conversation": {
+                "type": "string",
+                "pattern": "^\\/v1\\/conversations\\/.*"
+              },
+              "campaign": {
+                "type": "string",
+                "pattern": "^\\/v1\\/development-campaigns\\/.*"
+              }
+            },
+            "required": ["signal", "source"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["schemaVersion", "signal", "progress", "links"],
+        "additionalProperties": false
+      },
       "PushNotificationStatus": {
         "type": "object",
         "properties": {
@@ -5317,9 +5410,18 @@
           "url": { "type": "string", "format": "uri" },
           "taskId": { "type": "string", "pattern": "^task_.*" },
           "runId": { "type": "string", "pattern": "^run_.*" },
-          "conversationId": { "type": "string", "pattern": "^conversation_.*" }
+          "conversationId": { "type": "string", "pattern": "^conversation_.*" },
+          "progress": {
+            "$ref": "#/components/schemas/ExternalSignalResolutionResourceProgress"
+          }
         },
-        "required": ["kind", "externalSignalId", "routineId", "url"],
+        "required": [
+          "kind",
+          "externalSignalId",
+          "routineId",
+          "url",
+          "progress"
+        ],
         "additionalProperties": false
       },
       "AttentionBriefingItemsItemsTargetOneOfRoutine": {
@@ -6722,6 +6824,30 @@
           }
         },
         "required": ["schemaVersion", "kind", "decisionSummary", "goal"],
+        "additionalProperties": false
+      },
+      "ExternalSignalResolutionResourceProgress": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "untriaged",
+              "triaging",
+              "action_approval_required",
+              "repair_approval_required",
+              "repairing",
+              "verifying",
+              "awaiting_source_confirmation",
+              "triaged",
+              "needs_attention",
+              "resolved"
+            ]
+          },
+          "summary": { "type": "string", "minLength": 1, "maxLength": 1000 },
+          "updatedAt": { "$ref": "#/components/schemas/DateTime" }
+        },
+        "required": ["status", "summary", "updatedAt"],
         "additionalProperties": false
       },
       "ExternalSignalListResourceSignalsItems": {
@@ -19151,6 +19277,57 @@
         "operationId": "getV1ExternalSignalsId",
         "tags": ["external-awareness"],
         "summary": "GET /v1/external-signals/{id}"
+      }
+    },
+    "/v1/external-signals/{id}/resolution": {
+      "get": {
+        "parameters": [
+          {
+            "schema": { "type": "string", "minLength": 1, "maxLength": 200 },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalSignalResolutionResource"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request did not satisfy the declared path, query, header, or body schema.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist for the current owner.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred or an operation failed internally.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        },
+        "operationId": "getV1ExternalSignalsIdResolution",
+        "tags": ["external-awareness"],
+        "summary": "GET /v1/external-signals/{id}/resolution"
       }
     },
     "/v1/external-signals/{id}/triage": {

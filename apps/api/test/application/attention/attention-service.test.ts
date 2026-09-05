@@ -87,6 +87,11 @@ void describe('attention service', () => {
       taskId: 'task_signal_attention',
       runId: 'run_signal_attention',
       conversationId: 'conversation_signal_attention',
+      progress: {
+        status: 'triaged',
+        summary: 'Vera completed triage; no active repair workflow is linked.',
+        updatedAt: '2026-09-05T10:01:40.000Z',
+      },
     });
     const activity = await createNotificationService({
       store: resources,

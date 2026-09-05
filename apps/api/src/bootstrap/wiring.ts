@@ -109,6 +109,7 @@ import type { ExternalSignalStore } from '../ports/persistence/external-signal-s
 import { GitHubAwarenessSource } from '../adapters/outbound/external-awareness/github/github-awareness-source.ts';
 import { createExternalAwarenessService } from '../application/external-awareness/external-awareness-service.ts';
 import { createExternalSignalTriageService } from '../application/external-awareness/external-signal-triage-service.ts';
+import { createExternalSignalResolutionService } from '../application/external-awareness/external-signal-resolution-service.ts';
 import { resolveLocalGitHubRepository } from '../adapters/outbound/github/github-cli.ts';
 
 export function createApp(
@@ -669,6 +670,11 @@ export function createApp(
     conversations: conversationService,
     tasks: dispatchedLifecycle,
   });
+  const externalSignalResolution = createExternalSignalResolutionService({
+    awareness: externalAwareness,
+    executions: store,
+    campaigns: campaignStore,
+  });
 
   const app = buildApp({
     evaluateModelDecision,
@@ -680,6 +686,7 @@ export function createApp(
     integrations: integrationConnectionService,
     externalAwareness,
     externalSignalTriage,
+    externalSignalResolution,
     capabilities: capabilityService,
     personalTasks: personalTaskService,
     reminders: reminderService,

@@ -17,6 +17,7 @@ import {
   getV1MissionPolicies,
   getV1ExternalSignals,
   getV1ExternalSignalsId,
+  getV1ExternalSignalsIdResolution,
   getV1Missions,
   getV1MissionsId,
   getV1RoutineRunsId,
@@ -65,6 +66,15 @@ export class AutomationClient extends SoftwareDeliveryClient {
   public async getExternalSignal(signalId: string) {
     return this.generatedRequest(
       getV1ExternalSignalsId({
+        client: this.generatedClient,
+        path: { id: signalId },
+      }),
+    );
+  }
+
+  public async getExternalSignalResolution(signalId: string) {
+    return this.generatedRequest(
+      getV1ExternalSignalsIdResolution({
         client: this.generatedClient,
         path: { id: signalId },
       }),

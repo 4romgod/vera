@@ -80,6 +80,9 @@ generated transport operations.
 ADR-0044 generates every low-level TypeScript operation with pinned Hey API and
 Axios while preserving per-client configuration, runtime validation, normalized
 errors, polling, uploads, and streaming in that facade.
+ADR-0049 closes the external-signal feedback loop with a derived resolution
+read model, exact project/repository/pull-request repair binding, and
+source-owned final resolution after complete observation.
 
 Implementation began on the same date. ADR-0009 accepts the first production
 source layout and model decision boundary. ADR-0010 accepts the durable

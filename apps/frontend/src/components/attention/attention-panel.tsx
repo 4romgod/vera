@@ -15,6 +15,11 @@ import type { AttentionBriefing, AttentionItem } from '@vera/client';
 
 import { palette, radius, spacing } from '@/design/tokens';
 
+type ExternalSignalTarget = Extract<
+  AttentionItem['target'],
+  { kind: 'external_signal' }
+>;
+
 export function AttentionPanel(props: {
   briefing?: AttentionBriefing;
   focusedItemId?: string;
@@ -308,6 +313,43 @@ function AttentionCard(props: {
         >
           {props.item.summary}
         </Text>
+        {props.item.target.kind === 'external_signal' ? (
+          <View style={{ gap: spacing.xs }}>
+            <View
+              accessibilityLabel={`Vera progress: ${signalProgressLabel(props.item.target.progress.status)}`}
+              style={{
+                alignSelf: 'flex-start',
+                borderRadius: radius.pill,
+                paddingHorizontal: spacing.sm,
+                paddingVertical: 5,
+                backgroundColor: palette.accentSurface,
+              }}
+            >
+              <Text
+                style={{
+                  color: palette.accent,
+                  fontSize: 10,
+                  fontWeight: '800',
+                  letterSpacing: 0.5,
+                }}
+              >
+                {signalProgressLabel(
+                  props.item.target.progress.status,
+                ).toUpperCase()}
+              </Text>
+            </View>
+            <Text
+              selectable
+              style={{
+                color: palette.muted,
+                fontSize: 12,
+                lineHeight: 18,
+              }}
+            >
+              {props.item.target.progress.summary}
+            </Text>
+          </View>
+        ) : null}
       </View>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
         {props.item.target.kind === 'external_signal' ? (
@@ -471,4 +513,31 @@ function formatTime(value: string): string {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(value));
+}
+
+function signalProgressLabel(
+  status: ExternalSignalTarget['progress']['status'],
+): string {
+  switch (status) {
+    case 'untriaged':
+      return 'Ready to triage';
+    case 'triaging':
+      return 'Vera is triaging';
+    case 'action_approval_required':
+      return 'Action approval needed';
+    case 'repair_approval_required':
+      return 'Repair approval needed';
+    case 'repairing':
+      return 'Repair in progress';
+    case 'verifying':
+      return 'Verifying repair';
+    case 'awaiting_source_confirmation':
+      return 'Confirming with GitHub';
+    case 'triaged':
+      return 'Triaged';
+    case 'needs_attention':
+      return 'Needs attention';
+    case 'resolved':
+      return 'Resolved';
+  }
 }
