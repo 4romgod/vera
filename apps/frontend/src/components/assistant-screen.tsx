@@ -46,6 +46,7 @@ import { layout, palette } from '@/design/tokens';
 import { useSpokenReply } from '@/voice/use-spoken-reply';
 import { useVoiceInput } from '@/voice/use-voice-input';
 import { usePushNotifications } from '@/notifications/use-push-notifications';
+import { useIntegrationConnections } from '@/components/integrations/use-integration-connections';
 
 const configuredApiUrl = process.env.EXPO_PUBLIC_VERA_API_URL?.trim();
 const defaultApiUrl =
@@ -136,6 +137,11 @@ export function AssistantScreen() {
   const voiceRunIds = useRef(new Set<string>());
   const mounted = useRef(true);
   const refreshInFlight = useRef(false);
+  const integrationConnections = useIntegrationConnections({
+    client,
+    mounted,
+    onError: setError,
+  });
   const {
     attachments,
     attaching,
@@ -217,6 +223,7 @@ export function AssistantScreen() {
       client.listMissions(),
       client.getAttentionBriefing(),
       client.listRoutines(),
+      integrationConnections.refresh(),
     ]);
     if (!mounted.current) return;
     setConversations(conversationPage.conversations);
@@ -243,7 +250,7 @@ export function AssistantScreen() {
       }),
     );
     setRoutineRuns(Object.fromEntries(runEntries));
-  }, [client]);
+  }, [client, integrationConnections.refresh]);
 
   const searchKnowledge = useCallback(
     (query: string): Promise<KnowledgeSearchResponse> =>
@@ -1140,6 +1147,9 @@ export function AssistantScreen() {
           routines={routines}
           routineRuns={routineRuns}
           routineActionId={routineActionId}
+          integrations={integrationConnections.integrations}
+          integrationConnections={integrationConnections.connections}
+          integrationActionId={integrationConnections.actionId}
           campaignPolicies={campaignPolicies}
           notifications={notifications}
           pushNotifications={pushNotifications}
@@ -1179,6 +1189,9 @@ export function AssistantScreen() {
           onPauseRoutine={pauseRoutine}
           onResumeRoutine={resumeRoutine}
           onRunRoutineNow={runRoutineNow}
+          onConnectIntegration={integrationConnections.connect}
+          onVerifyIntegration={integrationConnections.verify}
+          onRevokeIntegration={integrationConnections.revoke}
           onTab={(tab) => setResources({ open: true, tab })}
         />
 

@@ -20,6 +20,14 @@ export const ProjectContextManifestSchema = z
     schemaVersion: z.literal(1),
     projectId: z.string().startsWith('project_'),
     sourceKind: z.literal('local_git'),
+    repository: z
+      .object({
+        provider: z.literal('github'),
+        owner: z.string().min(1).max(100),
+        name: z.string().min(1).max(100),
+      })
+      .strict()
+      .optional(),
     revision: z.string().min(1).max(200),
     generatedAt: z.iso.datetime(),
     entries: z.array(ProjectContextEntrySchema).max(100),

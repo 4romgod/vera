@@ -1,5 +1,6 @@
 import type { CapabilityDestination } from '../../domain/capabilities/capability-destination.ts';
 import type { CapabilityAuthority } from '../../domain/capabilities/capability-registry.ts';
+import type { ProjectContextBundle } from '../../domain/projects/project-context.ts';
 
 /**
  * Provider-neutral boundary for an approved action against an owner service.
@@ -24,6 +25,8 @@ export type IntegrationActionExecutor<Arguments, Result> = {
         conversationId?: string;
         messageId?: string;
       };
+      project?: { id: string; displayName: string };
+      context?: ProjectContextBundle;
     },
     options?: { signal?: AbortSignal },
   ): Promise<Result>;

@@ -66,6 +66,7 @@ erasing why a choice was made.
 | [0042](0042-resolve-conversational-software-delivery-references-in-application-code.md) | Accepted | Resolve natural mission, campaign, and pull-request references deterministically before conversational inspection or repair preparation. |
 | [0043](0043-generate-openapi-from-runtime-http-contracts.md) | Accepted | Generate a checked OpenAPI contract from runtime routes and migrate mechanical client code behind the existing SDK facade. |
 | [0044](0044-generate-the-typescript-sdk-with-hey-api-and-axios.md) | Accepted | Generate the low-level TypeScript SDK with pinned Hey API and Axios behind the stable client facade. |
+| [0045](0045-connect-curated-external-services-through-provider-neutral-capabilities.md) | Accepted | Connect curated external services through durable owner authority and provider-neutral capabilities; use GitHub Issues as the first adapter. |
 
 ADRs 0001–0008 were accepted 24 August 2026 following the owner's review of
 the foundation documentation. ADR-0007 accepted a semantic boundary without
@@ -160,6 +161,10 @@ ambiguity, and reuses ADR-0041's separate exact repair approval.
 ADR-0043 makes the runtime Fastify and Zod route graph the source of a complete,
 checked OpenAPI contract. Generated transport code will replace mechanical
 client code incrementally while `@vera/client` retains its SDK behavior.
+ADR-0045 separates durable connection authority, provider-neutral capability
+semantics, and provider transport. GitHub Issues is the first implementation:
+Vera explicitly adopts and verifies the host `gh` account, freezes the selected
+repository for approval, and reconciles writes without exposing credentials.
 
 ## ADR rules
 

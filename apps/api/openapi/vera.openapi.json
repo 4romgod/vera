@@ -321,6 +321,168 @@
         ],
         "additionalProperties": false
       },
+      "IntegrationCatalogResource": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": { "type": "number", "enum": [1] },
+          "integrations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "schemaVersion": { "type": "number", "enum": [1] },
+                "id": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                },
+                "provider": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                },
+                "displayName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                },
+                "credentialManagement": {
+                  "type": "string",
+                  "enum": ["host_session"]
+                },
+                "capabilities": {
+                  "minItems": 1,
+                  "maxItems": 20,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                  }
+                },
+                "operations": {
+                  "minItems": 1,
+                  "maxItems": 20,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                  }
+                }
+              },
+              "required": [
+                "schemaVersion",
+                "id",
+                "provider",
+                "displayName",
+                "description",
+                "credentialManagement",
+                "capabilities",
+                "operations"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["schemaVersion", "integrations"],
+        "additionalProperties": false
+      },
+      "IntegrationConnectionListResource": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": { "type": "number", "enum": [1] },
+          "connections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IntegrationConnectionListResourceConnectionsItems"
+            }
+          }
+        },
+        "required": ["schemaVersion", "connections"],
+        "additionalProperties": false
+      },
+      "PostV1IntegrationConnectionsRequest": {
+        "type": "object",
+        "properties": {
+          "integrationId": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          }
+        },
+        "required": ["integrationId"],
+        "additionalProperties": false
+      },
+      "IntegrationConnectionResource": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": { "type": "number", "enum": [1] },
+          "version": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "id": { "type": "string", "pattern": "^connection_.*" },
+          "integrationId": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "adapterId": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "status": { "type": "string", "enum": ["active", "revoked"] },
+          "credentialBinding": {
+            "type": "object",
+            "properties": {
+              "kind": { "type": "string", "enum": ["host_session"] },
+              "host": { "type": "string", "minLength": 1, "maxLength": 253 }
+            },
+            "required": ["kind", "host"],
+            "additionalProperties": false
+          },
+          "account": {
+            "$ref": "#/components/schemas/IntegrationConnectionResourceAccount"
+          },
+          "operations": {
+            "minItems": 1,
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 100,
+              "pattern": "^[a-z0-9][a-z0-9._-]*$"
+            }
+          },
+          "lastVerifiedAt": { "$ref": "#/components/schemas/DateTime" },
+          "revokedAt": { "$ref": "#/components/schemas/DateTime" },
+          "createdAt": { "$ref": "#/components/schemas/DateTime" },
+          "updatedAt": { "$ref": "#/components/schemas/DateTime" }
+        },
+        "required": [
+          "schemaVersion",
+          "version",
+          "id",
+          "integrationId",
+          "adapterId",
+          "status",
+          "credentialBinding",
+          "account",
+          "operations",
+          "lastVerifiedAt",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
       "ConversationListResource": {
         "type": "object",
         "properties": {
@@ -451,6 +613,110 @@
           },
           "output": {
             "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": { "type": "string", "enum": ["work_item_result"] },
+                  "result": {
+                    "type": "object",
+                    "properties": {
+                      "schemaVersion": { "type": "number", "enum": [1] },
+                      "action": {
+                        "type": "string",
+                        "enum": [
+                          "create",
+                          "list",
+                          "inspect",
+                          "comment",
+                          "close",
+                          "reopen"
+                        ]
+                      },
+                      "summary": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2000
+                      },
+                      "connectionId": {
+                        "type": "string",
+                        "pattern": "^connection_.*"
+                      },
+                      "items": {
+                        "maxItems": 50,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "provider": {
+                              "type": "string",
+                              "enum": ["github"]
+                            },
+                            "repository": {
+                              "type": "object",
+                              "properties": {
+                                "owner": { "type": "string", "minLength": 1 },
+                                "name": { "type": "string", "minLength": 1 }
+                              },
+                              "required": ["owner", "name"],
+                              "additionalProperties": false
+                            },
+                            "number": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "title": { "type": "string", "minLength": 1 },
+                            "body": { "type": "string" },
+                            "state": {
+                              "type": "string",
+                              "enum": ["open", "closed"]
+                            },
+                            "url": { "type": "string", "format": "uri" },
+                            "labels": {
+                              "type": "array",
+                              "items": { "type": "string" }
+                            },
+                            "author": { "type": "string", "minLength": 1 },
+                            "createdAt": {
+                              "$ref": "#/components/schemas/DateTime"
+                            },
+                            "updatedAt": {
+                              "$ref": "#/components/schemas/DateTime"
+                            }
+                          },
+                          "required": [
+                            "provider",
+                            "repository",
+                            "number",
+                            "title",
+                            "body",
+                            "state",
+                            "url",
+                            "labels",
+                            "author",
+                            "createdAt",
+                            "updatedAt"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "schemaVersion",
+                      "action",
+                      "summary",
+                      "connectionId",
+                      "items"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "artifact": {
+                    "$ref": "#/components/schemas/TaskResourceOutputOneOfWorkItemResultArtifact"
+                  }
+                },
+                "required": ["kind", "result"],
+                "additionalProperties": false
+              },
               {
                 "type": "object",
                 "properties": {
@@ -4022,7 +4288,8 @@
           "knowledge_result",
           "attention_result",
           "routine_management_result",
-          "software_delivery_management_result"
+          "software_delivery_management_result",
+          "work_item_result"
         ]
       },
       "ArtifactResourceOneOfMemoryResultProducer": {
@@ -6103,6 +6370,85 @@
         "required": ["schemaVersion", "kind", "decisionSummary", "goal"],
         "additionalProperties": false
       },
+      "IntegrationConnectionListResourceConnectionsItems": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": { "type": "number", "enum": [1] },
+          "version": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "id": { "type": "string", "pattern": "^connection_.*" },
+          "integrationId": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "adapterId": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "status": { "type": "string", "enum": ["active", "revoked"] },
+          "credentialBinding": {
+            "type": "object",
+            "properties": {
+              "kind": { "type": "string", "enum": ["host_session"] },
+              "host": { "type": "string", "minLength": 1, "maxLength": 253 }
+            },
+            "required": ["kind", "host"],
+            "additionalProperties": false
+          },
+          "account": {
+            "$ref": "#/components/schemas/IntegrationConnectionResourceAccount"
+          },
+          "operations": {
+            "minItems": 1,
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 100,
+              "pattern": "^[a-z0-9][a-z0-9._-]*$"
+            }
+          },
+          "lastVerifiedAt": { "$ref": "#/components/schemas/DateTime" },
+          "revokedAt": { "$ref": "#/components/schemas/DateTime" },
+          "createdAt": { "$ref": "#/components/schemas/DateTime" },
+          "updatedAt": { "$ref": "#/components/schemas/DateTime" }
+        },
+        "required": [
+          "schemaVersion",
+          "version",
+          "id",
+          "integrationId",
+          "adapterId",
+          "status",
+          "credentialBinding",
+          "account",
+          "operations",
+          "lastVerifiedAt",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "IntegrationConnectionResourceAccount": {
+        "type": "object",
+        "properties": {
+          "providerAccountId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "login": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "displayName": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "profileUrl": { "type": "string", "format": "uri" }
+        },
+        "required": ["providerAccountId", "login"],
+        "additionalProperties": false
+      },
       "KnowledgeManagementApprovalRequiredDecision": {
         "type": "object",
         "properties": {
@@ -7114,7 +7460,8 @@
           "personal_knowledge",
           "owner_attention",
           "routine_data",
-          "software_delivery_metadata"
+          "software_delivery_metadata",
+          "work_item_data"
         ]
       },
       "MissionResourceCapabilitiesItemsAuthoritySideEffectsItems": {
@@ -7129,7 +7476,8 @@
           "mission_draft_write",
           "knowledge_write",
           "standing_instruction_write",
-          "campaign_repair_draft_write"
+          "campaign_repair_draft_write",
+          "external_data_write"
         ]
       },
       "MissionResourceEffectCampaignEffectCapabilitiesItems": {
@@ -8906,6 +9254,9 @@
       "TaskResourceApproval": {
         "anyOf": [
           {
+            "$ref": "#/components/schemas/TaskResourceApprovalAnyOfSpecialistCapabilityInvocationVariant15"
+          },
+          {
             "$ref": "#/components/schemas/TaskResourceApprovalAnyOfSpecialistCapabilityInvocationVariant10"
           },
           {
@@ -10029,6 +10380,75 @@
         ],
         "additionalProperties": false
       },
+      "TaskResourceApprovalAnyOfSpecialistCapabilityInvocationVariant15": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "pattern": "^approval_.*" },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "approved", "rejected"]
+          },
+          "reason": {
+            "type": "string",
+            "enum": ["specialist_capability_invocation"]
+          },
+          "project": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string", "pattern": "^project_.*" },
+              "displayName": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              }
+            },
+            "required": ["id", "displayName"],
+            "additionalProperties": false
+          },
+          "contextManifest": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
+          },
+          "destination": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
+          },
+          "authority": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchAuthority"
+          },
+          "inputArtifacts": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchInputArtifacts"
+          },
+          "decisionEvidence": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDecisionEvidence"
+          },
+          "attachments": {
+            "$ref": "#/components/schemas/KnowledgeSourceResourceProvenanceAttachments"
+          },
+          "requestedAt": { "$ref": "#/components/schemas/DateTime" },
+          "decidedAt": { "$ref": "#/components/schemas/DateTime" },
+          "decidedBy": { "type": "string" },
+          "capability": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string", "enum": ["work_item_management"] },
+              "version": { "type": "number", "enum": [1] }
+            },
+            "required": ["name", "version"],
+            "additionalProperties": false
+          },
+          "proposedArguments": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWorkItemManagementArguments"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "reason",
+          "requestedAt",
+          "capability",
+          "proposedArguments"
+        ],
+        "additionalProperties": false
+      },
       "TaskResourceAttachments": {
         "maxItems": 5,
         "type": "array",
@@ -10179,6 +10599,9 @@
       "TaskResourceDecisionAnyOfGoalPlannedPlanStepsItems": {
         "oneOf": [
           {
+            "$ref": "#/components/schemas/TaskResourceAnyOfExecuteGoalGoalStepsItemsOneOfWorkItemManagement"
+          },
+          {
             "$ref": "#/components/schemas/TaskResourceAnyOfExecuteGoalGoalStepsItemsOneOfDevelopmentPlanning"
           },
           {
@@ -10220,6 +10643,9 @@
             },
             "required": ["kind", "message"],
             "additionalProperties": false
+          },
+          {
+            "$ref": "#/components/schemas/WorkItemManagementApprovalRequiredDecision"
           },
           {
             "$ref": "#/components/schemas/RoutineManagementApprovalRequiredDecision"
@@ -10408,6 +10834,9 @@
         "anyOf": [
           { "$ref": "#/components/schemas/RespondDecision" },
           {
+            "$ref": "#/components/schemas/WorkItemManagementInvocationDecision"
+          },
+          {
             "$ref": "#/components/schemas/RoutineManagementInvocationDecision"
           },
           {
@@ -10452,6 +10881,7 @@
       },
       "TaskResourceGoalAnyOfVariant1StepsItems": {
         "oneOf": [
+          { "$ref": "#/components/schemas/WorkItemManagementGoalStep" },
           { "$ref": "#/components/schemas/DevelopmentPlanningGoalStep" },
           { "$ref": "#/components/schemas/SoftwareChangeGoalStep" },
           { "$ref": "#/components/schemas/WebResearchGoalStep" },
@@ -10519,6 +10949,9 @@
       },
       "TaskResourceInvocation": {
         "anyOf": [
+          {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWorkItemManagement"
+          },
           {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfRoutineManagement"
           },
@@ -11955,6 +12388,9 @@
           "schemaVersion": { "type": "number", "enum": [1] },
           "projectId": { "type": "string", "pattern": "^project_.*" },
           "sourceKind": { "type": "string", "enum": ["local_git"] },
+          "repository": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifestRepository"
+          },
           "revision": { "type": "string", "minLength": 1, "maxLength": 200 },
           "generatedAt": { "$ref": "#/components/schemas/DateTime" },
           "entries": {
@@ -12022,6 +12458,16 @@
         "required": ["maxFiles", "maxBytes", "maxFileBytes"],
         "additionalProperties": false
       },
+      "TaskResourceInvocationAnyOfWebResearchContextManifestRepository": {
+        "type": "object",
+        "properties": {
+          "provider": { "type": "string", "enum": ["github"] },
+          "owner": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "name": { "type": "string", "minLength": 1, "maxLength": 100 }
+        },
+        "required": ["provider", "owner", "name"],
+        "additionalProperties": false
+      },
       "TaskResourceInvocationAnyOfWebResearchDecisionEvidence": {
         "maxItems": 3,
         "type": "array",
@@ -12068,6 +12514,219 @@
         "items": {
           "$ref": "#/components/schemas/TaskResourceOutputOneOfGoalResultArtifactsItems"
         }
+      },
+      "TaskResourceInvocationAnyOfWorkItemManagement": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "pattern": "^invocation_.*" },
+          "status": {
+            "type": "string",
+            "enum": ["executing", "succeeded", "failed"]
+          },
+          "project": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string", "pattern": "^project_.*" },
+              "displayName": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              }
+            },
+            "required": ["id", "displayName"],
+            "additionalProperties": false
+          },
+          "contextManifest": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
+          },
+          "destination": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
+          },
+          "authority": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchAuthority"
+          },
+          "inputArtifacts": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchInputArtifacts"
+          },
+          "decisionEvidence": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDecisionEvidence"
+          },
+          "attachments": {
+            "$ref": "#/components/schemas/KnowledgeSourceResourceProvenanceAttachments"
+          },
+          "startedAt": { "$ref": "#/components/schemas/DateTime" },
+          "completedAt": { "$ref": "#/components/schemas/DateTime" },
+          "model": { "$ref": "#/components/schemas/TaskResourceDecisionModel" },
+          "capability": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string", "enum": ["work_item_management"] },
+              "version": { "type": "number", "enum": [1] }
+            },
+            "required": ["name", "version"],
+            "additionalProperties": false
+          },
+          "arguments": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWorkItemManagementArguments"
+          }
+        },
+        "required": ["id", "status", "startedAt", "capability", "arguments"],
+        "additionalProperties": false
+      },
+      "TaskResourceInvocationAnyOfWorkItemManagementArguments": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWorkItemManagementArgumentsOneOfCreate"
+          },
+          {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWorkItemManagementArgumentsOneOfList"
+          },
+          {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWorkItemManagementArgumentsOneOfInspect"
+          },
+          {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWorkItemManagementArgumentsOneOfComment"
+          },
+          {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWorkItemManagementArgumentsOneOfVariant5"
+          }
+        ]
+      },
+      "TaskResourceInvocationAnyOfWorkItemManagementArgumentsOneOfComment": {
+        "type": "object",
+        "properties": {
+          "action": { "type": "string", "enum": ["comment"] },
+          "objective": { "type": "string", "minLength": 1, "maxLength": 10000 },
+          "project": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string", "minLength": 1, "maxLength": 200 }
+            },
+            "required": ["name"],
+            "additionalProperties": false
+          },
+          "issue": {
+            "type": "object",
+            "properties": {
+              "number": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": ["number"],
+            "additionalProperties": false
+          },
+          "body": { "type": "string", "minLength": 1, "maxLength": 50000 }
+        },
+        "required": ["action", "objective", "project", "issue", "body"],
+        "additionalProperties": false
+      },
+      "TaskResourceInvocationAnyOfWorkItemManagementArgumentsOneOfCreate": {
+        "type": "object",
+        "properties": {
+          "action": { "type": "string", "enum": ["create"] },
+          "objective": { "type": "string", "minLength": 1, "maxLength": 10000 },
+          "project": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string", "minLength": 1, "maxLength": 200 }
+            },
+            "required": ["name"],
+            "additionalProperties": false
+          },
+          "issue": {
+            "$ref": "#/components/schemas/TaskResourceStepOneOfWorkItemManagementArgumentsOneOfCreateIssue"
+          }
+        },
+        "required": ["action", "objective", "project", "issue"],
+        "additionalProperties": false
+      },
+      "TaskResourceInvocationAnyOfWorkItemManagementArgumentsOneOfInspect": {
+        "type": "object",
+        "properties": {
+          "action": { "type": "string", "enum": ["inspect"] },
+          "objective": { "type": "string", "minLength": 1, "maxLength": 10000 },
+          "project": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string", "minLength": 1, "maxLength": 200 }
+            },
+            "required": ["name"],
+            "additionalProperties": false
+          },
+          "issue": {
+            "type": "object",
+            "properties": {
+              "number": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": ["number"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["action", "objective", "project", "issue"],
+        "additionalProperties": false
+      },
+      "TaskResourceInvocationAnyOfWorkItemManagementArgumentsOneOfList": {
+        "type": "object",
+        "properties": {
+          "action": { "type": "string", "enum": ["list"] },
+          "objective": { "type": "string", "minLength": 1, "maxLength": 10000 },
+          "project": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string", "minLength": 1, "maxLength": 200 }
+            },
+            "required": ["name"],
+            "additionalProperties": false
+          },
+          "state": {
+            "default": "open",
+            "type": "string",
+            "enum": ["open", "closed", "all"]
+          },
+          "limit": {
+            "default": 20,
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 50
+          }
+        },
+        "required": ["action", "objective", "project", "state", "limit"],
+        "additionalProperties": false
+      },
+      "TaskResourceInvocationAnyOfWorkItemManagementArgumentsOneOfVariant5": {
+        "type": "object",
+        "properties": {
+          "action": { "type": "string", "enum": ["close", "reopen"] },
+          "objective": { "type": "string", "minLength": 1, "maxLength": 10000 },
+          "project": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string", "minLength": 1, "maxLength": 200 }
+            },
+            "required": ["name"],
+            "additionalProperties": false
+          },
+          "issue": {
+            "type": "object",
+            "properties": {
+              "number": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": ["number"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["action", "objective", "project", "issue"],
+        "additionalProperties": false
       },
       "TaskResourceItemsAnyOfWebResearchContextManifestEntriesItems": {
         "type": "object",
@@ -12515,6 +13174,9 @@
           },
           {
             "$ref": "#/components/schemas/TaskResourceOutputOneOfRoutineManagementResultArtifact"
+          },
+          {
+            "$ref": "#/components/schemas/TaskResourceOutputOneOfWorkItemResultArtifact"
           }
         ]
       },
@@ -12823,6 +13485,33 @@
         ],
         "additionalProperties": false
       },
+      "TaskResourceOutputOneOfWorkItemResultArtifact": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "pattern": "^artifact_.*" },
+          "version": { "type": "number", "enum": [1] },
+          "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "byteLength": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "type": { "type": "string", "enum": ["work_item_result"] },
+          "mediaType": {
+            "type": "string",
+            "enum": ["application/vnd.vera.work-item-result+json"]
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "sha256",
+          "byteLength",
+          "type",
+          "mediaType"
+        ],
+        "additionalProperties": false
+      },
       "TaskResourceResultDiagnosticServicesItemsObservation": {
         "type": "object",
         "properties": {
@@ -13039,6 +13728,21 @@
         "required": ["id", "displayName", "observation"],
         "additionalProperties": false
       },
+      "TaskResourceStepOneOfWorkItemManagementArgumentsOneOfCreateIssue": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "body": { "default": "", "type": "string", "maxLength": 50000 },
+          "labels": {
+            "default": [],
+            "maxItems": 20,
+            "type": "array",
+            "items": { "type": "string", "minLength": 1, "maxLength": 100 }
+          }
+        },
+        "required": ["title", "body", "labels"],
+        "additionalProperties": false
+      },
       "WebResearchApprovalRequiredDecision": {
         "type": "object",
         "properties": {
@@ -13190,6 +13894,132 @@
             },
             "required": ["objective"],
             "additionalProperties": false
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "kind",
+          "decisionSummary",
+          "capability",
+          "arguments"
+        ],
+        "additionalProperties": false
+      },
+      "WorkItemManagementApprovalRequiredDecision": {
+        "type": "object",
+        "properties": {
+          "kind": { "type": "string", "enum": ["approval_required"] },
+          "reason": {
+            "type": "string",
+            "enum": ["specialist_capability_invocation"]
+          },
+          "capability": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string", "enum": ["work_item_management"] },
+              "version": { "type": "number", "enum": [1] }
+            },
+            "required": ["name", "version"],
+            "additionalProperties": false
+          },
+          "proposedArguments": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWorkItemManagementArguments"
+          }
+        },
+        "required": ["kind", "reason", "capability", "proposedArguments"],
+        "additionalProperties": false
+      },
+      "WorkItemManagementGoalStep": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "pattern": "^step_[a-z0-9_]+$" },
+          "purpose": { "type": "string", "minLength": 1, "maxLength": 500 },
+          "inputStepIds": {
+            "maxItems": 2,
+            "type": "array",
+            "items": { "type": "string", "pattern": "^step_[a-z0-9_]+$" }
+          },
+          "capability": { "type": "string", "enum": ["work_item_management"] },
+          "version": { "type": "number", "enum": [1] },
+          "arguments": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWorkItemManagementArguments"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "awaiting_approval",
+              "executing",
+              "succeeded",
+              "rejected",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "approvalId": { "type": "string", "pattern": "^approval_.*" },
+          "invocationId": { "type": "string", "pattern": "^invocation_.*" },
+          "artifact": {
+            "$ref": "#/components/schemas/TaskResourceOutputOneOfGoalResultArtifactsItems"
+          }
+        },
+        "required": [
+          "id",
+          "purpose",
+          "inputStepIds",
+          "capability",
+          "version",
+          "arguments",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "TaskResourceAnyOfExecuteGoalGoalStepsItemsOneOfWorkItemManagement": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "pattern": "^step_[a-z0-9_]+$" },
+          "purpose": { "type": "string", "minLength": 1, "maxLength": 500 },
+          "inputStepIds": {
+            "maxItems": 2,
+            "type": "array",
+            "items": { "type": "string", "pattern": "^step_[a-z0-9_]+$" }
+          },
+          "capability": { "type": "string", "enum": ["work_item_management"] },
+          "version": { "type": "number", "enum": [1] },
+          "arguments": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWorkItemManagementArguments"
+          }
+        },
+        "required": [
+          "id",
+          "purpose",
+          "inputStepIds",
+          "capability",
+          "version",
+          "arguments"
+        ],
+        "additionalProperties": false
+      },
+      "WorkItemManagementInvocationDecision": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": { "type": "number", "enum": [1] },
+          "kind": { "type": "string", "enum": ["invoke_capability"] },
+          "decisionSummary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "capability": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string", "enum": ["work_item_management"] },
+              "version": { "type": "number", "enum": [1] }
+            },
+            "required": ["name", "version"],
+            "additionalProperties": false
+          },
+          "arguments": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWorkItemManagementArguments"
           }
         },
         "required": [
@@ -13537,6 +14367,318 @@
         "operationId": "getV1ProjectsId",
         "tags": ["projects"],
         "summary": "GET /v1/projects/{id}"
+      }
+    },
+    "/v1/integrations": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationCatalogResource"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred or an operation failed internally.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        },
+        "operationId": "getV1Integrations",
+        "tags": ["integrations"],
+        "summary": "GET /v1/integrations"
+      }
+    },
+    "/v1/integration-connections": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationConnectionListResource"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred or an operation failed internally.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        },
+        "operationId": "getV1IntegrationConnections",
+        "tags": ["integrations"],
+        "summary": "GET /v1/integration-connections"
+      },
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostV1IntegrationConnectionsRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": { "type": "string", "minLength": 8, "maxLength": 200 },
+            "in": "header",
+            "name": "idempotency-key",
+            "required": true
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationConnectionResource"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "description": "Canonical URL of the created resource.",
+                "schema": { "type": "string" }
+              }
+            }
+          },
+          "400": {
+            "description": "The request did not satisfy the declared path, query, header, or body schema.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist for the current owner.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current resource state or reuses an idempotency key.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred or an operation failed internally.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "503": {
+            "description": "A required provider, capability, or notification service is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        },
+        "operationId": "postV1IntegrationConnections",
+        "tags": ["integrations"],
+        "summary": "POST /v1/integration-connections"
+      }
+    },
+    "/v1/integration-connections/{id}": {
+      "get": {
+        "parameters": [
+          {
+            "schema": { "type": "string", "minLength": 1, "maxLength": 200 },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationConnectionResource"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request did not satisfy the declared path, query, header, or body schema.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist for the current owner.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred or an operation failed internally.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        },
+        "operationId": "getV1IntegrationConnectionsId",
+        "tags": ["integrations"],
+        "summary": "GET /v1/integration-connections/{id}"
+      }
+    },
+    "/v1/integration-connections/{id}/verification": {
+      "post": {
+        "parameters": [
+          {
+            "schema": { "type": "string", "minLength": 1, "maxLength": 200 },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationConnectionResource"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request did not satisfy the declared path, query, header, or body schema.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist for the current owner.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current resource state or reuses an idempotency key.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred or an operation failed internally.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "503": {
+            "description": "A required provider, capability, or notification service is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        },
+        "operationId": "postV1IntegrationConnectionsIdVerification",
+        "tags": ["integrations"],
+        "summary": "POST /v1/integration-connections/{id}/verification"
+      }
+    },
+    "/v1/integration-connections/{id}/revocation": {
+      "post": {
+        "parameters": [
+          {
+            "schema": { "type": "string", "minLength": 1, "maxLength": 200 },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationConnectionResource"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request did not satisfy the declared path, query, header, or body schema.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist for the current owner.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current resource state or reuses an idempotency key.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred or an operation failed internally.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        },
+        "operationId": "postV1IntegrationConnectionsIdRevocation",
+        "tags": ["integrations"],
+        "summary": "POST /v1/integration-connections/{id}/revocation"
       }
     },
     "/v1/conversations": {
@@ -17782,6 +18924,10 @@
     { "name": "operations", "description": "Service health and readiness." },
     { "name": "model", "description": "Model decision evaluation." },
     { "name": "capabilities", "description": "Available Vera capabilities." },
+    {
+      "name": "integrations",
+      "description": "Curated external services and owner connection state."
+    },
     { "name": "machines", "description": "Owner-machine discovery." },
     { "name": "projects", "description": "Registered project resources." },
     {

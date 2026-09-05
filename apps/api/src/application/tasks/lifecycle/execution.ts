@@ -446,18 +446,31 @@ export function createExecutionOperations(
                                             byteLength: artifact.byteLength,
                                           },
                                         }
-                                      : {
-                                          kind: 'routine_management_result',
-                                          result: artifact.content,
-                                          artifact: {
-                                            id: artifact.id,
-                                            version: artifact.version,
-                                            type: artifact.type,
-                                            mediaType: artifact.mediaType,
-                                            sha256: artifact.sha256,
-                                            byteLength: artifact.byteLength,
-                                          },
-                                        };
+                                      : artifact.type === 'work_item_result'
+                                        ? {
+                                            kind: 'work_item_result',
+                                            result: artifact.content,
+                                            artifact: {
+                                              id: artifact.id,
+                                              version: artifact.version,
+                                              type: artifact.type,
+                                              mediaType: artifact.mediaType,
+                                              sha256: artifact.sha256,
+                                              byteLength: artifact.byteLength,
+                                            },
+                                          }
+                                        : {
+                                            kind: 'routine_management_result',
+                                            result: artifact.content,
+                                            artifact: {
+                                              id: artifact.id,
+                                              version: artifact.version,
+                                              type: artifact.type,
+                                              mediaType: artifact.mediaType,
+                                              sha256: artifact.sha256,
+                                              byteLength: artifact.byteLength,
+                                            },
+                                          };
           appendEvent(candidate, 'run_succeeded', completedAt, {}, createId);
           return true;
         },

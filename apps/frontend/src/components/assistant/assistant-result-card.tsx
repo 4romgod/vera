@@ -14,9 +14,10 @@ import {
   Wrench,
   Library,
   GitPullRequest,
+  GitBranch,
   ShieldCheck,
 } from 'lucide-react-native';
-import { Pressable, Text, View } from 'react-native';
+import { Linking, Pressable, Text, View } from 'react-native';
 
 import type { ArtifactResource, TaskResource, VeraApi } from '@vera/client';
 
@@ -363,6 +364,32 @@ function resultPresentation(output: NonNullable<TaskResource['output']>): {
               : 'Software deliveries',
         summary: output.result.summary,
         icon: GitPullRequest,
+      };
+    case 'work_item_result':
+      return {
+        title: humanizeIdentifier(`${output.result.action} GitHub issue`),
+        summary: output.result.summary,
+        icon: GitBranch,
+        content: (
+          <View style={{ gap: spacing.sm }}>
+            {output.result.items.map((item) => (
+              <Pressable
+                accessibilityHint="Opens this issue on GitHub"
+                accessibilityLabel={`Open GitHub issue ${String(item.number)}`}
+                accessibilityRole="link"
+                key={`${item.repository.owner}/${item.repository.name}/${String(item.number)}`}
+                onPress={() => void Linking.openURL(item.url)}
+                style={({ pressed }) => ({ opacity: pressed ? 0.65 : 1 })}
+              >
+                <ResultRow
+                  detail={`${item.repository.owner}/${item.repository.name} · @${item.author}`}
+                  status={item.state}
+                  title={`#${String(item.number)} ${item.title}`}
+                />
+              </Pressable>
+            ))}
+          </View>
+        ),
       };
     case 'personal_task_result':
       return {

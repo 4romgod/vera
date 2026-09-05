@@ -165,4 +165,53 @@ void describe('deterministic model provider', () => {
       },
     });
   });
+
+  void it('routes selected-project GitHub issue requests through work-item management', async () => {
+    const provider = new DeterministicModelProvider();
+    const outputSchema = { capabilities: ['work_item_management'] };
+    const create = await provider.generateStructured({
+      purpose: 'orchestration_decision',
+      systemPrompt: 'test',
+      message: JSON.stringify({
+        ownerMessage:
+          'Create a GitHub issue: Add connection health to readiness',
+        selectedProject: { id: 'project_vera', displayName: 'Vera' },
+      }),
+      outputSchema,
+    });
+    const list = await provider.generateStructured({
+      purpose: 'orchestration_decision',
+      systemPrompt: 'test',
+      message: JSON.stringify({
+        ownerMessage: 'List closed GitHub issues',
+        selectedProject: { id: 'project_vera', displayName: 'Vera' },
+      }),
+      outputSchema,
+    });
+
+    assert.deepEqual(create.candidate, {
+      schemaVersion: 1,
+      kind: 'invoke_capability',
+      decisionSummary:
+        'The owner requested an action against work items in the selected project.',
+      capability: { name: 'work_item_management', version: 1 },
+      arguments: {
+        action: 'create',
+        objective: 'Create a GitHub issue: Add connection health to readiness',
+        project: { name: 'Vera' },
+        issue: {
+          title: 'Add connection health to readiness',
+          body: '',
+          labels: [],
+        },
+      },
+    });
+    assert.deepEqual((list.candidate as { arguments: unknown }).arguments, {
+      action: 'list',
+      objective: 'List closed GitHub issues',
+      project: { name: 'Vera' },
+      state: 'closed',
+      limit: 20,
+    });
+  });
 });

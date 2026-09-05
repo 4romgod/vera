@@ -439,6 +439,19 @@ export function createTaskLifecycleFoundation(runtime: TaskLifecycleRuntime) {
           : [`Artifact: ${aggregate.run.output.artifact.id}`]),
       ].join('\n\n');
     }
+    if (aggregate.run.output?.kind === 'work_item_result') {
+      const result = aggregate.run.output.result;
+      return [
+        result.summary,
+        ...result.items.map(
+          (item) =>
+            `[#${String(item.number)} · ${item.state}] ${item.title} — ${item.url}`,
+        ),
+        ...(aggregate.run.output.artifact === undefined
+          ? []
+          : [`Artifact: ${aggregate.run.output.artifact.id}`]),
+      ].join('\n\n');
+    }
     if (aggregate.run.output?.kind === 'knowledge_result') {
       const result = aggregate.run.output.result;
       return [

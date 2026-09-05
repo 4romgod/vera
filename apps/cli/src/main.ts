@@ -22,6 +22,10 @@ export type CliDependencies = {
 const usage = `Usage:
   vera capability list
   vera capability show <capability-name>
+  vera integration list
+  vera integration connect <integration-id> [--key <key>] [--yes]
+  vera integration verify <connection-id>
+  vera integration revoke <connection-id> [--yes]
   vera personal-task list [--status <all|open|completed>] [--limit <number>]
   vera personal-task show <personal-task-id>
   vera reminder list [--status <all|scheduled|delivered|acknowledged|cancelled>] [--limit <number>]
@@ -250,6 +254,56 @@ export async function runCli(
       throw new Error(`Capability ${name} was not found.`);
     }
     print(stdout, capability);
+    return 0;
+  }
+
+  if (resource === 'integration' && action === 'list') {
+    const [catalog, connections] = await Promise.all([
+      client.listIntegrations(),
+      client.listIntegrationConnections(),
+    ]);
+    print(stdout, { ...catalog, connections: connections.connections });
+    return 0;
+  }
+  if (resource === 'integration' && action === 'connect') {
+    const integrationId = positional(args, 2, 'integration-id');
+    const approved =
+      args.includes('--yes') ||
+      (await confirm(
+        `Allow Vera to use the existing host session for ${integrationId}?`,
+      ));
+    if (!approved) {
+      stderr.write('Connection cancelled.\n');
+      return 2;
+    }
+    print(
+      stdout,
+      await client.connectIntegration({
+        integrationId,
+        idempotencyKey: option(args, '--key') ?? createKey(),
+      }),
+    );
+    return 0;
+  }
+  if (resource === 'integration' && action === 'verify') {
+    print(
+      stdout,
+      await client.verifyIntegrationConnection(
+        positional(args, 2, 'connection-id'),
+      ),
+    );
+    return 0;
+  }
+  if (resource === 'integration' && action === 'revoke') {
+    const connectionId = positional(args, 2, 'connection-id');
+    const approved =
+      args.includes('--yes') ||
+      (await confirm(`Revoke Vera's use of connection ${connectionId}?`));
+    if (!approved) {
+      stderr.write('Revocation cancelled.\n');
+      return 2;
+    }
+    print(stdout, await client.revokeIntegrationConnection(connectionId));
     return 0;
   }
 

@@ -13,9 +13,10 @@ and `memory_management@1` accepted by ADR-0025 on 26 August 2026;
 `attachment_analysis@1` is accepted by ADR-0031 on 27 August 2026; actionable
 attachment composition is accepted by ADR-0032 on 27 August 2026
 and registered machine operations are accepted by ADR-0033 on 27 August 2026;
-grounded personal knowledge is accepted by ADR-0036 on 4 September 2026; and
-conversational software-delivery control is accepted by ADR-0042 on 5 September
-2026
+grounded personal knowledge is accepted by ADR-0036 on 4 September 2026;
+conversational software-delivery control is accepted by ADR-0042; and curated
+external connections with `work_item_management@1` are accepted by ADR-0045 on
+5 September 2026.
 
 ## Purpose
 
@@ -355,6 +356,29 @@ authoritative owner resources from an external specialist invocation. Both
 still use the same task, approval, invocation, artifact, budget, and recovery
 lifecycle. See
 [ADR-0022](decisions/0022-introduce-provider-neutral-integration-actions-with-vera-owned-personal-tasks.md).
+
+### External work items and connections
+
+`work_item_management@1` is a provider-neutral contract for creating, listing,
+inspecting, commenting on, closing, and reopening project work items. GitHub
+Issues is the first adapter, but neither its proposal schema nor artifact names
+`gh`, OAuth, or a provider-native payload.
+
+```mermaid
+flowchart LR
+    CONNECT["Active owner connection"] --> GUARD["Account + project + repository guard"]
+    PROPOSAL["Typed work-item proposal"] --> APPROVAL["Exact per-operation approval"]
+    APPROVAL --> GUARD
+    GUARD --> ADAPTER["Selected provider adapter"]
+    ADAPTER --> RESULT["work_item_result artifact"]
+```
+
+The connection is an additional execution prerequisite, not reusable approval.
+Read operations declare third-party disclosure; writes additionally declare
+external data mutation. Repository identity comes from the registered project's
+credential-free origin and is frozen in project context. Credentials remain in
+the host or a future credential broker and are never model arguments. See
+[ADR-0045](decisions/0045-connect-curated-external-services-through-provider-neutral-capabilities.md).
 
 `personal_reminder_management@1` reuses the same integration-action boundary
 for `create`, `list`, `reschedule`, `cancel`, and `acknowledge`. Creating and

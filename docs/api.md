@@ -29,6 +29,12 @@ must not be exposed to an untrusted or shared network.
 | `GET /health` | Process liveness only | `200` |
 | `GET /ready` | Model, stores, recovery, workers, and every enabled task-capability runtime | `200` or `503` |
 | `GET /v1/capabilities` | List declared capability contracts, authority, enabled state, and destination | `200` |
+| `GET /v1/integrations` | Discover curated external-service definitions and supported operations | `200` |
+| `GET /v1/integration-connections` | List public owner-scoped connection state without credentials | `200` |
+| `POST /v1/integration-connections` | Idempotently enable Vera to use one registered host session | `201` |
+| `GET /v1/integration-connections/{connectionId}` | Retrieve one public connection projection | `200` |
+| `POST /v1/integration-connections/{connectionId}/verification` | Re-verify the host account without changing it | `200` |
+| `POST /v1/integration-connections/{connectionId}/revocation` | Revoke Vera's use without signing the host out | `200` |
 | `GET /v1/attention` | Compute the current owner briefing from authoritative resources and persisted dispositions | `200` |
 | `POST /v1/attention-items/{attentionItemId}/decision` | Idempotently snooze, dismiss, or restore one exact attention generation | `200` |
 | `GET /v1/routines` | List durable standing instructions | `200` |
@@ -109,6 +115,23 @@ must not be exposed to an untrusted or shared network.
 The model-decision path is useful for provider and proposal diagnostics. New
 owner-facing clients should submit tasks so accepted work has durable identity,
 events, approval, and recovery semantics.
+
+## External-service connections
+
+The integration catalog is a server-owned allowlist, not a downloadable plugin
+index. In the initial GitHub adapter, `POST /v1/integration-connections` adopts
+the already authenticated `gh` session after an explicit owner action. The
+response contains only non-secret account identity and declared operations.
+Vera persists the connection in MongoDB and refuses a changed host account
+until the owner revokes and reconnects.
+The catalog is empty while `VERA_WORK_ITEM_ADAPTER=disabled`; selecting
+`github_gh_cli` publishes the definition but does not itself authorize Vera.
+
+Connection state alone does not approve external work. A conversational GitHub
+issue request becomes an ordinary durable `work_item_management@1` task with a
+separate exact approval. Execution rechecks the active connection, stored
+account, selected registered project, and GitHub repository frozen in its
+context manifest. See [ADR-0045](decisions/0045-connect-curated-external-services-through-provider-neutral-capabilities.md).
 
 ## Speech transcription
 

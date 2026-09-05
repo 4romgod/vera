@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Version:** 0.9
-**Last updated:** 4 September 2026
+**Last updated:** 5 September 2026
 **Accepted:** 24 August 2026 (owner); V1 perimeter clarified by ADR-0014 and
 cloud-provider policy clarified by ADR-0015 and bounded conversation disclosure
 accepted by ADR-0016 on 25 August 2026
@@ -17,7 +17,8 @@ software-change publication is accepted by ADR-0029 on 27 August 2026. Durable
 owner attachments and approval-scoped analysis are accepted by ADR-0031;
 grounded personal knowledge is accepted by ADR-0036 on 4 September 2026.
 Privacy-safe proactive device delivery is accepted by ADR-0039 on 4 September
-2026.
+2026. Curated external-service connections and GitHub work-item authority are
+accepted by ADR-0045 on 5 September 2026.
 
 ## Purpose
 
@@ -408,6 +409,23 @@ The secure interpretation is:
 
 Vera should not search the machine for ambient credentials and place them into
 a model prompt.
+
+### External-service connection boundary
+
+An ambient authenticated provider session is credential availability, not Vera
+authority. Vera may use it only after an explicit owner connection is stored,
+and every actual capability invocation still receives its own exact approval.
+The initial GitHub connection records non-secret account identity and supports
+independent revocation without deleting or returning host credentials.
+
+Before work-item execution, Vera checks the active connection, exact stored
+account, registered project, current credential-free GitHub origin, and the
+repository identity frozen during approval. A silent account or repository
+change fails closed. Provider output is untrusted and schema-validated. Issue
+and comment writes use durable invocation markers for reconciliation; an
+unprovable interrupted outcome is surfaced for review rather than blindly
+repeated. See
+[ADR-0045](decisions/0045-connect-curated-external-services-through-provider-neutral-capabilities.md).
 
 ## Data classification
 

@@ -40,6 +40,12 @@ function fakeApi(overrides: Partial<VeraApi>): VeraApi {
     getAttachment: unavailable,
     attachmentPreviewUrl: unavailable,
     listCapabilities: unavailable,
+    listIntegrations: unavailable,
+    listIntegrationConnections: unavailable,
+    connectIntegration: unavailable,
+    getIntegrationConnection: unavailable,
+    verifyIntegrationConnection: unavailable,
+    revokeIntegrationConnection: unavailable,
     listMachines: unavailable,
     getAttentionBriefing: unavailable,
     decideAttention: unavailable,
@@ -120,6 +126,21 @@ function fakeApi(overrides: Partial<VeraApi>): VeraApi {
     ...overrides,
   };
 }
+
+const integrationConnection = {
+  schemaVersion: 1 as const,
+  version: 1,
+  id: 'connection_test',
+  integrationId: 'github',
+  adapterId: 'github_gh_cli',
+  status: 'active' as const,
+  credentialBinding: { kind: 'host_session' as const, host: 'github.com' },
+  account: { providerAccountId: '123', login: 'vera-owner' },
+  operations: ['issues_read'],
+  lastVerifiedAt: '2026-09-05T00:00:00.000Z',
+  createdAt: '2026-09-05T00:00:00.000Z',
+  updatedAt: '2026-09-05T00:00:00.000Z',
+};
 
 function changeApplication(
   status: ChangeApplicationResource['status'],
@@ -210,6 +231,107 @@ function publication(
 }
 
 void describe('Vera CLI', () => {
+  void it('lists, explicitly connects, verifies, and revokes integrations', async () => {
+    const output: string[] = [];
+    const calls: string[] = [];
+    const client = fakeApi({
+      listIntegrations: () =>
+        Promise.resolve({
+          schemaVersion: 1,
+          integrations: [
+            {
+              schemaVersion: 1,
+              id: 'github',
+              provider: 'github',
+              displayName: 'GitHub',
+              description: 'Manage issues.',
+              credentialManagement: 'host_session',
+              capabilities: ['work_item_management'],
+              operations: ['issues_read'],
+            },
+          ],
+        }),
+      listIntegrationConnections: () =>
+        Promise.resolve({
+          schemaVersion: 1,
+          connections: [integrationConnection],
+        }),
+      connectIntegration: (input) => {
+        calls.push(`connect:${input.integrationId}:${input.idempotencyKey}`);
+        return Promise.resolve(integrationConnection);
+      },
+      verifyIntegrationConnection: (id) => {
+        calls.push(`verify:${id}`);
+        return Promise.resolve(integrationConnection);
+      },
+      revokeIntegrationConnection: (id) => {
+        calls.push(`revoke:${id}`);
+        return Promise.resolve({
+          ...integrationConnection,
+          version: 2,
+          status: 'revoked',
+          revokedAt: '2026-09-05T00:01:00.000Z',
+          updatedAt: '2026-09-05T00:01:00.000Z',
+        });
+      },
+    });
+    const dependencies = {
+      client,
+      stdout: {
+        write: (value: string | Uint8Array) => {
+          output.push(String(value));
+          return true;
+        },
+      },
+      stderr: { write: () => true },
+      confirm: () => Promise.resolve(true),
+      createIdempotencyKey: () => 'cli-connect-key',
+    };
+
+    assert.equal(await runCli(['integration', 'list'], dependencies), 0);
+    assert.equal(
+      await runCli(['integration', 'connect', 'github'], dependencies),
+      0,
+    );
+    assert.equal(
+      await runCli(
+        ['integration', 'verify', integrationConnection.id],
+        dependencies,
+      ),
+      0,
+    );
+    assert.equal(
+      await runCli(
+        ['integration', 'revoke', integrationConnection.id],
+        dependencies,
+      ),
+      0,
+    );
+    assert.deepEqual(calls, [
+      'connect:github:cli-connect-key',
+      'verify:connection_test',
+      'revoke:connection_test',
+    ]);
+    assert.match(output.join(''), /vera-owner/u);
+  });
+
+  void it('does not adopt a host integration session without confirmation', async () => {
+    let connected = false;
+    const exit = await runCli(['integration', 'connect', 'github'], {
+      client: fakeApi({
+        connectIntegration: () => {
+          connected = true;
+          return Promise.resolve(integrationConnection);
+        },
+      }),
+      stdout: { write: () => true },
+      stderr: { write: () => true },
+      confirm: () => Promise.resolve(false),
+    });
+    assert.equal(exit, 2);
+    assert.equal(connected, false);
+  });
+
   void it('lists governed memory through the shared client', async () => {
     const output: string[] = [];
     let options: Parameters<VeraApi['listMemories']>[0];

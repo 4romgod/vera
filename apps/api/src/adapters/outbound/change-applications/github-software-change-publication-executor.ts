@@ -20,6 +20,7 @@ import {
   type SoftwareChangePublicationExecutor,
   type SoftwareChangePublicationResult,
 } from '../../../ports/change-applications/software-change-publication-executor.ts';
+import { githubCliProcessEnvironment } from '../github/github-cli.ts';
 
 const executeFile = promisify(execFile);
 const commandTimeoutMs = 60_000;
@@ -31,56 +32,7 @@ type CommandRunner = (
   options?: { cwd?: string; allowFailure?: boolean },
 ) => Promise<CommandResult>;
 
-const publicationEnvironmentKeys = [
-  'PATH',
-  'HOME',
-  'USER',
-  'LOGNAME',
-  'USERPROFILE',
-  'SHELL',
-  'TMPDIR',
-  'TMP',
-  'TEMP',
-  'LANG',
-  'LC_ALL',
-  'LC_CTYPE',
-  'TZ',
-  'TERM',
-  'COLORTERM',
-  'NO_COLOR',
-  'SSH_AUTH_SOCK',
-  'GH_TOKEN',
-  'GITHUB_TOKEN',
-  'GH_HOST',
-  'GH_ENTERPRISE_TOKEN',
-  'XDG_CONFIG_HOME',
-  'XDG_DATA_HOME',
-  'XDG_STATE_HOME',
-  'XDG_RUNTIME_DIR',
-  'HTTPS_PROXY',
-  'HTTP_PROXY',
-  'NO_PROXY',
-  'SSL_CERT_FILE',
-  'SSL_CERT_DIR',
-  'CURL_CA_BUNDLE',
-  'SystemRoot',
-  'ComSpec',
-  'PATHEXT',
-] as const;
-
-export function githubPublicationProcessEnvironment(
-  source: NodeJS.ProcessEnv = process.env,
-): NodeJS.ProcessEnv {
-  const environment: NodeJS.ProcessEnv = {
-    GIT_TERMINAL_PROMPT: '0',
-    GH_PROMPT_DISABLED: '1',
-  };
-  for (const key of publicationEnvironmentKeys) {
-    const value = source[key];
-    if (value !== undefined) environment[key] = value;
-  }
-  return environment;
-}
+export const githubPublicationProcessEnvironment = githubCliProcessEnvironment;
 
 async function defaultRunner(
   command: string,
@@ -93,7 +45,7 @@ async function defaultRunner(
       encoding: 'utf8',
       maxBuffer: 10 * 1024 * 1024,
       timeout: commandTimeoutMs,
-      env: githubPublicationProcessEnvironment(),
+      env: githubCliProcessEnvironment(),
     });
     return { stdout: result.stdout, stderr: result.stderr, exitCode: 0 };
   } catch (error) {

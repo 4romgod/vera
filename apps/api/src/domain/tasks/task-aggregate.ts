@@ -16,6 +16,7 @@ import {
   KnowledgeResultArtifactReferenceSchema,
   AttentionResultArtifactReferenceSchema,
   RoutineManagementResultArtifactReferenceSchema,
+  WorkItemResultArtifactReferenceSchema,
 } from '../artifacts/artifact.ts';
 import { CapabilityDestinationSchema } from '../capabilities/capability-destination.ts';
 import { ConversationContextBundleSchema } from '../conversations/conversation-context.ts';
@@ -79,6 +80,10 @@ import {
   SoftwareDeliveryRepairArgumentsSchema,
   SoftwareDeliveryManagementResultSchema,
 } from '../software-delivery/software-delivery-management.ts';
+import {
+  WorkItemActionArgumentsSchema,
+  WorkItemResultSchema,
+} from '../work-items/work-item.ts';
 
 export const TaskStatusSchema = z.enum([
   'active',
@@ -124,6 +129,15 @@ const ApprovalIdentitySchema = z
   .strict();
 
 export const ApprovalSchema = z.union([
+  ApprovalIdentitySchema.extend({
+    capability: z
+      .object({
+        name: z.literal('work_item_management'),
+        version: z.literal(1),
+      })
+      .strict(),
+    proposedArguments: WorkItemActionArgumentsSchema,
+  }).strict(),
   ApprovalIdentitySchema.extend({
     capability: z
       .object({ name: z.literal('routine_management'), version: z.literal(1) })
@@ -286,6 +300,15 @@ const CapabilityInvocationIdentitySchema = z
 export const CapabilityInvocationSchema = z.union([
   CapabilityInvocationIdentitySchema.extend({
     capability: z
+      .object({
+        name: z.literal('work_item_management'),
+        version: z.literal(1),
+      })
+      .strict(),
+    arguments: WorkItemActionArgumentsSchema,
+  }).strict(),
+  CapabilityInvocationIdentitySchema.extend({
+    capability: z
       .object({ name: z.literal('routine_management'), version: z.literal(1) })
       .strict(),
     arguments: RoutineManagementArgumentsSchema,
@@ -407,6 +430,13 @@ export const CapabilityInvocationSchema = z.union([
 ]);
 
 export const TaskOutputSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('work_item_result'),
+      result: WorkItemResultSchema,
+      artifact: WorkItemResultArtifactReferenceSchema.optional(),
+    })
+    .strict(),
   z
     .object({
       kind: z.literal('routine_management_result'),

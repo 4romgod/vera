@@ -10,6 +10,7 @@ import {
 } from '../../../domain/projects/project-context.ts';
 import { containsControlCharacter } from '../../../domain/shared/text-safety.ts';
 import type { ProjectContextAssembler } from '../../../ports/projects/project-context-assembler.ts';
+import { parseGitHubRepositoryRemote } from '../github/github-cli.ts';
 
 const executeFile = promisify(execFile);
 const gitCommandTimeoutMs = 30_000;
@@ -508,6 +509,22 @@ export class LocalGitProjectContextAssembler
           '--untracked-files=no',
         ])
       ).trim().length > 0;
+    let repository:
+      | { provider: 'github'; owner: string; name: string }
+      | undefined;
+    try {
+      const remote = await runGit(configuredRoot, [
+        'remote',
+        'get-url',
+        'origin',
+      ]);
+      repository = {
+        provider: 'github',
+        ...parseGitHubRepositoryRemote(remote),
+      };
+    } catch {
+      repository = undefined;
+    }
     const tracked = (
       requestedRevision === undefined
         ? (await runGit(configuredRoot, ['ls-files', '--cached', '-z']))
@@ -724,6 +741,7 @@ export class LocalGitProjectContextAssembler
         schemaVersion: 1,
         projectId: input.project.id,
         sourceKind: 'local_git',
+        ...(repository === undefined ? {} : { repository }),
         revision: dirty ? `${head}+working-tree` : head,
         generatedAt: new Date().toISOString(),
         entries,

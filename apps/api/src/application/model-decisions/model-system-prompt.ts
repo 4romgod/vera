@@ -34,6 +34,10 @@ export function buildModelSystemPrompt(
     (capability) =>
       capability.name === 'routine_management' && capability.version === 1,
   );
+  const workItemManagementEnabled = enabledCapabilities.some(
+    (capability) =>
+      capability.name === 'work_item_management' && capability.version === 1,
+  );
   const developmentPlanningEnabled = enabledCapabilities.some(
     (capability) =>
       capability.name === 'development_planning' && capability.version === 1,
@@ -74,6 +78,7 @@ export function buildModelSystemPrompt(
       memoryManagementEnabled,
       knowledgeManagementEnabled,
       documentAnalysisEnabled,
+      workItemManagementEnabled,
     ].filter(Boolean).length >= 2;
   const adaptiveGoalEnabled =
     enabledCapabilities.length > 0 && options.allowAdaptiveGoals !== false;
@@ -126,6 +131,12 @@ export function buildModelSystemPrompt(
       ? [
           'Use software_change only when the owner explicitly asks to implement, fix, modify, edit, or write project files.',
           'For software_change, extract the authoritative project, objective, and ticket fields. If no ticket reference is supplied, use "untracked".',
+        ]
+      : []),
+    ...(workItemManagementEnabled
+      ? [
+          'Use work_item_management only for GitHub issue operations in selectedProject. Preserve selectedProject.displayName exactly. Never substitute a pull request, personal task, or software-change capability.',
+          'For create, preserve the requested title, body, and labels without inventing scope. For comment, close, reopen, or inspect, require an exact issue number from the owner request or trusted conversation history. List is read-only but still requires approval because it contacts a third-party provider.',
         ]
       : []),
     ...(missionManagementEnabled

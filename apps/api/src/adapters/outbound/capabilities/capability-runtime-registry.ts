@@ -52,6 +52,11 @@ import {
   webResearchRegistration,
 } from './runtime/project-registrations.ts';
 import { sameReference } from './runtime/runtime-support.ts';
+import { workItemRegistration } from './runtime/work-item-registration.ts';
+import type {
+  WorkItemActionArguments,
+  WorkItemResult,
+} from '../../../domain/work-items/work-item.ts';
 
 export function createCapabilityRuntimeRegistry(options: {
   provider: ModelProvider;
@@ -82,8 +87,15 @@ export function createCapabilityRuntimeRegistry(options: {
     SoftwareDeliveryActionArguments,
     SoftwareDeliveryManagementResult
   >;
+  workItems?: IntegrationActionExecutor<
+    WorkItemActionArguments,
+    WorkItemResult
+  >;
 }): CapabilityRuntimeRegistry {
   const registrations = [
+    ...(options.workItems === undefined
+      ? []
+      : [workItemRegistration(options.workItems)]),
     ...(options.softwareDeliveryManagement === undefined
       ? []
       : [
