@@ -191,6 +191,80 @@ void describe('model decision boundary', () => {
     });
   });
 
+  void it('uses frozen failed-check identity to validate one exact repair campaign', async () => {
+    const provider = new FakeModelProvider({
+      schemaVersion: 1,
+      kind: 'invoke_capability',
+      decisionSummary: 'Prepare the repair for the signaled pull request.',
+      capability: { name: 'software_delivery_repair', version: 1 },
+      arguments: {
+        action: 'prepare_repair',
+        campaignId: 'campaign_signaled',
+      },
+    });
+    const externalSignalContext = assembleExternalSignalContext({
+      signal: ExternalSignalSchema.parse({
+        schemaVersion: 1,
+        version: 2,
+        id: 'external_signal_exact_repair',
+        principalId: 'owner_v1',
+        routineId: 'routine_exact_repair',
+        integrationId: 'github',
+        connectionId: 'connection_exact_repair',
+        project: { id: 'project_vera', displayName: 'Vera' },
+        repository: { provider: 'github', owner: '4romgod', name: 'vera' },
+        externalKey: 'pull:42:failed-checks',
+        category: 'failed_check',
+        title: 'Checks failed on #42',
+        summary: 'quality-gate failed.',
+        url: 'https://github.com/4romgod/vera/pull/42',
+        occurredAt: currentTime,
+        status: 'active',
+        firstObservedAt: currentTime,
+        lastObservedAt: currentTime,
+      }),
+      assembledAt: currentTime,
+    });
+    const campaign = (id: string, number: number) => ({
+      kind: 'development_campaign' as const,
+      id,
+      status: 'review_required' as const,
+      objective: `Repair PR #${String(number)}.`,
+      project: { id: 'project_vera', displayName: 'Vera' },
+      repository: { owner: '4romgod', name: 'vera' },
+      attemptCount: 1,
+      maxAttempts: 3,
+      repairAvailable: true,
+      pullRequest: {
+        number,
+        url: `https://github.com/4romgod/vera/pull/${String(number)}`,
+        headRevision: 'a'.repeat(40),
+      },
+      createdAt: currentTime,
+      updatedAt: currentTime,
+    });
+    const result = await createEvaluateModelDecision(provider, undefined, {
+      enabledCapabilities: [{ name: 'software_delivery_repair', version: 1 }],
+    })('Handle this failed check.', {
+      selectedProject: { id: 'project_vera', displayName: 'Vera' },
+      externalSignalContext,
+      softwareDeliveryContext: {
+        schemaVersion: 1,
+        generatedAt: currentTime,
+        resources: [
+          campaign('campaign_other', 41),
+          campaign('campaign_signaled', 42),
+        ],
+      },
+    });
+
+    assert.equal(result.decision.kind, 'approval_required');
+    assert.match(
+      provider.inputs[0]?.systemPrompt ?? '',
+      /project, repository, and pull request match/u,
+    );
+  });
+
   void it('accepts a bounded mission only for the authoritative selected project', async () => {
     const result = await createEvaluateModelDecision(
       new FakeModelProvider({

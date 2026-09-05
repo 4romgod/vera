@@ -934,6 +934,15 @@ context, specialist execution, patch application, publication, or merge still
 uses its existing independent boundary. See
 [ADR-0047](decisions/0047-convert-external-signals-into-owner-directed-work.md).
 
+Signal progress is projected rather than persisted as a second state machine.
+The resolution service joins the authoritative signal, its exact linked task,
+and any explicitly prepared repair campaign. For failed checks, deterministic
+policy matches project ID, repository identity, and canonical pull-request URL
+before accepting the model's campaign reference. Campaign success means Vera
+is awaiting source confirmation; only complete external reconciliation can
+close the signal. See
+[ADR-0049](decisions/0049-derive-signal-resolution-from-authoritative-work.md).
+
 For V1, accepting a task-producing message returns `202 Accepted` with the
 conversation, task, and run identifiers. Clients poll run, event, approval, and
 artifact resources. Live steering is deferred; changed intent creates a new

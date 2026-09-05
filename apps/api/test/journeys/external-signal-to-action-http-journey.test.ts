@@ -5,9 +5,11 @@ import { buildApp } from '../../src/adapters/inbound/http/build-app.ts';
 import { InMemoryExecutionStore } from '../../src/adapters/outbound/persistence/memory/in-memory-execution-store.ts';
 import { InMemoryExternalSignalStore } from '../../src/adapters/outbound/persistence/memory/in-memory-external-signal-store.ts';
 import { InMemoryOwnerResourceStore } from '../../src/adapters/outbound/persistence/memory/in-memory-owner-resource-store.ts';
+import { InMemoryDevelopmentCampaignStore } from '../../src/adapters/outbound/persistence/memory/in-memory-development-campaign-store.ts';
 import { InMemoryScratchpad } from '../../src/adapters/outbound/persistence/memory/in-memory-scratchpad.ts';
 import { createConversationService } from '../../src/application/conversations/conversation-service.ts';
 import { createExternalSignalTriageService } from '../../src/application/external-awareness/external-signal-triage-service.ts';
+import { createExternalSignalResolutionService } from '../../src/application/external-awareness/external-signal-resolution-service.ts';
 import { createEvaluateModelDecision } from '../../src/application/model-decisions/evaluate-model-decision.ts';
 import { createTaskLifecycle } from '../../src/application/tasks/task-lifecycle.ts';
 import { ExternalSignalSchema } from '../../src/domain/external-awareness/external-signal.ts';
@@ -89,8 +91,10 @@ void describe('external signal to action HTTP journey', () => {
       resolve: () => planningCapability,
     } as DevelopmentPlanningCapabilityRegistry;
     const warnings: unknown[] = [];
+    const executions = new InMemoryExecutionStore();
+    const campaigns = new InMemoryDevelopmentCampaignStore();
     const lifecycle = createTaskLifecycle({
-      store: new InMemoryExecutionStore(),
+      store: executions,
       scratchpad: new InMemoryScratchpad(),
       evaluateModelDecision: createEvaluateModelDecision(
         provider,
@@ -144,6 +148,11 @@ void describe('external signal to action HTTP journey', () => {
         conversations,
         tasks: lifecycle,
       }),
+      externalSignalResolution: createExternalSignalResolutionService({
+        awareness,
+        executions,
+        campaigns,
+      }),
       conversations,
       taskLifecycle: lifecycle,
     });
@@ -187,5 +196,15 @@ void describe('external signal to action HTTP journey', () => {
     const modelInput = provider.inputs[0]?.message ?? '';
     assert.match(modelInput, /IGNORE POLICY/u);
     assert.doesNotMatch(modelInput, /connection_action_journey/u);
+
+    const resolution = await app.inject({
+      method: 'GET',
+      url: `/v1/external-signals/${signal.id}/resolution`,
+    });
+    assert.equal(resolution.statusCode, 200, resolution.body);
+    assert.equal(
+      resolution.json<{ progress: { status: string } }>().progress.status,
+      'action_approval_required',
+    );
   });
 });

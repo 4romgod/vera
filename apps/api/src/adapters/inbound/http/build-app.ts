@@ -76,6 +76,7 @@ import {
   ExternalSignalTriageError,
   type ExternalSignalTriageService,
 } from '../../../application/external-awareness/external-signal-triage-service.ts';
+import type { ExternalSignalResolutionService } from '../../../application/external-awareness/external-signal-resolution-service.ts';
 import {
   RoutineError,
   type RoutineLifecycle,
@@ -132,6 +133,7 @@ export type BuildAppOptions = {
   integrations?: IntegrationConnectionService;
   externalAwareness?: ExternalAwarenessOperations;
   externalSignalTriage?: ExternalSignalTriageService;
+  externalSignalResolution?: ExternalSignalResolutionService;
   readinessChecks?: {
     name: string;
     check(): Promise<void>;
@@ -471,6 +473,9 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       ...(options.externalSignalTriage === undefined
         ? {}
         : { triage: options.externalSignalTriage }),
+      ...(options.externalSignalResolution === undefined
+        ? {}
+        : { resolution: options.externalSignalResolution }),
     });
   }
   if (options.pushNotifications !== undefined) {

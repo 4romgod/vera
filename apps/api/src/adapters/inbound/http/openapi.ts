@@ -442,6 +442,8 @@ const publicSchemaNames: Readonly<Record<string, string>> = {
   'getV1RoutinesIdRuns response 200': 'RoutineRunListResource',
   'postV1RoutinesIdRuns response 202': 'RoutineRunResource',
   'getV1ExternalSignals response 200': 'ExternalSignalListResource',
+  'getV1ExternalSignalsIdResolution response 200':
+    'ExternalSignalResolutionResource',
   'getV1RoutinesIdExternalSignals response 200': 'ExternalSignalListResource',
   'getV1PushNotificationsStatus response 200': 'PushNotificationStatus',
   'getV1NotificationDevices response 200': 'NotificationDeviceListResource',

@@ -97,6 +97,7 @@ export function taskResponse(aggregate: TaskAggregate) {
         ? {}
         : {
             externalSignal: `/v1/external-signals/${aggregate.task.externalSignal.id}`,
+            externalSignalResolution: `/v1/external-signals/${aggregate.task.externalSignal.id}/resolution`,
           }),
     },
   };

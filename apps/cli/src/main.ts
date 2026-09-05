@@ -42,6 +42,7 @@ const usage = `Usage:
   vera routine resume <routine-id>
   vera routine run <routine-id> [--key <key>]
   vera signal list [--routine <routine-id>]
+  vera signal status <signal-id>
   vera signal handle <signal-id> [--objective <objective>] [--key <key>] [--approve]
   vera project add --name <name> --path <absolute-git-root> [--key <key>]
   vera project list
@@ -781,6 +782,15 @@ export async function runCli(
       ...(conversation === undefined ? {} : { conversation }),
     });
     return finalTask.runStatus === 'succeeded' ? 0 : 2;
+  }
+  if (resource === 'signal' && action === 'status') {
+    print(
+      stdout,
+      await client.getExternalSignalResolution(
+        positional(args, 2, 'signal-id'),
+      ),
+    );
+    return 0;
   }
 
   if (resource === 'artifact' && action === 'show') {

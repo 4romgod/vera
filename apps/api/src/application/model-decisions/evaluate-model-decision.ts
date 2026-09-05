@@ -286,6 +286,7 @@ function decide(
   machines?: MachineCatalog,
   softwareDeliveryContext?: SoftwareDeliveryContext,
   conversationContext?: ConversationContextBundle,
+  externalSignalContext?: ExternalSignalContextBundle,
 ): ExecutionDecision {
   const machineArgumentsAreRegistered = (
     capability: string,
@@ -723,6 +724,7 @@ function decide(
       arguments: arguments_,
       ownerMessage,
       ...(conversationContext === undefined ? {} : { conversationContext }),
+      ...(externalSignalContext === undefined ? {} : { externalSignalContext }),
       ...(softwareDeliveryContext === undefined
         ? {}
         : { context: softwareDeliveryContext }),
@@ -1005,6 +1007,7 @@ export function createEvaluateModelDecision(
             options.machines,
             context?.softwareDeliveryContext,
             context?.conversationContext,
+            context?.externalSignalContext,
           ),
       model: {
         provider: generation.provider,

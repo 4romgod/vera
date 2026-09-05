@@ -112,6 +112,23 @@ export class MongoDbExecutionStore implements ExecutionStore {
     });
   }
 
+  public async findLatestByExternalSignal(
+    principalId: string,
+    signalId: string,
+    signalVersion: number,
+  ): Promise<TaskAggregate | null> {
+    await this.ensureConnected();
+    const document = await this.collection.findOne(
+      {
+        'task.principalId': principalId,
+        'task.externalSignal.id': signalId,
+        'task.externalSignal.version': signalVersion,
+      },
+      { sort: { 'task.updatedAt': -1, 'task.id': -1 } },
+    );
+    return document === null ? null : this.parse(document);
+  }
+
   public async replace(
     aggregate: TaskAggregate,
     expectedVersion: number,
@@ -256,6 +273,12 @@ export class MongoDbExecutionStore implements ExecutionStore {
         { unique: true },
       ),
       this.collection.createIndex({ 'run.id': 1 }, { unique: true }),
+      this.collection.createIndex({
+        'task.principalId': 1,
+        'task.externalSignal.id': 1,
+        'task.externalSignal.version': 1,
+        'task.updatedAt': -1,
+      }),
       this.collection.createIndex(
         { 'run.approval.id': 1 },
         {

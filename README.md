@@ -29,6 +29,10 @@ freezes and integrity-checks the exact signal generation, sends only minimized
 untrusted evidence to the selected orchestration brain, and routes any proposed
 planning or change through the ordinary separately approved capability
 lifecycle.
+Signal cards now show derived progress across triage, approval, repair, and
+verification. Failed-check repair selection is bound to the exact project,
+repository, and pull-request URL, and Vera reports final resolution only after
+a complete GitHub observation confirms that the original signal is gone.
 
 The orchestration brain is selected at startup through a provider registry.
 Ollama remains the default owner-controlled provider; OpenAI and Gemini are

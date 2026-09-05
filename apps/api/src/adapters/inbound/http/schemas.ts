@@ -327,6 +327,7 @@ export const TaskLifecycleResponseSchema = z
         events: z.string(),
         approval: z.string().optional(),
         externalSignal: z.string().optional(),
+        externalSignalResolution: z.string().optional(),
       })
       .strict(),
   })

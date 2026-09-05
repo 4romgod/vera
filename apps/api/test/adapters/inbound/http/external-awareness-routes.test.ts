@@ -8,6 +8,7 @@ import { ExternalSignalSchema } from '../../../../src/domain/external-awareness/
 import type { ExternalAwarenessOperations } from '../../../../src/ports/external-awareness/external-awareness-operations.ts';
 import { FakeModelProvider } from '../../../support/fake-model-provider.ts';
 import type { TaskAggregate } from '../../../../src/domain/tasks/task-aggregate.ts';
+import { ExternalSignalResolutionSchema } from '../../../../src/domain/external-awareness/external-signal-resolution.ts';
 
 const apps: ReturnType<typeof buildApp>[] = [];
 const signal = ExternalSignalSchema.parse({
@@ -160,5 +161,44 @@ void describe('external awareness HTTP API', () => {
       id: signal.id,
       version: signal.version,
     });
+  });
+
+  void it('returns the derived resolution path for an observed signal', async () => {
+    const provider = new FakeModelProvider({});
+    const resolution = ExternalSignalResolutionSchema.parse({
+      schemaVersion: 1,
+      signal,
+      progress: {
+        status: 'untriaged',
+        summary: 'This signal has not been triaged by Vera yet.',
+        updatedAt: signal.lastObservedAt,
+      },
+      links: {
+        signal: `/v1/external-signals/${signal.id}`,
+        source: signal.url,
+      },
+    });
+    const app = buildApp({
+      provider,
+      evaluateModelDecision: createEvaluateModelDecision(provider),
+      externalAwareness: {
+        get: () => Promise.resolve(signal),
+      } as unknown as ExternalAwarenessOperations,
+      externalSignalResolution: {
+        get: () => Promise.resolve(resolution),
+      },
+    });
+    apps.push(app);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/v1/external-signals/${signal.id}/resolution`,
+    });
+
+    assert.equal(response.statusCode, 200, response.body);
+    assert.equal(
+      response.json<{ progress: { status: string } }>().progress.status,
+      'untriaged',
+    );
   });
 });

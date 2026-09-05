@@ -8,6 +8,8 @@ import {
 import type { ExternalAwarenessOperations } from '../../../../ports/external-awareness/external-awareness-operations.ts';
 import type { RoutineLifecycle } from '../../../../application/routines/routine-lifecycle.ts';
 import type { ExternalSignalTriageService } from '../../../../application/external-awareness/external-signal-triage-service.ts';
+import type { ExternalSignalResolutionService } from '../../../../application/external-awareness/external-signal-resolution-service.ts';
+import { ExternalSignalResolutionJsonSchema } from '../../../../domain/external-awareness/external-signal-resolution.ts';
 import { taskResponse } from '../presenters.ts';
 import {
   HandleExternalSignalRequestJsonSchema,
@@ -36,6 +38,7 @@ export function registerExternalAwarenessRoutes(
     externalAwareness: ExternalAwarenessOperations;
     routines?: Pick<RoutineLifecycle, 'get'>;
     triage?: ExternalSignalTriageService;
+    resolution?: ExternalSignalResolutionService;
   },
 ) {
   app.get(
@@ -57,6 +60,19 @@ export function registerExternalAwarenessRoutes(
     async (request) =>
       options.externalAwareness.get(options.principalId, request.params.id),
   );
+  if (options.resolution !== undefined) {
+    app.get<{ Params: ResourceIdParams }>(
+      '/v1/external-signals/:id/resolution',
+      {
+        schema: {
+          params: ResourceIdParamsJsonSchema,
+          response: { 200: ExternalSignalResolutionJsonSchema },
+        },
+      },
+      async (request) =>
+        options.resolution?.get(options.principalId, request.params.id),
+    );
+  }
   if (options.triage !== undefined) {
     app.post<{
       Params: ResourceIdParams;
