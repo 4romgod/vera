@@ -1,7 +1,259 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { VeraApiError, VeraClient } from '../src/index.ts';
+import {
+  VeraApiError,
+  VeraClient,
+  type ChangeApplicationResource,
+  type DevelopmentCampaignResource,
+  type MissionResource,
+  type SoftwareChangePublicationResource,
+} from '../src/index.ts';
+
+const fixtureTime = '2026-09-04T12:00:00.000Z';
+const fixtureFile = {
+  relativePath: 'src/test.ts',
+  operation: 'create' as const,
+  afterSha256: 'c'.repeat(64),
+  bytes: 1,
+};
+const fixtureAuthority: DevelopmentCampaignResource['approval']['effect']['capabilities'][number]['authority'] =
+  {
+    approval: 'always',
+    projectContext: 'required',
+    networkAccess: 'provider_api',
+    dataClasses: ['owner_request', 'project_context'],
+    sideEffects: ['isolated_workspace_write'],
+    credentials: 'server_managed',
+  };
+const fixtureDestination: DevelopmentCampaignResource['approval']['effect']['capabilities'][number]['destination'] =
+  {
+    schemaVersion: 1,
+    adapterId: 'test_adapter',
+    provider: 'test_provider',
+    transport: 'https',
+    dataBoundary: 'owner_controlled',
+  };
+
+function isGeneratedValidationError(error: unknown): boolean {
+  assert.ok(error instanceof Error);
+  assert.equal(error.name, 'ZodError');
+  return true;
+}
+
+function developmentCampaignEffect(): DevelopmentCampaignResource['approval']['effect'] {
+  return {
+    adapterId: 'local_git_github' as const,
+    completionMode: 'policy' as const,
+    policyId: 'fixture',
+    project: { id: 'project_test', displayName: 'Test' },
+    repository: { owner: 'vera', name: 'vera' },
+    baseBranch: 'main',
+    baseRevision: 'a'.repeat(40),
+    objective: 'Ship the test change.',
+    ticket: { reference: 'VERA-401', details: 'Ship the test change.' },
+    delivery: {
+      commitMessage: 'feat: ship test change',
+      pullRequest: { title: 'Ship test change', body: 'Body', draft: false },
+    },
+    capabilities: [
+      {
+        name: 'development_planning' as const,
+        version: 1 as const,
+        destination: fixtureDestination,
+        authority: fixtureAuthority,
+      },
+    ],
+    qualityGates: [
+      {
+        id: 'quality',
+        label: 'Quality',
+        executable: 'npm',
+        arguments: ['test'],
+        timeoutMs: 1_000,
+      },
+    ],
+    protectedPathPrefixes: [],
+    limits: {
+      maxAttempts: 2,
+      maxChangedFiles: 10,
+      maxChangedBytes: 100_000,
+      maxDurationMinutes: 30,
+      minimumRequiredChecks: 1,
+    },
+    merge: {
+      enabled: true,
+      method: 'squash' as const,
+      requireReviewApproval: true,
+      synchronizeLocalBase: true,
+    },
+    authority: {
+      implementation: 'bounded_capabilities' as const,
+      application: 'exact_generated_patch' as const,
+      verification: 'configured_commands' as const,
+      publication: 'create_one_pull_request' as const,
+      observation: 'github_checks_and_reviews' as const,
+      merge: 'prohibited' as const,
+      directBasePush: false as const,
+      forcePush: false as const,
+      policyMutation: false as const,
+    },
+  };
+}
+
+function campaignFixture(
+  status: DevelopmentCampaignResource['status'],
+): DevelopmentCampaignResource {
+  return {
+    schemaVersion: 1,
+    version: status === 'succeeded' ? 3 : 1,
+    id: 'campaign_test',
+    requestKey: 'campaign-key',
+    principalId: 'owner_v1',
+    status,
+    approval: {
+      id: 'approval_campaign',
+      status: status === 'awaiting_approval' ? 'pending' : 'approved',
+      reason: 'development_campaign',
+      effect: developmentCampaignEffect(),
+      requestedAt: fixtureTime,
+    },
+    attempts: [],
+    events: [],
+    createdAt: fixtureTime,
+    updatedAt: fixtureTime,
+  };
+}
+
+function missionFixture(status: MissionResource['status']): MissionResource {
+  return {
+    schemaVersion: 1,
+    version: status === 'succeeded' ? 3 : 1,
+    id: 'mission_test',
+    requestKey: 'mission-key',
+    principalId: 'owner_v1',
+    status,
+    approval: {
+      id: 'approval_mission',
+      status: status === 'awaiting_approval' ? 'pending' : 'approved',
+      reason: 'bounded_mission',
+      effect: {
+        policyId: 'fixture',
+        objective: 'Deliver one bounded improvement.',
+        completionCriteria: 'One verified pull request is ready.',
+        project: { id: 'project_test', displayName: 'Test' },
+        limits: { maxCampaigns: 1, maxDurationMinutes: 30 },
+        campaign: {
+          id: 'campaign_test',
+          approvalId: 'approval_campaign',
+          effect: developmentCampaignEffect(),
+        },
+        authority: {
+          selectOneOutcome: true,
+          createDevelopmentCampaigns: 1,
+          createPullRequest: true,
+          mergePullRequest: false,
+          recurringExecution: false,
+          missionPolicyMutation: false,
+        },
+      },
+      requestedAt: fixtureTime,
+    },
+    events: [],
+    createdAt: fixtureTime,
+    updatedAt: fixtureTime,
+  };
+}
+
+function changeApplicationFixture(
+  status: ChangeApplicationResource['status'],
+): ChangeApplicationResource {
+  const approvalStatus =
+    status === 'awaiting_approval' ? 'pending' : 'approved';
+  return {
+    schemaVersion: 1,
+    version: 1,
+    id: 'application_test',
+    status,
+    sourceArtifact: { id: 'artifact_test', sha256: 'a'.repeat(64) },
+    project: { id: 'project_test', displayName: 'Test' },
+    approval: {
+      id: 'approval_test',
+      status: approvalStatus,
+      reason: 'software_change_application',
+      sourceArtifact: { id: 'artifact_test', sha256: 'a'.repeat(64) },
+      project: { id: 'project_test', displayName: 'Test' },
+      effect: {
+        adapterId: 'local_git_worktree',
+        baseRevision: 'a'.repeat(40),
+        branchName: 'vera/change-test',
+        workspacePath: '/managed/application_test',
+        patchSha256: 'b'.repeat(64),
+        staged: true,
+        files: [fixtureFile],
+      },
+      requestedAt: fixtureTime,
+    },
+    effect: {
+      id: 'effect_test',
+      status: status === 'succeeded' ? 'succeeded' : 'pending',
+    },
+    createdAt: fixtureTime,
+    updatedAt: fixtureTime,
+    links: { application: '/application', events: '/events' },
+  };
+}
+
+function publicationFixture(
+  status: SoftwareChangePublicationResource['status'],
+): SoftwareChangePublicationResource {
+  return {
+    schemaVersion: 1,
+    version: 1,
+    id: 'publication_test',
+    status,
+    sourceApplication: {
+      id: 'application_test',
+      effectId: 'effect_test',
+      version: 4,
+    },
+    project: { id: 'project_test', displayName: 'Test' },
+    approval: {
+      id: 'approval_publication',
+      status: status === 'awaiting_approval' ? 'pending' : 'approved',
+      reason: 'software_change_publication',
+      effect: {
+        adapterId: 'github_gh_cli',
+        repository: { remoteName: 'origin', owner: 'vera', name: 'vera' },
+        baseRevision: 'a'.repeat(40),
+        baseBranch: 'main',
+        baseBranchRevision: 'a'.repeat(40),
+        headBranch: 'vera/change-test',
+        workspacePath: '/managed/application_test',
+        treeRevision: 'b'.repeat(40),
+        files: [fixtureFile],
+        author: { name: 'Vera', email: 'vera@example.com' },
+        commitMessage: 'Publish test',
+        pullRequest: { title: 'Publish test', body: 'Body', draft: true },
+        authority: {
+          commit: 'create_one',
+          push: 'create_or_verify_head',
+          pullRequest: 'create_or_verify',
+          directBasePush: false,
+          forcePush: false,
+        },
+      },
+      requestedAt: fixtureTime,
+    },
+    effect: {
+      id: 'effect_publication',
+      status: status === 'succeeded' ? 'succeeded' : 'pending',
+    },
+    createdAt: fixtureTime,
+    updatedAt: fixtureTime,
+    links: { publication: '/publication', events: '/events' },
+  };
+}
 
 void describe('Vera HTTP client', () => {
   const knowledgeSource = {
@@ -277,6 +529,7 @@ void describe('Vera HTTP client', () => {
                   type: 'research_report',
                   mediaType: 'application/vnd.vera.research-report+json',
                 },
+                acceptedInputArtifacts: [],
                 authority: {
                   approval: 'always',
                   projectContext: 'none',
@@ -311,10 +564,31 @@ void describe('Vera HTTP client', () => {
         ),
     });
 
-    await assert.rejects(
-      client.listCapabilities(),
-      /invalid capability catalog/u,
-    );
+    await assert.rejects(client.listCapabilities(), isGeneratedValidationError);
+  });
+
+  void it('normalizes generated Axios operation errors at the facade boundary', async () => {
+    const client = new VeraClient({
+      fetch: () =>
+        Promise.resolve(
+          Response.json(
+            {
+              error: {
+                code: 'capability_catalog_unavailable',
+                message: 'Capability discovery failed.',
+              },
+            },
+            { status: 500 },
+          ),
+        ),
+    });
+
+    await assert.rejects(client.listCapabilities(), (error) => {
+      assert.ok(error instanceof VeraApiError);
+      assert.equal(error.status, 500);
+      assert.equal(error.code, 'capability_catalog_unavailable');
+      return true;
+    });
   });
 
   void it('lists the public command-free machine catalog', async () => {
@@ -368,7 +642,7 @@ void describe('Vera HTTP client', () => {
         ),
     });
 
-    await assert.rejects(client.listMachines(), /invalid machine catalog/u);
+    await assert.rejects(client.listMachines(), isGeneratedValidationError);
   });
 
   void it('rejects operator-only machine commands at the client boundary', async () => {
@@ -391,7 +665,7 @@ void describe('Vera HTTP client', () => {
         ),
     });
 
-    await assert.rejects(client.listMachines(), /invalid machine catalog/u);
+    await assert.rejects(client.listMachines(), isGeneratedValidationError);
   });
 
   void it('lists and validates owner-scoped personal tasks', async () => {
@@ -586,7 +860,7 @@ void describe('Vera HTTP client', () => {
         ),
     });
 
-    await assert.rejects(client.listMemories(), /invalid memory resource/u);
+    await assert.rejects(client.listMemories(), isGeneratedValidationError);
   });
 
   void it('parses chunked notification server-sent events', async () => {
@@ -682,6 +956,47 @@ void describe('Vera HTTP client', () => {
     });
   });
 
+  void it('does not declare a content type for bodyless generated requests', async () => {
+    const client = new VeraClient({
+      baseUrl: 'http://vera.test',
+      fetch: (input, init) => {
+        assert.equal(
+          input,
+          'http://vera.test/v1/notification-devices/notification_device_test/test',
+        );
+        assert.ok(init);
+        assert.equal(init.method, 'POST');
+        assert.equal(init.body, undefined);
+        const headers = new Headers(init.headers);
+        assert.equal(headers.get('content-type'), null);
+        assert.equal(headers.get('idempotency-key'), 'notification-test-key');
+        return Promise.resolve(
+          Response.json({
+            schemaVersion: 1,
+            version: 1,
+            id: 'push_delivery_test',
+            deviceId: 'notification_device_test',
+            sourceId: 'test:notification-test-key',
+            category: 'test',
+            deepLink: 'vera://attention',
+            status: 'queued',
+            attempts: 0,
+            nextAttemptAt: fixtureTime,
+            createdAt: fixtureTime,
+            updatedAt: fixtureTime,
+          }),
+        );
+      },
+    });
+
+    const delivery = await client.testNotificationDevice(
+      'notification_device_test',
+      'notification-test-key',
+    );
+
+    assert.equal(delivery.id, 'push_delivery_test');
+  });
+
   void it('normalizes Vera error envelopes', async () => {
     const client = new VeraClient({
       fetch: () =>
@@ -719,7 +1034,7 @@ void describe('Vera HTTP client', () => {
         ),
     });
 
-    await assert.rejects(client.getRun('run_test'), /invalid task resource/u);
+    await assert.rejects(client.getRun('run_test'), isGeneratedValidationError);
   });
 
   void it('polls until a caller-defined approval boundary', async () => {
@@ -758,40 +1073,6 @@ void describe('Vera HTTP client', () => {
   void it('creates and polls a controlled change application', async () => {
     const requests: string[] = [];
     let polls = 0;
-    const application = (
-      status: 'awaiting_approval' | 'applying' | 'succeeded',
-    ) => ({
-      schemaVersion: 1,
-      version: 1,
-      id: 'application_test',
-      status,
-      sourceArtifact: { id: 'artifact_test', sha256: 'a'.repeat(64) },
-      project: { id: 'project_test', displayName: 'Test' },
-      approval: {
-        id: 'approval_test',
-        status: status === 'awaiting_approval' ? 'pending' : 'approved',
-        reason: 'software_change_application',
-        sourceArtifact: { id: 'artifact_test', sha256: 'a'.repeat(64) },
-        project: { id: 'project_test', displayName: 'Test' },
-        effect: {
-          adapterId: 'local_git_worktree',
-          baseRevision: 'a'.repeat(40),
-          branchName: 'vera/change-test',
-          workspacePath: '/managed/application_test',
-          patchSha256: 'b'.repeat(64),
-          staged: true,
-          files: [],
-        },
-        requestedAt: '2026-08-25T00:00:00.000Z',
-      },
-      effect: {
-        id: 'effect_test',
-        status: status === 'succeeded' ? 'succeeded' : 'pending',
-      },
-      createdAt: '2026-08-25T00:00:00.000Z',
-      updatedAt: '2026-08-25T00:00:00.000Z',
-      links: { application: '/application', events: '/events' },
-    });
     const client = new VeraClient({
       baseUrl: 'http://vera.test',
       fetch: (input, init) => {
@@ -808,8 +1089,10 @@ void describe('Vera HTTP client', () => {
           new Response(
             JSON.stringify(
               isCreate
-                ? application('awaiting_approval')
-                : application(polls === 1 ? 'applying' : 'succeeded'),
+                ? changeApplicationFixture('awaiting_approval')
+                : changeApplicationFixture(
+                    polls === 1 ? 'applying' : 'succeeded',
+                  ),
             ),
             {
               status: isCreate ? 202 : 200,
@@ -839,34 +1122,6 @@ void describe('Vera HTTP client', () => {
 
   void it('creates and polls a separately approved software-change publication', async () => {
     let polls = 0;
-    const publication = (
-      status: 'awaiting_approval' | 'publishing' | 'succeeded',
-    ) => ({
-      schemaVersion: 1,
-      version: 1,
-      id: 'publication_test',
-      status,
-      sourceApplication: {
-        id: 'application_test',
-        effectId: 'effect_test',
-        version: 4,
-      },
-      project: { id: 'project_test', displayName: 'Test' },
-      approval: {
-        id: 'approval_publication',
-        status: status === 'awaiting_approval' ? 'pending' : 'approved',
-        reason: 'software_change_publication',
-        effect: {},
-        requestedAt: '2026-08-27T00:00:00.000Z',
-      },
-      effect: {
-        id: 'effect_publication',
-        status: status === 'succeeded' ? 'succeeded' : 'pending',
-      },
-      createdAt: '2026-08-27T00:00:00.000Z',
-      updatedAt: '2026-08-27T00:00:00.000Z',
-      links: { publication: '/publication', events: '/events' },
-    });
     const client = new VeraClient({
       baseUrl: 'http://vera.test',
       fetch: (input, init) => {
@@ -895,8 +1150,8 @@ void describe('Vera HTTP client', () => {
           new Response(
             JSON.stringify(
               isCreate
-                ? publication('awaiting_approval')
-                : publication(polls === 1 ? 'publishing' : 'succeeded'),
+                ? publicationFixture('awaiting_approval')
+                : publicationFixture(polls === 1 ? 'publishing' : 'succeeded'),
             ),
             {
               status: isCreate ? 202 : 200,
@@ -932,20 +1187,6 @@ void describe('Vera HTTP client', () => {
       body?: string;
     }[] = [];
     let polls = 0;
-    const campaign = (
-      status: 'awaiting_approval' | 'implementing' | 'succeeded',
-    ) => ({
-      schemaVersion: 1,
-      version: status === 'succeeded' ? 3 : 1,
-      id: 'campaign_test',
-      status,
-      approval: {
-        reason: 'development_campaign',
-        effect: {},
-      },
-      attempts: [],
-      events: [],
-    });
     const client = new VeraClient({
       baseUrl: 'http://vera.test',
       fetch: (input, init) => {
@@ -975,8 +1216,19 @@ void describe('Vera HTTP client', () => {
                   qualityGates: [
                     { id: 'quality', label: 'Quality', timeoutMs: 1_000 },
                   ],
-                  limits: {},
-                  merge: { enabled: true },
+                  limits: {
+                    maxAttempts: 2,
+                    maxChangedFiles: 10,
+                    maxChangedBytes: 100_000,
+                    maxDurationMinutes: 30,
+                    minimumRequiredChecks: 1,
+                  },
+                  merge: {
+                    enabled: true,
+                    method: 'squash',
+                    requireReviewApproval: true,
+                    synchronizeLocalBase: true,
+                  },
                 },
               ],
             }),
@@ -984,12 +1236,16 @@ void describe('Vera HTTP client', () => {
         }
         if (method === 'POST') {
           return Promise.resolve(
-            Response.json(campaign('awaiting_approval'), { status: 202 }),
+            Response.json(campaignFixture('awaiting_approval'), {
+              status: 202,
+            }),
           );
         }
         polls += 1;
         return Promise.resolve(
-          Response.json(campaign(polls === 1 ? 'implementing' : 'succeeded')),
+          Response.json(
+            campaignFixture(polls === 1 ? 'implementing' : 'succeeded'),
+          ),
         );
       },
     });
@@ -1032,15 +1288,11 @@ void describe('Vera HTTP client', () => {
       headers: Headers;
       body?: string;
     }[] = [];
-    const campaign = {
-      schemaVersion: 1,
+    const campaign: DevelopmentCampaignResource = {
+      ...campaignFixture('repair_awaiting_approval'),
       version: 8,
       id: 'campaign_repair',
-      status: 'repair_awaiting_approval',
-      approval: { reason: 'development_campaign', effect: {} },
-      attempts: [],
       repairs: [],
-      events: [],
     };
     const client = new VeraClient({
       baseUrl: 'http://vera.test',
@@ -1092,18 +1344,6 @@ void describe('Vera HTTP client', () => {
   void it('creates, approves, and waits for one bounded mission', async () => {
     const requests: { url: string; method: string; body?: string }[] = [];
     let polls = 0;
-    const mission = (
-      status: 'awaiting_approval' | 'executing' | 'succeeded',
-    ) => ({
-      schemaVersion: 1,
-      version: status === 'succeeded' ? 3 : 1,
-      id: 'mission_test',
-      status,
-      approval: {
-        reason: 'bounded_mission',
-        effect: {},
-      },
-    });
     const client = new VeraClient({
       baseUrl: 'http://vera.test',
       fetch: (input, init) => {
@@ -1121,12 +1361,14 @@ void describe('Vera HTTP client', () => {
         });
         if (method === 'POST') {
           return Promise.resolve(
-            Response.json(mission('awaiting_approval'), { status: 202 }),
+            Response.json(missionFixture('awaiting_approval'), { status: 202 }),
           );
         }
         polls += 1;
         return Promise.resolve(
-          Response.json(mission(polls === 1 ? 'executing' : 'succeeded')),
+          Response.json(
+            missionFixture(polls === 1 ? 'executing' : 'succeeded'),
+          ),
         );
       },
     });
@@ -1179,9 +1421,8 @@ void describe('Vera HTTP client', () => {
                   schemaVersion: 1,
                   applications: [
                     {
-                      schemaVersion: 1,
+                      ...changeApplicationFixture('succeeded'),
                       id: 'application_recovered',
-                      status: 'succeeded',
                     },
                   ],
                 }
@@ -1189,9 +1430,8 @@ void describe('Vera HTTP client', () => {
                   schemaVersion: 1,
                   publications: [
                     {
-                      schemaVersion: 1,
+                      ...publicationFixture('awaiting_approval'),
                       id: 'publication_recovered',
-                      status: 'awaiting_approval',
                     },
                   ],
                 },
@@ -1279,7 +1519,10 @@ void describe('Vera HTTP client', () => {
 
   void it('forwards cancellation when loading adaptive-goal evidence', async () => {
     const controller = new AbortController();
-    let observedSignal: AbortSignal | null = null;
+    let markRequestStarted: (signal: AbortSignal) => void = () => undefined;
+    const requestStarted = new Promise<AbortSignal>((resolve) => {
+      markRequestStarted = resolve;
+    });
     const client = new VeraClient({
       baseUrl: 'http://vera.test',
       fetch: (input, init) => {
@@ -1287,16 +1530,36 @@ void describe('Vera HTTP client', () => {
           input,
           'http://vera.test/v1/artifacts/artifact_attachment_analysis',
         );
-        observedSignal = init?.signal ?? null;
-        return Promise.resolve(Response.json({ type: 'attachment_analysis' }));
+        const signal = init?.signal;
+        assert.ok(signal);
+        markRequestStarted(signal);
+        return new Promise<Response>((_resolve, reject) => {
+          signal.addEventListener(
+            'abort',
+            () =>
+              reject(
+                signal.reason instanceof Error
+                  ? signal.reason
+                  : new DOMException(
+                      'The operation was aborted.',
+                      'AbortError',
+                    ),
+              ),
+            { once: true },
+          );
+        });
       },
     });
 
-    await client.getArtifact('artifact_attachment_analysis', {
+    const request = client.getArtifact('artifact_attachment_analysis', {
       signal: controller.signal,
     });
+    const observedSignal = await requestStarted;
 
-    assert.equal(observedSignal, controller.signal);
+    const rejection = assert.rejects(request);
+    controller.abort();
+    assert.equal(observedSignal.aborted, true);
+    await rejection;
   });
 
   void it('loads and validates the deterministic attention briefing', async () => {
@@ -1421,11 +1684,16 @@ void describe('Vera HTTP client', () => {
                       machine: {
                         id: 'macmini',
                         displayName: 'Mac mini',
-                        adapter: { kind: 'local' },
+                      },
+                      adapter: 'local',
+                      inspectedAt: '2026-09-04T12:00:01.000Z',
+                      system: {
+                        hostname: 'macmini.local',
+                        platform: 'darwin',
+                        architecture: 'arm64',
                       },
                       diagnostics: [],
                       services: [],
-                      observedAt: '2026-09-04T12:00:01.000Z',
                     },
                   },
                 }
@@ -1524,7 +1792,7 @@ void describe('Vera HTTP client', () => {
             }),
           ),
       }).listNotificationDevices(),
-      /invalid notification device/u,
+      isGeneratedValidationError,
     );
   });
 });

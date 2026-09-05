@@ -26,7 +26,6 @@ export function registerTranscriptionRoutes(
   app.post<{ Body: Buffer }>(
     '/v1/audio/transcriptions',
     {
-      config: { rawBody: false },
       bodyLimit: transcriptions.maxAudioBytes,
       schema: {
         response: { 200: SpeechTranscriptionResponseJsonSchema },

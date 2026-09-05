@@ -14,7 +14,7 @@ import { runCli } from '../src/main.ts';
 
 function task(
   runStatus: TaskResource['runStatus'],
-  extra: Partial<TaskResource> = {},
+  extra: Record<string, unknown> = {},
 ): TaskResource {
   return {
     schemaVersion: 1,
@@ -55,6 +55,13 @@ function fakeApi(overrides: Partial<VeraApi>): VeraApi {
     removeKnowledgeSource: unavailable,
     searchKnowledge: unavailable,
     listNotifications: unavailable,
+    getPushNotificationStatus: unavailable,
+    listNotificationDevices: unavailable,
+    registerNotificationDevice: unavailable,
+    updateNotificationPreferences: unavailable,
+    revokeNotificationDevice: unavailable,
+    testNotificationDevice: unavailable,
+    listPushDeliveries: unavailable,
     streamNotifications: unavailable,
     registerProject: unavailable,
     listProjects: unavailable,

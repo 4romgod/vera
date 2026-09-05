@@ -1,21 +1,8 @@
-import { VeraApiError } from '../contracts/index.ts';
-import type {
-  TaskResource,
-  ChangeApplicationResource,
-  SoftwareChangePublicationResource,
-  DevelopmentCampaignResource,
-  MissionResource,
-  RoutineResource,
-} from '../contracts/index.ts';
+import { VeraApiError } from '../errors.ts';
 import {
-  isRecord,
-  assertTaskResource,
-  assertChangeApplicationResource,
-  assertSoftwareChangePublicationResource,
-  assertDevelopmentCampaignResource,
-  assertMissionResource,
-  assertRoutineResource,
-} from '../validation/index.ts';
+  createClient as createGeneratedClient,
+  type Client as GeneratedClient,
+} from '../generated/client/index.ts';
 
 type Fetch = typeof globalThis.fetch;
 
@@ -50,6 +37,7 @@ export async function delay(
 export class VeraHttpTransport {
   protected readonly baseUrl: string;
   protected readonly fetch: Fetch;
+  protected readonly generatedClient: GeneratedClient;
 
   public constructor(options?: { baseUrl?: string; fetch?: Fetch }) {
     this.baseUrl = (options?.baseUrl ?? 'http://127.0.0.1:4310').replace(
@@ -58,86 +46,45 @@ export class VeraHttpTransport {
     );
     this.fetch =
       options?.fetch ?? ((input, init) => globalThis.fetch(input, init));
-  }
-
-  protected async taskRequest(
-    path: string,
-    options?: RequestOptions,
-  ): Promise<TaskResource> {
-    const value: unknown = await this.request(path, options);
-    assertTaskResource(value);
-    return value;
-  }
-
-  protected async changeApplicationRequest(
-    path: string,
-    options?: RequestOptions,
-  ): Promise<ChangeApplicationResource> {
-    const value: unknown = await this.request(path, options);
-    assertChangeApplicationResource(value);
-    return value;
-  }
-
-  protected async softwareChangePublicationRequest(
-    path: string,
-    options?: RequestOptions,
-  ): Promise<SoftwareChangePublicationResource> {
-    const value: unknown = await this.request(path, options);
-    assertSoftwareChangePublicationResource(value);
-    return value;
-  }
-
-  protected async developmentCampaignRequest(
-    path: string,
-    options?: RequestOptions,
-  ): Promise<DevelopmentCampaignResource> {
-    const value: unknown = await this.request(path, options);
-    assertDevelopmentCampaignResource(value);
-    return value;
-  }
-
-  protected async missionRequest(
-    path: string,
-    options?: RequestOptions,
-  ): Promise<MissionResource> {
-    const value: unknown = await this.request(path, options);
-    assertMissionResource(value);
-    return value;
-  }
-
-  protected async routineRequest(
-    path: string,
-    options?: RequestOptions,
-  ): Promise<RoutineResource> {
-    const value: unknown = await this.request(path, options);
-    assertRoutineResource(value);
-    return value;
-  }
-
-  protected async request<T>(
-    path: string,
-    options?: RequestOptions,
-  ): Promise<T> {
-    const response = await this.fetch(`${this.baseUrl}${path}`, {
-      method: options?.method ?? 'GET',
-      headers: {
-        ...(options?.body === undefined
-          ? {}
-          : { 'content-type': 'application/json' }),
-        ...(options?.idempotencyKey === undefined
-          ? {}
-          : { 'idempotency-key': options.idempotencyKey }),
+    this.generatedClient = createGeneratedClient({
+      adapter: 'fetch',
+      baseURL: this.baseUrl,
+      env: {
+        fetch: this.fetch,
+        // Axios otherwise wraps calls in a Request object before invoking the
+        // injected fetch. Vera's established seam intentionally exposes the
+        // portable fetch(url, init) shape to callers and tests.
+        Request: null as never,
       },
-      ...(options?.body === undefined
-        ? {}
-        : { body: JSON.stringify(options.body) }),
-      ...(options?.signal === undefined ? {} : { signal: options.signal }),
+      throwOnError: false,
     });
-    const body: unknown = await response.json();
-    if (!response.ok) {
-      throw this.errorFromBody(response.status, body);
+    this.generatedClient.instance.interceptors.request.use((request) => {
+      // Axios otherwise assigns application/x-www-form-urlencoded to POST,
+      // PUT, and PATCH requests without a body. Fastify then attempts to parse
+      // content that does not exist and rejects the request before routing it.
+      if (request.data === undefined) {
+        request.headers.set('Content-Type', null);
+      }
+      return request;
+    });
+  }
+
+  protected generatedData<T>(result: GeneratedResult<T>): T {
+    if (result.error !== undefined || result.data === undefined) {
+      const status = result.response?.status;
+      if (status === undefined) {
+        if (result instanceof Error) throw result;
+        throw new Error('Vera request failed before receiving a response.');
+      }
+      throw this.errorFromBody(status, result.error);
     }
-    return body as T;
+    return result.data;
+  }
+
+  protected async generatedRequest<T>(
+    request: PromiseLike<GeneratedResult<T>>,
+  ): Promise<T> {
+    return this.generatedData(await request);
   }
 
   protected async apiError(response: Response): Promise<VeraApiError> {
@@ -165,9 +112,12 @@ export class VeraHttpTransport {
   }
 }
 
-type RequestOptions = {
-  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
-  idempotencyKey?: string;
-  body?: Record<string, unknown>;
-  signal?: AbortSignal;
+type GeneratedResult<T> = {
+  data: T | undefined;
+  error?: unknown;
+  response?: { status: number };
 };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}

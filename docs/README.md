@@ -74,6 +74,12 @@ quiet healthy outcomes.
 ADR-0042 makes missions and campaigns operable from the primary conversation
 surface through bounded model context, deterministic application-owned
 reference resolution, and the existing exact repair approval boundary.
+ADR-0043 generates a checked OpenAPI 3.1 contract from the runtime Fastify and
+Zod route graph and preserves `@vera/client` as the SDK facade over future
+generated transport operations.
+ADR-0044 generates every low-level TypeScript operation with pinned Hey API and
+Axios while preserving per-client configuration, runtime validation, normalized
+errors, polling, uploads, and streaming in that facade.
 
 Implementation began on the same date. ADR-0009 accepts the first production
 source layout and model decision boundary. ADR-0010 accepts the durable

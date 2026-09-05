@@ -114,8 +114,7 @@ export function AssistantResultCard(props: {
       ) : null}
 
       {softwareChange === undefined ? (
-        output.kind === 'software_delivery_management_result' &&
-        output.result !== undefined ? (
+        output.kind === 'software_delivery_management_result' ? (
           <SoftwareDeliveryManagementContent
             client={props.client}
             result={output.result}
@@ -305,83 +304,72 @@ function resultPresentation(output: NonNullable<TaskResource['output']>): {
   switch (output.kind) {
     case 'machine_diagnostic':
       return {
-        title: output.diagnostic?.machine.displayName ?? 'Machine inspected',
-        summary:
-          output.diagnostic === undefined
-            ? undefined
-            : `Checked ${String(output.diagnostic.diagnostics.length)} system diagnostic${output.diagnostic.diagnostics.length === 1 ? '' : 's'} and ${String(output.diagnostic.services.length)} registered service${output.diagnostic.services.length === 1 ? '' : 's'}.`,
+        title: output.diagnostic.machine.displayName,
+        summary: `Checked ${String(output.diagnostic.diagnostics.length)} system diagnostic${output.diagnostic.diagnostics.length === 1 ? '' : 's'} and ${String(output.diagnostic.services.length)} registered service${output.diagnostic.services.length === 1 ? '' : 's'}.`,
         icon: ServerCog,
-        content:
-          output.diagnostic === undefined ? undefined : (
-            <View style={{ gap: spacing.sm }}>
-              <Text selectable style={{ color: palette.muted, fontSize: 11 }}>
-                {output.diagnostic.system.hostname} ·{' '}
-                {output.diagnostic.system.platform} ·{' '}
-                {output.diagnostic.system.architecture}
-              </Text>
-              {output.diagnostic.diagnostics.map((diagnostic) => (
-                <ResultRow
-                  key={`diagnostic-${diagnostic.id}`}
-                  status={diagnostic.observation.status}
-                  title={diagnostic.label}
-                  detail={diagnostic.observation.summary}
-                />
-              ))}
-              {output.diagnostic.services.map((service) => (
-                <ResultRow
-                  key={`service-${service.id}`}
-                  status={service.observation.status}
-                  title={service.displayName}
-                  detail={service.observation.summary}
-                />
-              ))}
-            </View>
-          ),
+        content: (
+          <View style={{ gap: spacing.sm }}>
+            <Text selectable style={{ color: palette.muted, fontSize: 11 }}>
+              {output.diagnostic.system.hostname} ·{' '}
+              {output.diagnostic.system.platform} ·{' '}
+              {output.diagnostic.system.architecture}
+            </Text>
+            {output.diagnostic.diagnostics.map((diagnostic) => (
+              <ResultRow
+                key={`diagnostic-${diagnostic.id}`}
+                status={diagnostic.observation.status}
+                title={diagnostic.label}
+                detail={diagnostic.observation.summary}
+              />
+            ))}
+            {output.diagnostic.services.map((service) => (
+              <ResultRow
+                key={`service-${service.id}`}
+                status={service.observation.status}
+                title={service.displayName}
+                detail={service.observation.summary}
+              />
+            ))}
+          </View>
+        ),
       };
     case 'machine_service_action_result':
       return {
-        title:
-          output.result === undefined
-            ? 'Machine action completed'
-            : `${humanizeIdentifier(output.result.action)} ${output.result.service.displayName}`,
-        summary:
-          output.result === undefined
-            ? undefined
-            : `${output.result.machine.displayName} · ${output.result.verified ? 'Postcondition verified' : 'Verification failed'}`,
+        title: `${humanizeIdentifier(output.result.action)} ${output.result.service.displayName}`,
+        summary: `${output.result.machine.displayName} · ${output.result.verified ? 'Postcondition verified' : 'Verification failed'}`,
         icon: Wrench,
-        content:
-          output.result === undefined ? undefined : (
-            <View style={{ gap: spacing.sm }}>
-              <ResultRow
-                status={output.result.before.status}
-                title="Before"
-                detail={output.result.before.summary}
-              />
-              <ResultRow
-                status={output.result.after.status}
-                title="After"
-                detail={output.result.after.summary}
-              />
-            </View>
-          ),
+        content: (
+          <View style={{ gap: spacing.sm }}>
+            <ResultRow
+              status={output.result.before.status}
+              title="Before"
+              detail={output.result.before.summary}
+            />
+            <ResultRow
+              status={output.result.after.status}
+              title="After"
+              detail={output.result.after.summary}
+            />
+          </View>
+        ),
       };
     case 'software_delivery_management_result':
       return {
         title:
-          output.result?.action === 'prepare_repair'
+          output.result.action === 'prepare_repair'
             ? 'Repair ready for approval'
-            : output.result?.action === 'inspect'
+            : output.result.action === 'inspect'
               ? 'Software delivery status'
               : 'Software deliveries',
-        summary: output.result?.summary,
+        summary: output.result.summary,
         icon: GitPullRequest,
       };
     case 'personal_task_result':
       return {
-        title: humanizeIdentifier(`${output.result?.action ?? 'task'} task`),
-        summary: output.result?.summary,
+        title: humanizeIdentifier(`${output.result.action} task`),
+        summary: output.result.summary,
         icon: ClipboardCheck,
-        content: output.result?.tasks.map((task) => (
+        content: output.result.tasks.map((task) => (
           <ResultRow
             key={task.id}
             status={task.status}
@@ -394,12 +382,10 @@ function resultPresentation(output: NonNullable<TaskResource['output']>): {
       };
     case 'personal_reminder_result':
       return {
-        title: humanizeIdentifier(
-          `${output.result?.action ?? 'reminder'} reminder`,
-        ),
-        summary: output.result?.summary,
+        title: humanizeIdentifier(`${output.result.action} reminder`),
+        summary: output.result.summary,
         icon: BellRing,
-        content: output.result?.reminders.map((reminder) => (
+        content: output.result.reminders.map((reminder) => (
           <ResultRow
             key={reminder.id}
             status={reminder.status}
@@ -410,12 +396,10 @@ function resultPresentation(output: NonNullable<TaskResource['output']>): {
       };
     case 'memory_result':
       return {
-        title: humanizeIdentifier(
-          `${output.result?.action ?? 'memory'} memory`,
-        ),
-        summary: output.result?.summary,
+        title: humanizeIdentifier(`${output.result.action} memory`),
+        summary: output.result.summary,
         icon: Brain,
-        content: output.result?.memories.map((memory) => (
+        content: output.result.memories.map((memory) => (
           <ResultRow
             key={memory.id}
             status={humanizeIdentifier(memory.kind)}
@@ -427,94 +411,90 @@ function resultPresentation(output: NonNullable<TaskResource['output']>): {
     case 'knowledge_result':
       return {
         title:
-          output.result?.action === 'search'
+          output.result.action === 'search'
             ? 'Answer from your knowledge'
             : 'Knowledge library updated',
-        summary: output.result?.summary,
+        summary: output.result.summary,
         icon: Library,
-        content:
-          output.result === undefined ? undefined : (
-            <View style={{ gap: spacing.md }}>
-              {output.result.answer === undefined ? null : (
+        content: (
+          <View style={{ gap: spacing.md }}>
+            {output.result.answer === undefined ? null : (
+              <Text
+                selectable
+                style={{
+                  color: palette.textSoft,
+                  fontSize: 15,
+                  lineHeight: 22,
+                }}
+              >
+                {output.result.answer}
+              </Text>
+            )}
+            {(output.result.citations ?? []).map((citation, index) => (
+              <View
+                key={citation.chunkId}
+                style={{
+                  gap: 4,
+                  borderLeftWidth: 2,
+                  borderLeftColor: palette.accentLine,
+                  paddingLeft: spacing.md,
+                }}
+              >
+                <Text
+                  selectable
+                  style={{
+                    color: palette.accent,
+                    fontSize: 11,
+                    fontWeight: '700',
+                  }}
+                >
+                  [{String(index + 1)}] {citation.sourceTitle}
+                </Text>
+                <Text selectable style={{ color: palette.muted, fontSize: 11 }}>
+                  {citation.locator}
+                </Text>
                 <Text
                   selectable
                   style={{
                     color: palette.textSoft,
-                    fontSize: 15,
-                    lineHeight: 22,
+                    fontSize: 12,
+                    lineHeight: 18,
                   }}
                 >
-                  {output.result.answer}
+                  “{citation.excerpt}”
                 </Text>
-              )}
-              {(output.result.citations ?? []).map((citation, index) => (
-                <View
-                  key={citation.chunkId}
-                  style={{
-                    gap: 4,
-                    borderLeftWidth: 2,
-                    borderLeftColor: palette.accentLine,
-                    paddingLeft: spacing.md,
-                  }}
-                >
-                  <Text
-                    selectable
-                    style={{
-                      color: palette.accent,
-                      fontSize: 11,
-                      fontWeight: '700',
-                    }}
-                  >
-                    [{String(index + 1)}] {citation.sourceTitle}
-                  </Text>
-                  <Text
-                    selectable
-                    style={{ color: palette.muted, fontSize: 11 }}
-                  >
-                    {citation.locator}
-                  </Text>
-                  <Text
-                    selectable
-                    style={{
-                      color: palette.textSoft,
-                      fontSize: 12,
-                      lineHeight: 18,
-                    }}
-                  >
-                    “{citation.excerpt}”
-                  </Text>
-                </View>
-              ))}
-              {output.result.answer === undefined
-                ? output.result.sources.map((source) => (
-                    <ResultRow
-                      detail={source.provenance.attachments
-                        .map(({ filename }) => filename)
-                        .join(', ')}
-                      key={source.id}
-                      status={source.status}
-                      title={source.title}
-                    />
-                  ))
-                : null}
-              {(output.result.limitations ?? []).map((limitation) => (
-                <Text
-                  key={limitation}
-                  selectable
-                  style={{ color: palette.muted, fontSize: 12, lineHeight: 18 }}
-                >
-                  Limitation: {limitation}
-                </Text>
-              ))}
-            </View>
-          ),
+              </View>
+            ))}
+            {output.result.answer === undefined
+              ? output.result.sources.map((source) => (
+                  <ResultRow
+                    detail={source.provenance.attachments
+                      .map(({ filename }) => filename)
+                      .join(', ')}
+                    key={source.id}
+                    status={source.status}
+                    title={source.title}
+                  />
+                ))
+              : null}
+            {(output.result.limitations ?? []).map((limitation) => (
+              <Text
+                key={limitation}
+                selectable
+                style={{ color: palette.muted, fontSize: 12, lineHeight: 18 }}
+              >
+                Limitation: {limitation}
+              </Text>
+            ))}
+          </View>
+        ),
       };
     case 'attention_result':
       return {
-        title: output.result?.briefing.headline ?? 'Your briefing',
-        summary: output.result?.briefing.summary,
+        title: output.result.briefing.headline,
+        summary: output.result.briefing.summary,
         icon: BellRing,
-        content: output.result?.briefing.items.map((item) => (
+        content: output.result.briefing.items.map((item) => (
           <ResultRow
             detail={item.summary}
             key={item.id}
@@ -526,67 +506,20 @@ function resultPresentation(output: NonNullable<TaskResource['output']>): {
     case 'research_report':
       return {
         title: 'Research complete',
-        summary: output.report?.objective,
+        summary: output.report.objective,
         icon: Search,
-        content:
-          output.report === undefined ? undefined : (
-            <View style={{ gap: spacing.md }}>
-              <Text
-                selectable
-                style={{ color: palette.textSoft, lineHeight: 21 }}
-              >
-                {output.report.report}
-              </Text>
-              {output.report.sources.length === 0 ? null : (
-                <View style={{ gap: spacing.sm }}>
-                  <Text
-                    selectable
-                    style={{
-                      color: palette.faint,
-                      fontSize: 10,
-                      fontWeight: '700',
-                      letterSpacing: 0.8,
-                    }}
-                  >
-                    SOURCES
-                  </Text>
-                  {output.report.sources.map((source) => (
-                    <Text
-                      key={source.url}
-                      selectable
-                      style={{ color: palette.accent, fontSize: 12 }}
-                    >
-                      {source.title}
-                    </Text>
-                  ))}
-                </View>
-              )}
-            </View>
-          ),
-      };
-    case 'attachment_analysis':
-      return {
-        title: 'Attachment analysis complete',
-        summary: output.analysis?.summary,
-        icon: FileSearch,
-        content:
-          output.analysis === undefined ? undefined : (
-            <View style={{ gap: spacing.md }}>
-              {output.analysis.findings.map((finding, index) => (
-                <Text
-                  key={`${String(index)}-${finding}`}
-                  selectable
-                  style={{
-                    color: palette.textSoft,
-                    fontSize: 14,
-                    lineHeight: 21,
-                  }}
-                >
-                  {`• ${finding}`}
-                </Text>
-              ))}
+        content: (
+          <View style={{ gap: spacing.md }}>
+            <Text
+              selectable
+              style={{ color: palette.textSoft, lineHeight: 21 }}
+            >
+              {output.report.report}
+            </Text>
+            {output.report.sources.length === 0 ? null : (
               <View style={{ gap: spacing.sm }}>
                 <Text
+                  selectable
                   style={{
                     color: palette.faint,
                     fontSize: 10,
@@ -594,56 +527,101 @@ function resultPresentation(output: NonNullable<TaskResource['output']>): {
                     letterSpacing: 0.8,
                   }}
                 >
-                  EVIDENCE
+                  SOURCES
                 </Text>
-                {output.analysis.citations.map((citation, index) => (
-                  <View
-                    key={`${citation.attachmentId}-${citation.kind === 'document' ? citation.locator : 'image'}-${String(index)}`}
-                    style={{
-                      gap: 4,
-                      borderLeftWidth: 2,
-                      borderLeftColor: palette.accentLine,
-                      paddingLeft: spacing.sm,
-                    }}
+                {output.report.sources.map((source) => (
+                  <Text
+                    key={source.url}
+                    selectable
+                    style={{ color: palette.accent, fontSize: 12 }}
                   >
-                    <Text
-                      style={{
-                        color: palette.accent,
-                        fontSize: 11,
-                        fontWeight: '700',
-                      }}
-                    >
-                      {citation.kind === 'document'
-                        ? `${citation.filename} · ${citation.locator}`
-                        : `${citation.filename} · image`}
-                    </Text>
-                    {citation.kind === 'document' ? (
-                      <Text
-                        selectable
-                        style={{
-                          color: palette.muted,
-                          fontSize: 12,
-                          lineHeight: 18,
-                        }}
-                      >
-                        “{citation.excerpt}”
-                      </Text>
-                    ) : (
-                      <Text
-                        style={{
-                          color: palette.muted,
-                          fontSize: 12,
-                          lineHeight: 18,
-                        }}
-                      >
-                        Visual evidence from the approved image.
-                      </Text>
-                    )}
-                  </View>
+                    {source.title}
+                  </Text>
                 ))}
               </View>
+            )}
+          </View>
+        ),
+      };
+    case 'attachment_analysis':
+      return {
+        title: 'Attachment analysis complete',
+        summary: output.analysis.summary,
+        icon: FileSearch,
+        content: (
+          <View style={{ gap: spacing.md }}>
+            {output.analysis.findings.map((finding, index) => (
+              <Text
+                key={`${String(index)}-${finding}`}
+                selectable
+                style={{
+                  color: palette.textSoft,
+                  fontSize: 14,
+                  lineHeight: 21,
+                }}
+              >
+                {`• ${finding}`}
+              </Text>
+            ))}
+            <View style={{ gap: spacing.sm }}>
+              <Text
+                style={{
+                  color: palette.faint,
+                  fontSize: 10,
+                  fontWeight: '700',
+                  letterSpacing: 0.8,
+                }}
+              >
+                EVIDENCE
+              </Text>
+              {output.analysis.citations.map((citation, index) => (
+                <View
+                  key={`${citation.attachmentId}-${citation.kind === 'document' ? citation.locator : 'image'}-${String(index)}`}
+                  style={{
+                    gap: 4,
+                    borderLeftWidth: 2,
+                    borderLeftColor: palette.accentLine,
+                    paddingLeft: spacing.sm,
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: palette.accent,
+                      fontSize: 11,
+                      fontWeight: '700',
+                    }}
+                  >
+                    {citation.kind === 'document'
+                      ? `${citation.filename} · ${citation.locator}`
+                      : `${citation.filename} · image`}
+                  </Text>
+                  {citation.kind === 'document' ? (
+                    <Text
+                      selectable
+                      style={{
+                        color: palette.muted,
+                        fontSize: 12,
+                        lineHeight: 18,
+                      }}
+                    >
+                      “{citation.excerpt}”
+                    </Text>
+                  ) : (
+                    <Text
+                      style={{
+                        color: palette.muted,
+                        fontSize: 12,
+                        lineHeight: 18,
+                      }}
+                    >
+                      Visual evidence from the approved image.
+                    </Text>
+                  )}
+                </View>
+              ))}
             </View>
-          ),
+          </View>
+        ),
       };
     case 'development_plan':
       return {

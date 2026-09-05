@@ -13,6 +13,9 @@
   },
   "packageManager": "npm@10.9.8",
   "overrides": {
+    "@hey-api/json-schema-ref-parser": {
+      "js-yaml": "4.3.1"
+    },
     "xcode": {
       "uuid": "11.1.1"
     }
@@ -21,7 +24,8 @@
     "build": "npm run build --workspace @vera/client && npm run build --workspace @vera/api && npm run build --workspace @vera/cli && npm run build --workspace @vera/frontend",
     "build:install": "npm run build --workspace @vera/client && npm run build --workspace @vera/api && npm run build --workspace @vera/cli && npm run build:host --workspace @vera/frontend",
     "cli": "npm run dev --workspace @vera/cli --",
-    "check": "npm run format:check && npm run lint && npm run check:scripts && npm run typecheck && npm test",
+    "client:generate": "npm run client:generate --workspace @vera/client",
+    "check": "npm run openapi:check && npm run client:generate && npm run format:check && npm run lint && npm run check:scripts && npm run typecheck && npm test",
     "check:scripts": "node --check scripts/verify-persistent.mjs && node --check scripts/verify-live-model.mjs && node --check scripts/tailscale-development.mjs && node --check scripts/local-transcription.mjs && node --check scripts/lib/vera-operations.mjs && node --check scripts/static-frontend.mjs && node --check scripts/vera-service.mjs",
     "dev": "npm run dev --workspace @vera/api",
     "dev:frontend": "npm run dev --workspace @vera/frontend",
@@ -33,6 +37,8 @@
     "infra:down": "docker compose down",
     "infra:up": "docker compose up -d --wait",
     "lint": "eslint .",
+    "openapi:generate": "npm run openapi:generate --workspace @vera/api",
+    "openapi:check": "npm run openapi:check --workspace @vera/api",
     "start": "npm run start --workspace @vera/api",
     "test": "npm run test --workspaces --if-present && npm run test:operations",
     "test:operations": "node --test scripts/test/*.test.mjs",

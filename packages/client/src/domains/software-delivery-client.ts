@@ -1,21 +1,39 @@
 import type {
-  ChangeApplicationStatus,
   ChangeApplicationResource,
   ChangeApplicationEventsResource,
   ChangeApplicationListResource,
-  SoftwareChangePublicationStatus,
   SoftwareChangePublicationResource,
   SoftwareChangePublicationEventsResource,
   SoftwareChangePublicationListResource,
+} from '../generated/types.gen.ts';
+import type {
+  ChangeApplicationStatus,
+  SoftwareChangePublicationStatus,
   WaitForChangeApplicationOptions,
   WaitForSoftwareChangePublicationOptions,
-} from '../contracts/index.ts';
+} from '../sdk-types.ts';
 import {
-  assertChangeApplicationListResource,
-  assertSoftwareChangePublicationListResource,
-  assertDevelopmentCampaignListResource,
-  assertDevelopmentCampaignPolicyListResource,
-} from '../validation/index.ts';
+  getV1ArtifactsIdApplications,
+  getV1ChangeApplicationsId,
+  getV1ChangeApplicationsIdEvents,
+  getV1ChangeApplicationsIdPublications,
+  getV1DevelopmentCampaignPolicies,
+  getV1DevelopmentCampaigns,
+  getV1DevelopmentCampaignsId,
+  getV1SoftwareChangePublicationsId,
+  getV1SoftwareChangePublicationsIdEvents,
+  postV1ArtifactsIdApplications,
+  postV1ChangeApplicationsIdCancellation,
+  postV1ChangeApplicationsIdDecision,
+  postV1ChangeApplicationsIdPublications,
+  postV1DevelopmentCampaigns,
+  postV1DevelopmentCampaignsIdCancellation,
+  postV1DevelopmentCampaignsIdDecision,
+  postV1DevelopmentCampaignsIdRepairs,
+  postV1DevelopmentCampaignsIdRepairsRepairIdDecision,
+  postV1SoftwareChangePublicationsIdCancellation,
+  postV1SoftwareChangePublicationsIdDecision,
+} from '../generated/sdk.gen.ts';
 import { OwnerDataClient } from './owner-data-client.ts';
 import { delay } from '../http/transport.ts';
 
@@ -24,35 +42,45 @@ export class SoftwareDeliveryClient extends OwnerDataClient {
     artifactId: string;
     idempotencyKey: string;
   }): Promise<ChangeApplicationResource> {
-    return this.changeApplicationRequest(
-      `/v1/artifacts/${encodeURIComponent(input.artifactId)}/applications`,
-      { method: 'POST', idempotencyKey: input.idempotencyKey },
+    return this.generatedRequest(
+      postV1ArtifactsIdApplications({
+        client: this.generatedClient,
+        headers: { 'idempotency-key': input.idempotencyKey },
+        path: { id: input.artifactId },
+      }),
     );
   }
 
   public async listChangeApplicationsForArtifact(
     artifactId: string,
   ): Promise<ChangeApplicationListResource> {
-    const value: unknown = await this.request(
-      `/v1/artifacts/${encodeURIComponent(artifactId)}/applications`,
+    return this.generatedRequest(
+      getV1ArtifactsIdApplications({
+        client: this.generatedClient,
+        path: { id: artifactId },
+      }),
     );
-    assertChangeApplicationListResource(value);
-    return value;
   }
 
   public getChangeApplication(
     applicationId: string,
   ): Promise<ChangeApplicationResource> {
-    return this.changeApplicationRequest(
-      `/v1/change-applications/${encodeURIComponent(applicationId)}`,
+    return this.generatedRequest(
+      getV1ChangeApplicationsId({
+        client: this.generatedClient,
+        path: { id: applicationId },
+      }),
     );
   }
 
   public getChangeApplicationEvents(
     applicationId: string,
   ): Promise<ChangeApplicationEventsResource> {
-    return this.request(
-      `/v1/change-applications/${encodeURIComponent(applicationId)}/events`,
+    return this.generatedRequest(
+      getV1ChangeApplicationsIdEvents({
+        client: this.generatedClient,
+        path: { id: applicationId },
+      }),
     );
   }
 
@@ -60,18 +88,23 @@ export class SoftwareDeliveryClient extends OwnerDataClient {
     applicationId: string;
     decision: 'approved' | 'rejected';
   }): Promise<ChangeApplicationResource> {
-    return this.changeApplicationRequest(
-      `/v1/change-applications/${encodeURIComponent(input.applicationId)}/decision`,
-      { method: 'POST', body: { decision: input.decision } },
+    return this.generatedRequest(
+      postV1ChangeApplicationsIdDecision({
+        client: this.generatedClient,
+        path: { id: input.applicationId },
+        body: { decision: input.decision },
+      }),
     );
   }
 
   public cancelChangeApplication(
     applicationId: string,
   ): Promise<ChangeApplicationResource> {
-    return this.changeApplicationRequest(
-      `/v1/change-applications/${encodeURIComponent(applicationId)}/cancellation`,
-      { method: 'POST' },
+    return this.generatedRequest(
+      postV1ChangeApplicationsIdCancellation({
+        client: this.generatedClient,
+        path: { id: applicationId },
+      }),
     );
   }
 
@@ -115,9 +148,12 @@ export class SoftwareDeliveryClient extends OwnerDataClient {
           : AbortSignal.any([options.signal, timeoutSignal]);
       let application: ChangeApplicationResource;
       try {
-        application = await this.changeApplicationRequest(
-          `/v1/change-applications/${encodeURIComponent(applicationId)}`,
-          { signal },
+        application = await this.generatedRequest(
+          getV1ChangeApplicationsId({
+            client: this.generatedClient,
+            path: { id: applicationId },
+            signal,
+          }),
         );
       } catch (error) {
         if (options?.signal?.aborted === true) throw error;
@@ -151,41 +187,48 @@ export class SoftwareDeliveryClient extends OwnerDataClient {
     pullRequest: { title: string; body: string; draft: boolean };
     idempotencyKey: string;
   }): Promise<SoftwareChangePublicationResource> {
-    return this.softwareChangePublicationRequest(
-      `/v1/change-applications/${encodeURIComponent(input.applicationId)}/publications`,
-      {
-        method: 'POST',
-        idempotencyKey: input.idempotencyKey,
+    return this.generatedRequest(
+      postV1ChangeApplicationsIdPublications({
+        client: this.generatedClient,
+        headers: { 'idempotency-key': input.idempotencyKey },
+        path: { id: input.applicationId },
         body: {
           baseBranch: input.baseBranch,
           commitMessage: input.commitMessage,
           pullRequest: input.pullRequest,
         },
-      },
+      }),
     );
   }
 
   public async listSoftwareChangePublicationsForApplication(
     applicationId: string,
   ): Promise<SoftwareChangePublicationListResource> {
-    const value: unknown = await this.request(
-      `/v1/change-applications/${encodeURIComponent(applicationId)}/publications`,
+    return this.generatedRequest(
+      getV1ChangeApplicationsIdPublications({
+        client: this.generatedClient,
+        path: { id: applicationId },
+      }),
     );
-    assertSoftwareChangePublicationListResource(value);
-    return value;
   }
 
   public getSoftwareChangePublication(publicationId: string) {
-    return this.softwareChangePublicationRequest(
-      `/v1/software-change-publications/${encodeURIComponent(publicationId)}`,
+    return this.generatedRequest(
+      getV1SoftwareChangePublicationsId({
+        client: this.generatedClient,
+        path: { id: publicationId },
+      }),
     );
   }
 
   public getSoftwareChangePublicationEvents(
     publicationId: string,
   ): Promise<SoftwareChangePublicationEventsResource> {
-    return this.request(
-      `/v1/software-change-publications/${encodeURIComponent(publicationId)}/events`,
+    return this.generatedRequest(
+      getV1SoftwareChangePublicationsIdEvents({
+        client: this.generatedClient,
+        path: { id: publicationId },
+      }),
     );
   }
 
@@ -193,16 +236,21 @@ export class SoftwareDeliveryClient extends OwnerDataClient {
     publicationId: string;
     decision: 'approved' | 'rejected';
   }) {
-    return this.softwareChangePublicationRequest(
-      `/v1/software-change-publications/${encodeURIComponent(input.publicationId)}/decision`,
-      { method: 'POST', body: { decision: input.decision } },
+    return this.generatedRequest(
+      postV1SoftwareChangePublicationsIdDecision({
+        client: this.generatedClient,
+        path: { id: input.publicationId },
+        body: { decision: input.decision },
+      }),
     );
   }
 
   public cancelSoftwareChangePublication(publicationId: string) {
-    return this.softwareChangePublicationRequest(
-      `/v1/software-change-publications/${encodeURIComponent(publicationId)}/cancellation`,
-      { method: 'POST' },
+    return this.generatedRequest(
+      postV1SoftwareChangePublicationsIdCancellation({
+        client: this.generatedClient,
+        path: { id: publicationId },
+      }),
     );
   }
 
@@ -263,36 +311,41 @@ export class SoftwareDeliveryClient extends OwnerDataClient {
     };
     idempotencyKey: string;
   }) {
-    return this.developmentCampaignRequest('/v1/development-campaigns', {
-      method: 'POST',
-      idempotencyKey: input.idempotencyKey,
-      body: {
-        projectId: input.projectId,
-        policyId: input.policyId,
-        objective: input.objective,
-        ticket: input.ticket,
-        delivery: input.delivery,
-      },
-    });
+    return this.generatedRequest(
+      postV1DevelopmentCampaigns({
+        client: this.generatedClient,
+        headers: { 'idempotency-key': input.idempotencyKey },
+        body: {
+          projectId: input.projectId,
+          policyId: input.policyId,
+          objective: input.objective,
+          ticket: input.ticket,
+          delivery: input.delivery,
+        },
+      }),
+    );
   }
 
   public async listDevelopmentCampaignPolicies() {
-    const value: unknown = await this.request(
-      '/v1/development-campaign-policies',
+    return this.generatedRequest(
+      getV1DevelopmentCampaignPolicies({
+        client: this.generatedClient,
+      }),
     );
-    assertDevelopmentCampaignPolicyListResource(value);
-    return value;
   }
 
   public async listDevelopmentCampaigns() {
-    const value: unknown = await this.request('/v1/development-campaigns');
-    assertDevelopmentCampaignListResource(value);
-    return value;
+    return this.generatedRequest(
+      getV1DevelopmentCampaigns({ client: this.generatedClient }),
+    );
   }
 
   public getDevelopmentCampaign(campaignId: string) {
-    return this.developmentCampaignRequest(
-      `/v1/development-campaigns/${encodeURIComponent(campaignId)}`,
+    return this.generatedRequest(
+      getV1DevelopmentCampaignsId({
+        client: this.generatedClient,
+        path: { id: campaignId },
+      }),
     );
   }
 
@@ -300,9 +353,12 @@ export class SoftwareDeliveryClient extends OwnerDataClient {
     campaignId: string;
     decision: 'approved' | 'rejected';
   }) {
-    return this.developmentCampaignRequest(
-      `/v1/development-campaigns/${encodeURIComponent(input.campaignId)}/decision`,
-      { method: 'POST', body: { decision: input.decision } },
+    return this.generatedRequest(
+      postV1DevelopmentCampaignsIdDecision({
+        client: this.generatedClient,
+        path: { id: input.campaignId },
+        body: { decision: input.decision },
+      }),
     );
   }
 
@@ -310,9 +366,12 @@ export class SoftwareDeliveryClient extends OwnerDataClient {
     campaignId: string;
     idempotencyKey: string;
   }) {
-    return this.developmentCampaignRequest(
-      `/v1/development-campaigns/${encodeURIComponent(input.campaignId)}/repairs`,
-      { method: 'POST', idempotencyKey: input.idempotencyKey },
+    return this.generatedRequest(
+      postV1DevelopmentCampaignsIdRepairs({
+        client: this.generatedClient,
+        headers: { 'idempotency-key': input.idempotencyKey },
+        path: { id: input.campaignId },
+      }),
     );
   }
 
@@ -321,16 +380,21 @@ export class SoftwareDeliveryClient extends OwnerDataClient {
     repairId: string;
     decision: 'approved' | 'rejected';
   }) {
-    return this.developmentCampaignRequest(
-      `/v1/development-campaigns/${encodeURIComponent(input.campaignId)}/repairs/${encodeURIComponent(input.repairId)}/decision`,
-      { method: 'POST', body: { decision: input.decision } },
+    return this.generatedRequest(
+      postV1DevelopmentCampaignsIdRepairsRepairIdDecision({
+        client: this.generatedClient,
+        path: { id: input.campaignId, repairId: input.repairId },
+        body: { decision: input.decision },
+      }),
     );
   }
 
   public cancelDevelopmentCampaign(campaignId: string) {
-    return this.developmentCampaignRequest(
-      `/v1/development-campaigns/${encodeURIComponent(campaignId)}/cancellation`,
-      { method: 'POST' },
+    return this.generatedRequest(
+      postV1DevelopmentCampaignsIdCancellation({
+        client: this.generatedClient,
+        path: { id: campaignId },
+      }),
     );
   }
 }

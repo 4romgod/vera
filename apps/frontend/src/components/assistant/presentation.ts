@@ -124,9 +124,10 @@ export function goalProgressStages(goal: NonNullable<TaskResource['goal']>): {
     ({ capability }) => capability !== 'attachment_analysis',
   );
   const understood = analysis?.status === 'succeeded' || analysis === undefined;
-  const decided =
-    understood &&
-    ((goal.continuations?.length ?? 0) > 0 || goal.mode !== 'adaptive');
+  const adaptive = 'mode' in goal;
+  const continuationCount =
+    'continuations' in goal ? goal.continuations.length : 0;
+  const decided = understood && (continuationCount > 0 || !adaptive);
   const acted =
     actions.length > 0 && actions.every(({ status }) => status === 'succeeded');
   return [
