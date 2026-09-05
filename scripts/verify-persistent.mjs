@@ -13,6 +13,7 @@ import { createClient } from 'redis';
 
 import { MongoDbWorkLeaseStore } from '../apps/api/dist/adapters/outbound/persistence/mongodb/mongodb-work-lease-store.js';
 import { MongoDbProjectMutationLeaseStore } from '../apps/api/dist/adapters/outbound/persistence/mongodb/mongodb-project-mutation-lease-store.js';
+import { MongoDbIntegrationConnectionStore } from '../apps/api/dist/adapters/outbound/persistence/mongodb/mongodb-integration-connection-store.js';
 import { VeraClient } from '../packages/client/dist/index.js';
 
 const executeFile = promisify(execFile);
@@ -316,6 +317,63 @@ async function verifyProjectMutationLeaseExclusion() {
       second.release(projectId, 'verification_application_token_second'),
     ]);
     await Promise.allSettled([first.close(), second.close()]);
+  }
+}
+
+async function verifyIntegrationConnectionPersistence() {
+  const first = new MongoDbIntegrationConnectionStore({
+    uri: mongodbUri,
+    database,
+    timeoutMs: 3_000,
+  });
+  const now = new Date().toISOString();
+  const id = `connection_${randomUUID()}`;
+  const record = {
+    schemaVersion: 1,
+    version: 1,
+    id,
+    requestKey: 'persistent-verification-github-connection',
+    principalId: 'owner_v1',
+    integrationId: 'github',
+    adapterId: 'github_gh_cli',
+    status: 'active',
+    credentialBinding: { kind: 'host_session', host: 'github.com' },
+    account: { providerAccountId: '123', login: 'persistent-fixture' },
+    operations: ['issues_read', 'issues_create'],
+    lastVerifiedAt: now,
+    events: [
+      {
+        schemaVersion: 1,
+        id: `event_${randomUUID()}`,
+        sequence: 1,
+        type: 'connection_enabled',
+        occurredAt: now,
+        data: {},
+      },
+    ],
+    createdAt: now,
+    updatedAt: now,
+  };
+  try {
+    const created = await first.create(record);
+    assert.equal(created.created, true);
+    assert.equal((await first.create(record)).created, false);
+  } finally {
+    await first.close();
+  }
+
+  const recovered = new MongoDbIntegrationConnectionStore({
+    uri: mongodbUri,
+    database,
+    timeoutMs: 3_000,
+  });
+  try {
+    const value = await recovered.findById('owner_v1', id);
+    assert.equal(value?.account.login, 'persistent-fixture');
+    assert.equal(await recovered.findById('another_owner', id), null);
+    assert.equal((await recovered.list('owner_v1')).length, 1);
+  } finally {
+    await recovered.close();
   }
 }
 
@@ -1490,6 +1548,7 @@ async function verifyScenarios(mongo, redis) {
   );
   await verifyLeaseExclusion();
   await verifyProjectMutationLeaseExclusion();
+  await verifyIntegrationConnectionPersistence();
 
   const legacyConversation = await client.createConversation({
     title: 'Legacy reply upgrade',
@@ -1653,6 +1712,11 @@ async function verifyScenarios(mongo, redis) {
     .collection('memories')
     .find({})
     .toArray();
+  const integrationConnections = await mongo
+    .db(database)
+    .collection('integration_connections')
+    .find({})
+    .toArray();
   assert.equal(aggregates.length, 24);
   assert.equal(artifacts.length, 18);
   assert.equal(personalTasks.length, 1);
@@ -1672,6 +1736,12 @@ async function verifyScenarios(mongo, redis) {
   assert.equal(memories[0]?.id, memoryId);
   assert.equal(memories[0]?.status, 'forgotten');
   assert.equal(memories[0]?.revision, 2);
+  assert.equal(integrationConnections.length, 1);
+  assert.equal(integrationConnections[0]?.integrationId, 'github');
+  assert.equal(
+    JSON.stringify(integrationConnections[0]).includes('token'),
+    false,
+  );
   assert.equal(applications.length, 1);
   assert.equal(applications[0]?.id, applicationId);
   assert.equal(
@@ -1693,6 +1763,7 @@ async function verifyScenarios(mongo, redis) {
     scratchpadRebuilt: true,
     leaseExclusionVerified: true,
     projectMutationLeaseExclusionVerified: true,
+    integrationConnectionPersistenceVerified: true,
     cliJourneyVerified: true,
     boundedGoalVerified: true,
     adaptiveGoalVerified: true,

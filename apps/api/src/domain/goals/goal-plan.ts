@@ -16,6 +16,7 @@ import {
   MachineServiceActionArgumentsSchema,
 } from '../machines/machine.ts';
 import { KnowledgeActionArgumentsSchema } from '../knowledge/knowledge.ts';
+import { WorkItemActionArgumentsSchema } from '../work-items/work-item.ts';
 
 export const GoalStepBaseSchema = z.object({
   id: z.string().regex(/^step_[a-z0-9_]+$/u),
@@ -27,6 +28,11 @@ export const DevelopmentPlanningGoalStepSchema = GoalStepBaseSchema.extend({
   capability: z.literal('development_planning'),
   version: z.literal(1),
   arguments: DevelopmentPlanningProposalArgumentsSchema,
+}).strict();
+export const WorkItemManagementGoalStepSchema = GoalStepBaseSchema.extend({
+  capability: z.literal('work_item_management'),
+  version: z.literal(1),
+  arguments: WorkItemActionArgumentsSchema,
 }).strict();
 export const SoftwareChangeGoalStepSchema = GoalStepBaseSchema.extend({
   capability: z.literal('software_change'),
@@ -78,6 +84,7 @@ export const MachineServiceManagementGoalStepSchema = GoalStepBaseSchema.extend(
 ).strict();
 
 export const GoalStepSchema = z.discriminatedUnion('capability', [
+  WorkItemManagementGoalStepSchema,
   DevelopmentPlanningGoalStepSchema,
   SoftwareChangeGoalStepSchema,
   WebResearchGoalStepSchema,
@@ -157,6 +164,7 @@ const GoalExecutionFields = {
 };
 
 export const GoalExecutionStepSchema = z.discriminatedUnion('capability', [
+  WorkItemManagementGoalStepSchema.extend(GoalExecutionFields).strict(),
   DevelopmentPlanningGoalStepSchema.extend(GoalExecutionFields).strict(),
   SoftwareChangeGoalStepSchema.extend(GoalExecutionFields).strict(),
   WebResearchGoalStepSchema.extend(GoalExecutionFields).strict(),

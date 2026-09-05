@@ -12,6 +12,10 @@ const tags: OpenAPIV3.TagObject[] = [
   { name: 'operations', description: 'Service health and readiness.' },
   { name: 'model', description: 'Model decision evaluation.' },
   { name: 'capabilities', description: 'Available Vera capabilities.' },
+  {
+    name: 'integrations',
+    description: 'Curated external services and owner connection state.',
+  },
   { name: 'machines', description: 'Owner-machine discovery.' },
   { name: 'projects', description: 'Registered project resources.' },
   {
@@ -48,6 +52,9 @@ const errorDescriptions: Readonly<Record<number, string>> = {
 };
 
 const conflictOperations = new Set([
+  'post /v1/integration-connections',
+  'post /v1/integration-connections/{id}/verification',
+  'post /v1/integration-connections/{id}/revocation',
   'post /v1/projects',
   'post /v1/conversations',
   'post /v1/conversations/{id}/messages',
@@ -98,6 +105,8 @@ const unprocessableOperations = new Set([
 ]);
 
 const unavailableOperations = new Set([
+  'post /v1/integration-connections',
+  'post /v1/integration-connections/{id}/verification',
   'post /v1/model-decisions',
   'post /v1/audio/transcriptions',
   'post /v1/development-campaigns',
@@ -112,6 +121,7 @@ const upstreamOperations = new Set([
 ]);
 
 const notFoundOperations = new Set([
+  'post /v1/integration-connections',
   'post /v1/tasks',
   'post /v1/knowledge-sources',
   'post /v1/knowledge-search',
@@ -121,6 +131,7 @@ const notFoundOperations = new Set([
 ]);
 
 const locationResponseStatuses: Readonly<Record<string, readonly string[]>> = {
+  'post /v1/integration-connections': ['201'],
   'post /v1/projects': ['201'],
   'post /v1/conversations': ['201'],
   'post /v1/conversations/{id}/messages': ['202'],
@@ -157,6 +168,11 @@ function tagFor(path: string): string {
   if (path === '/health' || path === '/ready') return 'operations';
   if (path.startsWith('/v1/model-decisions')) return 'model';
   if (path.startsWith('/v1/capabilities')) return 'capabilities';
+  if (
+    path.startsWith('/v1/integrations') ||
+    path.startsWith('/v1/integration-connections')
+  )
+    return 'integrations';
   if (path.startsWith('/v1/machines')) return 'machines';
   if (path.startsWith('/v1/projects')) return 'projects';
   if (path.startsWith('/v1/conversations')) return 'conversations';
@@ -373,6 +389,10 @@ function contentTypeSuffix(contentType: string): string {
 
 const publicSchemaNames: Readonly<Record<string, string>> = {
   'getV1Capabilities response 200': 'CapabilityCatalogResource',
+  'getV1Integrations response 200': 'IntegrationCatalogResource',
+  'getV1IntegrationConnections response 200':
+    'IntegrationConnectionListResource',
+  'postV1IntegrationConnections response 201': 'IntegrationConnectionResource',
   'getV1Machines response 200': 'MachineCatalogResource',
   'getV1Projects response 200': 'ProjectListResource',
   'postV1Projects response 201': 'ProjectResource',

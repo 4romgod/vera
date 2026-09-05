@@ -35,9 +35,12 @@ import type {
   TaskResourceResultOneOfListResourcesItemsOneOfDevelopmentCampaign,
   TaskResourceResultOneOfListResourcesItemsOneOfMission,
   PutV1NotificationDevicesIdPreferencesRequest,
+  IntegrationCatalogResource,
 } from './generated/types.gen.ts';
 
 export type RunStatus = TaskResource['runStatus'];
+export type IntegrationDefinitionResource =
+  IntegrationCatalogResource['integrations'][number];
 export type CapabilityDestination = NonNullable<
   CapabilityCatalogResource['capabilities'][number]['destination']
 >;

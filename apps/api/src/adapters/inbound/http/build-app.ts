@@ -63,6 +63,11 @@ import { registerMissionRoutes } from './routes/mission-routes.ts';
 import { registerAttentionRoutes } from './routes/attention-routes.ts';
 import { registerRoutineRoutes } from './routes/routine-routes.ts';
 import { registerPushNotificationRoutes } from './routes/push-notification-routes.ts';
+import { registerIntegrationConnectionRoutes } from './routes/integration-connection-routes.ts';
+import {
+  IntegrationConnectionError,
+  type IntegrationConnectionService,
+} from '../../../application/integrations/integration-connection-service.ts';
 import type { PushNotificationService } from '../../../application/notifications/push-notification-service.ts';
 import {
   RoutineError,
@@ -117,6 +122,7 @@ export type BuildAppOptions = {
   missions?: MissionLifecycle & { wake(): void };
   routines?: RoutineLifecycle & { wake(): void };
   pushNotifications?: PushNotificationService;
+  integrations?: IntegrationConnectionService;
   readinessChecks?: {
     name: string;
     check(): Promise<void>;
@@ -346,6 +352,12 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   if (options.projects !== undefined) {
     registerProjectRoutes(app, { principalId, projects: options.projects });
   }
+  if (options.integrations !== undefined) {
+    registerIntegrationConnectionRoutes(app, {
+      principalId,
+      integrations: options.integrations,
+    });
+  }
   if (options.conversations !== undefined) {
     registerConversationRoutes(app, {
       principalId,
@@ -452,6 +464,19 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   if (options.close !== undefined) app.addHook('onClose', options.close);
 
   app.setErrorHandler((error, request, reply) => {
+    if (error instanceof IntegrationConnectionError) {
+      const statusCode =
+        error.code === 'integration_not_found' ||
+        error.code === 'connection_not_found'
+          ? 404
+          : error.code === 'integration_unavailable'
+            ? 503
+            : 409;
+      void reply.status(statusCode).send({
+        error: { code: error.code, message: error.message },
+      });
+      return;
+    }
     if (error instanceof LifecycleError) {
       const statusCode =
         error.code === 'approval_already_decided' ||

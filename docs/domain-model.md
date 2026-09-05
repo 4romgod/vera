@@ -3,7 +3,7 @@
 **Status:** Accepted (core vocabulary and critical distinctions); the open
 questions below are explicitly excluded from this acceptance
 **Version:** 0.9
-**Last updated:** 4 September 2026
+**Last updated:** 5 September 2026
 **Accepted:** 24 August 2026 (owner) — accepts the Core concepts and
 Critical distinctions sections as Vera's shared language.
 
@@ -37,6 +37,7 @@ erDiagram
     PRINCIPAL ||--o{ TASK : owns
     PRINCIPAL ||--o{ PERSONAL_TASK : owns
     PRINCIPAL ||--o{ REMINDER : owns
+    PRINCIPAL ||--o{ INTEGRATION_CONNECTION : authorizes
     REMINDER ||--o| NOTIFICATION : delivers_as
     PRINCIPAL ||--o{ NOTIFICATION_DEVICE : registers
     NOTIFICATION_DEVICE ||--o{ PUSH_DELIVERY : receives
@@ -47,6 +48,7 @@ erDiagram
     RUN ||--o{ STEP : contains
     STEP o|--o{ CAPABILITY_INVOCATION : initiates
     CAPABILITY_INVOCATION o|--o| INTEGRATION_ACTION : delegates
+    INTEGRATION_CONNECTION ||--o{ INTEGRATION_ACTION : permits
     CAPABILITY_VERSION ||--o{ CAPABILITY_INVOCATION : fulfills
     TASK ||--o{ EVENT : records
     RUN ||--o{ EVENT : records
@@ -267,6 +269,28 @@ identity, validated action arguments, resolved destination, exact action-level
 authority, and recovery context. The executor owns provider translation and
 returns a normalized domain result. The capability lifecycle still owns policy,
 approval, budgets, events, and artifacts.
+
+### Integration connection
+
+A durable, owner-scoped authorization for Vera to use one external-service
+account through a registered adapter. It records stable provider and account
+identity, supported operations, verification time, and active or revoked state.
+It is neither credential material nor approval for a particular effect.
+
+Key invariants:
+
+- public and durable records never contain provider secrets;
+- an ambient authenticated host session is unusable until explicitly connected;
+- account identity cannot change silently; and
+- every consequential operation still requires its own capability authority
+  and approval.
+
+### Work item
+
+A provider-neutral issue or ticket associated with a registered project's
+verified external repository. A work-item result records normalized identity,
+title, body, state, canonical URL, labels, author, and timestamps. Provider
+payloads and transport details remain adapter concerns.
 
 ### Personal task
 

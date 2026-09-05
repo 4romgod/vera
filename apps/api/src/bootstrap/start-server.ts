@@ -82,6 +82,9 @@ app.log.info(
         gitCommand: config.publication.gitCommand,
         ghCommand: config.publication.ghCommand,
       },
+      workItems: {
+        adapterId: config.workItems?.adapterId ?? 'disabled',
+      },
       research:
         config.research.adapterId === 'openai_web_search'
           ? {

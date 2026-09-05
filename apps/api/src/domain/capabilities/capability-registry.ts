@@ -16,6 +16,7 @@ import {
   SoftwareDeliveryManagementArgumentsSchema,
   SoftwareDeliveryRepairArgumentsSchema,
 } from '../software-delivery/software-delivery-arguments.ts';
+import { WorkItemActionArgumentsSchema } from '../work-items/work-item.ts';
 export { AttachmentAnalysisArgumentsSchema } from '../attachments/attachment-analysis.ts';
 
 export const DevelopmentPlanningProposalArgumentsSchema = z
@@ -91,6 +92,7 @@ export const CapabilityAuthoritySchema = z
         'owner_attention',
         'routine_data',
         'software_delivery_metadata',
+        'work_item_data',
       ]),
     ),
     sideEffects: z.array(
@@ -105,6 +107,7 @@ export const CapabilityAuthoritySchema = z
         'knowledge_write',
         'standing_instruction_write',
         'campaign_repair_draft_write',
+        'external_data_write',
       ]),
     ),
     credentials: z.enum(['none', 'server_managed']),
@@ -128,6 +131,33 @@ export type CapabilityDefinition = {
 };
 
 export const CapabilityDefinitions = [
+  {
+    name: 'work_item_management',
+    version: 1,
+    description:
+      'Create, list, inspect, comment on, close, or reopen issues in the selected registered project through its enabled provider connection.',
+    proposalArgumentsSchema: WorkItemActionArgumentsSchema,
+    effect: 'external',
+    artifact: {
+      type: 'work_item_result',
+      mediaType: 'application/vnd.vera.work-item-result+json',
+    },
+    acceptedInputArtifacts: [],
+    explicitAdaptiveOutcome: {
+      patterns: [
+        /\b(create|open|list|show|inspect|comment on|close|reopen)\b.{0,80}\b(issue|work item|github issue)\b/u,
+      ],
+      description: 'Complete the requested external work-item operation.',
+    },
+    authority: {
+      approval: 'always',
+      projectContext: 'required',
+      networkAccess: 'provider_api',
+      dataClasses: ['owner_request', 'project_context', 'work_item_data'],
+      sideEffects: ['third_party_disclosure', 'external_data_write'],
+      credentials: 'server_managed',
+    },
+  },
   {
     name: 'software_delivery_management',
     version: 1,

@@ -18,6 +18,9 @@ import type {
   ArtifactResource,
   CapabilityCatalogResource,
   RunEventsResource,
+  GetV1IntegrationsResponse,
+  GetV1IntegrationConnectionsResponse,
+  PostV1IntegrationConnectionsResponse,
 } from '../generated/types.gen.ts';
 import type {
   KnowledgeScope,
@@ -51,6 +54,9 @@ import {
   getV1PersonalTasksId,
   getV1Projects,
   getV1ProjectsId,
+  getV1Integrations,
+  getV1IntegrationConnections,
+  getV1IntegrationConnectionsId,
   getV1PushDeliveries,
   getV1PushNotificationsStatus,
   getV1Reminders,
@@ -68,6 +74,9 @@ import {
   postV1NotificationDevicesIdRevoke,
   postV1NotificationDevicesIdTest,
   postV1Projects,
+  postV1IntegrationConnections,
+  postV1IntegrationConnectionsIdVerification,
+  postV1IntegrationConnectionsIdRevocation,
   postV1RunsIdCancellation,
   postV1Tasks,
   putV1NotificationDevicesIdPreferences,
@@ -75,6 +84,64 @@ import {
 import { VeraHttpTransport } from '../http/transport.ts';
 
 export class OwnerDataClient extends VeraHttpTransport {
+  public async listIntegrations(): Promise<GetV1IntegrationsResponse> {
+    return this.generatedRequest(
+      getV1Integrations({ client: this.generatedClient }),
+    );
+  }
+
+  public async listIntegrationConnections(): Promise<GetV1IntegrationConnectionsResponse> {
+    return this.generatedRequest(
+      getV1IntegrationConnections({ client: this.generatedClient }),
+    );
+  }
+
+  public async connectIntegration(input: {
+    integrationId: string;
+    idempotencyKey: string;
+  }): Promise<PostV1IntegrationConnectionsResponse> {
+    return this.generatedRequest(
+      postV1IntegrationConnections({
+        client: this.generatedClient,
+        headers: { 'idempotency-key': input.idempotencyKey },
+        body: { integrationId: input.integrationId },
+      }),
+    );
+  }
+
+  public async getIntegrationConnection(
+    connectionId: string,
+  ): Promise<PostV1IntegrationConnectionsResponse> {
+    return this.generatedRequest(
+      getV1IntegrationConnectionsId({
+        client: this.generatedClient,
+        path: { id: connectionId },
+      }),
+    );
+  }
+
+  public async verifyIntegrationConnection(
+    connectionId: string,
+  ): Promise<PostV1IntegrationConnectionsResponse> {
+    return this.generatedRequest(
+      postV1IntegrationConnectionsIdVerification({
+        client: this.generatedClient,
+        path: { id: connectionId },
+      }),
+    );
+  }
+
+  public async revokeIntegrationConnection(
+    connectionId: string,
+  ): Promise<PostV1IntegrationConnectionsResponse> {
+    return this.generatedRequest(
+      postV1IntegrationConnectionsIdRevocation({
+        client: this.generatedClient,
+        path: { id: connectionId },
+      }),
+    );
+  }
+
   public async listCapabilities(): Promise<CapabilityCatalogResource> {
     return this.generatedRequest(
       getV1Capabilities({ client: this.generatedClient }),

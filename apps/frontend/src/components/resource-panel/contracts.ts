@@ -13,6 +13,8 @@ import type {
   ReminderResource,
   RoutineResource,
   RoutineRunResource,
+  IntegrationDefinitionResource,
+  IntegrationConnectionResource,
 } from '@vera/client';
 import type { PushNotificationController } from '@/notifications/use-push-notifications';
 
@@ -26,7 +28,8 @@ export type ResourceTab =
   | 'machines'
   | 'routines'
   | 'missions'
-  | 'campaigns';
+  | 'campaigns'
+  | 'connections';
 
 export type ResourcePanelProps = {
   compact: boolean;
@@ -47,6 +50,9 @@ export type ResourcePanelProps = {
   routines: RoutineResource[];
   routineRuns: Partial<Record<string, RoutineRunResource[]>>;
   routineActionId?: string;
+  integrations: IntegrationDefinitionResource[];
+  integrationConnections: IntegrationConnectionResource[];
+  integrationActionId?: string;
   onTab: (tab: ResourceTab) => void;
   onAttentionDecision: (
     item: AttentionItem,
@@ -97,4 +103,7 @@ export type ResourcePanelProps = {
   onRunRoutineNow: (
     routineId: string,
   ) => Promise<RoutineRunResource | undefined>;
+  onConnectIntegration: (integrationId: string) => Promise<boolean>;
+  onVerifyIntegration: (connectionId: string) => Promise<boolean>;
+  onRevokeIntegration: (connectionId: string) => Promise<boolean>;
 };

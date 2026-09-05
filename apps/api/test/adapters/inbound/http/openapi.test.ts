@@ -24,11 +24,11 @@ void describe('generated OpenAPI contract', () => {
     const documented = operations(document);
 
     assert.equal(document.openapi, '3.1.0');
-    assert.equal(Object.keys(document.paths).length, 69);
-    assert.equal(documented.length, 80);
+    assert.equal(Object.keys(document.paths).length, 74);
+    assert.equal(documented.length, 86);
     assert.equal(
       new Set(documented.map(({ operation }) => operation.operationId)).size,
-      80,
+      86,
     );
     const componentNames = Object.keys(document.components?.schemas ?? {});
     for (const componentName of [
@@ -45,6 +45,8 @@ void describe('generated OpenAPI contract', () => {
       'DevelopmentCampaignResource',
       'MissionResource',
       'RoutineRunResource',
+      'IntegrationCatalogResource',
+      'IntegrationConnectionResource',
     ]) {
       assert.ok(
         componentNames.includes(componentName),

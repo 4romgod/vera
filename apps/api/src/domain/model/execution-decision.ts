@@ -24,11 +24,26 @@ import {
   SoftwareDeliveryManagementArgumentsSchema,
   SoftwareDeliveryRepairArgumentsSchema,
 } from '../software-delivery/software-delivery-arguments.ts';
+import { WorkItemActionArgumentsSchema } from '../work-items/work-item.ts';
 
 const ResponseDecisionSchema = z
   .object({
     kind: z.literal('respond'),
     message: z.string(),
+  })
+  .strict();
+
+const WorkItemManagementApprovalDecisionSchema = z
+  .object({
+    kind: z.literal('approval_required'),
+    reason: z.literal('specialist_capability_invocation'),
+    capability: z
+      .object({
+        name: z.literal('work_item_management'),
+        version: z.literal(1),
+      })
+      .strict(),
+    proposedArguments: WorkItemActionArgumentsSchema,
   })
   .strict();
 
@@ -262,6 +277,7 @@ const AdaptiveGoalPlannedDecisionSchema = z
 
 export const ExecutionDecisionSchema = z.union([
   ResponseDecisionSchema,
+  WorkItemManagementApprovalDecisionSchema,
   RoutineManagementApprovalDecisionSchema,
   AttentionManagementApprovalDecisionSchema,
   MissionManagementApprovalDecisionSchema,

@@ -38,6 +38,7 @@ export function buildOpenApiApp(): FastifyInstance {
     capabilities: documentationDependency,
     machines: documentationDependency,
     projects: documentationDependency,
+    integrations: documentationDependency,
     conversations: documentationDependency,
     artifacts: documentationDependency,
     personalTasks: documentationDependency,

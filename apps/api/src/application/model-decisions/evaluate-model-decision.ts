@@ -50,6 +50,7 @@ import {
   SoftwareDeliveryRepairArgumentsSchema,
   type SoftwareDeliveryContext,
 } from '../../domain/software-delivery/software-delivery-management.ts';
+import { WorkItemActionArgumentsSchema } from '../../domain/work-items/work-item.ts';
 import { validateSoftwareDeliveryReference } from './resolve-software-delivery-reference.ts';
 
 export type EvaluateModelDecision = (
@@ -559,6 +560,23 @@ function decide(
       proposedArguments: DevelopmentPlanningProposalArgumentsSchema.parse(
         proposal.arguments,
       ),
+    };
+  }
+  if (proposal.capability.name === 'work_item_management') {
+    const arguments_ = WorkItemActionArgumentsSchema.parse(proposal.arguments);
+    if (arguments_.project.name !== selectedProject?.displayName) {
+      return {
+        kind: 'rejected',
+        code: 'invalid_capability_arguments',
+        message:
+          'The proposed work-item action does not preserve the selected project identity.',
+      };
+    }
+    return {
+      kind: 'approval_required',
+      reason: 'specialist_capability_invocation',
+      capability: proposal.capability,
+      proposedArguments: arguments_,
     };
   }
   if (proposal.capability.name === 'software_change') {

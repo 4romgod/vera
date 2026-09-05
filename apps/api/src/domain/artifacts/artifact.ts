@@ -17,6 +17,7 @@ import { KnowledgeResultSchema } from '../knowledge/knowledge.ts';
 import { AttentionResultSchema } from '../attention/attention.ts';
 import { RoutineManagementResultSchema } from '../routines/routine.ts';
 import { SoftwareDeliveryManagementResultSchema } from '../software-delivery/software-delivery-management.ts';
+import { WorkItemResultSchema } from '../work-items/work-item.ts';
 
 export const ArtifactLineageReferenceSchema = z
   .object({
@@ -37,6 +38,7 @@ export const ArtifactLineageReferenceSchema = z
       'attention_result',
       'routine_management_result',
       'software_delivery_management_result',
+      'work_item_result',
     ]),
     mediaType: z.string().min(1),
     sha256: z.string().regex(/^[a-f0-9]{64}$/),
@@ -172,6 +174,13 @@ export const RoutineManagementResultArtifactSchema =
     content: RoutineManagementResultSchema,
   }).strict();
 
+export const WorkItemResultArtifactSchema = ArtifactIdentitySchema.extend({
+  projectId: z.string().startsWith('project_'),
+  type: z.literal('work_item_result'),
+  mediaType: z.literal('application/vnd.vera.work-item-result+json'),
+  content: WorkItemResultSchema,
+}).strict();
+
 export const ArtifactSchema = z.discriminatedUnion('type', [
   ImplementationPlanArtifactSchema,
   SoftwareChangeArtifactSchema,
@@ -187,6 +196,7 @@ export const ArtifactSchema = z.discriminatedUnion('type', [
   KnowledgeResultArtifactSchema,
   AttentionResultArtifactSchema,
   RoutineManagementResultArtifactSchema,
+  WorkItemResultArtifactSchema,
 ]);
 
 const ArtifactReferenceBaseSchema = ArtifactIdentitySchema.pick({
@@ -284,6 +294,12 @@ export const RoutineManagementResultArtifactReferenceSchema =
     mediaType: z.literal('application/vnd.vera.routine-management-result+json'),
   }).strict();
 
+export const WorkItemResultArtifactReferenceSchema =
+  ArtifactReferenceBaseSchema.extend({
+    type: z.literal('work_item_result'),
+    mediaType: z.literal('application/vnd.vera.work-item-result+json'),
+  }).strict();
+
 export const ArtifactReferenceSchema = z.discriminatedUnion('type', [
   ImplementationPlanArtifactReferenceSchema,
   SoftwareChangeArtifactReferenceSchema,
@@ -299,6 +315,7 @@ export const ArtifactReferenceSchema = z.discriminatedUnion('type', [
   KnowledgeResultArtifactReferenceSchema,
   AttentionResultArtifactReferenceSchema,
   RoutineManagementResultArtifactReferenceSchema,
+  WorkItemResultArtifactReferenceSchema,
 ]);
 
 export type Artifact = z.infer<typeof ArtifactSchema>;

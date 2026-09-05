@@ -37,6 +37,8 @@ import {
   SoftwareDeliveryManagementArgumentsSchema,
   SoftwareDeliveryRepairArgumentsSchema,
 } from '../software-delivery/software-delivery-arguments.ts';
+import { WorkItemActionArgumentsSchema } from '../work-items/work-item.ts';
+import { WorkItemManagementGoalStepSchema } from '../goals/goal-plan.ts';
 
 const DecisionSummarySchema = z.string().trim().min(1).max(500);
 
@@ -44,6 +46,19 @@ const CapabilityReferenceSchema = z
   .object({
     name: z.string().regex(/^[a-z][a-z0-9_]*$/),
     version: z.number().int().positive(),
+  })
+  .strict();
+
+const WorkItemManagementProposalSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    kind: z.literal('invoke_capability'),
+    decisionSummary: DecisionSummarySchema,
+    capability: CapabilityReferenceSchema.extend({
+      name: z.literal('work_item_management'),
+      version: z.literal(1),
+    }),
+    arguments: WorkItemActionArgumentsSchema,
   })
   .strict();
 
@@ -271,6 +286,7 @@ const PursueAdaptiveGoalProposalSchema = z
 
 export const ModelProposalSchema = z.union([
   RespondProposalSchema,
+  WorkItemManagementProposalSchema,
   RoutineManagementProposalSchema,
   AttentionManagementProposalSchema,
   MissionManagementProposalSchema,
@@ -299,6 +315,10 @@ export function createModelProposalSchema(options: {
   const developmentPlanningEnabled = options.enabledCapabilities.some(
     (capability) =>
       capability.name === 'development_planning' && capability.version === 1,
+  );
+  const workItemManagementEnabled = options.enabledCapabilities.some(
+    (capability) =>
+      capability.name === 'work_item_management' && capability.version === 1,
   );
   const attentionManagementEnabled = options.enabledCapabilities.some(
     (capability) =>
@@ -362,6 +382,7 @@ export function createModelProposalSchema(options: {
       capability.version === 1,
   );
   const enabledGoalSteps = [
+    ...(workItemManagementEnabled ? [WorkItemManagementGoalStepSchema] : []),
     ...(developmentPlanningEnabled ? [DevelopmentPlanningGoalStepSchema] : []),
     ...(softwareChangeEnabled ? [SoftwareChangeGoalStepSchema] : []),
     ...(webResearchEnabled ? [WebResearchGoalStepSchema] : []),
@@ -380,6 +401,7 @@ export function createModelProposalSchema(options: {
       : []),
   ];
   const schemas: z.ZodType[] = [RespondProposalSchema];
+  if (workItemManagementEnabled) schemas.push(WorkItemManagementProposalSchema);
   if (attentionManagementEnabled)
     schemas.push(AttentionManagementProposalSchema);
   if (routineManagementEnabled) schemas.push(RoutineManagementProposalSchema);

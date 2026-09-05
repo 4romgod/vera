@@ -1,7 +1,7 @@
 # Vera Interface Design
 
 **Status:** Implemented design language
-**Last updated:** 4 September 2026
+**Last updated:** 5 September 2026
 
 ## Purpose
 
@@ -38,6 +38,7 @@ flowchart TD
     OWNER --> TASKS["Tasks"]
     OWNER --> REMINDERS["Reminders"]
     OWNER --> ACTIVITY["Activity"]
+    OWNER --> CONNECTIONS["Connections"]
     CHAT --> CONTROL["Progress, cancellation, and exact approvals"]
     CHAT --> RESULTS["Human-readable results"]
     RESULTS --> DETAILS["Technical details on demand"]
@@ -113,6 +114,10 @@ destinations.
   allowed actions. Inspect creates a read-only approval; start, stop, and
   restart create a distinct mutation approval. Completed cards show service
   health or the before/after postcondition rather than raw command output.
+- The Connections tab presents the curated server catalog and public account
+  state. Enabling and revoking require a plain-language confirmation; verifying
+  never changes accounts. Host-session connections show no credential input,
+  and a completed work-item card opens only the canonical provider URL.
 
 ## Today and proactive attention
 

@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import { MongoTaskAggregateJsonSchema } from '../../../../../src/adapters/outbound/persistence/mongodb/mongodb-execution-store.ts';
 import { toMongoJsonSchema } from '../../../../../src/adapters/outbound/persistence/mongodb/mongo-json-schema.ts';
 import { MongoSoftwareChangeApplicationJsonSchema } from '../../../../../src/adapters/outbound/persistence/mongodb/mongodb-change-application-store.ts';
+import { MongoIntegrationConnectionJsonSchema } from '../../../../../src/adapters/outbound/persistence/mongodb/mongodb-integration-connection-store.ts';
 
 function asRecord(value: unknown): Record<string, unknown> {
   assert.equal(typeof value, 'object');
@@ -110,6 +111,19 @@ void describe('MongoDB JSON Schema conversion', () => {
       'double',
       'decimal',
     ]);
+    assert.deepEqual(unsupportedPaths(schema), []);
+  });
+
+  void it('keeps integration connections strict and credential-free in MongoDB', () => {
+    const schema = asRecord(MongoIntegrationConnectionJsonSchema);
+    const properties = asRecord(schema.properties);
+
+    assert.deepEqual(properties._id, { bsonType: 'objectId' });
+    assert.deepEqual(asRecord(properties.schemaVersion).enum, [1]);
+    assert.ok('account' in properties);
+    assert.ok('credentialBinding' in properties);
+    assert.equal('credentials' in properties, false);
+    assert.equal('token' in properties, false);
     assert.deepEqual(unsupportedPaths(schema), []);
   });
 });

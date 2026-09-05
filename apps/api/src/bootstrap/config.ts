@@ -88,6 +88,9 @@ const EnvironmentSchema = z.object({
   VERA_RESEARCH_ADAPTER: z
     .enum(['disabled', 'openai_web_search', 'deterministic_research'])
     .default('disabled'),
+  VERA_WORK_ITEM_ADAPTER: z
+    .enum(['disabled', 'github_gh_cli'])
+    .default('disabled'),
   RESEARCH_OPENAI_BASE_URL: z.url().optional(),
   RESEARCH_OPENAI_API_KEY: z.string().trim().min(1).optional(),
   RESEARCH_OPENAI_MODEL: z.string().trim().min(1).default('gpt-5.4-mini'),
@@ -211,6 +214,7 @@ export type AppConfig = {
     };
   };
   research: WebResearchAdapterConfig;
+  workItems?: { adapterId: 'disabled' | 'github_gh_cli' };
   transcription: SpeechTranscriptionConfig;
   application: {
     workspacesRoot: string;
@@ -571,6 +575,7 @@ export function loadConfig(
       },
     },
     research: createResearchConfig(parsed),
+    workItems: { adapterId: parsed.VERA_WORK_ITEM_ADAPTER },
     transcription: createTranscriptionConfig(parsed),
     application: {
       workspacesRoot: resolve(

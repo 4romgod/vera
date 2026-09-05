@@ -8,6 +8,7 @@ import {
   Repeat2,
   Rocket,
   ServerCog,
+  PlugZap,
 } from 'lucide-react-native';
 import type { ResourceTab } from './contracts.ts';
 
@@ -17,6 +18,7 @@ export const resourceTabs: {
   icon: typeof Brain;
 }[] = [
   { id: 'attention', label: 'Today', icon: CircleAlert },
+  { id: 'connections', label: 'Connections', icon: PlugZap },
   { id: 'memory', label: 'Memory', icon: Brain },
   { id: 'knowledge', label: 'Knowledge', icon: Library },
   { id: 'tasks', label: 'Tasks', icon: ListChecks },

@@ -38,7 +38,8 @@ catalog. The implemented declarations are `development_planning@1`,
 `software_change@1`, project-independent `web_research@1`, and owner-scoped
 `personal_task_management@1`, `personal_reminder_management@1`, and
 `attachment_analysis@1`, plus grounded `knowledge_management@1` and read-only
-`attention_management@1` and standing-instruction `routine_management@1`; Vera's code
+`attention_management@1`, standing-instruction `routine_management@1`, and
+provider-neutral `work_item_management@1`; Vera's code
 validates the closed, versioned proposal and routing arguments, then returns a
 direct response, one approval requirement, a validated fixed goal, an adaptive
 goal's first step, or a rejection. A disabled capability is absent from the
@@ -65,6 +66,17 @@ mutations disclose `personal_data_write`. The provider-neutral integration port
 is the extension point for future calendars, reminders, and external task
 services. See
 [ADR-0022](docs/decisions/0022-introduce-provider-neutral-integration-actions-with-vera-owned-personal-tasks.md).
+
+Vera can now connect to GitHub as a real external service and manage issues in
+the exact registered project selected by the owner. The connection is a
+durable, revocable Vera permission over the existing Mac Mini `gh` session;
+credentials never enter prompts, public resources, or the frontend. Issue
+create, list, inspect, comment, close, and reopen use the provider-neutral
+`work_item_management@1` contract, require exact approval, verify the connected
+account and frozen repository at execution, and produce durable work-item
+artifacts. The frontend and CLI expose connection status and explicit
+enable/verify/revoke controls. See
+[ADR-0045](docs/decisions/0045-connect-curated-external-services-through-provider-neutral-capabilities.md).
 
 Vera can also schedule one-shot reminders from ordinary language, recover them
 after restart, and deliver each due reminder into its durable owner inbox. The
@@ -624,6 +636,13 @@ accepts `disabled` (the default), `openai_web_search`, or the non-production
 an Ollama orchestration profile to delegate research to OpenAI without changing
 Vera's brain. The OpenAI profile template enables this adapter explicitly. No
 adapter fallback occurs.
+
+External work items are independently disabled by default. Set
+`VERA_WORK_ITEM_ADAPTER=github_gh_cli` to publish the GitHub connection catalog
+and enable `work_item_management@1`; then use the Connections workspace or
+`npm run cli -- integration connect github` to let Vera adopt the Mac Mini's
+existing authenticated `gh` session. This setting selects transport only—it
+does not connect an account or approve any issue operation.
 
 Vera never falls back automatically between providers. An Ollama failure will
 not silently send the request to a cloud service, and a failed cloud request

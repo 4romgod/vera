@@ -567,6 +567,112 @@ void describe('Vera HTTP client', () => {
     await assert.rejects(client.listCapabilities(), isGeneratedValidationError);
   });
 
+  void it('manages external connections through generated validated operations', async () => {
+    const requests: {
+      url: string;
+      method: string;
+      key?: string;
+      body?: string;
+    }[] = [];
+    const connection = {
+      schemaVersion: 1,
+      version: 1,
+      id: 'connection_test',
+      integrationId: 'github',
+      adapterId: 'github_gh_cli',
+      status: 'active',
+      credentialBinding: { kind: 'host_session', host: 'github.com' },
+      account: {
+        providerAccountId: '123',
+        login: 'vera-owner',
+        profileUrl: 'https://github.com/vera-owner',
+      },
+      operations: ['issues_read', 'issues_create'],
+      lastVerifiedAt: fixtureTime,
+      createdAt: fixtureTime,
+      updatedAt: fixtureTime,
+    };
+    const client = new VeraClient({
+      baseUrl: 'http://vera.test',
+      fetch: (input, init) => {
+        const url =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        const headers = new Headers(init?.headers);
+        const idempotencyKey = headers.get('idempotency-key');
+        requests.push({
+          url,
+          method: init?.method ?? 'GET',
+          ...(idempotencyKey === null ? {} : { key: idempotencyKey }),
+          ...(typeof init?.body === 'string' ? { body: init.body } : {}),
+        });
+        if (url.endsWith('/v1/integrations')) {
+          return Promise.resolve(
+            Response.json({
+              schemaVersion: 1,
+              integrations: [
+                {
+                  schemaVersion: 1,
+                  id: 'github',
+                  provider: 'github',
+                  displayName: 'GitHub',
+                  description: 'Manage issues.',
+                  credentialManagement: 'host_session',
+                  capabilities: ['work_item_management'],
+                  operations: ['issues_read', 'issues_create'],
+                },
+              ],
+            }),
+          );
+        }
+        if (
+          url.endsWith('/v1/integration-connections') &&
+          init?.method !== 'POST'
+        ) {
+          return Promise.resolve(
+            Response.json({ schemaVersion: 1, connections: [connection] }),
+          );
+        }
+        return Promise.resolve(
+          Response.json(connection, {
+            status: url.endsWith('/v1/integration-connections') ? 201 : 200,
+          }),
+        );
+      },
+    });
+
+    const catalog = await client.listIntegrations();
+    const listed = await client.listIntegrationConnections();
+    const connected = await client.connectIntegration({
+      integrationId: 'github',
+      idempotencyKey: 'connect-test',
+    });
+    await client.getIntegrationConnection(connected.id);
+    await client.verifyIntegrationConnection(connected.id);
+    await client.revokeIntegrationConnection(connected.id);
+
+    assert.equal(catalog.integrations[0]?.id, 'github');
+    assert.equal(listed.connections[0]?.account.login, 'vera-owner');
+    assert.equal(requests[2]?.key, 'connect-test');
+    assert.deepEqual(JSON.parse(requests[2].body ?? '{}'), {
+      integrationId: 'github',
+    });
+    assert.deepEqual(
+      requests.map(({ url }) => url),
+      [
+        'http://vera.test/v1/integrations',
+        'http://vera.test/v1/integration-connections',
+        'http://vera.test/v1/integration-connections',
+        'http://vera.test/v1/integration-connections/connection_test',
+        'http://vera.test/v1/integration-connections/connection_test/verification',
+        'http://vera.test/v1/integration-connections/connection_test/revocation',
+      ],
+    );
+  });
+
   void it('normalizes generated Axios operation errors at the facade boundary', async () => {
     const client = new VeraClient({
       fetch: () =>

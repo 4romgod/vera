@@ -23,6 +23,7 @@ import { humanizeIdentifier } from '../assistant/presentation.ts';
 import { AttentionPanel } from '../attention/attention-panel.tsx';
 import { RoutinesPanel } from '../routines/routines-panel.tsx';
 import { NotificationSettings } from '../notifications/notification-settings.tsx';
+import { ConnectionsPanel } from '../integrations/connections-panel.tsx';
 import type { ResourcePanelProps } from './contracts.ts';
 import { resourceTabs } from './tabs.ts';
 import {
@@ -232,6 +233,16 @@ export function PanelContent(props: ResourcePanelProps) {
             focusedItemId={props.focusedAttentionItemId}
             onDecision={props.onAttentionDecision}
             onOpen={props.onOpenAttention}
+          />
+        ) : null}
+        {props.tab === 'connections' ? (
+          <ConnectionsPanel
+            actionId={props.integrationActionId}
+            connections={props.integrationConnections}
+            integrations={props.integrations}
+            onConnect={props.onConnectIntegration}
+            onRevoke={props.onRevokeIntegration}
+            onVerify={props.onVerifyIntegration}
           />
         ) : null}
         {props.tab === 'routines' ? (

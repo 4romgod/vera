@@ -278,11 +278,28 @@ export function createEvaluationOperations(
         );
       }
       const runBudget = budgetClaim.aggregate.run.budget ?? budget;
-      if (!('ticket' in firstProjectStep.arguments)) {
-        throw new Error(
-          'A project capability is missing project-routing arguments.',
-        );
+      const contextObjective =
+        'objective' in firstProjectStep.arguments
+          ? firstProjectStep.arguments.objective
+          : undefined;
+      if (typeof contextObjective !== 'string') {
+        throw new Error('A project capability is missing its objective.');
       }
+      const contextTicket =
+        'ticket' in firstProjectStep.arguments &&
+        typeof firstProjectStep.arguments.ticket === 'object' &&
+        'reference' in firstProjectStep.arguments.ticket &&
+        'details' in firstProjectStep.arguments.ticket &&
+        typeof firstProjectStep.arguments.ticket.reference === 'string' &&
+        typeof firstProjectStep.arguments.ticket.details === 'string'
+          ? {
+              reference: firstProjectStep.arguments.ticket.reference,
+              details: firstProjectStep.arguments.ticket.details,
+            }
+          : {
+              reference: `capability:${firstProjectStep.capability}`,
+              details: contextObjective,
+            };
       let context: ProjectContextBundle;
       try {
         context = await options.contextAssembler.assemble({
@@ -290,8 +307,8 @@ export function createEvaluationOperations(
           ...(budgetClaim.aggregate.task.projectRevision === undefined
             ? {}
             : { revision: budgetClaim.aggregate.task.projectRevision }),
-          objective: firstProjectStep.arguments.objective,
-          ticket: firstProjectStep.arguments.ticket,
+          objective: contextObjective,
+          ticket: contextTicket,
           limits: {
             maxFiles: runBudget.limits.maxContextFiles,
             maxBytes: runBudget.limits.maxContextBytes,

@@ -95,6 +95,11 @@ import { createRoutineLifecycle } from '../application/routines/routine-lifecycl
 import { createRoutineWorker } from '../application/routines/routine-worker.ts';
 import { InMemoryPushNotificationStore } from '../adapters/outbound/persistence/memory/in-memory-push-notification-store.ts';
 import { MongoDbPushNotificationStore } from '../adapters/outbound/persistence/mongodb/mongodb-push-notification-store.ts';
+import { InMemoryIntegrationConnectionStore } from '../adapters/outbound/persistence/memory/in-memory-integration-connection-store.ts';
+import { MongoDbIntegrationConnectionStore } from '../adapters/outbound/persistence/mongodb/mongodb-integration-connection-store.ts';
+import { GitHubCliConnector } from '../adapters/outbound/integrations/github/github-cli-connector.ts';
+import { createIntegrationConnectionService } from '../application/integrations/integration-connection-service.ts';
+import { GitHubWorkItemActionExecutor } from '../adapters/outbound/integrations/github/github-work-item-action-executor.ts';
 import { createPushNotificationProvider } from '../adapters/outbound/notifications/push-notification-provider-registry.ts';
 import { createPushNotificationService } from '../application/notifications/push-notification-service.ts';
 import { createPushNotificationWorker } from '../application/notifications/push-notification-worker.ts';
@@ -250,6 +255,31 @@ export function createApp(
           database: config.storage.mongodbDatabase,
           timeoutMs: config.storage.dependencyTimeoutMs,
         });
+  const integrationConnectionStore =
+    config.storage.mode === 'memory'
+      ? new InMemoryIntegrationConnectionStore()
+      : new MongoDbIntegrationConnectionStore({
+          uri: config.storage.mongodbUri,
+          database: config.storage.mongodbDatabase,
+          timeoutMs: config.storage.dependencyTimeoutMs,
+        });
+  const githubConnector =
+    config.workItems?.adapterId === 'github_gh_cli'
+      ? new GitHubCliConnector({ command: config.publication.ghCommand })
+      : undefined;
+  const integrationConnectionService = createIntegrationConnectionService({
+    store: integrationConnectionStore,
+    connectors: githubConnector === undefined ? [] : [githubConnector],
+  });
+  const workItemExecutor =
+    githubConnector === undefined
+      ? undefined
+      : new GitHubWorkItemActionExecutor({
+          projects: resources,
+          connections: integrationConnectionService,
+          ghCommand: config.publication.ghCommand,
+          gitCommand: config.publication.gitCommand,
+        });
   const projectService = createProjectService({
     store: resources,
     resolveLocalGitRoot,
@@ -374,6 +404,7 @@ export function createApp(
     personalTasks: personalTaskExecutor,
     reminders: reminderExecutor,
     memories: memoryExecutor,
+    ...(workItemExecutor === undefined ? {} : { workItems: workItemExecutor }),
     softwareDeliveryManagement: softwareDeliveryManagementExecutor,
     softwareDeliveryRepair: softwareDeliveryRepairExecutor,
     knowledge: knowledgeService,
@@ -600,6 +631,7 @@ export function createApp(
     artifacts: artifactService,
     conversations: conversationService,
     projects: projectService,
+    integrations: integrationConnectionService,
     capabilities: capabilityService,
     personalTasks: personalTaskService,
     reminders: reminderService,
@@ -713,6 +745,10 @@ export function createApp(
         name: 'push_notification_store',
         check: () => pushNotificationStore.checkReadiness(),
       },
+      {
+        name: 'integration_connection_store',
+        check: () => integrationConnectionStore.checkReadiness(),
+      },
       ...(pushWorker === undefined
         ? []
         : [
@@ -746,6 +782,7 @@ export function createApp(
         attentionDecisions.close(),
         routineStore.close(),
         pushNotificationStore.close(),
+        integrationConnectionStore.close(),
       ]);
     },
     logger: runtime.logger ?? true,
