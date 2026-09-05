@@ -36,6 +36,9 @@ void describe('application configuration', () => {
     });
     assert.deepEqual(config.research, { adapterId: 'disabled' });
     assert.deepEqual(config.workItems, { adapterId: 'disabled' });
+    assert.deepEqual(config.integrations, {
+      github: { connectorId: 'disabled' },
+    });
     assert.deepEqual(config.transcription, {
       provider: 'disabled',
       maxAudioBytes: 25_000_000,
@@ -81,10 +84,25 @@ void describe('application configuration', () => {
       VERA_MODEL_PROVIDER: 'deterministic',
     });
     assert.deepEqual(config.workItems, { adapterId: 'github_gh_cli' });
+    assert.deepEqual(config.integrations, {
+      github: { connectorId: 'gh_cli' },
+    });
     assert.deepEqual(config.research, { adapterId: 'disabled' });
     assert.throws(
       () => loadConfig({ VERA_WORK_ITEM_ADAPTER: 'jira_magic' }),
       /VERA_WORK_ITEM_ADAPTER/u,
+    );
+  });
+
+  void it('enables read-only GitHub integration independently of issue writes', () => {
+    const config = loadConfig({ VERA_GITHUB_CONNECTOR: 'gh_cli' });
+    assert.deepEqual(config.integrations, {
+      github: { connectorId: 'gh_cli' },
+    });
+    assert.deepEqual(config.workItems, { adapterId: 'disabled' });
+    assert.throws(
+      () => loadConfig({ VERA_GITHUB_CONNECTOR: 'github_api' }),
+      /VERA_GITHUB_CONNECTOR/u,
     );
   });
 

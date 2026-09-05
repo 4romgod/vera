@@ -46,6 +46,8 @@ must not be exposed to an untrusted or shared network.
 | `GET /v1/routines/{routineId}/runs` | List recent durable routine runs | `200` |
 | `POST /v1/routines/{routineId}/runs` | Idempotently queue one manual run of an active routine | `202` |
 | `GET /v1/routine-runs/{runId}` | Retrieve one durable routine occurrence for completion polling | `200` |
+| `GET /v1/external-signals` | List current active provider-neutral external signals | `200` |
+| `GET /v1/routines/{routineId}/external-signals` | List current and resolved signals observed by one routine | `200` |
 | `POST /v1/audio/transcriptions` | Transcribe one completed bounded audio recording without persisting it | `200` |
 | `POST /v1/attachments` | Validate, extract, and durably store one owner-scoped document | `200` or `201` |
 | `GET /v1/attachments/{attachmentId}` | Retrieve attachment metadata and extraction status, never original content | `200` |
@@ -124,14 +126,29 @@ the already authenticated `gh` session after an explicit owner action. The
 response contains only non-secret account identity and declared operations.
 Vera persists the connection in MongoDB and refuses a changed host account
 until the owner revokes and reconnects.
-The catalog is empty while `VERA_WORK_ITEM_ADAPTER=disabled`; selecting
-`github_gh_cli` publishes the definition but does not itself authorize Vera.
+The catalog is empty while `VERA_GITHUB_CONNECTOR=disabled`; selecting `gh_cli`
+publishes the definition but does not itself authorize Vera. For backward
+compatibility, selecting `VERA_WORK_ITEM_ADAPTER=github_gh_cli` also enables its
+required GitHub connector when the connector setting is omitted. The published
+definition and each connection expose only operations enabled by the current
+runtime: awareness-only mode advertises notification and pull-request-check
+reads, while issue operations appear only when the separate work-item adapter
+is enabled.
 
 Connection state alone does not approve external work. A conversational GitHub
 issue request becomes an ordinary durable `work_item_management@1` task with a
 separate exact approval. Execution rechecks the active connection, stored
 account, selected registered project, and GitHub repository frozen in its
 context manifest. See [ADR-0045](decisions/0045-connect-curated-external-services-through-provider-neutral-capabilities.md).
+
+An enabled connection also makes it possible to draft an
+`integration_awareness` routine for one registered project. The routine remains
+inactive until its separate standing approval freezes the account, repository,
+categories, and 5–1440 minute interval. Complete read-only polls reconcile
+stable external signals; incomplete polls never resolve absent signals. Active
+signals feed `/v1/attention`, notification Activity, and device push. They do
+not authorize any external mutation. See
+[ADR-0046](decisions/0046-project-external-signals-through-approved-standing-watches.md).
 
 ## Speech transcription
 

@@ -14,11 +14,10 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    # A cold dependency install plus the complete quality, multi-platform
-    # build, and persistent-infrastructure gates currently needs about thirteen
-    # minutes on a two-core hosted runner. Keep a bounded two-minute margin for
-    # runner and cleanup variance without weakening or skipping verification.
-    timeout-minutes: 15
+    # Recent pull-request runs approach fifteen minutes before persistent
+    # verification completes. Keep the full gate bounded while allowing a
+    # five-minute margin for two-core runner and cleanup variance.
+    timeout-minutes: 20
     services:
       mongodb:
         image: mongo:8.2

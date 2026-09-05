@@ -427,6 +427,14 @@ unprovable interrupted outcome is surfaced for review rather than blindly
 repeated. See
 [ADR-0045](decisions/0045-connect-curated-external-services-through-provider-neutral-capabilities.md).
 
+An active connection does not authorize ambient polling. External awareness
+requires a separately approved standing routine that freezes account, project,
+repository, categories, and interval. Every poll revalidates that scope. The
+watch can read metadata but cannot mutate GitHub; observation authority is not
+transitive to issue, pull-request, code, publication, repair, or merge actions.
+Incomplete provider enumeration never resolves an absent signal. See
+[ADR-0046](decisions/0046-project-external-signals-through-approved-standing-watches.md).
+
 ## Data classification
 
 An initial classification scheme should distinguish at least:

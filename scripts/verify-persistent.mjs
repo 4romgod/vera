@@ -14,6 +14,7 @@ import { createClient } from 'redis';
 import { MongoDbWorkLeaseStore } from '../apps/api/dist/adapters/outbound/persistence/mongodb/mongodb-work-lease-store.js';
 import { MongoDbProjectMutationLeaseStore } from '../apps/api/dist/adapters/outbound/persistence/mongodb/mongodb-project-mutation-lease-store.js';
 import { MongoDbIntegrationConnectionStore } from '../apps/api/dist/adapters/outbound/persistence/mongodb/mongodb-integration-connection-store.js';
+import { MongoDbExternalSignalStore } from '../apps/api/dist/adapters/outbound/persistence/mongodb/mongodb-external-signal-store.js';
 import { VeraClient } from '../packages/client/dist/index.js';
 
 const executeFile = promisify(execFile);
@@ -26,6 +27,10 @@ const changeApplicationRoot = join(tmpdir(), `${database}_applications`);
 // rebuildable Redis projection to MongoDB. Leave enough budget for that
 // fallback plus the next poll without relaxing the workflow-level time bound.
 const operationTimeoutMs = 30_000;
+// Persistent startup creates or validates every MongoDB collection and index.
+// Cold hosted infrastructure can take longer than the ordinary local path, so
+// readiness receives the same finite operational budget as later HTTP work.
+const startupTimeoutMs = 30_000;
 const runIds = new Set();
 const temporaryDirectories = new Set([changeApplicationRoot]);
 let child;
@@ -92,7 +97,8 @@ async function startServer(port) {
   processHandle.stdout.on('data', capture);
   processHandle.stderr.on('data', capture);
   const baseUrl = `http://127.0.0.1:${String(port)}`;
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+  const startupDeadline = Date.now() + startupTimeoutMs;
+  while (Date.now() < startupDeadline) {
     if (processHandle.exitCode !== null) {
       throw new Error(`Vera exited during startup.\n${serverOutput}`);
     }
@@ -372,6 +378,65 @@ async function verifyIntegrationConnectionPersistence() {
     assert.equal(value?.account.login, 'persistent-fixture');
     assert.equal(await recovered.findById('another_owner', id), null);
     assert.equal((await recovered.list('owner_v1')).length, 1);
+  } finally {
+    await recovered.close();
+  }
+}
+
+async function verifyExternalSignalPersistence() {
+  const first = new MongoDbExternalSignalStore({
+    uri: mongodbUri,
+    database,
+    timeoutMs: 3_000,
+  });
+  const id = `external_signal_${randomUUID()}`;
+  const signal = {
+    schemaVersion: 1,
+    version: 1,
+    id,
+    principalId: 'owner_v1',
+    routineId: 'routine_persistent_watch',
+    integrationId: 'github',
+    connectionId: 'connection_persistent_watch',
+    project: { id: 'project_persistent_watch', displayName: 'Vera' },
+    repository: { provider: 'github', owner: '4romgod', name: 'vera' },
+    externalKey: 'pull:42:failed-checks',
+    category: 'failed_check',
+    title: 'Checks failed on #42',
+    summary: 'quality-gate failed.',
+    url: 'https://github.com/4romgod/vera/pull/42',
+    occurredAt: '2026-09-05T10:00:00.000Z',
+    status: 'active',
+    firstObservedAt: '2026-09-05T10:01:00.000Z',
+    lastObservedAt: '2026-09-05T10:01:00.000Z',
+  };
+  try {
+    assert.equal((await first.upsert(signal)).created, true);
+    assert.equal((await first.upsert(signal)).created, false);
+  } finally {
+    await first.close();
+  }
+  const recovered = new MongoDbExternalSignalStore({
+    uri: mongodbUri,
+    database,
+    timeoutMs: 3_000,
+  });
+  try {
+    assert.equal((await recovered.listActive('owner_v1', 10))[0]?.id, id);
+    assert.equal(
+      (await recovered.listNotifications('owner_v1', { limit: 10 }))[0]?.id,
+      `notification_${id.slice('external_signal_'.length)}`,
+    );
+    assert.equal(
+      await recovered.resolveMissing({
+        principalId: 'owner_v1',
+        routineId: signal.routineId,
+        activeIds: [],
+        resolvedAt: '2026-09-05T10:02:00.000Z',
+      }),
+      1,
+    );
+    assert.equal((await recovered.listActive('owner_v1', 10)).length, 0);
   } finally {
     await recovered.close();
   }
@@ -1549,6 +1614,7 @@ async function verifyScenarios(mongo, redis) {
   await verifyLeaseExclusion();
   await verifyProjectMutationLeaseExclusion();
   await verifyIntegrationConnectionPersistence();
+  await verifyExternalSignalPersistence();
 
   const legacyConversation = await client.createConversation({
     title: 'Legacy reply upgrade',
@@ -1764,6 +1830,7 @@ async function verifyScenarios(mongo, redis) {
     leaseExclusionVerified: true,
     projectMutationLeaseExclusionVerified: true,
     integrationConnectionPersistenceVerified: true,
+    externalSignalPersistenceVerified: true,
     cliJourneyVerified: true,
     boundedGoalVerified: true,
     adaptiveGoalVerified: true,

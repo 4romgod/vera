@@ -235,11 +235,20 @@ export function categoryForReason(reason: string): PushCategory | undefined {
       'campaign_failed',
       'routine_check_failed',
       'routine_attention_required',
+      'external_check_failed',
     ].includes(reason)
   )
     return 'failures';
   if (['mission_result_ready', 'campaign_result_ready'].includes(reason))
     return 'results';
+  if (
+    [
+      'external_review_requested',
+      'external_mentioned',
+      'external_assigned',
+    ].includes(reason)
+  )
+    return 'tasks';
   return undefined;
 }
 

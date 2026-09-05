@@ -339,6 +339,29 @@ export function generateOrchestrationDecision(
   );
   const routineId = /routine_[a-z0-9-]+/u.exec(ownerMessage)?.[0];
   const routineTime = /\b(?:[01]\d|2[0-3]):[0-5]\d\b/u.exec(ownerMessage)?.[0];
+  const routineInterval = /\bevery\s+(\d{1,4})\s+minutes?\b/u.exec(
+    normalizedMessage,
+  )?.[1];
+  const requestsGitHubWatch =
+    projectId !== undefined &&
+    /\b(watch|monitor)\b/u.test(normalizedMessage) &&
+    /\b(github|review requests?|mentions?|assignments?|failed (?:checks?|ci))\b/u.test(
+      normalizedMessage,
+    );
+  const awarenessCategories = [
+    ...(/\breview requests?\b/u.test(normalizedMessage)
+      ? (['review_requested'] as const)
+      : []),
+    ...(/\bmentions?\b/u.test(normalizedMessage)
+      ? (['mentioned'] as const)
+      : []),
+    ...(/\bassign(?:ed|ments?)?\b/u.test(normalizedMessage)
+      ? (['assigned'] as const)
+      : []),
+    ...(/\bfailed (?:checks?|ci)\b/u.test(normalizedMessage)
+      ? (['failed_check'] as const)
+      : []),
+  ];
   const routineAction =
     canManageRoutines &&
     routineId !== undefined &&
@@ -355,31 +378,62 @@ export function generateOrchestrationDecision(
           : canManageRoutines &&
               /\b(list|show)\b.*\broutines?\b/u.test(normalizedMessage)
             ? ({ action: 'list' } as const)
-            : canManageRoutines &&
-                selectedMachine !== undefined &&
-                /\b(every (?:day|morning|evening)|daily|routine|standing instruction)\b/u.test(
-                  normalizedMessage,
-                )
+            : canManageRoutines && requestsGitHubWatch
               ? ({
                   action: 'create',
                   routine: {
-                    title: 'Daily machine health check',
+                    title: `Watch ${projectName} on GitHub`,
                     schedule: {
-                      kind: 'daily',
-                      timeZone: ownerTimeZone,
-                      localTime: routineTime ?? '08:00',
-                      daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+                      kind: 'interval',
+                      minutes:
+                        routineInterval === undefined
+                          ? 15
+                          : Math.min(
+                              1440,
+                              Math.max(5, Number(routineInterval)),
+                            ),
                     },
                     action: {
-                      kind: 'machine_health_check',
-                      machineId: selectedMachine.id,
-                      ...(selectedService === undefined
-                        ? {}
-                        : { serviceIds: [selectedService.id] }),
+                      kind: 'integration_awareness',
+                      integrationId: 'github',
+                      projectId,
+                      categories:
+                        awarenessCategories.length === 0
+                          ? [
+                              'review_requested',
+                              'mentioned',
+                              'assigned',
+                              'failed_check',
+                            ]
+                          : awarenessCategories,
                     },
                   },
                 } as const)
-              : undefined;
+              : canManageRoutines &&
+                  selectedMachine !== undefined &&
+                  /\b(every (?:day|morning|evening)|daily|routine|standing instruction)\b/u.test(
+                    normalizedMessage,
+                  )
+                ? ({
+                    action: 'create',
+                    routine: {
+                      title: 'Daily machine health check',
+                      schedule: {
+                        kind: 'daily',
+                        timeZone: ownerTimeZone,
+                        localTime: routineTime ?? '08:00',
+                        daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+                      },
+                      action: {
+                        kind: 'machine_health_check',
+                        machineId: selectedMachine.id,
+                        ...(selectedService === undefined
+                          ? {}
+                          : { serviceIds: [selectedService.id] }),
+                      },
+                    },
+                  } as const)
+                : undefined;
   const personalTaskId = /personal_task_[a-z0-9-]+/u.exec(ownerMessage)?.[0];
   const personalTaskAction =
     canManagePersonalTasks &&

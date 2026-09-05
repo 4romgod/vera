@@ -45,6 +45,14 @@ export const AttentionTargetSchema = z.discriminatedUnion('kind', [
       approvalId: z.string().startsWith('approval_').optional(),
     })
     .strict(),
+  z
+    .object({
+      kind: z.literal('external_signal'),
+      externalSignalId: z.string().startsWith('external_signal_'),
+      routineId: z.string().startsWith('routine_'),
+      url: z.url(),
+    })
+    .strict(),
 ]);
 
 export const AttentionItemSchema = z
@@ -68,6 +76,10 @@ export const AttentionItemSchema = z
       'routine_approval_required',
       'routine_check_failed',
       'routine_attention_required',
+      'external_review_requested',
+      'external_mentioned',
+      'external_assigned',
+      'external_check_failed',
     ]),
     priority: AttentionPrioritySchema,
     title: z.string().trim().min(1).max(500),

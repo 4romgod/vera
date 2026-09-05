@@ -20,6 +20,10 @@ for the universal Today surface and ordinary conversation.
 Durable standing routines now let Vera run exact, owner-approved registered
 machine health checks on a civil-time schedule, recover after restart, stay
 quiet while healthy, and surface only unhealthy or failed checks in Today.
+The same governed routine lifecycle can watch one approved GitHub-backed
+project for review requests, mentions, assignments, and failed pull-request
+checks. Provider-neutral signals flow into Today, Activity, and push without
+granting GitHub write authority; acting on one remains separately approved.
 
 The orchestration brain is selected at startup through a provider registry.
 Ollama remains the default owner-controlled provider; OpenAI and Gemini are
@@ -637,12 +641,17 @@ an Ollama orchestration profile to delegate research to OpenAI without changing
 Vera's brain. The OpenAI profile template enables this adapter explicitly. No
 adapter fallback occurs.
 
-External work items are independently disabled by default. Set
-`VERA_WORK_ITEM_ADAPTER=github_gh_cli` to publish the GitHub connection catalog
-and enable `work_item_management@1`; then use the Connections workspace or
+GitHub connectivity and external work-item writes are independently disabled by
+default. Set `VERA_GITHUB_CONNECTOR=gh_cli` to publish the GitHub connection
+catalog and enable read-only repository watches. Separately set
+`VERA_WORK_ITEM_ADAPTER=github_gh_cli` to enable `work_item_management@1`; for
+backward compatibility, that work-item setting also enables its required GitHub
+connector when `VERA_GITHUB_CONNECTOR` is omitted. Then use the Connections workspace or
 `npm run cli -- integration connect github` to let Vera adopt the Mac Mini's
 existing authenticated `gh` session. This setting selects transport only—it
-does not connect an account or approve any issue operation.
+does not connect an account, approve any issue operation, or create a watch.
+After connecting, the Routines workspace can draft a repository-scoped GitHub
+watch; the owner must separately approve its exact read-only standing scope.
 
 Vera never falls back automatically between providers. An Ollama failure will
 not silently send the request to a cloud service, and a failed cloud request

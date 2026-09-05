@@ -142,3 +142,18 @@ export function parseGitHubRepositoryRemote(value: string): {
   }
   return { owner, name };
 }
+
+export async function resolveLocalGitHubRepository(
+  rootPath: string,
+  options: {
+    gitCommand?: string;
+    run?: GitHubCommandRunner;
+  } = {},
+): Promise<{ provider: 'github'; owner: string; name: string }> {
+  const result = await (options.run ?? defaultGitHubCommandRunner)(
+    options.gitCommand ?? 'git',
+    ['remote', 'get-url', 'origin'],
+    { cwd: rootPath },
+  );
+  return { provider: 'github', ...parseGitHubRepositoryRemote(result.stdout) };
+}

@@ -171,7 +171,7 @@ export function buildModelSystemPrompt(
       : []),
     ...(routineManagementEnabled
       ? [
-          'Use routine_management when the owner asks for a recurring standing instruction, to list routines, or to pause, resume, or run an existing routine now.',
+          'Use routine_management when the owner asks for a recurring standing instruction, including a read-only watch of a selected registered project, or to list, pause, resume, or run an existing routine. Creating a watch only drafts exact standing authority; never imply that it is active before separate owner approval, and never infer write authority from observation authority.',
           'The first routine action is machine_health_check only. For create, copy an exact machineId and optional serviceIds from machineCatalog, use temporalContext.ownerTimeZone, and preserve the requested local HH:mm time and weekdays. Ask a clarification if the time or machine cannot be resolved.',
           'Creating a routine only drafts a frozen standing instruction. It needs no capability approval because the routine remains inactive until the owner separately approves its exact schedule, target, and read-only authority.',
           'A routine may inspect only registered services. It cannot control services, change its own definition, or silently expand scope. For pause, resume, and run_now, require an exact routine_ identifier from the owner message or trusted conversation history.',

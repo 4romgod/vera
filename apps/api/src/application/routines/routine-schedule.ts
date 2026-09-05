@@ -56,6 +56,13 @@ export function nextRoutineOccurrence(
   after: Date,
   previousOccurrence?: string,
 ): string {
+  if (schedule.kind === 'interval') {
+    const anchor =
+      previousOccurrence === undefined
+        ? after.getTime()
+        : Date.parse(previousOccurrence);
+    return new Date(anchor + schedule.minutes * MINUTE_MS).toISOString();
+  }
   assertValidTimeZone(schedule.timeZone);
   const previousLocalDate =
     previousOccurrence === undefined

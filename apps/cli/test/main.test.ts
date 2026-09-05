@@ -114,6 +114,8 @@ function fakeApi(overrides: Partial<VeraApi>): VeraApi {
     cancelMission: unavailable,
     waitForMission: unavailable,
     listRoutines: unavailable,
+    listExternalSignals: unavailable,
+    listRoutineExternalSignals: unavailable,
     createRoutine: unavailable,
     decideRoutine: unavailable,
     pauseRoutine: unavailable,

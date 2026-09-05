@@ -15,6 +15,66 @@ function evaluator(candidate: unknown) {
 }
 
 void describe('model decision boundary', () => {
+  void it('accepts a repository watch only for the exact selected project', async () => {
+    const candidate = {
+      schemaVersion: 1,
+      kind: 'invoke_capability',
+      decisionSummary: 'Draft the requested read-only GitHub watch.',
+      capability: { name: 'routine_management', version: 1 },
+      arguments: {
+        action: 'create',
+        routine: {
+          title: 'Watch Vera on GitHub',
+          schedule: { kind: 'interval', minutes: 15 },
+          action: {
+            kind: 'integration_awareness',
+            integrationId: 'github',
+            projectId: 'project_vera',
+            categories: ['review_requested', 'failed_check'],
+          },
+        },
+      },
+    };
+    const accepted = await createEvaluateModelDecision(
+      new FakeModelProvider(candidate),
+      () => 'decision_watch',
+      {
+        enabledCapabilities: [{ name: 'routine_management', version: 1 }],
+      },
+    )('Watch GitHub review requests and failed checks every 15 minutes.', {
+      selectedProject: { id: 'project_vera', displayName: 'Vera' },
+    });
+    assert.equal(accepted.decision.kind, 'approval_required');
+
+    const rejected = await createEvaluateModelDecision(
+      new FakeModelProvider({
+        ...candidate,
+        arguments: {
+          ...candidate.arguments,
+          routine: {
+            ...candidate.arguments.routine,
+            action: {
+              ...candidate.arguments.routine.action,
+              projectId: 'project_other',
+            },
+          },
+        },
+      }),
+      () => 'decision_drifted_watch',
+      {
+        enabledCapabilities: [{ name: 'routine_management', version: 1 }],
+      },
+    )('Watch this project.', {
+      selectedProject: { id: 'project_vera', displayName: 'Vera' },
+    });
+    assert.deepEqual(rejected.decision, {
+      kind: 'rejected',
+      code: 'invalid_capability_arguments',
+      message:
+        'The proposed external watch does not preserve the selected project identity.',
+    });
+  });
+
   void it('resolves the latest repairable campaign from bounded software-delivery context', async () => {
     const provider = new FakeModelProvider({
       schemaVersion: 1,

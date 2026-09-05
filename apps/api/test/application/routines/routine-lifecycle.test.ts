@@ -5,6 +5,7 @@ import { InMemoryRoutineStore } from '../../../src/adapters/outbound/persistence
 import { createRoutineLifecycle } from '../../../src/application/routines/routine-lifecycle.ts';
 import { nextRoutineOccurrence } from '../../../src/application/routines/routine-schedule.ts';
 import type { MachineOperations } from '../../../src/ports/machines/machine-operations.ts';
+import type { ExternalAwarenessOperations } from '../../../src/ports/external-awareness/external-awareness-operations.ts';
 
 const catalog = {
   schemaVersion: 1 as const,
@@ -168,6 +169,7 @@ void describe('routine lifecycle', () => {
       routineId: created.id,
       requestKey: 'manual-one',
     });
+    assert.equal(run.action.kind, 'machine_health_check');
     assert.deepEqual(run.action.serviceIds, ['vera_api']);
     const completed = await lifecycle.executeRun('owner_v1', run.id);
     assert.equal(completed.result?.outcome, 'attention_required');
@@ -188,6 +190,90 @@ void describe('routine lifecycle', () => {
     );
   });
 
+  void it('resumes interval routines from now instead of replaying missed intervals', async () => {
+    const store = new InMemoryRoutineStore();
+    let now = new Date('2026-09-05T10:00:00.000Z');
+    const lifecycle = createRoutineLifecycle({
+      store,
+      machines: machines(),
+      clock: () => now,
+    });
+    const created = await lifecycle.create({
+      principalId: 'owner_v1',
+      requestKey: 'interval-resume',
+      title: 'Interval health',
+      schedule: { kind: 'interval', minutes: 15 },
+      action: { kind: 'machine_health_check', machineId: 'macmini' },
+    });
+    const approved = await lifecycle.decideApproval({
+      principalId: 'owner_v1',
+      routineId: created.id,
+      decision: 'approved',
+    });
+    now = new Date('2026-09-05T10:15:00.000Z');
+    await lifecycle.materializeDue(approved);
+    now = new Date('2026-09-05T10:16:00.000Z');
+    await lifecycle.pause('owner_v1', created.id);
+    now = new Date('2026-09-05T15:00:00.000Z');
+    const resumed = await lifecycle.resume('owner_v1', created.id);
+
+    assert.equal(resumed.nextRunAt, '2026-09-05T15:15:00.000Z');
+  });
+
+  void it('replays an external-watch idempotency key without re-freezing external scope', async () => {
+    let freezeCalls = 0;
+    const externalAwareness: ExternalAwarenessOperations = {
+      list: () => Promise.resolve([]),
+      listByRoutine: () => Promise.resolve([]),
+      freeze: (input) => {
+        freezeCalls += 1;
+        if (freezeCalls > 1) throw new Error('External scope was re-frozen.');
+        return Promise.resolve({
+          kind: 'integration_awareness',
+          integrationId: 'github',
+          connectionId: 'connection_test',
+          account: { providerAccountId: '123', login: 'owner' },
+          project: { id: input.projectId, displayName: 'Vera' },
+          repository: { provider: 'github', owner: 'owner', name: 'vera' },
+          categories: input.categories,
+        });
+      },
+      execute: () =>
+        Promise.resolve({
+          observations: [],
+          created: 0,
+          changed: 0,
+          resolved: 0,
+        }),
+    };
+    const lifecycle = createRoutineLifecycle({
+      store: new InMemoryRoutineStore(),
+      machines: machines(),
+      externalAwareness,
+    });
+    const request = {
+      principalId: 'owner_v1',
+      requestKey: 'github-watch-replay',
+      title: 'Watch GitHub',
+      schedule: { kind: 'interval' as const, minutes: 15 },
+      action: {
+        kind: 'integration_awareness' as const,
+        integrationId: 'github' as const,
+        projectId: 'project_vera',
+        categories: ['failed_check', 'review_requested'] as (
+          | 'review_requested'
+          | 'mentioned'
+          | 'assigned'
+          | 'failed_check'
+        )[],
+      },
+    };
+    const created = await lifecycle.create(request);
+    const replay = await lifecycle.create(request);
+    assert.equal(replay.id, created.id);
+    assert.equal(freezeCalls, 1);
+  });
+
   void it('does not execute a repeated local clock hour twice across DST', () => {
     const schedule = {
       kind: 'daily' as const,
@@ -203,6 +289,24 @@ void describe('routine lifecycle', () => {
     assert.equal(
       nextRoutineOccurrence(schedule, new Date(first), first),
       '2026-11-08T06:30:00.000Z',
+    );
+  });
+
+  void it('advances interval schedules from the prior occurrence without drift', () => {
+    assert.equal(
+      nextRoutineOccurrence(
+        { kind: 'interval', minutes: 15 },
+        new Date('2026-09-05T10:07:00.000Z'),
+      ),
+      '2026-09-05T10:22:00.000Z',
+    );
+    assert.equal(
+      nextRoutineOccurrence(
+        { kind: 'interval', minutes: 15 },
+        new Date('2026-09-05T10:22:09.000Z'),
+        '2026-09-05T10:22:00.000Z',
+      ),
+      '2026-09-05T10:37:00.000Z',
     );
   });
 

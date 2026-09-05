@@ -103,6 +103,12 @@ import { GitHubWorkItemActionExecutor } from '../adapters/outbound/integrations/
 import { createPushNotificationProvider } from '../adapters/outbound/notifications/push-notification-provider-registry.ts';
 import { createPushNotificationService } from '../application/notifications/push-notification-service.ts';
 import { createPushNotificationWorker } from '../application/notifications/push-notification-worker.ts';
+import { InMemoryExternalSignalStore } from '../adapters/outbound/persistence/memory/in-memory-external-signal-store.ts';
+import { MongoDbExternalSignalStore } from '../adapters/outbound/persistence/mongodb/mongodb-external-signal-store.ts';
+import type { ExternalSignalStore } from '../ports/persistence/external-signal-store.ts';
+import { GitHubAwarenessSource } from '../adapters/outbound/external-awareness/github/github-awareness-source.ts';
+import { createExternalAwarenessService } from '../application/external-awareness/external-awareness-service.ts';
+import { resolveLocalGitHubRepository } from '../adapters/outbound/github/github-cli.ts';
 
 export function createApp(
   config: AppConfig,
@@ -263,16 +269,32 @@ export function createApp(
           database: config.storage.mongodbDatabase,
           timeoutMs: config.storage.dependencyTimeoutMs,
         });
+  const externalSignalStore: ExternalSignalStore =
+    config.storage.mode === 'memory'
+      ? new InMemoryExternalSignalStore()
+      : new MongoDbExternalSignalStore({
+          uri: config.storage.mongodbUri,
+          database: config.storage.mongodbDatabase,
+          timeoutMs: config.storage.dependencyTimeoutMs,
+        });
   const githubConnector =
-    config.workItems?.adapterId === 'github_gh_cli'
-      ? new GitHubCliConnector({ command: config.publication.ghCommand })
+    (config.integrations?.github.connectorId ??
+      (config.workItems?.adapterId === 'github_gh_cli'
+        ? 'gh_cli'
+        : 'disabled')) === 'gh_cli'
+      ? new GitHubCliConnector({
+          command: config.publication.ghCommand,
+          workItemManagementEnabled:
+            config.workItems?.adapterId === 'github_gh_cli',
+        })
       : undefined;
   const integrationConnectionService = createIntegrationConnectionService({
     store: integrationConnectionStore,
     connectors: githubConnector === undefined ? [] : [githubConnector],
   });
   const workItemExecutor =
-    githubConnector === undefined
+    githubConnector === undefined ||
+    config.workItems?.adapterId !== 'github_gh_cli'
       ? undefined
       : new GitHubWorkItemActionExecutor({
           projects: resources,
@@ -280,6 +302,20 @@ export function createApp(
           ghCommand: config.publication.ghCommand,
           gitCommand: config.publication.gitCommand,
         });
+  const githubAwarenessSource =
+    githubConnector === undefined
+      ? undefined
+      : new GitHubAwarenessSource({ command: config.publication.ghCommand });
+  const externalAwareness = createExternalAwarenessService({
+    projects: resources,
+    connections: integrationConnectionService,
+    signals: externalSignalStore,
+    sources: githubAwarenessSource === undefined ? [] : [githubAwarenessSource],
+    resolveRepository: (project) =>
+      resolveLocalGitHubRepository(project.source.rootPath, {
+        gitCommand: config.publication.gitCommand,
+      }),
+  });
   const projectService = createProjectService({
     store: resources,
     resolveLocalGitRoot,
@@ -338,6 +374,7 @@ export function createApp(
   const notificationService = createNotificationService({
     store: resources,
     missions: missionStore,
+    externalSignals: externalSignalStore,
   });
   const memoryService = createMemoryService({ store: resources });
   const machineService = createMachineService(machineOperations.catalog);
@@ -357,6 +394,7 @@ export function createApp(
     campaigns: campaignStore,
     decisions: attentionDecisions,
     routines: routineStore,
+    externalSignals: externalSignalStore,
   });
   const pushProvider = createPushNotificationProvider(pushConfig.provider);
   const pushWorkerReference: { current: { wake(): void } | undefined } = {
@@ -392,6 +430,7 @@ export function createApp(
   const routineLifecycle = createRoutineLifecycle({
     store: routineStore,
     machines: machineOperations,
+    externalAwareness,
   });
   const routineWorkerReference: { current?: { wake(): void } } = {};
   const capabilities = createCapabilityRuntimeRegistry({
@@ -632,6 +671,7 @@ export function createApp(
     conversations: conversationService,
     projects: projectService,
     integrations: integrationConnectionService,
+    externalAwareness,
     capabilities: capabilityService,
     personalTasks: personalTaskService,
     reminders: reminderService,
@@ -740,6 +780,18 @@ export function createApp(
       },
       { name: 'mission_worker', check: () => missionWorker.checkReadiness() },
       { name: 'routine_store', check: () => routineStore.checkReadiness() },
+      {
+        name: 'external_signal_store',
+        check: () => externalSignalStore.checkReadiness(),
+      },
+      ...(githubAwarenessSource === undefined
+        ? []
+        : [
+            {
+              name: 'github_awareness_source',
+              check: () => githubAwarenessSource.checkReadiness(),
+            },
+          ]),
       { name: 'routine_worker', check: () => routineWorker.checkReadiness() },
       {
         name: 'push_notification_store',
@@ -783,6 +835,7 @@ export function createApp(
         routineStore.close(),
         pushNotificationStore.close(),
         integrationConnectionStore.close(),
+        externalSignalStore.close(),
       ]);
     },
     logger: runtime.logger ?? true,
