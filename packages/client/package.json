@@ -18,8 +18,17 @@
   "types": "./src/index.ts",
   "scripts": {
     "build": "npm run clean && tsc -p tsconfig.build.json",
+    "client:generate": "openapi-ts -f openapi-ts.config.ts && node scripts/strict-generated-zod.mjs",
     "clean": "node --input-type=module --eval \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true })\"",
+    "prepare": "npm run client:generate",
     "test": "tsx --test 'test/**/*.test.ts'",
     "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "axios": "1.20.0",
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "@hey-api/openapi-ts": "0.99.0"
   }
 }

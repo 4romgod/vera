@@ -9,6 +9,7 @@ dist-host/
 apps/frontend/android/
 apps/frontend/ios/
 node_modules/
+packages/client/src/generated/
 *.log
 config/machines.json
 config/development-campaigns.json

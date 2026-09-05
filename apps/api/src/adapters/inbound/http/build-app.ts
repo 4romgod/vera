@@ -88,6 +88,7 @@ import {
   ReadyResponseJsonSchema,
   type EvaluateRequest,
 } from './schemas.ts';
+import { registerErrorResponseValidation } from './response-validation.ts';
 
 export type BuildAppOptions = {
   evaluateModelDecision: EvaluateModelDecision;
@@ -122,6 +123,7 @@ export type BuildAppOptions = {
   }[];
   close?: () => Promise<void>;
   logger?: FastifyServerOptions['logger'];
+  registerOpenApi?: (app: FastifyInstance) => void;
 };
 
 class DependencyReadinessError extends Error {
@@ -213,6 +215,9 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       },
     },
   });
+
+  registerErrorResponseValidation(app);
+  options.registerOpenApi?.(app);
 
   // The API remains bound to loopback. This policy only lets a browser-based
   // local Vera frontend read it from a different development port. Requests
@@ -354,7 +359,10 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
     });
   }
   if (options.artifacts !== undefined) {
-    registerArtifactRoutes(app, { principalId, artifacts: options.artifacts });
+    registerArtifactRoutes(app, {
+      principalId,
+      artifacts: options.artifacts,
+    });
   }
   if (options.personalTasks !== undefined) {
     registerPersonalTaskRoutes(app, {

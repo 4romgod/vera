@@ -1,14 +1,19 @@
 # Vera HTTP API
 
 **Status:** Accepted for implemented V1 paths
-**Version:** 1.7
-**Last updated:** 4 September 2026
+**Version:** 1.8
+**Last updated:** 5 September 2026
 
 ## Purpose
 
 This document owns the external behavior of Vera's implemented HTTP paths. The
 domain meanings remain in the [Domain Model](domain-model.md); this document
 defines how an HTTP client observes them.
+
+The machine-readable [OpenAPI 3.1 contract](../apps/api/openapi/vera.openapi.json)
+is generated from the runtime Fastify route graph and its Zod-derived schemas.
+It is the authoritative operation-level description for client generation;
+this document explains the intent and security constraints around those paths.
 
 All paths are versioned except process health. JSON request objects are closed:
 unknown properties are rejected rather than silently removed. The service
@@ -38,6 +43,7 @@ must not be exposed to an untrusted or shared network.
 | `POST /v1/audio/transcriptions` | Transcribe one completed bounded audio recording without persisting it | `200` |
 | `POST /v1/attachments` | Validate, extract, and durably store one owner-scoped document | `200` or `201` |
 | `GET /v1/attachments/{attachmentId}` | Retrieve attachment metadata and extraction status, never original content | `200` |
+| `GET /v1/attachments/{attachmentId}/preview` | Retrieve a normalized image preview with immutable private caching | `200` |
 | `GET /v1/personal-tasks` | List owner-scoped personal tasks; filters: `status`, `limit` | `200` |
 | `GET /v1/personal-tasks/{personalTaskId}` | Retrieve one owner-scoped personal task | `200` |
 | `GET /v1/reminders` | List owner-scoped reminders; filters: `status`, `limit` | `200` |

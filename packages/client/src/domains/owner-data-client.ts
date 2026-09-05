@@ -2,65 +2,95 @@ import type {
   AttachmentResource,
   MachineCatalogResource,
   PersonalTaskResource,
-  NotificationResource,
   ReminderResource,
   MemoryResource,
-  KnowledgeScope,
   KnowledgeSourceResource,
   KnowledgeSearchResponse,
   NotificationPage,
-  NotificationStreamEvent,
-  PushPreferences,
   NotificationDeviceResource,
   PushDeliveryResource,
   PushNotificationStatus,
   AttentionBriefing,
   SpeechTranscriptionResource,
-  SpeechTranscriptionAudio,
   TaskResource,
   ProjectResource,
   ConversationResource,
-  ConversationSummaryResource,
   ArtifactResource,
   CapabilityCatalogResource,
   RunEventsResource,
-} from '../contracts/index.ts';
+} from '../generated/types.gen.ts';
+import type {
+  KnowledgeScope,
+  ConversationSummaryResource,
+  NotificationResource,
+  NotificationStreamEvent,
+  PushPreferences,
+  SpeechTranscriptionAudio,
+} from '../sdk-types.ts';
 import {
-  isRecord,
-  assertAttachmentResource,
-  assertCapabilityCatalogResource,
-  assertMachineCatalogResource,
-  assertSpeechTranscriptionResource,
-  assertPersonalTaskResource,
-  assertNotificationResource,
-  assertReminderResource,
-  assertMemoryResource,
-  assertKnowledgeSourceResource,
-  assertKnowledgeSearchResponse,
-  assertAttentionBriefing,
-  assertPushNotificationStatus,
-  assertNotificationDeviceResource,
-  assertPushDeliveryResource,
-} from '../validation/index.ts';
+  zGetV1NotificationsResponse,
+  zPostV1AttachmentsResponse,
+  zPostV1AudioTranscriptionsResponse,
+} from '../generated/zod.gen.ts';
+import {
+  deleteV1KnowledgeSourcesId,
+  getV1ArtifactsId,
+  getV1AttachmentsId,
+  getV1Attention,
+  getV1Capabilities,
+  getV1Conversations,
+  getV1ConversationsId,
+  getV1KnowledgeSources,
+  getV1KnowledgeSourcesId,
+  getV1Machines,
+  getV1Memories,
+  getV1MemoriesId,
+  getV1NotificationDevices,
+  getV1Notifications,
+  getV1PersonalTasks,
+  getV1PersonalTasksId,
+  getV1Projects,
+  getV1ProjectsId,
+  getV1PushDeliveries,
+  getV1PushNotificationsStatus,
+  getV1Reminders,
+  getV1RemindersId,
+  getV1RunsId,
+  getV1RunsIdEvents,
+  getV1TasksId,
+  postV1ApprovalsIdDecision,
+  postV1AttentionItemsIdDecision,
+  postV1Conversations,
+  postV1ConversationsIdMessages,
+  postV1KnowledgeSearch,
+  postV1KnowledgeSources,
+  postV1NotificationDevices,
+  postV1NotificationDevicesIdRevoke,
+  postV1NotificationDevicesIdTest,
+  postV1Projects,
+  postV1RunsIdCancellation,
+  postV1Tasks,
+  putV1NotificationDevicesIdPreferences,
+} from '../generated/sdk.gen.ts';
 import { VeraHttpTransport } from '../http/transport.ts';
 
 export class OwnerDataClient extends VeraHttpTransport {
   public async listCapabilities(): Promise<CapabilityCatalogResource> {
-    const catalog = await this.request<unknown>('/v1/capabilities');
-    assertCapabilityCatalogResource(catalog);
-    return catalog;
+    return this.generatedRequest(
+      getV1Capabilities({ client: this.generatedClient }),
+    );
   }
 
   public async listMachines(): Promise<MachineCatalogResource> {
-    const catalog = await this.request<unknown>('/v1/machines');
-    assertMachineCatalogResource(catalog);
-    return catalog;
+    return this.generatedRequest(
+      getV1Machines({ client: this.generatedClient }),
+    );
   }
 
   public async getAttentionBriefing(): Promise<AttentionBriefing> {
-    const briefing = await this.request<unknown>('/v1/attention');
-    assertAttentionBriefing(briefing);
-    return briefing;
+    return this.generatedRequest(
+      getV1Attention({ client: this.generatedClient }),
+    );
   }
 
   public async decideAttention(input: {
@@ -69,21 +99,19 @@ export class OwnerDataClient extends VeraHttpTransport {
     snoozedUntil?: string;
     idempotencyKey: string;
   }): Promise<AttentionBriefing> {
-    const briefing = await this.request<unknown>(
-      `/v1/attention-items/${encodeURIComponent(input.attentionItemId)}/decision`,
-      {
-        method: 'POST',
-        idempotencyKey: input.idempotencyKey,
+    return this.generatedRequest(
+      postV1AttentionItemsIdDecision({
+        client: this.generatedClient,
+        headers: { 'idempotency-key': input.idempotencyKey },
+        path: { id: input.attentionItemId },
         body: {
           decision: input.decision,
           ...(input.snoozedUntil === undefined
             ? {}
             : { snoozedUntil: input.snoozedUntil }),
         },
-      },
+      }),
     );
-    assertAttentionBriefing(briefing);
-    return briefing;
   }
 
   public async uploadAttachment(input: {
@@ -109,18 +137,18 @@ export class OwnerDataClient extends VeraHttpTransport {
       body = undefined;
     }
     if (!response.ok) throw this.errorFromBody(response.status, body);
-    assertAttachmentResource(body);
-    return body;
+    return zPostV1AttachmentsResponse.parseAsync(body);
   }
 
   public async getAttachment(
     attachmentId: string,
   ): Promise<AttachmentResource> {
-    const value = await this.request<unknown>(
-      `/v1/attachments/${encodeURIComponent(attachmentId)}`,
+    return this.generatedRequest(
+      getV1AttachmentsId({
+        client: this.generatedClient,
+        path: { id: attachmentId },
+      }),
     );
-    assertAttachmentResource(value);
-    return value;
   }
 
   public attachmentPreviewUrl(attachmentId: string): string {
@@ -148,8 +176,7 @@ export class OwnerDataClient extends VeraHttpTransport {
       body = undefined;
     }
     if (!response.ok) throw this.errorFromBody(response.status, body);
-    assertSpeechTranscriptionResource(body);
-    return body;
+    return zPostV1AudioTranscriptionsResponse.parseAsync(body);
   }
 
   public async listPersonalTasks(
@@ -158,32 +185,24 @@ export class OwnerDataClient extends VeraHttpTransport {
       limit?: number;
     } = {},
   ): Promise<{ schemaVersion: 1; tasks: PersonalTaskResource[] }> {
-    const query = new URLSearchParams();
-    if (options.status !== undefined) query.set('status', options.status);
-    if (options.limit !== undefined) query.set('limit', String(options.limit));
-    const value = await this.request<unknown>(
-      `/v1/personal-tasks${query.size === 0 ? '' : `?${query.toString()}`}`,
+    return this.generatedRequest(
+      getV1PersonalTasks({
+        client: this.generatedClient,
+        query: {
+          ...(options.status === undefined ? {} : { status: options.status }),
+          ...(options.limit === undefined ? {} : { limit: options.limit }),
+        },
+      }),
     );
-    if (
-      !isRecord(value) ||
-      value.schemaVersion !== 1 ||
-      !Array.isArray(value.tasks)
-    ) {
-      throw new Error('Vera returned an invalid personal task collection.');
-    }
-    const tasks = value.tasks.map((task): PersonalTaskResource => {
-      assertPersonalTaskResource(task);
-      return task;
-    });
-    return { schemaVersion: 1, tasks };
   }
 
   public async getPersonalTask(taskId: string): Promise<PersonalTaskResource> {
-    const value = await this.request<unknown>(
-      `/v1/personal-tasks/${encodeURIComponent(taskId)}`,
+    return this.generatedRequest(
+      getV1PersonalTasksId({
+        client: this.generatedClient,
+        path: { id: taskId },
+      }),
     );
-    assertPersonalTaskResource(value);
-    return value;
   }
 
   public async listReminders(
@@ -192,32 +211,24 @@ export class OwnerDataClient extends VeraHttpTransport {
       limit?: number;
     } = {},
   ): Promise<{ schemaVersion: 1; reminders: ReminderResource[] }> {
-    const query = new URLSearchParams();
-    if (options.status !== undefined) query.set('status', options.status);
-    if (options.limit !== undefined) query.set('limit', String(options.limit));
-    const value = await this.request<unknown>(
-      `/v1/reminders${query.size === 0 ? '' : `?${query.toString()}`}`,
+    return this.generatedRequest(
+      getV1Reminders({
+        client: this.generatedClient,
+        query: {
+          ...(options.status === undefined ? {} : { status: options.status }),
+          ...(options.limit === undefined ? {} : { limit: options.limit }),
+        },
+      }),
     );
-    if (
-      !isRecord(value) ||
-      value.schemaVersion !== 1 ||
-      !Array.isArray(value.reminders)
-    ) {
-      throw new Error('Vera returned an invalid reminder collection.');
-    }
-    const reminders = value.reminders.map((reminder): ReminderResource => {
-      assertReminderResource(reminder);
-      return reminder;
-    });
-    return { schemaVersion: 1, reminders };
   }
 
   public async getReminder(reminderId: string): Promise<ReminderResource> {
-    const value = await this.request<unknown>(
-      `/v1/reminders/${encodeURIComponent(reminderId)}`,
+    return this.generatedRequest(
+      getV1RemindersId({
+        client: this.generatedClient,
+        path: { id: reminderId },
+      }),
     );
-    assertReminderResource(value);
-    return value;
   }
 
   public async listMemories(
@@ -228,39 +239,33 @@ export class OwnerDataClient extends VeraHttpTransport {
       limit?: number;
     } = {},
   ): Promise<{ schemaVersion: 1; memories: MemoryResource[] }> {
-    const query = new URLSearchParams();
-    if (options.status !== undefined) query.set('status', options.status);
-    if (options.kind !== undefined) query.set('kind', options.kind);
-    if (options.scope !== undefined) {
-      query.set('scopeKind', options.scope.kind);
-      if (options.scope.kind === 'project') {
-        query.set('projectId', options.scope.projectId);
-      }
-    }
-    if (options.limit !== undefined) query.set('limit', String(options.limit));
-    const value = await this.request<unknown>(
-      `/v1/memories${query.size === 0 ? '' : `?${query.toString()}`}`,
+    return this.generatedRequest(
+      getV1Memories({
+        client: this.generatedClient,
+        query: {
+          ...(options.status === undefined ? {} : { status: options.status }),
+          ...(options.kind === undefined ? {} : { kind: options.kind }),
+          ...(options.scope === undefined
+            ? {}
+            : {
+                scopeKind: options.scope.kind,
+                ...(options.scope.kind === 'project'
+                  ? { projectId: options.scope.projectId }
+                  : {}),
+              }),
+          ...(options.limit === undefined ? {} : { limit: options.limit }),
+        },
+      }),
     );
-    if (
-      !isRecord(value) ||
-      value.schemaVersion !== 1 ||
-      !Array.isArray(value.memories)
-    ) {
-      throw new Error('Vera returned an invalid memory collection.');
-    }
-    const memories = value.memories.map((memory): MemoryResource => {
-      assertMemoryResource(memory);
-      return memory;
-    });
-    return { schemaVersion: 1, memories };
   }
 
   public async getMemory(memoryId: string): Promise<MemoryResource> {
-    const value = await this.request<unknown>(
-      `/v1/memories/${encodeURIComponent(memoryId)}`,
+    return this.generatedRequest(
+      getV1MemoriesId({
+        client: this.generatedClient,
+        path: { id: memoryId },
+      }),
     );
-    assertMemoryResource(value);
-    return value;
   }
 
   public async createKnowledgeSource(input: {
@@ -271,23 +276,23 @@ export class OwnerDataClient extends VeraHttpTransport {
     analysisArtifactId?: string;
     idempotencyKey: string;
   }): Promise<KnowledgeSourceResource> {
-    const value = await this.request<unknown>('/v1/knowledge-sources', {
-      method: 'POST',
-      idempotencyKey: input.idempotencyKey,
-      body: {
-        title: input.title,
-        scope: input.scope,
-        attachmentIds: input.attachmentIds,
-        ...(input.sensitivity === undefined
-          ? {}
-          : { sensitivity: input.sensitivity }),
-        ...(input.analysisArtifactId === undefined
-          ? {}
-          : { analysisArtifactId: input.analysisArtifactId }),
-      },
-    });
-    assertKnowledgeSourceResource(value);
-    return value;
+    return this.generatedRequest(
+      postV1KnowledgeSources({
+        client: this.generatedClient,
+        headers: { 'idempotency-key': input.idempotencyKey },
+        body: {
+          title: input.title,
+          scope: input.scope,
+          attachmentIds: input.attachmentIds,
+          ...(input.sensitivity === undefined
+            ? {}
+            : { sensitivity: input.sensitivity }),
+          ...(input.analysisArtifactId === undefined
+            ? {}
+            : { analysisArtifactId: input.analysisArtifactId }),
+        },
+      }),
+    );
   }
 
   public async listKnowledgeSources(
@@ -297,51 +302,45 @@ export class OwnerDataClient extends VeraHttpTransport {
       limit?: number;
     } = {},
   ): Promise<{ schemaVersion: 1; sources: KnowledgeSourceResource[] }> {
-    const query = new URLSearchParams();
-    if (options.status !== undefined) query.set('status', options.status);
-    if (options.scope !== undefined) {
-      query.set('scopeKind', options.scope.kind);
-      if (options.scope.kind === 'project') {
-        query.set('projectId', options.scope.projectId);
-      }
-    }
-    if (options.limit !== undefined) query.set('limit', String(options.limit));
-    const value = await this.request<unknown>(
-      `/v1/knowledge-sources${query.size === 0 ? '' : `?${query.toString()}`}`,
+    return this.generatedRequest(
+      getV1KnowledgeSources({
+        client: this.generatedClient,
+        query: {
+          ...(options.status === undefined ? {} : { status: options.status }),
+          ...(options.scope === undefined
+            ? {}
+            : {
+                scopeKind: options.scope.kind,
+                ...(options.scope.kind === 'project'
+                  ? { projectId: options.scope.projectId }
+                  : {}),
+              }),
+          ...(options.limit === undefined ? {} : { limit: options.limit }),
+        },
+      }),
     );
-    if (
-      !isRecord(value) ||
-      value.schemaVersion !== 1 ||
-      !Array.isArray(value.sources)
-    ) {
-      throw new Error('Vera returned an invalid knowledge collection.');
-    }
-    const sources = value.sources.map((source): KnowledgeSourceResource => {
-      assertKnowledgeSourceResource(source);
-      return source;
-    });
-    return { schemaVersion: 1, sources };
   }
 
   public async getKnowledgeSource(
     sourceId: string,
   ): Promise<KnowledgeSourceResource> {
-    const value = await this.request<unknown>(
-      `/v1/knowledge-sources/${encodeURIComponent(sourceId)}`,
+    return this.generatedRequest(
+      getV1KnowledgeSourcesId({
+        client: this.generatedClient,
+        path: { id: sourceId },
+      }),
     );
-    assertKnowledgeSourceResource(value);
-    return value;
   }
 
   public async removeKnowledgeSource(
     sourceId: string,
   ): Promise<KnowledgeSourceResource> {
-    const value = await this.request<unknown>(
-      `/v1/knowledge-sources/${encodeURIComponent(sourceId)}`,
-      { method: 'DELETE' },
+    return this.generatedRequest(
+      deleteV1KnowledgeSourcesId({
+        client: this.generatedClient,
+        path: { id: sourceId },
+      }),
     );
-    assertKnowledgeSourceResource(value);
-    return value;
   }
 
   public async searchKnowledge(input: {
@@ -350,72 +349,45 @@ export class OwnerDataClient extends VeraHttpTransport {
     limit?: number;
     signal?: AbortSignal;
   }): Promise<KnowledgeSearchResponse> {
-    const value = await this.request<unknown>('/v1/knowledge-search', {
-      method: 'POST',
-      body: {
-        query: input.query,
-        ...(input.scope === undefined ? {} : { scope: input.scope }),
-        ...(input.limit === undefined ? {} : { limit: input.limit }),
-      },
-      ...(input.signal === undefined ? {} : { signal: input.signal }),
-    });
-    assertKnowledgeSearchResponse(value);
-    return value;
+    return this.generatedRequest(
+      postV1KnowledgeSearch({
+        client: this.generatedClient,
+        body: {
+          query: input.query,
+          ...(input.scope === undefined ? {} : { scope: input.scope }),
+          ...(input.limit === undefined ? {} : { limit: input.limit }),
+        },
+        ...(input.signal === undefined ? {} : { signal: input.signal }),
+      }),
+    );
   }
 
   public async listNotifications(
     options: { after?: string; limit?: number } = {},
   ): Promise<NotificationPage> {
-    const query = new URLSearchParams();
-    if (options.after !== undefined) query.set('after', options.after);
-    if (options.limit !== undefined) query.set('limit', String(options.limit));
-    const value = await this.request<unknown>(
-      `/v1/notifications${query.size === 0 ? '' : `?${query.toString()}`}`,
+    return this.generatedRequest(
+      getV1Notifications({
+        client: this.generatedClient,
+        query: {
+          ...(options.after === undefined ? {} : { after: options.after }),
+          ...(options.limit === undefined ? {} : { limit: options.limit }),
+        },
+      }),
     );
-    if (
-      !isRecord(value) ||
-      value.schemaVersion !== 1 ||
-      !Array.isArray(value.notifications) ||
-      (value.nextCursor !== undefined && typeof value.nextCursor !== 'string')
-    ) {
-      throw new Error('Vera returned an invalid notification collection.');
-    }
-    const notifications = value.notifications.map(
-      (notification): NotificationResource => {
-        assertNotificationResource(notification);
-        return notification;
-      },
-    );
-    return {
-      schemaVersion: 1,
-      notifications,
-      ...(value.nextCursor === undefined
-        ? {}
-        : { nextCursor: value.nextCursor }),
-    };
   }
 
   public async getPushNotificationStatus(): Promise<PushNotificationStatus> {
-    const value = await this.request<unknown>('/v1/push-notifications/status');
-    assertPushNotificationStatus(value);
-    return value;
+    return this.generatedRequest(
+      getV1PushNotificationsStatus({ client: this.generatedClient }),
+    );
   }
   public async listNotificationDevices(): Promise<{
     schemaVersion: 1;
     devices: NotificationDeviceResource[];
   }> {
-    const value = await this.request<unknown>('/v1/notification-devices');
-    if (
-      !isRecord(value) ||
-      value.schemaVersion !== 1 ||
-      !Array.isArray(value.devices)
-    )
-      throw new Error('Vera returned an invalid notification-device list.');
-    const devices = value.devices.map((device: unknown) => {
-      assertNotificationDeviceResource(device);
-      return device;
-    });
-    return { schemaVersion: 1, devices };
+    return this.generatedRequest(
+      getV1NotificationDevices({ client: this.generatedClient }),
+    );
   }
   public async registerNotificationDevice(input: {
     installationId: string;
@@ -425,61 +397,54 @@ export class OwnerDataClient extends VeraHttpTransport {
     platform: 'ios' | 'android';
     name: string;
   }): Promise<NotificationDeviceResource> {
-    const value = await this.request<unknown>('/v1/notification-devices', {
-      method: 'POST',
-      body: input,
-    });
-    assertNotificationDeviceResource(value);
-    return value;
+    return this.generatedRequest(
+      postV1NotificationDevices({
+        client: this.generatedClient,
+        body: input,
+      }),
+    );
   }
   public async updateNotificationPreferences(
     deviceId: string,
     preferences: PushPreferences,
   ): Promise<NotificationDeviceResource> {
-    const value = await this.request<unknown>(
-      `/v1/notification-devices/${encodeURIComponent(deviceId)}/preferences`,
-      { method: 'PUT', body: preferences },
+    return this.generatedRequest(
+      putV1NotificationDevicesIdPreferences({
+        client: this.generatedClient,
+        path: { id: deviceId },
+        body: preferences,
+      }),
     );
-    assertNotificationDeviceResource(value);
-    return value;
   }
   public async revokeNotificationDevice(
     deviceId: string,
   ): Promise<NotificationDeviceResource> {
-    const value = await this.request<unknown>(
-      `/v1/notification-devices/${encodeURIComponent(deviceId)}/revoke`,
-      { method: 'POST' },
+    return this.generatedRequest(
+      postV1NotificationDevicesIdRevoke({
+        client: this.generatedClient,
+        path: { id: deviceId },
+      }),
     );
-    assertNotificationDeviceResource(value);
-    return value;
   }
   public async testNotificationDevice(
     deviceId: string,
     idempotencyKey: string,
   ): Promise<PushDeliveryResource> {
-    const value = await this.request<unknown>(
-      `/v1/notification-devices/${encodeURIComponent(deviceId)}/test`,
-      { method: 'POST', idempotencyKey },
+    return this.generatedRequest(
+      postV1NotificationDevicesIdTest({
+        client: this.generatedClient,
+        headers: { 'idempotency-key': idempotencyKey },
+        path: { id: deviceId },
+      }),
     );
-    assertPushDeliveryResource(value);
-    return value;
   }
   public async listPushDeliveries(): Promise<{
     schemaVersion: 1;
     deliveries: PushDeliveryResource[];
   }> {
-    const value = await this.request<unknown>('/v1/push-deliveries');
-    if (
-      !isRecord(value) ||
-      value.schemaVersion !== 1 ||
-      !Array.isArray(value.deliveries)
-    )
-      throw new Error('Vera returned an invalid push-delivery list.');
-    const deliveries = value.deliveries.map((delivery: unknown) => {
-      assertPushDeliveryResource(delivery);
-      return delivery;
-    });
-    return { schemaVersion: 1, deliveries };
+    return this.generatedRequest(
+      getV1PushDeliveries({ client: this.generatedClient }),
+    );
   }
 
   public async *streamNotifications(
@@ -525,62 +490,86 @@ export class OwnerDataClient extends VeraHttpTransport {
           .map((line) => line.slice(5).trimStart())
           .join('\n');
         if (data.length === 0) continue;
-        const notification: unknown = JSON.parse(data);
-        assertNotificationResource(notification);
+        const parsed: unknown = JSON.parse(data) as unknown;
+        const page = await zGetV1NotificationsResponse.parseAsync({
+          schemaVersion: 1,
+          notifications: [parsed],
+        });
+        const notification = page.notifications[0] as
+          | NotificationResource
+          | undefined;
+        if (notification === undefined)
+          throw new Error('Vera returned an empty notification event.');
         yield { cursor, notification };
       }
     }
   }
 
-  public registerProject(input: {
+  public async registerProject(input: {
     displayName: string;
     rootPath: string;
     idempotencyKey: string;
   }): Promise<ProjectResource> {
-    return this.request('/v1/projects', {
-      method: 'POST',
-      idempotencyKey: input.idempotencyKey,
-      body: {
-        displayName: input.displayName,
-        source: { kind: 'local_git', rootPath: input.rootPath },
-      },
-    });
+    return this.generatedData(
+      await postV1Projects({
+        client: this.generatedClient,
+        headers: { 'idempotency-key': input.idempotencyKey },
+        body: {
+          displayName: input.displayName,
+          source: { kind: 'local_git', rootPath: input.rootPath },
+        },
+      }),
+    );
   }
 
-  public listProjects(): Promise<{
+  public async listProjects(): Promise<{
     schemaVersion: 1;
     projects: ProjectResource[];
   }> {
-    return this.request('/v1/projects');
+    return this.generatedData(
+      await getV1Projects({ client: this.generatedClient }),
+    );
   }
 
-  public getProject(projectId: string): Promise<ProjectResource> {
-    return this.request(`/v1/projects/${encodeURIComponent(projectId)}`);
+  public async getProject(projectId: string): Promise<ProjectResource> {
+    return this.generatedData(
+      await getV1ProjectsId({
+        client: this.generatedClient,
+        path: { id: projectId },
+      }),
+    );
   }
 
   public createConversation(input: {
     title?: string;
     idempotencyKey: string;
   }): Promise<ConversationResource> {
-    return this.request('/v1/conversations', {
-      method: 'POST',
-      idempotencyKey: input.idempotencyKey,
-      body: input.title === undefined ? {} : { title: input.title },
-    });
+    return this.generatedRequest(
+      postV1Conversations({
+        client: this.generatedClient,
+        headers: { 'idempotency-key': input.idempotencyKey },
+        body: input.title === undefined ? {} : { title: input.title },
+      }),
+    );
   }
 
   public listConversations(): Promise<{
     schemaVersion: 1;
     conversations: ConversationSummaryResource[];
   }> {
-    return this.request('/v1/conversations');
+    return this.generatedRequest(
+      getV1Conversations({ client: this.generatedClient }),
+    );
   }
 
   public getConversation(
     conversationId: string,
   ): Promise<ConversationResource> {
-    return this.request(
-      `/v1/conversations/${encodeURIComponent(conversationId)}`,
+    return this.generatedRequest(
+      getV1ConversationsId({
+        client: this.generatedClient,
+        path: { id: conversationId },
+      }),
     );
   }
 
@@ -591,11 +580,11 @@ export class OwnerDataClient extends VeraHttpTransport {
     attachmentIds?: string[];
     idempotencyKey: string;
   }): Promise<TaskResource> {
-    return this.taskRequest(
-      `/v1/conversations/${encodeURIComponent(input.conversationId)}/messages`,
-      {
-        method: 'POST',
-        idempotencyKey: input.idempotencyKey,
+    return this.generatedRequest(
+      postV1ConversationsIdMessages({
+        client: this.generatedClient,
+        headers: { 'idempotency-key': input.idempotencyKey },
+        path: { id: input.conversationId },
         body: {
           content: input.content,
           ...(input.projectId === undefined
@@ -606,7 +595,7 @@ export class OwnerDataClient extends VeraHttpTransport {
             ? {}
             : { attachmentIds: input.attachmentIds }),
         },
-      },
+      }),
     );
   }
 
@@ -616,57 +605,83 @@ export class OwnerDataClient extends VeraHttpTransport {
     attachmentIds?: string[];
     idempotencyKey: string;
   }): Promise<TaskResource> {
-    return this.taskRequest('/v1/tasks', {
-      method: 'POST',
-      idempotencyKey: input.idempotencyKey,
-      body: {
-        message: input.message,
-        ...(input.projectId === undefined
-          ? {}
-          : { projectId: input.projectId }),
-        ...(input.attachmentIds === undefined ||
-        input.attachmentIds.length === 0
-          ? {}
-          : { attachmentIds: input.attachmentIds }),
-      },
-    });
+    return this.generatedRequest(
+      postV1Tasks({
+        client: this.generatedClient,
+        headers: { 'idempotency-key': input.idempotencyKey },
+        body: {
+          message: input.message,
+          ...(input.projectId === undefined
+            ? {}
+            : { projectId: input.projectId }),
+          ...(input.attachmentIds === undefined ||
+          input.attachmentIds.length === 0
+            ? {}
+            : { attachmentIds: input.attachmentIds }),
+        },
+      }),
+    );
   }
 
   public getTask(taskId: string): Promise<TaskResource> {
-    return this.taskRequest(`/v1/tasks/${encodeURIComponent(taskId)}`);
+    return this.generatedRequest(
+      getV1TasksId({
+        client: this.generatedClient,
+        path: { id: taskId },
+      }),
+    );
   }
 
   public getRun(runId: string): Promise<TaskResource> {
-    return this.taskRequest(`/v1/runs/${encodeURIComponent(runId)}`);
+    return this.generatedRequest(
+      getV1RunsId({
+        client: this.generatedClient,
+        path: { id: runId },
+      }),
+    );
   }
 
   public getRunEvents(runId: string): Promise<RunEventsResource> {
-    return this.request(`/v1/runs/${encodeURIComponent(runId)}/events`);
+    return this.generatedRequest(
+      getV1RunsIdEvents({
+        client: this.generatedClient,
+        path: { id: runId },
+      }),
+    );
   }
 
   public decideApproval(
     approvalId: string,
     decision: 'approved' | 'rejected',
   ): Promise<TaskResource> {
-    return this.taskRequest(
-      `/v1/approvals/${encodeURIComponent(approvalId)}/decision`,
-      { method: 'POST', body: { decision } },
+    return this.generatedRequest(
+      postV1ApprovalsIdDecision({
+        client: this.generatedClient,
+        path: { id: approvalId },
+        body: { decision },
+      }),
     );
   }
 
   public cancelRun(runId: string): Promise<TaskResource> {
-    return this.taskRequest(
-      `/v1/runs/${encodeURIComponent(runId)}/cancellation`,
-      { method: 'POST' },
+    return this.generatedRequest(
+      postV1RunsIdCancellation({
+        client: this.generatedClient,
+        path: { id: runId },
+      }),
     );
   }
 
-  public getArtifact(
+  public async getArtifact(
     artifactId: string,
     options?: { signal?: AbortSignal },
   ): Promise<ArtifactResource> {
-    return this.request(`/v1/artifacts/${encodeURIComponent(artifactId)}`, {
-      ...(options?.signal === undefined ? {} : { signal: options.signal }),
-    });
+    return this.generatedRequest(
+      getV1ArtifactsId({
+        client: this.generatedClient,
+        path: { id: artifactId },
+        ...(options?.signal === undefined ? {} : { signal: options.signal }),
+      }),
+    );
   }
 }

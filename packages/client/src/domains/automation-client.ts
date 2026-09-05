@@ -1,49 +1,55 @@
 import type {
-  RunStatus,
   TaskResource,
+  RoutineResource,
+  RoutineRunResource,
+} from '../generated/types.gen.ts';
+import type {
+  RunStatus,
   DevelopmentCampaignStatus,
   MissionStatus,
   RoutineScheduleResource,
-  RoutineResource,
-  RoutineRunResource,
   WaitForRoutineRunOptions,
   WaitForRunOptions,
   WaitForDevelopmentCampaignOptions,
   WaitForMissionOptions,
-} from '../contracts/index.ts';
+} from '../sdk-types.ts';
 import {
-  isRecord,
-  assertMissionListResource,
-  assertMissionPolicyListResource,
-  assertRoutineResource,
-  assertRoutineRunResource,
-} from '../validation/index.ts';
+  getV1MissionPolicies,
+  getV1Missions,
+  getV1MissionsId,
+  getV1RoutineRunsId,
+  getV1Routines,
+  getV1RoutinesIdRuns,
+  getV1RunsId,
+  postV1Missions,
+  postV1MissionsIdCancellation,
+  postV1MissionsIdDecision,
+  postV1Routines,
+  postV1RoutinesIdDecision,
+  postV1RoutinesIdPause,
+  postV1RoutinesIdResume,
+  postV1RoutinesIdRuns,
+} from '../generated/sdk.gen.ts';
 import { SoftwareDeliveryClient } from './software-delivery-client.ts';
 import { delay } from '../http/transport.ts';
 
 export class AutomationClient extends SoftwareDeliveryClient {
   public async listMissionPolicies() {
-    const value: unknown = await this.request('/v1/mission-policies');
-    assertMissionPolicyListResource(value);
-    return value;
+    return this.generatedRequest(
+      getV1MissionPolicies({ client: this.generatedClient }),
+    );
   }
 
   public async listMissions() {
-    const value: unknown = await this.request('/v1/missions');
-    assertMissionListResource(value);
-    return value;
+    return this.generatedRequest(
+      getV1Missions({ client: this.generatedClient }),
+    );
   }
 
   public async listRoutines() {
-    const value: unknown = await this.request('/v1/routines');
-    if (
-      !isRecord(value) ||
-      value.schemaVersion !== 1 ||
-      !Array.isArray(value.routines)
-    )
-      throw new Error('Vera returned an invalid routine list.');
-    for (const routine of value.routines) assertRoutineResource(routine);
-    return value as { schemaVersion: 1; routines: RoutineResource[] };
+    return this.generatedRequest(
+      getV1Routines({ client: this.generatedClient }),
+    );
   }
 
   public async createRoutine(input: {
@@ -52,38 +58,47 @@ export class AutomationClient extends SoftwareDeliveryClient {
     action: RoutineResource['approval']['effect']['action'];
     idempotencyKey: string;
   }) {
-    return this.routineRequest('/v1/routines', {
-      method: 'POST',
-      idempotencyKey: input.idempotencyKey,
-      body: {
-        title: input.title,
-        schedule: input.schedule,
-        action: input.action,
-      },
-    });
+    return this.generatedRequest(
+      postV1Routines({
+        client: this.generatedClient,
+        headers: { 'idempotency-key': input.idempotencyKey },
+        body: {
+          title: input.title,
+          schedule: input.schedule,
+          action: input.action,
+        },
+      }),
+    );
   }
 
   public decideRoutine(input: {
     routineId: string;
     decision: 'approved' | 'rejected';
   }) {
-    return this.routineRequest(
-      `/v1/routines/${encodeURIComponent(input.routineId)}/decision`,
-      { method: 'POST', body: { decision: input.decision } },
+    return this.generatedRequest(
+      postV1RoutinesIdDecision({
+        client: this.generatedClient,
+        path: { id: input.routineId },
+        body: { decision: input.decision },
+      }),
     );
   }
 
   public pauseRoutine(routineId: string) {
-    return this.routineRequest(
-      `/v1/routines/${encodeURIComponent(routineId)}/pause`,
-      { method: 'POST' },
+    return this.generatedRequest(
+      postV1RoutinesIdPause({
+        client: this.generatedClient,
+        path: { id: routineId },
+      }),
     );
   }
 
   public resumeRoutine(routineId: string) {
-    return this.routineRequest(
-      `/v1/routines/${encodeURIComponent(routineId)}/resume`,
-      { method: 'POST' },
+    return this.generatedRequest(
+      postV1RoutinesIdResume({
+        client: this.generatedClient,
+        path: { id: routineId },
+      }),
     );
   }
 
@@ -91,38 +106,35 @@ export class AutomationClient extends SoftwareDeliveryClient {
     routineId: string;
     idempotencyKey: string;
   }) {
-    const value: unknown = await this.request(
-      `/v1/routines/${encodeURIComponent(input.routineId)}/runs`,
-      { method: 'POST', idempotencyKey: input.idempotencyKey },
+    return this.generatedRequest(
+      postV1RoutinesIdRuns({
+        client: this.generatedClient,
+        headers: { 'idempotency-key': input.idempotencyKey },
+        path: { id: input.routineId },
+      }),
     );
-    assertRoutineRunResource(value);
-    return value;
   }
 
   public async listRoutineRuns(routineId: string) {
-    const value: unknown = await this.request(
-      `/v1/routines/${encodeURIComponent(routineId)}/runs`,
+    return this.generatedRequest(
+      getV1RoutinesIdRuns({
+        client: this.generatedClient,
+        path: { id: routineId },
+      }),
     );
-    if (
-      !isRecord(value) ||
-      value.schemaVersion !== 1 ||
-      !Array.isArray(value.runs)
-    )
-      throw new Error('Vera returned an invalid routine-run list.');
-    for (const run of value.runs) assertRoutineRunResource(run);
-    return value as { schemaVersion: 1; runs: RoutineRunResource[] };
   }
 
   public async getRoutineRun(
     runId: string,
     options?: { signal?: AbortSignal },
   ) {
-    const value: unknown = await this.request(
-      `/v1/routine-runs/${encodeURIComponent(runId)}`,
-      options?.signal === undefined ? undefined : { signal: options.signal },
+    return this.generatedRequest(
+      getV1RoutineRunsId({
+        client: this.generatedClient,
+        path: { id: runId },
+        ...(options?.signal === undefined ? {} : { signal: options.signal }),
+      }),
     );
-    assertRoutineRunResource(value);
-    return value;
   }
 
   public async waitForRoutineRun(
@@ -183,38 +195,50 @@ export class AutomationClient extends SoftwareDeliveryClient {
     delivery: { commitMessage: string; pullRequestTitle: string };
     idempotencyKey: string;
   }) {
-    return this.missionRequest('/v1/missions', {
-      method: 'POST',
-      idempotencyKey: input.idempotencyKey,
-      body: {
-        action: 'create',
-        projectId: input.projectId,
-        policyId: input.policyId,
-        objective: input.objective,
-        completionCriteria: input.completionCriteria,
-        delivery: input.delivery,
-      },
-    });
+    return this.generatedRequest(
+      postV1Missions({
+        client: this.generatedClient,
+        headers: { 'idempotency-key': input.idempotencyKey },
+        body: {
+          action: 'create',
+          projectId: input.projectId,
+          policyId: input.policyId,
+          objective: input.objective,
+          completionCriteria: input.completionCriteria,
+          delivery: input.delivery,
+        },
+      }),
+    );
   }
 
   public getMission(missionId: string) {
-    return this.missionRequest(`/v1/missions/${encodeURIComponent(missionId)}`);
+    return this.generatedRequest(
+      getV1MissionsId({
+        client: this.generatedClient,
+        path: { id: missionId },
+      }),
+    );
   }
 
   public decideMission(input: {
     missionId: string;
     decision: 'approved' | 'rejected';
   }) {
-    return this.missionRequest(
-      `/v1/missions/${encodeURIComponent(input.missionId)}/decision`,
-      { method: 'POST', body: { decision: input.decision } },
+    return this.generatedRequest(
+      postV1MissionsIdDecision({
+        client: this.generatedClient,
+        path: { id: input.missionId },
+        body: { decision: input.decision },
+      }),
     );
   }
 
   public cancelMission(missionId: string) {
-    return this.missionRequest(
-      `/v1/missions/${encodeURIComponent(missionId)}/cancellation`,
-      { method: 'POST' },
+    return this.generatedRequest(
+      postV1MissionsIdCancellation({
+        client: this.generatedClient,
+        path: { id: missionId },
+      }),
     );
   }
 
@@ -329,9 +353,13 @@ export class AutomationClient extends SoftwareDeliveryClient {
           : AbortSignal.any([options.signal, timeoutSignal]);
       let task: TaskResource;
       try {
-        task = await this.taskRequest(`/v1/runs/${encodeURIComponent(runId)}`, {
-          signal,
-        });
+        task = await this.generatedRequest(
+          getV1RunsId({
+            client: this.generatedClient,
+            path: { id: runId },
+            signal,
+          }),
+        );
       } catch (error) {
         if (options?.signal?.aborted === true) throw error;
         if (timeoutSignal.aborted) {

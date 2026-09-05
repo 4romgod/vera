@@ -525,6 +525,21 @@ export type KnowledgeSearchRequest = z.infer<
   typeof KnowledgeSearchRequestSchema
 >;
 
+export const ErrorResponseSchema = z
+  .object({
+    error: z
+      .object({
+        code: z.string().min(1),
+        message: z.string().min(1),
+      })
+      .strict(),
+  })
+  .strict();
+
+export const ErrorResponseJsonSchema = z.toJSONSchema(ErrorResponseSchema, {
+  target: 'draft-7',
+});
+
 export const EvaluateRequestJsonSchema = z.toJSONSchema(EvaluateRequestSchema, {
   target: 'draft-7',
 });
