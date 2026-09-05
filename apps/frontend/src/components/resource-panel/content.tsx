@@ -235,6 +235,7 @@ export function PanelContent(props: ResourcePanelProps) {
             briefing={props.attention}
             focusedItemId={props.focusedAttentionItemId}
             onDecision={props.onAttentionDecision}
+            onHandle={props.onHandleAttention}
             onOpen={props.onOpenAttention}
           />
         ) : null}

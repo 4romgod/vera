@@ -16,6 +16,7 @@ import type {
 import {
   getV1MissionPolicies,
   getV1ExternalSignals,
+  getV1ExternalSignalsId,
   getV1Missions,
   getV1MissionsId,
   getV1RoutineRunsId,
@@ -31,6 +32,7 @@ import {
   postV1RoutinesIdPause,
   postV1RoutinesIdResume,
   postV1RoutinesIdRuns,
+  postV1ExternalSignalsIdTriage,
 } from '../generated/sdk.gen.ts';
 import { SoftwareDeliveryClient } from './software-delivery-client.ts';
 import { delay } from '../http/transport.ts';
@@ -57,6 +59,31 @@ export class AutomationClient extends SoftwareDeliveryClient {
   public async listExternalSignals() {
     return this.generatedRequest(
       getV1ExternalSignals({ client: this.generatedClient }),
+    );
+  }
+
+  public async getExternalSignal(signalId: string) {
+    return this.generatedRequest(
+      getV1ExternalSignalsId({
+        client: this.generatedClient,
+        path: { id: signalId },
+      }),
+    );
+  }
+
+  public async handleExternalSignal(input: {
+    signalId: string;
+    objective?: string;
+    idempotencyKey: string;
+  }): Promise<TaskResource> {
+    return this.generatedRequest(
+      postV1ExternalSignalsIdTriage({
+        client: this.generatedClient,
+        path: { id: input.signalId },
+        headers: { 'idempotency-key': input.idempotencyKey },
+        body:
+          input.objective === undefined ? {} : { objective: input.objective },
+      }),
     );
   }
 

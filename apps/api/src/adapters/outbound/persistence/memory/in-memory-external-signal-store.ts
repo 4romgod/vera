@@ -6,6 +6,13 @@ import type { ExternalSignalStore } from '../../../../ports/persistence/external
 export class InMemoryExternalSignalStore implements ExternalSignalStore {
   private readonly signals = new Map<string, ExternalSignal>();
 
+  public findById(principalId: string, signalId: string) {
+    const signal = this.signals.get(signalId);
+    return Promise.resolve(
+      signal?.principalId === principalId ? structuredClone(signal) : null,
+    );
+  }
+
   public upsert(signal: ExternalSignal) {
     const current = this.signals.get(signal.id);
     if (current === undefined) {

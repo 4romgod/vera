@@ -41,6 +41,7 @@ import {
   memoryMutationOrderKey,
   type MemoryListOptions,
 } from '../../../../ports/persistence/memory-store.ts';
+import { upgradeLegacyDocumentAnalysis } from './upgrade-legacy-document-analysis.ts';
 
 const PROJECTS = 'projects';
 const CONVERSATIONS = 'conversations';
@@ -1100,6 +1101,8 @@ export class MongoDbOwnerResourceStore implements OwnerResourceStore {
   }
 
   private parseArtifact(document: Document): Artifact {
-    return ArtifactSchema.parse(this.withoutId(document));
+    return ArtifactSchema.parse(
+      upgradeLegacyDocumentAnalysis(this.withoutId(document)),
+    );
   }
 }

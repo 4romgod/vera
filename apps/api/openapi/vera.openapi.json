@@ -594,6 +594,19 @@
           "attachments": {
             "$ref": "#/components/schemas/TaskResourceAttachments"
           },
+          "externalSignal": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string", "pattern": "^external_signal_.*" },
+              "version": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": ["id", "version"],
+            "additionalProperties": false
+          },
           "createdAt": { "$ref": "#/components/schemas/DateTime" },
           "updatedAt": { "$ref": "#/components/schemas/DateTime" },
           "decision": { "$ref": "#/components/schemas/TaskResourceDecision" },
@@ -1015,6 +1028,7 @@
                   "project_context_failure",
                   "conversation_context_failure",
                   "memory_context_failure",
+                  "external_signal_context_failure",
                   "adaptive_goal_failure",
                   "budget_exhausted",
                   "cancelled"
@@ -1323,6 +1337,41 @@
               "sha256",
               "limits",
               "exclusions"
+            ],
+            "additionalProperties": false
+          },
+          "externalSignalContextManifest": {
+            "type": "object",
+            "properties": {
+              "schemaVersion": { "type": "number", "enum": [1] },
+              "principalId": { "type": "string", "minLength": 1 },
+              "signalId": {
+                "type": "string",
+                "pattern": "^external_signal_.*"
+              },
+              "signalVersion": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "projectId": { "type": "string", "pattern": "^project_.*" },
+              "assembledAt": { "$ref": "#/components/schemas/DateTime" },
+              "characters": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+            },
+            "required": [
+              "schemaVersion",
+              "principalId",
+              "signalId",
+              "signalVersion",
+              "projectId",
+              "assembledAt",
+              "characters",
+              "sha256"
             ],
             "additionalProperties": false
           },
@@ -1702,7 +1751,8 @@
               "task": { "type": "string" },
               "run": { "type": "string" },
               "events": { "type": "string" },
-              "approval": { "type": "string" }
+              "approval": { "type": "string" },
+              "externalSignal": { "type": "string" }
             },
             "required": ["task", "run", "events"],
             "additionalProperties": false
@@ -3009,6 +3059,7 @@
                     "run_cancelled",
                     "conversation_context_assembled",
                     "memory_context_assembled",
+                    "external_signal_context_assembled",
                     "conversation_reply_pending",
                     "conversation_reply_projected",
                     "goal_planned",
@@ -3912,94 +3963,86 @@
             "maxItems": 100,
             "type": "array",
             "items": {
-              "type": "object",
-              "properties": {
-                "schemaVersion": { "type": "number", "enum": [1] },
-                "version": {
-                  "type": "integer",
-                  "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991
-                },
-                "id": { "type": "string", "pattern": "^external_signal_.*" },
-                "principalId": { "type": "string", "minLength": 1 },
-                "routineId": { "type": "string", "pattern": "^routine_.*" },
-                "integrationId": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 100
-                },
-                "connectionId": {
-                  "type": "string",
-                  "pattern": "^connection_.*"
-                },
-                "project": {
-                  "type": "object",
-                  "properties": {
-                    "id": { "type": "string", "pattern": "^project_.*" },
-                    "displayName": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 200
-                    }
-                  },
-                  "required": ["id", "displayName"],
-                  "additionalProperties": false
-                },
-                "repository": {
-                  "$ref": "#/components/schemas/ExternalSignalListResourceSignalsItemsRepository"
-                },
-                "externalKey": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 500
-                },
-                "category": {
-                  "type": "string",
-                  "enum": [
-                    "review_requested",
-                    "mentioned",
-                    "assigned",
-                    "failed_check"
-                  ]
-                },
-                "title": { "type": "string", "minLength": 1, "maxLength": 500 },
-                "summary": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 2000
-                },
-                "url": { "type": "string", "format": "uri" },
-                "occurredAt": { "$ref": "#/components/schemas/DateTime" },
-                "status": { "type": "string", "enum": ["active", "resolved"] },
-                "firstObservedAt": { "$ref": "#/components/schemas/DateTime" },
-                "lastObservedAt": { "$ref": "#/components/schemas/DateTime" },
-                "resolvedAt": { "$ref": "#/components/schemas/DateTime" }
-              },
-              "required": [
-                "schemaVersion",
-                "version",
-                "id",
-                "principalId",
-                "routineId",
-                "integrationId",
-                "connectionId",
-                "project",
-                "repository",
-                "externalKey",
-                "category",
-                "title",
-                "summary",
-                "url",
-                "occurredAt",
-                "status",
-                "firstObservedAt",
-                "lastObservedAt"
-              ],
-              "additionalProperties": false
+              "$ref": "#/components/schemas/ExternalSignalListResourceSignalsItems"
             }
           }
         },
         "required": ["schemaVersion", "signals"],
+        "additionalProperties": false
+      },
+      "GetV1ExternalSignalsIdResponse200": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": { "type": "number", "enum": [1] },
+          "version": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "id": { "type": "string", "pattern": "^external_signal_.*" },
+          "principalId": { "type": "string", "minLength": 1 },
+          "routineId": { "type": "string", "pattern": "^routine_.*" },
+          "integrationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "connectionId": { "type": "string", "pattern": "^connection_.*" },
+          "project": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string", "pattern": "^project_.*" },
+              "displayName": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              }
+            },
+            "required": ["id", "displayName"],
+            "additionalProperties": false
+          },
+          "repository": {
+            "$ref": "#/components/schemas/GetV1ExternalSignalsIdResponse200Repository"
+          },
+          "externalKey": { "type": "string", "minLength": 1, "maxLength": 500 },
+          "category": {
+            "type": "string",
+            "enum": [
+              "review_requested",
+              "mentioned",
+              "assigned",
+              "failed_check"
+            ]
+          },
+          "title": { "type": "string", "minLength": 1, "maxLength": 500 },
+          "summary": { "type": "string", "minLength": 1, "maxLength": 2000 },
+          "url": { "type": "string", "format": "uri" },
+          "occurredAt": { "$ref": "#/components/schemas/DateTime" },
+          "status": { "type": "string", "enum": ["active", "resolved"] },
+          "firstObservedAt": { "$ref": "#/components/schemas/DateTime" },
+          "lastObservedAt": { "$ref": "#/components/schemas/DateTime" },
+          "resolvedAt": { "$ref": "#/components/schemas/DateTime" }
+        },
+        "required": [
+          "schemaVersion",
+          "version",
+          "id",
+          "principalId",
+          "routineId",
+          "integrationId",
+          "connectionId",
+          "project",
+          "repository",
+          "externalKey",
+          "category",
+          "title",
+          "summary",
+          "url",
+          "occurredAt",
+          "status",
+          "firstObservedAt",
+          "lastObservedAt"
+        ],
         "additionalProperties": false
       },
       "PushNotificationStatus": {
@@ -5271,7 +5314,10 @@
             "pattern": "^external_signal_.*"
           },
           "routineId": { "type": "string", "pattern": "^routine_.*" },
-          "url": { "type": "string", "format": "uri" }
+          "url": { "type": "string", "format": "uri" },
+          "taskId": { "type": "string", "pattern": "^task_.*" },
+          "runId": { "type": "string", "pattern": "^run_.*" },
+          "conversationId": { "type": "string", "pattern": "^conversation_.*" }
         },
         "required": ["kind", "externalSignalId", "routineId", "url"],
         "additionalProperties": false
@@ -6678,7 +6724,82 @@
         "required": ["schemaVersion", "kind", "decisionSummary", "goal"],
         "additionalProperties": false
       },
-      "ExternalSignalListResourceSignalsItemsRepository": {
+      "ExternalSignalListResourceSignalsItems": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": { "type": "number", "enum": [1] },
+          "version": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "id": { "type": "string", "pattern": "^external_signal_.*" },
+          "principalId": { "type": "string", "minLength": 1 },
+          "routineId": { "type": "string", "pattern": "^routine_.*" },
+          "integrationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "connectionId": { "type": "string", "pattern": "^connection_.*" },
+          "project": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string", "pattern": "^project_.*" },
+              "displayName": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              }
+            },
+            "required": ["id", "displayName"],
+            "additionalProperties": false
+          },
+          "repository": {
+            "$ref": "#/components/schemas/GetV1ExternalSignalsIdResponse200Repository"
+          },
+          "externalKey": { "type": "string", "minLength": 1, "maxLength": 500 },
+          "category": {
+            "type": "string",
+            "enum": [
+              "review_requested",
+              "mentioned",
+              "assigned",
+              "failed_check"
+            ]
+          },
+          "title": { "type": "string", "minLength": 1, "maxLength": 500 },
+          "summary": { "type": "string", "minLength": 1, "maxLength": 2000 },
+          "url": { "type": "string", "format": "uri" },
+          "occurredAt": { "$ref": "#/components/schemas/DateTime" },
+          "status": { "type": "string", "enum": ["active", "resolved"] },
+          "firstObservedAt": { "$ref": "#/components/schemas/DateTime" },
+          "lastObservedAt": { "$ref": "#/components/schemas/DateTime" },
+          "resolvedAt": { "$ref": "#/components/schemas/DateTime" }
+        },
+        "required": [
+          "schemaVersion",
+          "version",
+          "id",
+          "principalId",
+          "routineId",
+          "integrationId",
+          "connectionId",
+          "project",
+          "repository",
+          "externalKey",
+          "category",
+          "title",
+          "summary",
+          "url",
+          "occurredAt",
+          "status",
+          "firstObservedAt",
+          "lastObservedAt"
+        ],
+        "additionalProperties": false
+      },
+      "GetV1ExternalSignalsIdResponse200Repository": {
         "type": "object",
         "properties": {
           "provider": { "type": "string", "enum": ["github"] },
@@ -9024,7 +9145,7 @@
             "additionalProperties": false
           },
           "repository": {
-            "$ref": "#/components/schemas/ExternalSignalListResourceSignalsItemsRepository"
+            "$ref": "#/components/schemas/GetV1ExternalSignalsIdResponse200Repository"
           }
         },
         "required": [
@@ -12839,7 +12960,7 @@
           "projectId": { "type": "string", "pattern": "^project_.*" },
           "sourceKind": { "type": "string", "enum": ["local_git"] },
           "repository": {
-            "$ref": "#/components/schemas/ExternalSignalListResourceSignalsItemsRepository"
+            "$ref": "#/components/schemas/GetV1ExternalSignalsIdResponse200Repository"
           },
           "revision": { "type": "string", "minLength": 1, "maxLength": 200 },
           "generatedAt": { "$ref": "#/components/schemas/DateTime" },
@@ -18979,6 +19100,130 @@
         "operationId": "getV1ExternalSignals",
         "tags": ["external-awareness"],
         "summary": "GET /v1/external-signals"
+      }
+    },
+    "/v1/external-signals/{id}": {
+      "get": {
+        "parameters": [
+          {
+            "schema": { "type": "string", "minLength": 1, "maxLength": 200 },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetV1ExternalSignalsIdResponse200"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request did not satisfy the declared path, query, header, or body schema.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist for the current owner.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred or an operation failed internally.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        },
+        "operationId": "getV1ExternalSignalsId",
+        "tags": ["external-awareness"],
+        "summary": "GET /v1/external-signals/{id}"
+      }
+    },
+    "/v1/external-signals/{id}/triage": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "objective": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": { "type": "string", "minLength": 1, "maxLength": 200 },
+            "in": "path",
+            "name": "id",
+            "required": true
+          },
+          {
+            "schema": { "type": "string", "minLength": 8, "maxLength": 200 },
+            "in": "header",
+            "name": "idempotency-key",
+            "required": true
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TaskResource" }
+              }
+            }
+          },
+          "400": {
+            "description": "The request did not satisfy the declared path, query, header, or body schema.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist for the current owner.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred or an operation failed internally.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        },
+        "operationId": "postV1ExternalSignalsIdTriage",
+        "tags": ["external-awareness"],
+        "summary": "POST /v1/external-signals/{id}/triage"
       }
     },
     "/v1/routines/{id}/external-signals": {

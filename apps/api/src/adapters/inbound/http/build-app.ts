@@ -73,6 +73,10 @@ import type { PushNotificationService } from '../../../application/notifications
 import type { ExternalAwarenessOperations } from '../../../ports/external-awareness/external-awareness-operations.ts';
 import { ExternalAwarenessError } from '../../../application/external-awareness/external-awareness-service.ts';
 import {
+  ExternalSignalTriageError,
+  type ExternalSignalTriageService,
+} from '../../../application/external-awareness/external-signal-triage-service.ts';
+import {
   RoutineError,
   type RoutineLifecycle,
 } from '../../../application/routines/routine-lifecycle.ts';
@@ -127,6 +131,7 @@ export type BuildAppOptions = {
   pushNotifications?: PushNotificationService;
   integrations?: IntegrationConnectionService;
   externalAwareness?: ExternalAwarenessOperations;
+  externalSignalTriage?: ExternalSignalTriageService;
   readinessChecks?: {
     name: string;
     check(): Promise<void>;
@@ -463,6 +468,9 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       principalId,
       externalAwareness: options.externalAwareness,
       ...(options.routines === undefined ? {} : { routines: options.routines }),
+      ...(options.externalSignalTriage === undefined
+        ? {}
+        : { triage: options.externalSignalTriage }),
     });
   }
   if (options.pushNotifications !== undefined) {
@@ -475,9 +483,16 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   if (options.close !== undefined) app.addHook('onClose', options.close);
 
   app.setErrorHandler((error, request, reply) => {
+    if (error instanceof ExternalSignalTriageError) {
+      void reply.status(409).send({
+        error: { code: error.code, message: error.message },
+      });
+      return;
+    }
     if (error instanceof ExternalAwarenessError) {
       const statusCode =
-        error.code === 'awareness_project_not_found'
+        error.code === 'awareness_project_not_found' ||
+        error.code === 'awareness_signal_not_found'
           ? 404
           : error.code === 'awareness_source_invalid'
             ? 502
@@ -507,7 +522,9 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
         error.code === 'approval_already_decided' ||
         error.code === 'idempotency_key_reused' ||
         error.code === 'concurrent_transition_failed' ||
-        error.code === 'conversation_message_mismatch'
+        error.code === 'conversation_message_mismatch' ||
+        error.code === 'external_signal_not_active' ||
+        error.code === 'external_signal_scope_mismatch'
           ? 409
           : 404;
       void reply.status(statusCode).send({

@@ -55,6 +55,7 @@ import {
   MemoryResourceSchema,
 } from '../../../domain/memories/memory.ts';
 import { MemoryContextManifestSchema } from '../../../domain/memories/memory-context.ts';
+import { ExternalSignalContextManifestSchema } from '../../../domain/external-awareness/external-signal-context.ts';
 import {
   AttachmentReferenceSchema,
   AttachmentResponseSchema,
@@ -140,6 +141,16 @@ export const CreateConversationMessageRequestSchema = z
 
 export type CreateConversationMessageRequest = z.infer<
   typeof CreateConversationMessageRequestSchema
+>;
+
+export const HandleExternalSignalRequestSchema = z
+  .object({
+    objective: z.string().trim().min(1).max(2_000).optional(),
+  })
+  .strict();
+
+export type HandleExternalSignalRequest = z.infer<
+  typeof HandleExternalSignalRequestSchema
 >;
 
 export const AttachmentUploadHeadersSchema = z.looseObject({
@@ -276,6 +287,13 @@ export const TaskLifecycleResponseSchema = z
     conversationId: z.string().startsWith('conversation_').optional(),
     messageId: z.string().startsWith('message_').optional(),
     attachments: z.array(AttachmentReferenceSchema).max(5).optional(),
+    externalSignal: z
+      .object({
+        id: z.string().startsWith('external_signal_'),
+        version: z.number().int().positive(),
+      })
+      .strict()
+      .optional(),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
     decision: DecisionResultSchema.optional(),
@@ -288,6 +306,8 @@ export const TaskLifecycleResponseSchema = z
     budget: RunBudgetSchema.optional(),
     conversationContextManifest: ConversationContextManifestSchema.optional(),
     memoryContextManifest: MemoryContextManifestSchema.optional(),
+    externalSignalContextManifest:
+      ExternalSignalContextManifestSchema.optional(),
     conversationReply: z
       .object({
         status: z.enum(['pending', 'projected']),
@@ -306,6 +326,7 @@ export const TaskLifecycleResponseSchema = z
         run: z.string(),
         events: z.string(),
         approval: z.string().optional(),
+        externalSignal: z.string().optional(),
       })
       .strict(),
   })
@@ -690,6 +711,11 @@ export const SoftwareChangePublicationListResponseJsonSchema = z.toJSONSchema(
 
 export const TaskLifecycleResponseJsonSchema = z.toJSONSchema(
   TaskLifecycleResponseSchema,
+  { target: 'draft-7' },
+);
+
+export const HandleExternalSignalRequestJsonSchema = z.toJSONSchema(
+  HandleExternalSignalRequestSchema,
   { target: 'draft-7' },
 );
 

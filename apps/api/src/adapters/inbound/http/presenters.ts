@@ -25,6 +25,9 @@ export function taskResponse(aggregate: TaskAggregate) {
     ...(aggregate.task.attachments === undefined
       ? {}
       : { attachments: aggregate.task.attachments }),
+    ...(aggregate.task.externalSignal === undefined
+      ? {}
+      : { externalSignal: aggregate.task.externalSignal }),
     createdAt: aggregate.task.createdAt,
     updatedAt: aggregate.task.updatedAt,
     ...(aggregate.run.decision === undefined
@@ -60,6 +63,12 @@ export function taskResponse(aggregate: TaskAggregate) {
     ...(aggregate.run.memoryContext === undefined
       ? {}
       : { memoryContextManifest: aggregate.run.memoryContext.manifest }),
+    ...(aggregate.run.externalSignalContext === undefined
+      ? {}
+      : {
+          externalSignalContextManifest:
+            aggregate.run.externalSignalContext.manifest,
+        }),
     ...(aggregate.run.conversationReply === undefined
       ? {}
       : {
@@ -83,6 +92,11 @@ export function taskResponse(aggregate: TaskAggregate) {
         ? {}
         : {
             approval: `/v1/approvals/${aggregate.run.approval.id}/decision`,
+          }),
+      ...(aggregate.task.externalSignal === undefined
+        ? {}
+        : {
+            externalSignal: `/v1/external-signals/${aggregate.task.externalSignal.id}`,
           }),
     },
   };

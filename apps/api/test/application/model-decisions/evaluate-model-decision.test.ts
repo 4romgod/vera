@@ -3,6 +3,8 @@ import { describe, it } from 'node:test';
 
 import { createEvaluateModelDecision } from '../../../src/application/model-decisions/evaluate-model-decision.ts';
 import { FakeModelProvider } from '../../support/fake-model-provider.ts';
+import { assembleExternalSignalContext } from '../../../src/application/external-awareness/external-signal-context.ts';
+import { ExternalSignalSchema } from '../../../src/domain/external-awareness/external-signal.ts';
 
 const currentTime = '2026-08-26T08:00:00.000Z';
 const temporalContext = { currentTime, ownerTimeZone: 'Africa/Johannesburg' };
@@ -499,6 +501,60 @@ void describe('model decision boundary', () => {
       },
     ]);
     assert.equal('memoryContext' in thirdPartyInput, false);
+  });
+
+  void it('discloses only minimized untrusted signal evidence to the model', async () => {
+    const provider = new FakeModelProvider({
+      schemaVersion: 1,
+      kind: 'respond',
+      decisionSummary: 'Explain the signal.',
+      message: 'The configured check failed.',
+    });
+    const context = assembleExternalSignalContext({
+      signal: ExternalSignalSchema.parse({
+        schemaVersion: 1,
+        version: 4,
+        id: 'external_signal_model_test',
+        principalId: 'owner_v1',
+        routineId: 'routine_model_test',
+        integrationId: 'github',
+        connectionId: 'connection_model_test',
+        project: { id: 'project_vera', displayName: 'Vera' },
+        repository: { provider: 'github', owner: '4romgod', name: 'vera' },
+        externalKey: 'pull:42:failed-checks',
+        category: 'failed_check',
+        title: 'Checks failed on #42',
+        summary: 'quality-gate failed.',
+        url: 'https://github.com/4romgod/vera/pull/42',
+        occurredAt: currentTime,
+        status: 'active',
+        firstObservedAt: currentTime,
+        lastObservedAt: currentTime,
+      }),
+      assembledAt: currentTime,
+    });
+
+    await createEvaluateModelDecision(provider)('Handle this.', {
+      selectedProject: { id: 'project_vera', displayName: 'Vera' },
+      externalSignalContext: context,
+    });
+
+    const input = JSON.parse(provider.inputs[0]?.message ?? '{}') as {
+      externalSignal?: Record<string, unknown>;
+    };
+    assert.deepEqual(input.externalSignal, {
+      category: 'failed_check',
+      title: 'Checks failed on #42',
+      summary: 'quality-gate failed.',
+      url: 'https://github.com/4romgod/vera/pull/42',
+      occurredAt: currentTime,
+      repository: { provider: 'github', owner: '4romgod', name: 'vera' },
+    });
+    assert.doesNotMatch(provider.inputs[0]?.message ?? '', /connection_model/u);
+    assert.match(
+      provider.inputs[0]?.systemPrompt ?? '',
+      /untrusted third-party/u,
+    );
   });
 
   void it('turns a direct-response proposal into a response decision', async () => {

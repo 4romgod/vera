@@ -10,6 +10,7 @@ import type {
   ExecutionStore,
 } from '../../../../ports/persistence/execution-store.ts';
 import { mongoDocumentSchema } from './mongo-json-schema.ts';
+import { upgradeLegacyDocumentAnalysis } from './upgrade-legacy-document-analysis.ts';
 
 const COLLECTION_NAME = 'task_execution_aggregates';
 
@@ -205,7 +206,7 @@ export class MongoDbExecutionStore implements ExecutionStore {
   private parse(document: Document): TaskAggregate {
     const { _id: ignored, ...aggregate } = document;
     void ignored;
-    return TaskAggregateSchema.parse(aggregate);
+    return TaskAggregateSchema.parse(upgradeLegacyDocumentAnalysis(aggregate));
   }
 
   private ensureConnected(): Promise<void> {

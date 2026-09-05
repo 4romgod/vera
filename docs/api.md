@@ -47,6 +47,8 @@ must not be exposed to an untrusted or shared network.
 | `POST /v1/routines/{routineId}/runs` | Idempotently queue one manual run of an active routine | `202` |
 | `GET /v1/routine-runs/{runId}` | Retrieve one durable routine occurrence for completion polling | `200` |
 | `GET /v1/external-signals` | List current active provider-neutral external signals | `200` |
+| `GET /v1/external-signals/{signalId}` | Retrieve one durable external signal generation | `200` |
+| `POST /v1/external-signals/{signalId}/triage` | Idempotently create a project-scoped conversation and task from one active signal | `202` |
 | `GET /v1/routines/{routineId}/external-signals` | List current and resolved signals observed by one routine | `200` |
 | `POST /v1/audio/transcriptions` | Transcribe one completed bounded audio recording without persisting it | `200` |
 | `POST /v1/attachments` | Validate, extract, and durably store one owner-scoped document | `200` or `201` |
@@ -149,6 +151,11 @@ stable external signals; incomplete polls never resolve absent signals. Active
 signals feed `/v1/attention`, notification Activity, and device push. They do
 not authorize any external mutation. See
 [ADR-0046](decisions/0046-project-external-signals-through-approved-standing-watches.md).
+Handling a signal requires an `Idempotency-Key` and accepts an optional bounded
+owner `objective`. Provider text is frozen as separate untrusted context; it is
+not copied into the owner message. The task response exposes the source signal
+identity and generation plus a link back to the signal. See
+[ADR-0047](decisions/0047-convert-external-signals-into-owner-directed-work.md).
 
 ## Speech transcription
 
@@ -1018,8 +1025,8 @@ Error envelopes use:
 | Status | Codes | Meaning |
 |---:|---|---|
 | `400` | `invalid_request` | Missing, malformed, too large, or unknown request input. |
-| `404` | `task_not_found`, `run_not_found`, `approval_not_found`, `project_not_found`, `conversation_not_found`, `conversation_message_not_found`, `artifact_not_found`, `attention_item_not_found`, `routine_not_found`, `routine_run_not_found`, `routine_machine_not_found`, `routine_service_not_found`, `change_application_not_found`, `software_change_publication_not_found`, `development_campaign_not_found`, `development_campaign_project_not_found`, `development_campaign_repair_not_found` | The addressed resource, routine target, repair approval, or current attention generation does not exist. |
-| `409` | `idempotency_key_reused`, `approval_already_decided`, `concurrent_transition_failed`, `conversation_message_mismatch`, `routine_idempotency_key_reused`, `routine_approval_already_decided`, `routine_invalid_transition`, `routine_concurrent_transition_failed`, `change_application_idempotency_key_reused`, `change_application_approval_already_decided`, `change_application_concurrent_transition_failed`, `change_application_not_cancellable`, `software_change_publication_idempotency_key_reused`, `software_change_publication_approval_already_decided`, `software_change_publication_concurrent_transition_failed`, `software_change_publication_not_cancellable`, `development_campaign_idempotency_key_reused`, `development_campaign_approval_already_decided`, `development_campaign_repair_not_available`, `development_campaign_repair_already_decided`, `development_campaign_repair_conflict`, `development_campaign_concurrent_transition_failed`, `development_campaign_not_cancellable`, `stale_source`, `application_conflict`, `publication_conflict`, `campaign_conflict`, `review_required` | The request conflicts with durable, filesystem, or remote state. |
+| `404` | `task_not_found`, `run_not_found`, `approval_not_found`, `project_not_found`, `conversation_not_found`, `conversation_message_not_found`, `external_signal_not_found`, `awareness_signal_not_found`, `artifact_not_found`, `attention_item_not_found`, `routine_not_found`, `routine_run_not_found`, `routine_machine_not_found`, `routine_service_not_found`, `change_application_not_found`, `software_change_publication_not_found`, `development_campaign_not_found`, `development_campaign_project_not_found`, `development_campaign_repair_not_found` | The addressed resource, routine target, repair approval, signal, or current attention generation does not exist. |
+| `409` | `idempotency_key_reused`, `approval_already_decided`, `concurrent_transition_failed`, `conversation_message_mismatch`, `external_signal_not_active`, `external_signal_scope_mismatch`, `routine_idempotency_key_reused`, `routine_approval_already_decided`, `routine_invalid_transition`, `routine_concurrent_transition_failed`, `change_application_idempotency_key_reused`, `change_application_approval_already_decided`, `change_application_concurrent_transition_failed`, `change_application_not_cancellable`, `software_change_publication_idempotency_key_reused`, `software_change_publication_approval_already_decided`, `software_change_publication_concurrent_transition_failed`, `software_change_publication_not_cancellable`, `development_campaign_idempotency_key_reused`, `development_campaign_approval_already_decided`, `development_campaign_repair_not_available`, `development_campaign_repair_already_decided`, `development_campaign_repair_conflict`, `development_campaign_concurrent_transition_failed`, `development_campaign_not_cancellable`, `stale_source`, `application_conflict`, `publication_conflict`, `campaign_conflict`, `review_required` | The request conflicts with durable, filesystem, or remote state. |
 | `422` | `invalid_attention_decision`, `invalid_project_source`, `software_change_artifact_required`, `software_change_publication_source_required` | An attention snooze is invalid, a project source is invalid, or the selected artifact/application cannot be used for the requested effect. |
 | `502` | `provider_request_rejected`, `provider_response_invalid` | Provider boundary failed while using the diagnostic endpoint. |
 | `503` | `model_not_found`, `provider_unavailable`, `publication_unavailable`, `operational_store_unavailable`, `scratchpad_unavailable`, `planning_capability_unavailable`, `software_change_capability_unavailable`, `development_campaign_capability_unavailable`, `capability_unavailable` | A required runtime dependency is unavailable. The response `dependency` identifies a generic capability runtime when applicable. |

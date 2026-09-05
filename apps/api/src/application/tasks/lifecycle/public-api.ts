@@ -32,6 +32,7 @@ export function createTaskLifecycleApi(
     update,
     prepareConversationContext,
     prepareMemoryContext,
+    prepareExternalSignalContext,
     assertMatchingTaskInput,
     finalizeConversationReply,
     evaluate,
@@ -59,6 +60,16 @@ export function createTaskLifecycleApi(
         ...(input.projectId === undefined
           ? {}
           : { projectId: input.projectId }),
+        assembledAt: now,
+      });
+      const externalSignalContext = await prepareExternalSignalContext({
+        principalId: input.principalId,
+        ...(input.projectId === undefined
+          ? {}
+          : { projectId: input.projectId }),
+        ...(input.externalSignalId === undefined
+          ? {}
+          : { externalSignalId: input.externalSignalId }),
         assembledAt: now,
       });
       const initialEvents: TaskAggregate['events'] = [
@@ -116,6 +127,21 @@ export function createTaskLifecycleApi(
           },
         });
       }
+      if (externalSignalContext !== undefined) {
+        initialEvents.push({
+          schemaVersion: 1,
+          id: createId('event'),
+          sequence: initialEvents.length + 1,
+          type: 'external_signal_context_assembled',
+          occurredAt: now,
+          data: {
+            signalId: externalSignalContext.manifest.signalId,
+            signalVersion: externalSignalContext.manifest.signalVersion,
+            projectId: externalSignalContext.manifest.projectId,
+            characters: externalSignalContext.manifest.characters,
+          },
+        });
+      }
       const aggregate: TaskAggregate = {
         schemaVersion: 1,
         version: 1,
@@ -138,6 +164,14 @@ export function createTaskLifecycleApi(
           ...(input.attachments === undefined || input.attachments.length === 0
             ? {}
             : { attachments: input.attachments }),
+          ...(externalSignalContext === undefined
+            ? {}
+            : {
+                externalSignal: {
+                  id: externalSignalContext.manifest.signalId,
+                  version: externalSignalContext.manifest.signalVersion,
+                },
+              }),
           message: input.message,
           status: 'active',
           createdAt: now,
@@ -151,6 +185,9 @@ export function createTaskLifecycleApi(
           budget: structuredClone(budget),
           ...(conversationContext === undefined ? {} : { conversationContext }),
           ...(memoryContext === undefined ? {} : { memoryContext }),
+          ...(externalSignalContext === undefined
+            ? {}
+            : { externalSignalContext }),
         },
         events: initialEvents,
       };
@@ -175,6 +212,15 @@ export function createTaskLifecycleApi(
         ) {
           throw new LifecycleError(
             `Idempotency key ${input.requestKey} is already associated with different memory context.`,
+            'idempotency_key_reused',
+          );
+        }
+        if (
+          JSON.stringify(creation.aggregate.run.externalSignalContext) !==
+          JSON.stringify(externalSignalContext)
+        ) {
+          throw new LifecycleError(
+            `Idempotency key ${input.requestKey} is already associated with different external signal context.`,
             'idempotency_key_reused',
           );
         }

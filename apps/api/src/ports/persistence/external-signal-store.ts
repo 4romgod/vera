@@ -2,6 +2,10 @@ import type { ExternalSignal } from '../../domain/external-awareness/external-si
 import type { NotificationResource } from '../../domain/notifications/notification.ts';
 
 export type ExternalSignalStore = {
+  findById(
+    principalId: string,
+    signalId: string,
+  ): Promise<ExternalSignal | null>;
   upsert(signal: ExternalSignal): Promise<{
     created: boolean;
     changed: boolean;

@@ -14,6 +14,7 @@ import type { OwnerResourceStore } from '../../../ports/persistence/owner-resour
 import type { Scratchpad } from '../../../ports/persistence/scratchpad.ts';
 import type { ProjectContextAssembler } from '../../../ports/projects/project-context-assembler.ts';
 import type { SoftwareDeliveryContext } from '../../../domain/software-delivery/software-delivery-management.ts';
+import type { ExternalSignalStore } from '../../../ports/persistence/external-signal-store.ts';
 
 export type LifecycleErrorCode =
   | 'task_not_found'
@@ -26,6 +27,9 @@ export type LifecycleErrorCode =
   | 'conversation_not_found'
   | 'conversation_message_not_found'
   | 'conversation_message_mismatch'
+  | 'external_signal_not_found'
+  | 'external_signal_not_active'
+  | 'external_signal_scope_mismatch'
   | 'concurrent_transition_failed';
 
 export class LifecycleError extends Error {
@@ -52,6 +56,7 @@ export type TaskLifecycle = {
     conversationId?: string;
     messageId?: string;
     attachments?: AttachmentReference[];
+    externalSignalId?: string;
   }): Promise<TaskAggregate>;
   getTask(principalId: string, taskId: string): Promise<TaskAggregate>;
   getRun(principalId: string, runId: string): Promise<TaskAggregate>;
@@ -84,6 +89,7 @@ export type TaskLifecycleOptions = {
     enabled: boolean;
     limits?: MemoryContextLimits;
   };
+  externalSignals?: ExternalSignalStore;
   softwareDeliveryContext?: {
     assemble(principalId: string): Promise<SoftwareDeliveryContext>;
   };

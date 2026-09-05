@@ -29,6 +29,9 @@ import { createTestCapabilityRuntime } from '../../support/test-capability-runti
 import { findCapability } from '../../../src/domain/capabilities/capability-registry.ts';
 import type { CapabilityRuntime } from '../../../src/ports/capabilities/capability-runtime.ts';
 import type { SoftwareDeliveryContext } from '../../../src/domain/software-delivery/software-delivery-management.ts';
+import { InMemoryExternalSignalStore } from '../../../src/adapters/outbound/persistence/memory/in-memory-external-signal-store.ts';
+import type { ExternalSignalStore } from '../../../src/ports/persistence/external-signal-store.ts';
+import { ExternalSignalSchema } from '../../../src/domain/external-awareness/external-signal.ts';
 
 const plan: DevelopmentPlan = {
   schemaVersion: 1,
@@ -507,6 +510,7 @@ function harness(options?: {
   softwareDeliveryContext?: {
     assemble(principalId: string): Promise<SoftwareDeliveryContext>;
   };
+  externalSignals?: ExternalSignalStore;
 }) {
   const store = new InMemoryExecutionStore();
   const resources = options?.resources ?? new InMemoryOwnerResourceStore();
@@ -572,6 +576,9 @@ function harness(options?: {
     ...(options?.softwareDeliveryContext === undefined
       ? {}
       : { softwareDeliveryContext: options.softwareDeliveryContext }),
+    ...(options?.externalSignals === undefined
+      ? {}
+      : { externalSignals: options.externalSignals }),
     observer: {
       warning: (error) => warnings.push(error),
     },
@@ -599,6 +606,52 @@ function harness(options?: {
 }
 
 void describe('task lifecycle', () => {
+  void it('fails closed before model evaluation when frozen signal evidence becomes stale', async () => {
+    const signals = new InMemoryExternalSignalStore();
+    const signal = ExternalSignalSchema.parse({
+      schemaVersion: 1,
+      version: 1,
+      id: 'external_signal_lifecycle_test',
+      principalId: 'owner_v1',
+      routineId: 'routine_lifecycle_test',
+      integrationId: 'github',
+      connectionId: 'connection_lifecycle_test',
+      project: { id: 'project_test', displayName: 'Vera' },
+      repository: { provider: 'github', owner: '4romgod', name: 'vera' },
+      externalKey: 'pull:42:failed-checks',
+      category: 'failed_check',
+      title: 'Checks failed on #42',
+      summary: 'quality-gate failed.',
+      url: 'https://github.com/4romgod/vera/pull/42',
+      occurredAt: '2026-08-24T18:00:00.000Z',
+      status: 'active',
+      firstObservedAt: '2026-08-24T18:00:00.000Z',
+      lastObservedAt: '2026-08-24T18:00:00.000Z',
+    });
+    await signals.upsert(signal);
+    const test = harness({ externalSignals: signals, executionMode: 'worker' });
+    const submitted = await test.lifecycle.submit({
+      principalId: 'owner_v1',
+      requestKey: 'signal-lifecycle-task',
+      message: 'Plan and fix this failed check.',
+      externalSignalId: signal.id,
+    });
+    assert.equal(submitted.task.externalSignal?.version, 1);
+    assert.equal(
+      submitted.run.externalSignalContext?.manifest.signalId,
+      signal.id,
+    );
+    await signals.upsert({ ...signal, summary: 'A new failure replaced it.' });
+
+    const failed = await test.lifecycle.progressTask(
+      'owner_v1',
+      submitted.task.id,
+    );
+
+    assert.equal(failed.run.status, 'failed');
+    assert.equal(failed.run.failure?.code, 'external_signal_context_failure');
+    assert.equal(test.evaluations(), 0);
+  });
   void it('automatically executes a non-consequential mission draft write but leaves the mission awaiting owner approval', async () => {
     const test = harness({
       decision: missionDecision(),

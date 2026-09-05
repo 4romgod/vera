@@ -23,7 +23,12 @@ quiet while healthy, and surface only unhealthy or failed checks in Today.
 The same governed routine lifecycle can watch one approved GitHub-backed
 project for review requests, mentions, assignments, and failed pull-request
 checks. Provider-neutral signals flow into Today, Activity, and push without
-granting GitHub write authority; acting on one remains separately approved.
+granting GitHub write authority. The owner can now turn an active signal into
+an idempotent project-scoped conversation through “Handle with Vera.” Vera
+freezes and integrity-checks the exact signal generation, sends only minimized
+untrusted evidence to the selected orchestration brain, and routes any proposed
+planning or change through the ordinary separately approved capability
+lifecycle.
 
 The orchestration brain is selected at startup through a provider registry.
 Ollama remains the default owner-controlled provider; OpenAI and Gemini are

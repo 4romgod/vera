@@ -16,6 +16,7 @@ import type { ExternalSignalStore } from '../../ports/persistence/external-signa
 import type { ProjectStore } from '../../ports/persistence/project-store.ts';
 
 export type ExternalAwarenessErrorCode =
+  | 'awareness_signal_not_found'
   | 'awareness_project_not_found'
   | 'awareness_source_unavailable'
   | 'awareness_source_invalid'
@@ -45,6 +46,16 @@ export function createExternalAwarenessService(options: {
     options.sources.find((source) => source.integrationId === integrationId);
 
   return {
+    async get(principalId, signalId) {
+      const signal = await options.signals.findById(principalId, signalId);
+      if (signal === null) {
+        throw new ExternalAwarenessError(
+          `External signal ${signalId} was not found.`,
+          'awareness_signal_not_found',
+        );
+      }
+      return signal;
+    },
     list: (principalId, limit = 100) =>
       options.signals.listActive(principalId, limit),
     listByRoutine: (principalId, routineId, limit = 100) =>

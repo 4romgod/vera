@@ -56,6 +56,9 @@ export type ConversationContextManifest = NonNullable<
 export type MemoryContextManifest = NonNullable<
   TaskResource['memoryContextManifest']
 >;
+export type ExternalSignalContextManifest = NonNullable<
+  TaskResource['externalSignalContextManifest']
+>;
 export type Approval = NonNullable<TaskResource['approval']>;
 export type ConversationMessageResource =
   ConversationResource['messages'][number];

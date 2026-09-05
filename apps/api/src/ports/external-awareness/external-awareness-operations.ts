@@ -11,6 +11,7 @@ export type IntegrationAwarenessAction = Extract<
 >;
 
 export type ExternalAwarenessOperations = {
+  get(principalId: string, signalId: string): Promise<ExternalSignal>;
   list(principalId: string, limit?: number): Promise<ExternalSignal[]>;
   listByRoutine(
     principalId: string,

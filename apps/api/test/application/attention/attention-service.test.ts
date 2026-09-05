@@ -11,6 +11,7 @@ import { createAttentionService } from '../../../src/application/attention/atten
 import { InMemoryExternalSignalStore } from '../../../src/adapters/outbound/persistence/memory/in-memory-external-signal-store.ts';
 import { ExternalSignalSchema } from '../../../src/domain/external-awareness/external-signal.ts';
 import { createNotificationService } from '../../../src/application/reminders/notification-service.ts';
+import { TaskAggregateSchema } from '../../../src/domain/tasks/task-aggregate.ts';
 
 void describe('attention service', () => {
   void it('projects active external signals into Today and the durable activity feed', async () => {
@@ -37,8 +38,35 @@ void describe('attention service', () => {
       lastObservedAt: '2026-09-05T10:01:00.000Z',
     });
     await signals.upsert(signal);
+    const executions = new InMemoryExecutionStore();
+    await executions.create(
+      TaskAggregateSchema.parse({
+        schemaVersion: 1,
+        version: 1,
+        task: {
+          id: 'task_signal_attention',
+          requestKey: 'signal-attention',
+          principalId: 'owner_v1',
+          conversationId: 'conversation_signal_attention',
+          messageId: 'message_signal_attention',
+          projectId: signal.project.id,
+          externalSignal: { id: signal.id, version: signal.version },
+          message: 'Handle this signal.',
+          status: 'completed',
+          createdAt: '2026-09-05T10:01:30.000Z',
+          updatedAt: '2026-09-05T10:01:40.000Z',
+        },
+        run: {
+          id: 'run_signal_attention',
+          status: 'succeeded',
+          createdAt: '2026-09-05T10:01:30.000Z',
+          updatedAt: '2026-09-05T10:01:40.000Z',
+        },
+        events: [],
+      }),
+    );
     const attention = createAttentionService({
-      executions: new InMemoryExecutionStore(),
+      executions,
       resources,
       missions: new InMemoryMissionStore(),
       campaigns: new InMemoryDevelopmentCampaignStore(),
@@ -47,13 +75,18 @@ void describe('attention service', () => {
       externalSignals: signals,
       clock: () => new Date('2026-09-05T10:02:00.000Z'),
     });
-    const item = (await attention.getBriefing('owner_v1')).items[0];
+    const item = (await attention.getBriefing('owner_v1')).items.find(
+      ({ target }) => target.kind === 'external_signal',
+    );
     assert.equal(item?.reason, 'external_check_failed');
     assert.deepEqual(item.target, {
       kind: 'external_signal',
       externalSignalId: signal.id,
       routineId: signal.routineId,
       url: signal.url,
+      taskId: 'task_signal_attention',
+      runId: 'run_signal_attention',
+      conversationId: 'conversation_signal_attention',
     });
     const activity = await createNotificationService({
       store: resources,

@@ -365,6 +365,7 @@ export function createDecisionRecording(
       | 'project_context_failure'
       | 'conversation_context_failure'
       | 'memory_context_failure'
+      | 'external_signal_context_failure'
       | 'adaptive_goal_failure'
       | 'budget_exhausted'
       | 'cancelled',

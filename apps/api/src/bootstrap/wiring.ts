@@ -108,6 +108,7 @@ import { MongoDbExternalSignalStore } from '../adapters/outbound/persistence/mon
 import type { ExternalSignalStore } from '../ports/persistence/external-signal-store.ts';
 import { GitHubAwarenessSource } from '../adapters/outbound/external-awareness/github/github-awareness-source.ts';
 import { createExternalAwarenessService } from '../application/external-awareness/external-awareness-service.ts';
+import { createExternalSignalTriageService } from '../application/external-awareness/external-signal-triage-service.ts';
 import { resolveLocalGitHubRepository } from '../adapters/outbound/github/github-cli.ts';
 
 export function createApp(
@@ -519,6 +520,7 @@ export function createApp(
     contextAssembler,
     conversationContextLimits: config.conversationContext,
     memoryContext: { enabled: provider.dataBoundary === 'owner_controlled' },
+    externalSignals: externalSignalStore,
     softwareDeliveryContext,
     ownerTimeZone: config.reminders.ownerTimeZone,
     executionMode: 'worker',
@@ -662,6 +664,11 @@ export function createApp(
       lifecycle.progressTask(principalId, taskId),
     recoverInterrupted: () => lifecycle.recoverInterrupted(),
   };
+  const externalSignalTriage = createExternalSignalTriageService({
+    awareness: externalAwareness,
+    conversations: conversationService,
+    tasks: dispatchedLifecycle,
+  });
 
   const app = buildApp({
     evaluateModelDecision,
@@ -672,6 +679,7 @@ export function createApp(
     projects: projectService,
     integrations: integrationConnectionService,
     externalAwareness,
+    externalSignalTriage,
     capabilities: capabilityService,
     personalTasks: personalTaskService,
     reminders: reminderService,

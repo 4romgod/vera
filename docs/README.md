@@ -260,6 +260,15 @@ requests are accepted in
 [ADR-0041](decisions/0041-repair-review-required-pull-requests-through-exact-approved-fast-forwards.md).
 Conversational listing, inspection, and safe repair preparation are accepted in
 [ADR-0042](decisions/0042-resolve-conversational-software-delivery-references-in-application-code.md).
+Runtime-derived OpenAPI, generated client contracts, curated external-service
+connections, approved standing GitHub watches, and owner-directed signal
+handling are accepted in
+[ADR-0043](decisions/0043-generate-openapi-from-runtime-http-contracts.md),
+[ADR-0044](decisions/0044-generate-the-typescript-sdk-with-hey-api-and-axios.md),
+[ADR-0045](decisions/0045-connect-curated-external-services-through-provider-neutral-capabilities.md),
+[ADR-0046](decisions/0046-project-external-signals-through-approved-standing-watches.md),
+and
+[ADR-0047](decisions/0047-convert-external-signals-into-owner-directed-work.md).
 
 ## Documentation and implementation cadence
 

@@ -61,6 +61,7 @@ export type ResourcePanelProps = {
     decision: 'dismiss' | 'snooze' | 'restore',
   ) => Promise<boolean>;
   onOpenAttention: (item: AttentionItem) => void;
+  onHandleAttention: (item: AttentionItem) => Promise<boolean>;
   onOpenNotification: (notification: NotificationResource) => void;
   onClose: () => void;
   onMemoryCommand: (command: string) => void;

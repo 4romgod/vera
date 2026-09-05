@@ -15,6 +15,7 @@ import {
 import type { CapabilityRuntimeRegistry } from '../../../ports/capabilities/capability-runtime.ts';
 import { projectTaskScratchpad } from '../project-task-scratchpad.ts';
 import { assembleMemoryContext } from '../../memories/assemble-memory-context.ts';
+import { assembleExternalSignalContext } from '../../external-awareness/external-signal-context.ts';
 import type { AttachmentReference } from '../../../domain/attachments/attachment.ts';
 import {
   appendEvent,
@@ -683,6 +684,50 @@ export function createTaskLifecycleFoundation(runtime: TaskLifecycleRuntime) {
     });
   }
 
+  async function prepareExternalSignalContext(input: {
+    principalId: string;
+    projectId?: string;
+    externalSignalId?: string;
+    assembledAt: string;
+  }) {
+    if (input.externalSignalId === undefined) return undefined;
+    if (options.externalSignals === undefined) {
+      throw new LifecycleError(
+        'External signal handling is not configured.',
+        'external_signal_not_found',
+      );
+    }
+    const signal = await options.externalSignals.findById(
+      input.principalId,
+      input.externalSignalId,
+    );
+    if (signal === null) {
+      throw new LifecycleError(
+        `External signal ${input.externalSignalId} was not found.`,
+        'external_signal_not_found',
+      );
+    }
+    if (signal.status !== 'active') {
+      throw new LifecycleError(
+        `External signal ${input.externalSignalId} is no longer active.`,
+        'external_signal_not_active',
+      );
+    }
+    if (
+      input.projectId === undefined ||
+      signal.project.id !== input.projectId
+    ) {
+      throw new LifecycleError(
+        'The external signal does not belong to the selected project.',
+        'external_signal_scope_mismatch',
+      );
+    }
+    return assembleExternalSignalContext({
+      signal,
+      assembledAt: input.assembledAt,
+    });
+  }
+
   function assertMatchingTaskInput(
     aggregate: TaskAggregate,
     input: Parameters<TaskLifecycle['submit']>[0],
@@ -694,6 +739,7 @@ export function createTaskLifecycleFoundation(runtime: TaskLifecycleRuntime) {
       aggregate.task.projectRevision !== input.projectRevision ||
       aggregate.task.conversationId !== input.conversationId ||
       aggregate.task.messageId !== input.messageId ||
+      aggregate.task.externalSignal?.id !== input.externalSignalId ||
       JSON.stringify(aggregate.task.attachments ?? []) !==
         JSON.stringify(input.attachments ?? [])
     ) {
@@ -796,6 +842,7 @@ export function createTaskLifecycleFoundation(runtime: TaskLifecycleRuntime) {
     update,
     prepareConversationContext,
     prepareMemoryContext,
+    prepareExternalSignalContext,
     assertMatchingTaskInput,
     projectConversationReply,
     finalizeConversationReply,

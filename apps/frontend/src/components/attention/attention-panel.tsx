@@ -6,6 +6,8 @@ import {
   ChevronRight,
   Clock3,
   RotateCcw,
+  Sparkles,
+  SquareArrowOutUpRight,
 } from 'lucide-react-native';
 import { Pressable, Text, View } from 'react-native';
 
@@ -21,6 +23,7 @@ export function AttentionPanel(props: {
     decision: 'dismiss' | 'snooze' | 'restore',
   ) => Promise<boolean>;
   onOpen: (item: AttentionItem) => void;
+  onHandle: (item: AttentionItem) => Promise<boolean>;
 }) {
   const [busyId, setBusyId] = useState<string>();
   const [showResolved, setShowResolved] = useState(false);
@@ -42,6 +45,16 @@ export function AttentionPanel(props: {
     setBusyId(item.id);
     try {
       await props.onDecision(item, decision);
+    } finally {
+      setBusyId(undefined);
+    }
+  }
+
+  async function handle(item: AttentionItem): Promise<void> {
+    if (busyId !== undefined) return;
+    setBusyId(item.id);
+    try {
+      await props.onHandle(item);
     } finally {
       setBusyId(undefined);
     }
@@ -141,6 +154,7 @@ export function AttentionPanel(props: {
             focused={item.id === props.focusedItemId}
             key={item.id}
             onDismiss={() => void decide(item, 'dismiss')}
+            onHandle={() => void handle(item)}
             onOpen={() => props.onOpen(item)}
             onSnooze={() => void decide(item, 'snooze')}
           />
@@ -221,6 +235,7 @@ function AttentionCard(props: {
   onOpen: () => void;
   onSnooze: () => void;
   onDismiss: () => void;
+  onHandle: () => void;
 }) {
   const priorityLabel =
     props.item.priority === 'urgent'
@@ -295,7 +310,32 @@ function AttentionCard(props: {
         </Text>
       </View>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
-        <ActionButton icon={ChevronRight} label="Open" onPress={props.onOpen} />
+        {props.item.target.kind === 'external_signal' ? (
+          <ActionButton
+            disabled={props.busy}
+            emphasized
+            icon={Sparkles}
+            label={
+              props.item.target.conversationId === undefined
+                ? 'Handle with Vera'
+                : 'Continue with Vera'
+            }
+            onPress={props.onHandle}
+          />
+        ) : null}
+        <ActionButton
+          icon={
+            props.item.target.kind === 'external_signal'
+              ? SquareArrowOutUpRight
+              : ChevronRight
+          }
+          label={
+            props.item.target.kind === 'external_signal'
+              ? 'View source'
+              : 'Open'
+          }
+          onPress={props.onOpen}
+        />
         <ActionButton
           disabled={props.busy}
           icon={Clock3}
@@ -317,6 +357,7 @@ function ActionButton(props: {
   icon: typeof Archive;
   label: string;
   disabled?: boolean;
+  emphasized?: boolean;
   onPress: () => void;
 }) {
   const Icon = props.icon;
@@ -328,21 +369,30 @@ function ActionButton(props: {
       disabled={props.disabled}
       onPress={props.onPress}
       style={({ pressed }) => ({
-        minHeight: 40,
+        minHeight: 44,
         flexDirection: 'row',
         alignItems: 'center',
         gap: 6,
         borderWidth: 1,
-        borderColor: palette.line,
+        borderColor: props.emphasized ? palette.accentLine : palette.line,
         borderRadius: radius.pill,
         paddingHorizontal: spacing.md,
         opacity: props.disabled ? 0.4 : pressed ? 0.7 : 1,
-        backgroundColor: palette.surfaceRaised,
+        backgroundColor: props.emphasized
+          ? palette.accentSurface
+          : palette.surfaceRaised,
       })}
     >
-      <Icon color={palette.textSoft} size={14} />
+      <Icon
+        color={props.emphasized ? palette.accent : palette.textSoft}
+        size={14}
+      />
       <Text
-        style={{ color: palette.textSoft, fontSize: 12, fontWeight: '600' }}
+        style={{
+          color: props.emphasized ? palette.text : palette.textSoft,
+          fontSize: 12,
+          fontWeight: '600',
+        }}
       >
         {props.label}
       </Text>
