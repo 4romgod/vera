@@ -8,8 +8,64 @@ import { InMemoryExecutionStore } from '../../../src/adapters/outbound/persisten
 import { InMemoryMissionStore } from '../../../src/adapters/outbound/persistence/memory/in-memory-mission-store.ts';
 import { InMemoryOwnerResourceStore } from '../../../src/adapters/outbound/persistence/memory/in-memory-owner-resource-store.ts';
 import { createAttentionService } from '../../../src/application/attention/attention-service.ts';
+import { InMemoryExternalSignalStore } from '../../../src/adapters/outbound/persistence/memory/in-memory-external-signal-store.ts';
+import { ExternalSignalSchema } from '../../../src/domain/external-awareness/external-signal.ts';
+import { createNotificationService } from '../../../src/application/reminders/notification-service.ts';
 
 void describe('attention service', () => {
+  void it('projects active external signals into Today and the durable activity feed', async () => {
+    const resources = new InMemoryOwnerResourceStore();
+    const signals = new InMemoryExternalSignalStore();
+    const signal = ExternalSignalSchema.parse({
+      schemaVersion: 1,
+      version: 1,
+      id: `external_signal_${'a'.repeat(32)}`,
+      principalId: 'owner_v1',
+      routineId: 'routine_watch',
+      integrationId: 'github',
+      connectionId: 'connection_github',
+      project: { id: 'project_vera', displayName: 'Vera' },
+      repository: { provider: 'github', owner: '4romgod', name: 'vera' },
+      externalKey: 'pull:42:failed-checks',
+      category: 'failed_check',
+      title: 'Checks failed on #42',
+      summary: 'quality-gate failed.',
+      url: 'https://github.com/4romgod/vera/pull/42',
+      occurredAt: '2026-09-05T10:00:00.000Z',
+      status: 'active',
+      firstObservedAt: '2026-09-05T10:01:00.000Z',
+      lastObservedAt: '2026-09-05T10:01:00.000Z',
+    });
+    await signals.upsert(signal);
+    const attention = createAttentionService({
+      executions: new InMemoryExecutionStore(),
+      resources,
+      missions: new InMemoryMissionStore(),
+      campaigns: new InMemoryDevelopmentCampaignStore(),
+      decisions: new InMemoryAttentionDecisionStore(),
+      routines: new InMemoryRoutineStore(),
+      externalSignals: signals,
+      clock: () => new Date('2026-09-05T10:02:00.000Z'),
+    });
+    const item = (await attention.getBriefing('owner_v1')).items[0];
+    assert.equal(item?.reason, 'external_check_failed');
+    assert.deepEqual(item.target, {
+      kind: 'external_signal',
+      externalSignalId: signal.id,
+      routineId: signal.routineId,
+      url: signal.url,
+    });
+    const activity = await createNotificationService({
+      store: resources,
+      externalSignals: signals,
+    }).list('owner_v1');
+    const notification = activity.notifications[0];
+    assert.ok(notification);
+    assert.equal(notification.message, signal.title);
+    assert.ok('externalSignalId' in notification);
+    assert.equal(notification.externalSignalId, signal.id);
+  });
+
   void it('prioritizes overdue work and keeps dispositions scoped to an exact source generation', async () => {
     const resources = new InMemoryOwnerResourceStore();
     const decisions = new InMemoryAttentionDecisionStore();

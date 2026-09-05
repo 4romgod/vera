@@ -14,6 +14,7 @@ import type { MissionStore } from '../../ports/persistence/mission-store.ts';
 import type { OwnerResourceStore } from '../../ports/persistence/owner-resource-store.ts';
 import type { AttentionDecisionStore } from '../../ports/persistence/attention-decision-store.ts';
 import type { RoutineStore } from '../../ports/persistence/routine-store.ts';
+import type { ExternalSignalStore } from '../../ports/persistence/external-signal-store.ts';
 import { ResourceError } from '../shared/resource-error.ts';
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
@@ -30,6 +31,7 @@ export function createAttentionService(options: {
   campaigns: DevelopmentCampaignStore;
   decisions: AttentionDecisionStore;
   routines: RoutineStore;
+  externalSignals?: ExternalSignalStore;
   clock?: () => Date;
 }): AttentionService {
   const clock = options.clock ?? (() => new Date());
@@ -43,6 +45,7 @@ export function createAttentionService(options: {
       campaigns,
       routines,
       routineRuns,
+      externalSignals,
     ] = await Promise.all([
       options.executions.listByPrincipal(principalId, SOURCE_LIMIT),
       options.resources.listPersonalTasks(principalId, {
@@ -57,6 +60,7 @@ export function createAttentionService(options: {
       options.campaigns.list(principalId, SOURCE_LIMIT),
       options.routines.list(principalId, SOURCE_LIMIT),
       options.routines.listAttentionRuns(principalId, SOURCE_LIMIT),
+      options.externalSignals?.listActive(principalId, SOURCE_LIMIT) ?? [],
     ]);
     const items: Candidate[] = [];
 
@@ -313,6 +317,36 @@ export function createAttentionService(options: {
         }),
       );
     }
+    for (const signal of externalSignals) {
+      const reason =
+        signal.category === 'review_requested'
+          ? 'external_review_requested'
+          : signal.category === 'mentioned'
+            ? 'external_mentioned'
+            : signal.category === 'assigned'
+              ? 'external_assigned'
+              : 'external_check_failed';
+      items.push(
+        candidate({
+          source: `external_signal:${signal.id}:${String(signal.version)}`,
+          reason,
+          priority:
+            signal.category === 'failed_check' ||
+            signal.category === 'review_requested'
+              ? 'high'
+              : 'normal',
+          title: signal.title,
+          summary: signal.summary,
+          occurredAt: signal.occurredAt,
+          target: {
+            kind: 'external_signal',
+            externalSignalId: signal.id,
+            routineId: signal.routineId,
+            url: signal.url,
+          },
+        }),
+      );
+    }
     return items;
   }
 
@@ -365,7 +399,7 @@ export function createAttentionService(options: {
             : `${String(activeCount)} things need your attention`,
       summary:
         activeCount === 0
-          ? 'Vera found no open approvals, failures, overdue work, or imminent reminders.'
+          ? 'Vera found no open approvals, failures, external signals, overdue work, or imminent reminders.'
           : counts.urgent > 0
             ? `${String(counts.urgent)} ${counts.urgent === 1 ? 'item requires' : 'items require'} immediate attention.`
             : 'Nothing is urgent; review the highest-priority item when you are ready.',

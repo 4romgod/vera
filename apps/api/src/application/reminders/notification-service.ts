@@ -5,6 +5,7 @@ import {
 } from '../../domain/reminders/reminder.ts';
 import type { ReminderStore } from '../../ports/persistence/reminder-store.ts';
 import type { MissionStore } from '../../ports/persistence/mission-store.ts';
+import type { ExternalSignalStore } from '../../ports/persistence/external-signal-store.ts';
 import { ResourceError } from '../shared/resource-error.ts';
 
 export type NotificationPage = {
@@ -23,6 +24,7 @@ export type NotificationService = {
 export function createNotificationService(options: {
   store: ReminderStore;
   missions?: MissionStore;
+  externalSignals?: ExternalSignalStore;
 }): NotificationService {
   return {
     async list(principalId, query = {}) {
@@ -50,6 +52,14 @@ export function createNotificationService(options: {
             ? []
             : [
                 options.missions.listNotifications(
+                  principalId,
+                  notificationOptions,
+                ),
+              ]),
+          ...(options.externalSignals === undefined
+            ? []
+            : [
+                options.externalSignals.listNotifications(
                   principalId,
                   notificationOptions,
                 ),

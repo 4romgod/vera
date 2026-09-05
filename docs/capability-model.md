@@ -16,7 +16,8 @@ and registered machine operations are accepted by ADR-0033 on 27 August 2026;
 grounded personal knowledge is accepted by ADR-0036 on 4 September 2026;
 conversational software-delivery control is accepted by ADR-0042; and curated
 external connections with `work_item_management@1` are accepted by ADR-0045 on
-5 September 2026.
+5 September 2026; project external awareness through approved standing watches
+is accepted by ADR-0046 on 5 September 2026.
 
 ## Purpose
 
@@ -640,6 +641,14 @@ permits recurring read-only inspection and explicitly prohibits service
 control and routine mutation. Pause revokes execution; resume restores only the
 unchanged approved effect. See
 [ADR-0038](decisions/0038-run-recurring-work-as-approved-standing-instructions.md).
+
+The second routine action is `integration_awareness`: one connected provider
+account, registered project repository, category set, and bounded interval.
+Its standing authority permits recurring reads and explicitly prohibits
+external writes. Observed signals may inform a later capability proposal, but
+they never confer that capability's authority or bypass its exact approval.
+See
+[ADR-0046](decisions/0046-project-external-signals-through-approved-standing-watches.md).
 
 ## Implemented web-research capability
 

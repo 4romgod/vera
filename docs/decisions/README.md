@@ -165,6 +165,10 @@ ADR-0045 separates durable connection authority, provider-neutral capability
 semantics, and provider transport. GitHub Issues is the first implementation:
 Vera explicitly adopts and verifies the host `gh` account, freezes the selected
 repository for approval, and reconciles writes without exposing credentials.
+ADR-0046 makes connected services proactively useful through separately
+approved read-only standing watches. Stable provider-neutral signals feed
+Today, Activity, and push, while completeness-aware reconciliation and strict
+scope checks prevent drift, duplication, and false resolution.
 
 ## ADR rules
 

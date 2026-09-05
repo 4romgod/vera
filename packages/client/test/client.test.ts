@@ -1752,6 +1752,39 @@ void describe('Vera HTTP client', () => {
     assert.equal(result.items.length, 0);
   });
 
+  void it('validates provider-neutral external signals from the generated boundary', async () => {
+    const signal = {
+      schemaVersion: 1,
+      version: 1,
+      id: `external_signal_${'a'.repeat(32)}`,
+      principalId: 'owner_v1',
+      routineId: 'routine_watch',
+      integrationId: 'github',
+      connectionId: 'connection_github',
+      project: { id: 'project_vera', displayName: 'Vera' },
+      repository: { provider: 'github', owner: '4romgod', name: 'vera' },
+      externalKey: 'pull:42:failed-checks',
+      category: 'failed_check',
+      title: 'Checks failed on #42',
+      summary: 'quality-gate failed.',
+      url: 'https://github.com/4romgod/vera/pull/42',
+      occurredAt: '2026-09-05T10:00:00.000Z',
+      status: 'active',
+      firstObservedAt: '2026-09-05T10:01:00.000Z',
+      lastObservedAt: '2026-09-05T10:01:00.000Z',
+    };
+    const client = new VeraClient({
+      baseUrl: 'http://vera.test',
+      fetch: (input) => {
+        assert.equal(input, 'http://vera.test/v1/external-signals');
+        return Promise.resolve(
+          Response.json({ schemaVersion: 1, signals: [signal] }),
+        );
+      },
+    });
+    assert.deepEqual((await client.listExternalSignals()).signals, [signal]);
+  });
+
   void it('waits for a durable routine run to reach a terminal state', async () => {
     let calls = 0;
     const client = new VeraClient({

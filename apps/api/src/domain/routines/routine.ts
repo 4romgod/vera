@@ -1,28 +1,37 @@
 import { z } from 'zod';
 
 import { MachineDiagnosticSchema } from '../machines/machine.ts';
+import { ExternalSignalCategorySchema } from '../external-awareness/external-signal.ts';
 
 const IdentifierSchema = z
   .string()
   .regex(/^[a-z0-9][a-z0-9._-]*$/u)
   .max(100);
 
-export const RoutineScheduleSchema = z
-  .object({
-    kind: z.literal('daily'),
-    timeZone: z.string().trim().min(1).max(100),
-    localTime: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/u),
-    daysOfWeek: z
-      .array(z.number().int().min(0).max(6))
-      .min(1)
-      .max(7)
-      .refine((days) => new Set(days).size === days.length, {
-        message: 'Schedule days must be unique.',
-      }),
-  })
-  .strict();
+export const RoutineScheduleSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('daily'),
+      timeZone: z.string().trim().min(1).max(100),
+      localTime: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/u),
+      daysOfWeek: z
+        .array(z.number().int().min(0).max(6))
+        .min(1)
+        .max(7)
+        .refine((days) => new Set(days).size === days.length, {
+          message: 'Schedule days must be unique.',
+        }),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('interval'),
+      minutes: z.number().int().min(5).max(1_440),
+    })
+    .strict(),
+]);
 
-export const RoutineActionSchema = z
+const MachineHealthRoutineActionSchema = z
   .object({
     kind: z.literal('machine_health_check'),
     machineId: IdentifierSchema,
@@ -37,22 +46,81 @@ export const RoutineActionSchema = z
   })
   .strict();
 
+const IntegrationAwarenessProposalActionSchema = z
+  .object({
+    kind: z.literal('integration_awareness'),
+    integrationId: z.literal('github'),
+    projectId: z.string().startsWith('project_'),
+    categories: z
+      .array(ExternalSignalCategorySchema)
+      .min(1)
+      .max(4)
+      .refine((values) => new Set(values).size === values.length, {
+        message: 'Awareness categories must be unique.',
+      }),
+  })
+  .strict();
+
+const IntegrationAwarenessRoutineActionSchema =
+  IntegrationAwarenessProposalActionSchema.extend({
+    connectionId: z.string().startsWith('connection_'),
+    account: z
+      .object({
+        providerAccountId: z.string().trim().min(1).max(200),
+        login: z.string().trim().min(1).max(200),
+      })
+      .strict(),
+    project: z
+      .object({
+        id: z.string().startsWith('project_'),
+        displayName: z.string().trim().min(1).max(200),
+      })
+      .strict(),
+    repository: z
+      .object({
+        provider: z.literal('github'),
+        owner: z.string().trim().min(1).max(100),
+        name: z.string().trim().min(1).max(100),
+      })
+      .strict(),
+  }).omit({ projectId: true });
+
+export const RoutineProposalActionSchema = z.discriminatedUnion('kind', [
+  MachineHealthRoutineActionSchema,
+  IntegrationAwarenessProposalActionSchema,
+]);
+
+export const RoutineActionSchema = z.discriminatedUnion('kind', [
+  MachineHealthRoutineActionSchema,
+  IntegrationAwarenessRoutineActionSchema,
+]);
+
 export const RoutineProposalArgumentsSchema = z
   .object({
     title: z.string().trim().min(1).max(200),
     schedule: RoutineScheduleSchema,
-    action: RoutineActionSchema,
+    action: RoutineProposalActionSchema,
   })
   .strict();
 
-const RoutineAuthoritySchema = z
-  .object({
-    recurringExecution: z.literal(true),
-    inspectRegisteredMachine: z.literal(true),
-    controlMachineServices: z.literal(false),
-    modifyRoutine: z.literal(false),
-  })
-  .strict();
+const RoutineAuthoritySchema = z.union([
+  z
+    .object({
+      recurringExecution: z.literal(true),
+      inspectRegisteredMachine: z.literal(true),
+      controlMachineServices: z.literal(false),
+      modifyRoutine: z.literal(false),
+    })
+    .strict(),
+  z
+    .object({
+      recurringExecution: z.literal(true),
+      readExternalService: z.literal(true),
+      modifyExternalService: z.literal(false),
+      modifyRoutine: z.literal(false),
+    })
+    .strict(),
+]);
 
 export const RoutineApprovalSchema = z
   .object({
@@ -140,6 +208,20 @@ export const RoutineSchema = z
         path: ['approval', 'decidedAt'],
         message: 'Decided approvals require decision time and principal.',
       });
+    const action = routine.approval.effect.action;
+    const authority = routine.approval.effect.authority;
+    if (
+      (action.kind === 'machine_health_check' &&
+        !('inspectRegisteredMachine' in authority)) ||
+      (action.kind === 'integration_awareness' &&
+        !('readExternalService' in authority))
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['approval', 'effect', 'authority'],
+        message: 'Standing authority must match the frozen routine action.',
+      });
+    }
   });
 
 export const RoutineRunSchema = z
@@ -157,12 +239,27 @@ export const RoutineRunSchema = z
     startedAt: z.iso.datetime().optional(),
     completedAt: z.iso.datetime().optional(),
     result: z
-      .object({
-        outcome: z.enum(['healthy', 'attention_required']),
-        summary: z.string().trim().min(1).max(2_000),
-        diagnostic: MachineDiagnosticSchema,
-      })
-      .strict()
+      .union([
+        z
+          .object({
+            kind: z.literal('machine_health').default('machine_health'),
+            outcome: z.enum(['healthy', 'attention_required']),
+            summary: z.string().trim().min(1).max(2_000),
+            diagnostic: MachineDiagnosticSchema,
+          })
+          .strict(),
+        z
+          .object({
+            kind: z.literal('external_awareness'),
+            outcome: z.enum(['quiet', 'signals_observed']),
+            summary: z.string().trim().min(1).max(2_000),
+            observed: z.number().int().nonnegative(),
+            created: z.number().int().nonnegative(),
+            changed: z.number().int().nonnegative(),
+            resolved: z.number().int().nonnegative(),
+          })
+          .strict(),
+      ])
       .optional(),
     failure: z
       .object({
@@ -271,6 +368,7 @@ export type RoutineSchedule = z.infer<typeof RoutineScheduleSchema>;
 export type RoutineProposalArguments = z.infer<
   typeof RoutineProposalArgumentsSchema
 >;
+export type RoutineAction = z.infer<typeof RoutineActionSchema>;
 export type RoutineManagementArguments = z.infer<
   typeof RoutineManagementArgumentsSchema
 >;

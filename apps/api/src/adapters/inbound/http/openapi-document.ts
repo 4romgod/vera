@@ -55,6 +55,7 @@ export function buildOpenApiApp(): FastifyInstance {
     developmentCampaigns: documentationDependency,
     missions: documentationDependency,
     routines: documentationDependency,
+    externalAwareness: documentationDependency,
     pushNotifications: documentationDependency,
   } as unknown as BuildAppOptions);
 }

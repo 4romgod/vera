@@ -85,6 +85,15 @@ app.log.info(
       workItems: {
         adapterId: config.workItems?.adapterId ?? 'disabled',
       },
+      integrations: {
+        github: {
+          connectorId:
+            config.integrations?.github.connectorId ??
+            (config.workItems?.adapterId === 'github_gh_cli'
+              ? 'gh_cli'
+              : 'disabled'),
+        },
+      },
       research:
         config.research.adapterId === 'openai_web_search'
           ? {

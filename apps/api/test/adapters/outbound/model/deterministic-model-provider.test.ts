@@ -214,4 +214,38 @@ void describe('deterministic model provider', () => {
       limit: 20,
     });
   });
+
+  void it('drafts a selected-project GitHub watch without external write authority', async () => {
+    const provider = new DeterministicModelProvider();
+    const result = await provider.generateStructured({
+      purpose: 'orchestration_decision',
+      systemPrompt: 'test',
+      message: JSON.stringify({
+        ownerMessage:
+          'Watch GitHub review requests and failed checks every 20 minutes',
+        selectedProject: { id: 'project_vera', displayName: 'Vera' },
+      }),
+      outputSchema: { capabilities: ['routine_management'] },
+    });
+    assert.deepEqual(result.candidate, {
+      schemaVersion: 1,
+      kind: 'invoke_capability',
+      decisionSummary:
+        'The owner requested management of a recurring standing instruction.',
+      capability: { name: 'routine_management', version: 1 },
+      arguments: {
+        action: 'create',
+        routine: {
+          title: 'Watch Vera on GitHub',
+          schedule: { kind: 'interval', minutes: 20 },
+          action: {
+            kind: 'integration_awareness',
+            integrationId: 'github',
+            projectId: 'project_vera',
+            categories: ['review_requested', 'failed_check'],
+          },
+        },
+      },
+    });
+  });
 });

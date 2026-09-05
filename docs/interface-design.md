@@ -151,6 +151,13 @@ Pause; paused routines expose Resume. Routine failures opened from Today land
 back on this source surface. Healthy runs intentionally create no badge or
 notification.
 
+The same workspace creates GitHub watches after the owner selects a registered
+project, interval, and signal categories. Its approval names the frozen
+repository and account and states that the watch is read-only. External
+signals appear in Today and Activity; opening one launches only its validated
+canonical HTTPS GitHub URL. Any action on that item remains a separate
+conversation and approval.
+
 ## Software delivery in conversation
 
 A completed software-change artifact is not a terminal blob. Its result card

@@ -782,6 +782,7 @@ function decide(
     );
     if (
       arguments_.action === 'create' &&
+      arguments_.routine.action.kind === 'machine_health_check' &&
       !machineArgumentsAreRegistered(
         'machine_inspection',
         arguments_.routine.action,
@@ -792,6 +793,18 @@ function decide(
         code: 'invalid_capability_arguments',
         message:
           'The proposed routine targets an unregistered machine or service.',
+      };
+    }
+    if (
+      arguments_.action === 'create' &&
+      arguments_.routine.action.kind === 'integration_awareness' &&
+      arguments_.routine.action.projectId !== selectedProject?.id
+    ) {
+      return {
+        kind: 'rejected',
+        code: 'invalid_capability_arguments',
+        message:
+          'The proposed external watch does not preserve the selected project identity.',
       };
     }
     return {

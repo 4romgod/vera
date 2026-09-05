@@ -34,6 +34,14 @@ const usage = `Usage:
   vera memory show <memory-id>
   vera notification list [--after <cursor>] [--limit <number>]
   vera notification watch [--after <cursor>]
+  vera routine list
+  vera routine show <routine-id>
+  vera routine watch-github --project <project-id> [--minutes <5-1440>] [--categories <review_requested,mentioned,assigned,failed_check>] [--title <title>] [--key <key>]
+  vera routine decide <routine-id> <approved|rejected>
+  vera routine pause <routine-id>
+  vera routine resume <routine-id>
+  vera routine run <routine-id> [--key <key>]
+  vera signal list [--routine <routine-id>]
   vera project add --name <name> --path <absolute-git-root> [--key <key>]
   vera project list
   vera project show <project-id>
@@ -639,6 +647,103 @@ export async function runCli(
         positional(args, 2, 'approval-id'),
         decision as 'approved' | 'rejected',
       ),
+    );
+    return 0;
+  }
+
+  if (resource === 'routine' && action === 'list') {
+    print(stdout, await client.listRoutines());
+    return 0;
+  }
+  if (resource === 'routine' && action === 'show') {
+    const id = positional(args, 2, 'routine-id');
+    const page = await client.listRoutines();
+    const routine = page.routines.find((candidate) => candidate.id === id);
+    if (routine === undefined) throw new Error(`Routine ${id} was not found.`);
+    print(stdout, routine);
+    return 0;
+  }
+  if (resource === 'routine' && action === 'watch-github') {
+    const allowed = new Set<string>([
+      'review_requested',
+      'mentioned',
+      'assigned',
+      'failed_check',
+    ]);
+    const requested = option(args, '--categories')?.split(',') ?? [...allowed];
+    if (
+      requested.length === 0 ||
+      requested.some((category) => !allowed.has(category))
+    )
+      throw new Error(
+        '--categories must contain review_requested, mentioned, assigned, or failed_check.',
+      );
+    const minutes = positiveIntegerOption(args, '--minutes') ?? 15;
+    if (minutes < 5 || minutes > 1_440)
+      throw new Error('--minutes must be between 5 and 1440.');
+    const projectId = requiredOption(args, '--project');
+    print(
+      stdout,
+      await client.createRoutine({
+        title: option(args, '--title') ?? `Watch ${projectId} on GitHub`,
+        schedule: { kind: 'interval', minutes },
+        action: {
+          kind: 'integration_awareness',
+          integrationId: 'github',
+          projectId,
+          categories: requested as (
+            | 'review_requested'
+            | 'mentioned'
+            | 'assigned'
+            | 'failed_check'
+          )[],
+        },
+        idempotencyKey: option(args, '--key') ?? createKey(),
+      }),
+    );
+    return 0;
+  }
+  if (resource === 'routine' && action === 'decide') {
+    const decision = positional(args, 3, 'decision');
+    if (decision !== 'approved' && decision !== 'rejected')
+      throw new Error('decision must be approved or rejected.');
+    print(
+      stdout,
+      await client.decideRoutine({
+        routineId: positional(args, 2, 'routine-id'),
+        decision,
+      }),
+    );
+    return 0;
+  }
+  if (resource === 'routine' && action === 'pause') {
+    print(stdout, await client.pauseRoutine(positional(args, 2, 'routine-id')));
+    return 0;
+  }
+  if (resource === 'routine' && action === 'resume') {
+    print(
+      stdout,
+      await client.resumeRoutine(positional(args, 2, 'routine-id')),
+    );
+    return 0;
+  }
+  if (resource === 'routine' && action === 'run') {
+    print(
+      stdout,
+      await client.runRoutineNow({
+        routineId: positional(args, 2, 'routine-id'),
+        idempotencyKey: option(args, '--key') ?? createKey(),
+      }),
+    );
+    return 0;
+  }
+  if (resource === 'signal' && action === 'list') {
+    const routineId = option(args, '--routine');
+    print(
+      stdout,
+      routineId === undefined
+        ? await client.listExternalSignals()
+        : await client.listRoutineExternalSignals(routineId),
     );
     return 0;
   }

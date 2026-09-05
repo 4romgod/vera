@@ -1,7 +1,7 @@
 import type {
   TaskResource,
-  RoutineResource,
   RoutineRunResource,
+  PostV1RoutinesRequestAction,
 } from '../generated/types.gen.ts';
 import type {
   RunStatus,
@@ -15,11 +15,13 @@ import type {
 } from '../sdk-types.ts';
 import {
   getV1MissionPolicies,
+  getV1ExternalSignals,
   getV1Missions,
   getV1MissionsId,
   getV1RoutineRunsId,
   getV1Routines,
   getV1RoutinesIdRuns,
+  getV1RoutinesIdExternalSignals,
   getV1RunsId,
   postV1Missions,
   postV1MissionsIdCancellation,
@@ -52,10 +54,25 @@ export class AutomationClient extends SoftwareDeliveryClient {
     );
   }
 
+  public async listExternalSignals() {
+    return this.generatedRequest(
+      getV1ExternalSignals({ client: this.generatedClient }),
+    );
+  }
+
+  public async listRoutineExternalSignals(routineId: string) {
+    return this.generatedRequest(
+      getV1RoutinesIdExternalSignals({
+        client: this.generatedClient,
+        path: { id: routineId },
+      }),
+    );
+  }
+
   public async createRoutine(input: {
     title: string;
     schedule: RoutineScheduleResource;
-    action: RoutineResource['approval']['effect']['action'];
+    action: PostV1RoutinesRequestAction;
     idempotencyKey: string;
   }) {
     return this.generatedRequest(

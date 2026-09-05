@@ -3,6 +3,7 @@ import { fetch as expoFetch } from 'expo/fetch';
 import {
   FlatList,
   KeyboardAvoidingView,
+  Linking,
   View,
   useWindowDimensions,
 } from 'react-native';
@@ -47,6 +48,7 @@ import { useSpokenReply } from '@/voice/use-spoken-reply';
 import { useVoiceInput } from '@/voice/use-voice-input';
 import { usePushNotifications } from '@/notifications/use-push-notifications';
 import { useIntegrationConnections } from '@/components/integrations/use-integration-connections';
+import { useCreateExternalWatch } from '@/components/routines/use-create-external-watch';
 
 const configuredApiUrl = process.env.EXPO_PUBLIC_VERA_API_URL?.trim();
 const defaultApiUrl =
@@ -880,6 +882,32 @@ export function AssistantScreen() {
         return;
       case 'routine':
         openResources('routines');
+        return;
+      case 'external_signal':
+        try {
+          await Linking.openURL(item.target.url);
+        } catch (cause) {
+          setError(
+            errorMessage(cause, 'That external signal could not be opened.'),
+          );
+        }
+    }
+  }
+
+  async function openNotificationItem(
+    notification: NotificationResource,
+  ): Promise<void> {
+    const url =
+      'externalSignalId' in notification
+        ? notification.url
+        : 'missionId' in notification
+          ? notification.pullRequestUrl
+          : undefined;
+    if (url === undefined) return;
+    try {
+      await Linking.openURL(url);
+    } catch (cause) {
+      setError(errorMessage(cause, 'That activity link could not be opened.'));
     }
   }
 
@@ -923,6 +951,15 @@ export function AssistantScreen() {
     },
     [client, refreshResources],
   );
+
+  const createExternalWatch = useCreateExternalWatch({
+    client,
+    refreshResources,
+    mounted,
+    requestKey,
+    setActionId: setRoutineActionId,
+    setError,
+  });
 
   const routineDecision = useCallback(
     async (
@@ -1142,6 +1179,7 @@ export function AssistantScreen() {
           memories={memories}
           knowledgeSources={knowledgeSources}
           machines={machines}
+          projects={projects}
           campaigns={campaigns}
           missions={missions}
           routines={routines}
@@ -1162,6 +1200,9 @@ export function AssistantScreen() {
           }
           onAttentionDecision={decideAttention}
           onOpenAttention={(item) => void openAttentionItem(item)}
+          onOpenNotification={(notification) =>
+            void openNotificationItem(notification)
+          }
           onMemoryCommand={(command) => {
             setResources((current) => ({ ...current, open: false }));
             void send(command);
@@ -1185,6 +1226,7 @@ export function AssistantScreen() {
           onMissionDecision={decideMission}
           onMissionCancel={cancelMission}
           onCreateRoutine={createRoutine}
+          onCreateExternalWatch={createExternalWatch}
           onRoutineDecision={routineDecision}
           onPauseRoutine={pauseRoutine}
           onResumeRoutine={resumeRoutine}

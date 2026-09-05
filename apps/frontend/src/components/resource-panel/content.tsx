@@ -16,7 +16,10 @@ import {
 } from 'lucide-react-native';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { KnowledgeSearchResponse } from '@vera/client';
+import type {
+  KnowledgeSearchResponse,
+  NotificationResource,
+} from '@vera/client';
 import { IconButton } from '@/components/ui/icon-button';
 import { layout, palette, radius, shadow, spacing } from '@/design/tokens';
 import { humanizeIdentifier } from '../assistant/presentation.ts';
@@ -249,9 +252,12 @@ export function PanelContent(props: ResourcePanelProps) {
           <RoutinesPanel
             actionId={props.routineActionId}
             machines={props.machines}
+            projects={props.projects}
+            connections={props.integrationConnections}
             routines={props.routines}
             runs={props.routineRuns}
             onCreate={props.onCreateRoutine}
+            onCreateWatch={props.onCreateExternalWatch}
             onDecision={props.onRoutineDecision}
             onPause={props.onPauseRoutine}
             onResume={props.onResumeRoutine}
@@ -638,22 +644,11 @@ export function PanelContent(props: ResourcePanelProps) {
         ) : null}
         {props.tab === 'notifications'
           ? props.notifications.map((notification) => (
-              <ResourceCard key={notification.id}>
-                <Tag label={notification.status} />
-                <Text
-                  selectable
-                  style={{
-                    color: palette.text,
-                    fontSize: 16,
-                    fontWeight: '600',
-                  }}
-                >
-                  {notification.message}
-                </Text>
-                <Text selectable style={{ color: palette.muted, fontSize: 11 }}>
-                  {formatDate(notification.deliveredAt)}
-                </Text>
-              </ResourceCard>
+              <NotificationCard
+                key={notification.id}
+                notification={notification}
+                onOpen={props.onOpenNotification}
+              />
             ))
           : null}
 
@@ -905,6 +900,48 @@ export function PanelContent(props: ResourcePanelProps) {
           : null}
       </ScrollView>
     </View>
+  );
+}
+
+function NotificationCard(props: {
+  notification: NotificationResource;
+  onOpen: (notification: NotificationResource) => void;
+}) {
+  const linked =
+    'externalSignalId' in props.notification ||
+    ('missionId' in props.notification &&
+      props.notification.pullRequestUrl !== undefined);
+  const content = (
+    <ResourceCard>
+      <Tag label={props.notification.status} />
+      <Text
+        selectable
+        style={{ color: palette.text, fontSize: 16, fontWeight: '600' }}
+      >
+        {props.notification.message}
+      </Text>
+      <Text selectable style={{ color: palette.muted, fontSize: 11 }}>
+        {formatDate(props.notification.deliveredAt)}
+      </Text>
+      {linked ? (
+        <Text
+          style={{ color: palette.accent, fontSize: 11, fontWeight: '600' }}
+        >
+          Open in GitHub
+        </Text>
+      ) : null}
+    </ResourceCard>
+  );
+  return linked ? (
+    <Pressable
+      accessibilityRole="link"
+      onPress={() => props.onOpen(props.notification)}
+      style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+    >
+      {content}
+    </Pressable>
+  ) : (
+    content
   );
 }
 

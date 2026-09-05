@@ -490,7 +490,7 @@ export function createTaskLifecycleFoundation(runtime: TaskLifecycleRuntime) {
         result.summary,
         ...(result.routines ?? []).map(
           (routine) =>
-            `${routine.approval.effect.title} — ${routine.status} — ${routine.id} — ${routine.approval.effect.schedule.localTime} ${routine.approval.effect.schedule.timeZone}`,
+            `${routine.approval.effect.title} — ${routine.status} — ${routine.id} — ${routine.approval.effect.schedule.kind === 'daily' ? `${routine.approval.effect.schedule.localTime} ${routine.approval.effect.schedule.timeZone}` : `every ${String(routine.approval.effect.schedule.minutes)} minutes`}`,
         ),
         ...(result.routine === undefined
           ? []

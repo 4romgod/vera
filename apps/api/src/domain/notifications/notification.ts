@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { ExternalSignalCategorySchema } from '../external-awareness/external-signal.ts';
+
 export const NotificationIdSchema = z
   .string()
   .regex(/^notification_[a-z0-9][a-z0-9_-]*$/u);
@@ -29,9 +31,19 @@ export const MissionNotificationResourceSchema = NotificationBaseSchema.extend({
   pullRequestUrl: z.url().optional(),
 }).strict();
 
+export const ExternalSignalNotificationResourceSchema =
+  NotificationBaseSchema.extend({
+    externalSignalId: z.string().startsWith('external_signal_'),
+    routineId: z.string().startsWith('routine_'),
+    category: ExternalSignalCategorySchema,
+    source: z.literal('github'),
+    url: z.url(),
+  }).strict();
+
 export const NotificationResourceSchema = z.union([
   ReminderNotificationResourceSchema,
   MissionNotificationResourceSchema,
+  ExternalSignalNotificationResourceSchema,
 ]);
 
 export type NotificationResource = z.infer<typeof NotificationResourceSchema>;

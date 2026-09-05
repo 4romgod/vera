@@ -25,22 +25,24 @@ import type {
   ReminderResource,
   RoutineResource,
   RoutineRunResource,
-  RoutineRunResourceResultDiagnostic,
+  ArtifactResourceOneOfMachineDiagnosticContent,
   SoftwareChangePublicationResource,
   TaskResource,
   TaskResourceAttachmentsItems,
   TaskResourceInvocationAnyOfWebResearchContextManifest,
   TaskResourceOutputOneOfGoalResultArtifactsItems,
-  TaskResourceResultDiagnosticServicesItemsObservation,
   TaskResourceResultOneOfListResourcesItemsOneOfDevelopmentCampaign,
   TaskResourceResultOneOfListResourcesItemsOneOfMission,
   PutV1NotificationDevicesIdPreferencesRequest,
   IntegrationCatalogResource,
+  GetV1ExternalSignalsResponse,
 } from './generated/types.gen.ts';
 
 export type RunStatus = TaskResource['runStatus'];
 export type IntegrationDefinitionResource =
   IntegrationCatalogResource['integrations'][number];
+export type ExternalSignalResource =
+  GetV1ExternalSignalsResponse['signals'][number];
 export type CapabilityDestination = NonNullable<
   CapabilityCatalogResource['capabilities'][number]['destination']
 >;
@@ -61,8 +63,9 @@ export type ConversationSummaryResource =
   ConversationListResource['conversations'][number];
 
 export type MachineObservation =
-  TaskResourceResultDiagnosticServicesItemsObservation;
-export type MachineDiagnosticContent = RoutineRunResourceResultDiagnostic;
+  ArtifactResourceOneOfMachineDiagnosticContent['services'][number]['observation'];
+export type MachineDiagnosticContent =
+  ArtifactResourceOneOfMachineDiagnosticContent;
 export type MachineServiceActionResultContent =
   ArtifactResourceOneOfMachineServiceActionResultContent;
 export type PersonalTaskResultContent =

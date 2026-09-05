@@ -115,21 +115,31 @@ export const IntegrationConnectionJsonSchema = z.toJSONSchema(
   { target: 'draft-7', unrepresentable: 'throw' },
 );
 
-export const GitHubIntegrationDefinition: IntegrationDefinition = {
+export const GitHubReadOnlyIntegrationDefinition: IntegrationDefinition = {
   schemaVersion: 1,
   id: 'github',
   provider: 'github',
   displayName: 'GitHub',
   description:
-    'Let Vera inspect and manage issues in registered GitHub-backed projects.',
+    'Let Vera watch registered GitHub projects through approved standing routines.',
   credentialManagement: 'host_session',
-  capabilities: ['work_item_management'],
+  capabilities: ['external_awareness'],
+  operations: ['notifications_read', 'pull_request_checks_read'],
+};
+
+export const GitHubIntegrationDefinition: IntegrationDefinition = {
+  ...GitHubReadOnlyIntegrationDefinition,
+  description:
+    'Let Vera watch registered GitHub projects and manage their issues through separately governed capabilities.',
+  capabilities: ['external_awareness', 'work_item_management'],
   operations: [
     'issues_read',
     'issues_create',
     'issues_comment',
     'issues_close',
     'issues_reopen',
+    'notifications_read',
+    'pull_request_checks_read',
   ],
 };
 

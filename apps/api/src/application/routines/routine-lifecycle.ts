@@ -12,6 +12,7 @@ import {
   type RoutineRun,
 } from '../../domain/routines/routine.ts';
 import type { MachineOperations } from '../../ports/machines/machine-operations.ts';
+import type { ExternalAwarenessOperations } from '../../ports/external-awareness/external-awareness-operations.ts';
 import type { RoutineStore } from '../../ports/persistence/routine-store.ts';
 import {
   nextRoutineOccurrence,
@@ -103,14 +104,14 @@ function routineSummary(routine: Routine) {
   });
 }
 
-function outcome(
-  run: RoutineRun['action'],
-  diagnostic: NonNullable<RoutineRun['result']>['diagnostic'],
+function machineOutcome(
+  diagnostic: Awaited<ReturnType<MachineOperations['inspect']>>,
 ) {
   const unhealthy = [...diagnostic.diagnostics, ...diagnostic.services].filter(
     (entry) => entry.observation.status !== 'healthy',
   );
   return {
+    kind: 'machine_health' as const,
     outcome:
       unhealthy.length === 0
         ? ('healthy' as const)
@@ -120,13 +121,51 @@ function outcome(
         ? `${diagnostic.machine.displayName} passed the scheduled health check.`
         : `${diagnostic.machine.displayName} has ${String(unhealthy.length)} unhealthy or unknown ${unhealthy.length === 1 ? 'check' : 'checks'}: ${unhealthy.map((entry) => entry.id).join(', ')}.`,
     diagnostic,
-    action: run,
   };
+}
+
+async function externalOutcome(
+  operations: ExternalAwarenessOperations | undefined,
+  input: Parameters<ExternalAwarenessOperations['execute']>[0],
+) {
+  if (operations === undefined) {
+    throw new Error('External awareness is not configured.');
+  }
+  const result = await operations.execute(input);
+  const changed = result.created + result.changed;
+  return {
+    kind: 'external_awareness' as const,
+    outcome: changed === 0 ? ('quiet' as const) : ('signals_observed' as const),
+    summary:
+      changed === 0
+        ? result.resolved === 0
+          ? 'No new external signals need attention.'
+          : `No new external signals; ${String(result.resolved)} ${result.resolved === 1 ? 'signal was' : 'signals were'} resolved.`
+        : `${String(changed)} new or changed external ${changed === 1 ? 'signal needs' : 'signals need'} attention.`,
+    observed: result.observations.length,
+    created: result.created,
+    changed: result.changed,
+    resolved: result.resolved,
+  };
+}
+
+async function freezeExternalAction(
+  operations: ExternalAwarenessOperations | undefined,
+  input: Parameters<ExternalAwarenessOperations['freeze']>[0],
+) {
+  if (operations === undefined) {
+    throw new RoutineError(
+      'External awareness is not available on this Vera host.',
+      'routine_invalid_transition',
+    );
+  }
+  return operations.freeze(input);
 }
 
 export function createRoutineLifecycle(options: {
   store: RoutineStore;
   machines: MachineOperations;
+  externalAwareness?: ExternalAwarenessOperations;
   clock?: () => Date;
   createId?: (prefix: string) => string;
 }): RoutineLifecycle {
@@ -135,18 +174,29 @@ export function createRoutineLifecycle(options: {
     options.createId ?? ((prefix: string) => `${prefix}_${randomUUID()}`);
 
   function validateProposal(proposal: RoutineProposalArguments) {
-    assertValidTimeZone(proposal.schedule.timeZone);
+    if (proposal.schedule.kind === 'daily')
+      assertValidTimeZone(proposal.schedule.timeZone);
+    const action = proposal.action;
+    if (action.kind === 'integration_awareness') {
+      if (options.externalAwareness === undefined) {
+        throw new RoutineError(
+          'External awareness is not available on this Vera host.',
+          'routine_invalid_transition',
+        );
+      }
+      return;
+    }
     const machine = options.machines.catalog.machines.find(
-      ({ id }) => id === proposal.action.machineId,
+      ({ id }) => id === action.machineId,
     );
     if (machine === undefined) {
       throw new RoutineError(
-        `Machine ${proposal.action.machineId} is not registered.`,
+        `Machine ${action.machineId} is not registered.`,
         'routine_machine_not_found',
       );
     }
     const missing =
-      proposal.action.serviceIds?.filter(
+      action.serviceIds?.filter(
         (id) => !machine.services.some((service) => service.id === id),
       ) ?? [];
     if (missing.length > 0) {
@@ -210,30 +260,47 @@ export function createRoutineLifecycle(options: {
     },
   ) {
     validateProposal(input);
-    const proposal = {
-      title: input.title.trim(),
-      schedule: {
-        ...input.schedule,
-        daysOfWeek: [...input.schedule.daysOfWeek].sort(
-          (left, right) => left - right,
-        ),
-      },
-      action: {
-        ...input.action,
-        ...(input.action.serviceIds === undefined
-          ? {}
-          : { serviceIds: [...input.action.serviceIds].sort() }),
-      },
-    };
+    const normalizedSchedule =
+      input.schedule.kind === 'daily'
+        ? {
+            ...input.schedule,
+            daysOfWeek: [...input.schedule.daysOfWeek].sort(
+              (left, right) => left - right,
+            ),
+          }
+        : input.schedule;
+    const normalizedRequestedAction =
+      input.action.kind === 'integration_awareness'
+        ? {
+            ...input.action,
+            categories: [...input.action.categories].sort(),
+          }
+        : {
+            ...input.action,
+            ...(input.action.serviceIds === undefined
+              ? {}
+              : { serviceIds: [...input.action.serviceIds].sort() }),
+          };
     const existing = await options.store.findByRequestKey(
       input.principalId,
       input.requestKey,
     );
     if (existing !== null) {
+      const existingAction = existing.approval.effect.action;
+      const sameRequestedAction =
+        existingAction.kind === normalizedRequestedAction.kind &&
+        (existingAction.kind === 'machine_health_check'
+          ? stableEqual(existingAction, normalizedRequestedAction)
+          : normalizedRequestedAction.kind === 'integration_awareness' &&
+            existingAction.project.id === normalizedRequestedAction.projectId &&
+            stableEqual(
+              existingAction.categories,
+              normalizedRequestedAction.categories,
+            ));
       if (
-        !stableEqual(existing.approval.effect.title, proposal.title) ||
-        !stableEqual(existing.approval.effect.schedule, proposal.schedule) ||
-        !stableEqual(existing.approval.effect.action, proposal.action)
+        existing.approval.effect.title !== input.title.trim() ||
+        !stableEqual(existing.approval.effect.schedule, normalizedSchedule) ||
+        !sameRequestedAction
       ) {
         throw new RoutineError(
           `Idempotency key ${input.requestKey} belongs to another routine.`,
@@ -242,6 +309,20 @@ export function createRoutineLifecycle(options: {
       }
       return existing;
     }
+    const action =
+      normalizedRequestedAction.kind === 'integration_awareness'
+        ? await freezeExternalAction(options.externalAwareness, {
+            principalId: input.principalId,
+            integrationId: normalizedRequestedAction.integrationId,
+            projectId: normalizedRequestedAction.projectId,
+            categories: normalizedRequestedAction.categories,
+          })
+        : normalizedRequestedAction;
+    const proposal = {
+      title: input.title.trim(),
+      schedule: normalizedSchedule,
+      action,
+    };
     const now = clock().toISOString();
     const routine = RoutineSchema.parse({
       schemaVersion: 1,
@@ -256,12 +337,20 @@ export function createRoutineLifecycle(options: {
         reason: 'standing_instruction',
         effect: {
           ...proposal,
-          authority: {
-            recurringExecution: true,
-            inspectRegisteredMachine: true,
-            controlMachineServices: false,
-            modifyRoutine: false,
-          },
+          authority:
+            proposal.action.kind === 'machine_health_check'
+              ? {
+                  recurringExecution: true,
+                  inspectRegisteredMachine: true,
+                  controlMachineServices: false,
+                  modifyRoutine: false,
+                }
+              : {
+                  recurringExecution: true,
+                  readExternalService: true,
+                  modifyExternalService: false,
+                  modifyRoutine: false,
+                },
         },
         requestedAt: now,
       },
@@ -272,7 +361,14 @@ export function createRoutineLifecycle(options: {
           sequence: 1,
           type: 'routine_created',
           occurredAt: now,
-          data: { machineId: input.action.machineId },
+          data:
+            proposal.action.kind === 'machine_health_check'
+              ? { machineId: proposal.action.machineId }
+              : {
+                  integrationId: proposal.action.integrationId,
+                  projectId: proposal.action.project.id,
+                  repository: proposal.action.repository,
+                },
         },
       ],
       createdAt: now,
@@ -344,7 +440,9 @@ export function createRoutineLifecycle(options: {
       routine.nextRunAt = nextRoutineOccurrence(
         routine.approval.effect.schedule,
         new Date(now),
-        routine.lastRunAt,
+        routine.approval.effect.schedule.kind === 'daily'
+          ? routine.lastRunAt
+          : undefined,
       );
       append(routine, 'routine_resumed', now, {});
       return true;
@@ -418,23 +516,28 @@ export function createRoutineLifecycle(options: {
       executing = candidate;
     }
     try {
-      const diagnostic = await options.machines.inspect({
-        machineId: executing.action.machineId,
-        ...(executing.action.serviceIds === undefined
-          ? {}
-          : { serviceIds: executing.action.serviceIds }),
-      });
+      const result =
+        executing.action.kind === 'machine_health_check'
+          ? machineOutcome(
+              await options.machines.inspect({
+                machineId: executing.action.machineId,
+                ...(executing.action.serviceIds === undefined
+                  ? {}
+                  : { serviceIds: executing.action.serviceIds }),
+              }),
+            )
+          : await externalOutcome(options.externalAwareness, {
+              principalId,
+              routineId: executing.routineId,
+              action: executing.action,
+              observedAt: clock().toISOString(),
+            });
       const now = clock().toISOString();
-      const result = outcome(executing.action, diagnostic);
       const completed = RoutineRunSchema.parse({
         ...executing,
         version: executing.version + 1,
         status: 'succeeded',
-        result: {
-          outcome: result.outcome,
-          summary: result.summary,
-          diagnostic,
-        },
+        result,
         completedAt: now,
         updatedAt: now,
       });
@@ -448,11 +551,16 @@ export function createRoutineLifecycle(options: {
         version: executing.version + 1,
         status: 'failed',
         failure: {
-          code: 'machine_inspection_failed',
+          code:
+            executing.action.kind === 'machine_health_check'
+              ? 'machine_inspection_failed'
+              : 'external_awareness_failed',
           message:
             error instanceof Error
               ? error.message.slice(0, 2_000)
-              : 'The machine inspection failed.',
+              : executing.action.kind === 'machine_health_check'
+                ? 'The machine inspection failed.'
+                : 'The external awareness check failed.',
         },
         completedAt: now,
         updatedAt: now,

@@ -13,6 +13,7 @@ import type {
   ReminderResource,
   RoutineResource,
   RoutineRunResource,
+  ProjectResource,
   IntegrationDefinitionResource,
   IntegrationConnectionResource,
 } from '@vera/client';
@@ -50,6 +51,7 @@ export type ResourcePanelProps = {
   routines: RoutineResource[];
   routineRuns: Partial<Record<string, RoutineRunResource[]>>;
   routineActionId?: string;
+  projects: ProjectResource[];
   integrations: IntegrationDefinitionResource[];
   integrationConnections: IntegrationConnectionResource[];
   integrationActionId?: string;
@@ -59,6 +61,7 @@ export type ResourcePanelProps = {
     decision: 'dismiss' | 'snooze' | 'restore',
   ) => Promise<boolean>;
   onOpenAttention: (item: AttentionItem) => void;
+  onOpenNotification: (notification: NotificationResource) => void;
   onClose: () => void;
   onMemoryCommand: (command: string) => void;
   onKnowledgeCommand: (command: string) => void;
@@ -93,6 +96,17 @@ export type ResourcePanelProps = {
     localTime: string;
     daysOfWeek: number[];
     timeZone: string;
+  }) => Promise<boolean>;
+  onCreateExternalWatch: (input: {
+    title: string;
+    projectId: string;
+    minutes: number;
+    categories: (
+      | 'review_requested'
+      | 'mentioned'
+      | 'assigned'
+      | 'failed_check'
+    )[];
   }) => Promise<boolean>;
   onRoutineDecision: (
     routineId: string,

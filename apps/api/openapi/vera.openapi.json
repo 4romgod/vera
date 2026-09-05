@@ -801,7 +801,7 @@
                 "properties": {
                   "kind": { "type": "string", "enum": ["machine_diagnostic"] },
                   "diagnostic": {
-                    "$ref": "#/components/schemas/RoutineRunResourceResultDiagnostic"
+                    "$ref": "#/components/schemas/ArtifactResourceOneOfMachineDiagnosticContent"
                   },
                   "artifact": {
                     "$ref": "#/components/schemas/TaskResourceOutputOneOfMachineDiagnosticArtifact"
@@ -2094,7 +2094,7 @@
                 "enum": ["application/vnd.vera.machine-diagnostic+json"]
               },
               "content": {
-                "$ref": "#/components/schemas/RoutineRunResourceResultDiagnostic"
+                "$ref": "#/components/schemas/ArtifactResourceOneOfMachineDiagnosticContent"
               }
             },
             "required": [
@@ -2513,7 +2513,61 @@
             "items": {
               "anyOf": [
                 { "$ref": "#/components/schemas/ReminderResourceNotification" },
-                { "$ref": "#/components/schemas/MissionResourceNotification" }
+                { "$ref": "#/components/schemas/MissionResourceNotification" },
+                {
+                  "type": "object",
+                  "properties": {
+                    "schemaVersion": { "type": "number", "enum": [1] },
+                    "id": {
+                      "type": "string",
+                      "pattern": "^notification_[a-z0-9][a-z0-9_-]*$"
+                    },
+                    "message": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1000
+                    },
+                    "deliveredAt": { "$ref": "#/components/schemas/DateTime" },
+                    "status": {
+                      "type": "string",
+                      "enum": ["unread", "acknowledged"]
+                    },
+                    "channel": { "type": "string", "enum": ["vera_inbox"] },
+                    "acknowledgedAt": {
+                      "$ref": "#/components/schemas/DateTime"
+                    },
+                    "externalSignalId": {
+                      "type": "string",
+                      "pattern": "^external_signal_.*"
+                    },
+                    "routineId": { "type": "string", "pattern": "^routine_.*" },
+                    "category": {
+                      "type": "string",
+                      "enum": [
+                        "review_requested",
+                        "mentioned",
+                        "assigned",
+                        "failed_check"
+                      ]
+                    },
+                    "source": { "type": "string", "enum": ["github"] },
+                    "url": { "type": "string", "format": "uri" }
+                  },
+                  "required": [
+                    "schemaVersion",
+                    "id",
+                    "message",
+                    "deliveredAt",
+                    "status",
+                    "channel",
+                    "externalSignalId",
+                    "routineId",
+                    "category",
+                    "source",
+                    "url"
+                  ],
+                  "additionalProperties": false
+                }
               ]
             }
           },
@@ -3735,7 +3789,9 @@
           "schedule": {
             "$ref": "#/components/schemas/PostV1RoutinesRequestSchedule"
           },
-          "action": { "$ref": "#/components/schemas/RoutineRunResourceAction" }
+          "action": {
+            "$ref": "#/components/schemas/PostV1RoutinesRequestAction"
+          }
         },
         "required": ["title", "schedule", "action"],
         "additionalProperties": false
@@ -3846,6 +3902,104 @@
           "createdAt",
           "updatedAt"
         ],
+        "additionalProperties": false
+      },
+      "ExternalSignalListResource": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": { "type": "number", "enum": [1] },
+          "signals": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "schemaVersion": { "type": "number", "enum": [1] },
+                "version": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "id": { "type": "string", "pattern": "^external_signal_.*" },
+                "principalId": { "type": "string", "minLength": 1 },
+                "routineId": { "type": "string", "pattern": "^routine_.*" },
+                "integrationId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "connectionId": {
+                  "type": "string",
+                  "pattern": "^connection_.*"
+                },
+                "project": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string", "pattern": "^project_.*" },
+                    "displayName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    }
+                  },
+                  "required": ["id", "displayName"],
+                  "additionalProperties": false
+                },
+                "repository": {
+                  "$ref": "#/components/schemas/ExternalSignalListResourceSignalsItemsRepository"
+                },
+                "externalKey": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                },
+                "category": {
+                  "type": "string",
+                  "enum": [
+                    "review_requested",
+                    "mentioned",
+                    "assigned",
+                    "failed_check"
+                  ]
+                },
+                "title": { "type": "string", "minLength": 1, "maxLength": 500 },
+                "summary": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                },
+                "url": { "type": "string", "format": "uri" },
+                "occurredAt": { "$ref": "#/components/schemas/DateTime" },
+                "status": { "type": "string", "enum": ["active", "resolved"] },
+                "firstObservedAt": { "$ref": "#/components/schemas/DateTime" },
+                "lastObservedAt": { "$ref": "#/components/schemas/DateTime" },
+                "resolvedAt": { "$ref": "#/components/schemas/DateTime" }
+              },
+              "required": [
+                "schemaVersion",
+                "version",
+                "id",
+                "principalId",
+                "routineId",
+                "integrationId",
+                "connectionId",
+                "project",
+                "repository",
+                "externalKey",
+                "category",
+                "title",
+                "summary",
+                "url",
+                "occurredAt",
+                "status",
+                "firstObservedAt",
+                "lastObservedAt"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["schemaVersion", "signals"],
         "additionalProperties": false
       },
       "PushNotificationStatus": {
@@ -4149,6 +4303,111 @@
         "required": ["schemaVersion", "action", "summary", "sources"],
         "additionalProperties": false
       },
+      "ArtifactResourceOneOfMachineDiagnosticContent": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": { "type": "number", "enum": [1] },
+          "machine": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "maxLength": 100,
+                "pattern": "^[a-z0-9][a-z0-9._-]*$"
+              },
+              "displayName": { "type": "string", "minLength": 1 }
+            },
+            "required": ["id", "displayName"],
+            "additionalProperties": false
+          },
+          "adapter": { "type": "string", "enum": ["local", "ssh"] },
+          "inspectedAt": { "$ref": "#/components/schemas/DateTime" },
+          "system": {
+            "$ref": "#/components/schemas/ArtifactResourceOneOfMachineDiagnosticContentSystem"
+          },
+          "diagnostics": {
+            "$ref": "#/components/schemas/ArtifactResourceOneOfMachineDiagnosticContentDiagnostics"
+          },
+          "services": {
+            "$ref": "#/components/schemas/ArtifactResourceOneOfMachineDiagnosticContentServices"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "machine",
+          "adapter",
+          "inspectedAt",
+          "system",
+          "diagnostics",
+          "services"
+        ],
+        "additionalProperties": false
+      },
+      "ArtifactResourceOneOfMachineDiagnosticContentDiagnostics": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/ArtifactResourceOneOfMachineDiagnosticContentDiagnosticsItems"
+        }
+      },
+      "ArtifactResourceOneOfMachineDiagnosticContentDiagnosticsItems": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "label": { "type": "string", "minLength": 1 },
+          "observation": {
+            "$ref": "#/components/schemas/ArtifactResourceOneOfMachineServiceActionResultContentAfter"
+          }
+        },
+        "required": ["id", "label", "observation"],
+        "additionalProperties": false
+      },
+      "ArtifactResourceOneOfMachineDiagnosticContentServices": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/ArtifactResourceOneOfMachineDiagnosticContentServicesItems"
+        }
+      },
+      "ArtifactResourceOneOfMachineDiagnosticContentServicesItems": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "displayName": { "type": "string", "minLength": 1 },
+          "observation": {
+            "$ref": "#/components/schemas/ArtifactResourceOneOfMachineServiceActionResultContentAfter"
+          }
+        },
+        "required": ["id", "displayName", "observation"],
+        "additionalProperties": false
+      },
+      "ArtifactResourceOneOfMachineDiagnosticContentSystem": {
+        "type": "object",
+        "properties": {
+          "hostname": { "type": "string", "minLength": 1 },
+          "platform": { "type": "string", "minLength": 1 },
+          "architecture": { "type": "string", "minLength": 1 },
+          "uptimeSeconds": { "type": "number", "minimum": 0 },
+          "freeMemoryBytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "totalMemoryBytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": ["hostname", "platform", "architecture"],
+        "additionalProperties": false
+      },
       "ArtifactResourceOneOfMachineServiceActionResultContent": {
         "type": "object",
         "properties": {
@@ -4181,13 +4440,13 @@
           },
           "action": { "type": "string", "enum": ["start", "stop", "restart"] },
           "before": {
-            "$ref": "#/components/schemas/TaskResourceResultDiagnosticServicesItemsObservation"
+            "$ref": "#/components/schemas/ArtifactResourceOneOfMachineServiceActionResultContentAfter"
           },
           "execution": {
             "$ref": "#/components/schemas/ArtifactResourceOneOfMachineServiceActionResultContentExecution"
           },
           "after": {
-            "$ref": "#/components/schemas/TaskResourceResultDiagnosticServicesItemsObservation"
+            "$ref": "#/components/schemas/ArtifactResourceOneOfMachineServiceActionResultContentAfter"
           },
           "verified": { "type": "boolean" },
           "completedAt": { "$ref": "#/components/schemas/DateTime" }
@@ -4203,6 +4462,34 @@
           "verified",
           "completedAt"
         ],
+        "additionalProperties": false
+      },
+      "ArtifactResourceOneOfMachineServiceActionResultContentAfter": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["healthy", "unhealthy", "unknown"]
+          },
+          "checkedAt": { "$ref": "#/components/schemas/DateTime" },
+          "durationMs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "summary": { "type": "string", "maxLength": 4000 },
+          "exitCode": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              { "type": "null" }
+            ]
+          }
+        },
+        "required": ["status", "checkedAt", "durationMs", "summary"],
         "additionalProperties": false
       },
       "ArtifactResourceOneOfMachineServiceActionResultContentExecution": {
@@ -4916,7 +5203,11 @@
           "campaign_result_ready",
           "routine_approval_required",
           "routine_check_failed",
-          "routine_attention_required"
+          "routine_attention_required",
+          "external_review_requested",
+          "external_mentioned",
+          "external_assigned",
+          "external_check_failed"
         ]
       },
       "AttentionBriefingItemsItemsTarget": {
@@ -4965,8 +5256,25 @@
           },
           {
             "$ref": "#/components/schemas/AttentionBriefingItemsItemsTargetOneOfRoutine"
+          },
+          {
+            "$ref": "#/components/schemas/AttentionBriefingItemsItemsTargetOneOfExternalSignal"
           }
         ]
+      },
+      "AttentionBriefingItemsItemsTargetOneOfExternalSignal": {
+        "type": "object",
+        "properties": {
+          "kind": { "type": "string", "enum": ["external_signal"] },
+          "externalSignalId": {
+            "type": "string",
+            "pattern": "^external_signal_.*"
+          },
+          "routineId": { "type": "string", "pattern": "^routine_.*" },
+          "url": { "type": "string", "format": "uri" }
+        },
+        "required": ["kind", "externalSignalId", "routineId", "url"],
+        "additionalProperties": false
       },
       "AttentionBriefingItemsItemsTargetOneOfRoutine": {
         "type": "object",
@@ -6368,6 +6676,16 @@
           }
         },
         "required": ["schemaVersion", "kind", "decisionSummary", "goal"],
+        "additionalProperties": false
+      },
+      "ExternalSignalListResourceSignalsItemsRepository": {
+        "type": "object",
+        "properties": {
+          "provider": { "type": "string", "enum": ["github"] },
+          "owner": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "name": { "type": "string", "minLength": 1, "maxLength": 100 }
+        },
+        "required": ["provider", "owner", "name"],
         "additionalProperties": false
       },
       "IntegrationConnectionListResourceConnectionsItems": {
@@ -8102,12 +8420,64 @@
           "schedule": {
             "$ref": "#/components/schemas/PostV1RoutinesRequestSchedule"
           },
-          "action": { "$ref": "#/components/schemas/RoutineRunResourceAction" }
+          "action": {
+            "$ref": "#/components/schemas/PostV1RoutinesRequestAction"
+          }
         },
         "required": ["title", "schedule", "action"],
         "additionalProperties": false
       },
+      "PostV1RoutinesRequestAction": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/RoutineRunResourceActionOneOfMachineHealthCheck"
+          },
+          {
+            "$ref": "#/components/schemas/PostV1RoutinesRequestActionOneOfIntegrationAwareness"
+          }
+        ]
+      },
+      "PostV1RoutinesRequestActionOneOfIntegrationAwareness": {
+        "type": "object",
+        "properties": {
+          "kind": { "type": "string", "enum": ["integration_awareness"] },
+          "integrationId": { "type": "string", "enum": ["github"] },
+          "projectId": { "type": "string", "pattern": "^project_.*" },
+          "categories": {
+            "minItems": 1,
+            "maxItems": 4,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "review_requested",
+                "mentioned",
+                "assigned",
+                "failed_check"
+              ]
+            }
+          }
+        },
+        "required": ["kind", "integrationId", "projectId", "categories"],
+        "additionalProperties": false
+      },
       "PostV1RoutinesRequestSchedule": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/PostV1RoutinesRequestScheduleOneOfDaily"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": { "type": "string", "enum": ["interval"] },
+              "minutes": { "type": "integer", "minimum": 5, "maximum": 1440 }
+            },
+            "required": ["kind", "minutes"],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "PostV1RoutinesRequestScheduleOneOfDaily": {
         "type": "object",
         "properties": {
           "kind": { "type": "string", "enum": ["daily"] },
@@ -8458,6 +8828,16 @@
         "additionalProperties": false
       },
       "RoutineResourceApprovalEffectAuthority": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/RoutineResourceApprovalEffectAuthorityAnyOfVariant1"
+          },
+          {
+            "$ref": "#/components/schemas/RoutineResourceApprovalEffectAuthorityAnyOfVariant2"
+          }
+        ]
+      },
+      "RoutineResourceApprovalEffectAuthorityAnyOfVariant1": {
         "type": "object",
         "properties": {
           "recurringExecution": { "type": "boolean", "enum": [true] },
@@ -8469,6 +8849,22 @@
           "recurringExecution",
           "inspectRegisteredMachine",
           "controlMachineServices",
+          "modifyRoutine"
+        ],
+        "additionalProperties": false
+      },
+      "RoutineResourceApprovalEffectAuthorityAnyOfVariant2": {
+        "type": "object",
+        "properties": {
+          "recurringExecution": { "type": "boolean", "enum": [true] },
+          "readExternalService": { "type": "boolean", "enum": [true] },
+          "modifyExternalService": { "type": "boolean", "enum": [false] },
+          "modifyRoutine": { "type": "boolean", "enum": [false] }
+        },
+        "required": [
+          "recurringExecution",
+          "readExternalService",
+          "modifyExternalService",
           "modifyRoutine"
         ],
         "additionalProperties": false
@@ -8572,6 +8968,77 @@
         "additionalProperties": false
       },
       "RoutineRunResourceAction": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/RoutineRunResourceActionOneOfMachineHealthCheck"
+          },
+          {
+            "$ref": "#/components/schemas/RoutineRunResourceActionOneOfIntegrationAwareness"
+          }
+        ]
+      },
+      "RoutineRunResourceActionOneOfIntegrationAwareness": {
+        "type": "object",
+        "properties": {
+          "kind": { "type": "string", "enum": ["integration_awareness"] },
+          "integrationId": { "type": "string", "enum": ["github"] },
+          "categories": {
+            "minItems": 1,
+            "maxItems": 4,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "review_requested",
+                "mentioned",
+                "assigned",
+                "failed_check"
+              ]
+            }
+          },
+          "connectionId": { "type": "string", "pattern": "^connection_.*" },
+          "account": {
+            "type": "object",
+            "properties": {
+              "providerAccountId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "login": { "type": "string", "minLength": 1, "maxLength": 200 }
+            },
+            "required": ["providerAccountId", "login"],
+            "additionalProperties": false
+          },
+          "project": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string", "pattern": "^project_.*" },
+              "displayName": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              }
+            },
+            "required": ["id", "displayName"],
+            "additionalProperties": false
+          },
+          "repository": {
+            "$ref": "#/components/schemas/ExternalSignalListResourceSignalsItemsRepository"
+          }
+        },
+        "required": [
+          "kind",
+          "integrationId",
+          "categories",
+          "connectionId",
+          "account",
+          "project",
+          "repository"
+        ],
+        "additionalProperties": false
+      },
+      "RoutineRunResourceActionOneOfMachineHealthCheck": {
         "type": "object",
         "properties": {
           "kind": { "type": "string", "enum": ["machine_health_check"] },
@@ -8595,91 +9062,74 @@
         "additionalProperties": false
       },
       "RoutineRunResourceResult": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/RoutineRunResourceResultAnyOfMachineHealth"
+          },
+          {
+            "$ref": "#/components/schemas/RoutineRunResourceResultAnyOfExternalAwareness"
+          }
+        ]
+      },
+      "RoutineRunResourceResultAnyOfExternalAwareness": {
         "type": "object",
         "properties": {
+          "kind": { "type": "string", "enum": ["external_awareness"] },
+          "outcome": {
+            "type": "string",
+            "enum": ["quiet", "signals_observed"]
+          },
+          "summary": { "type": "string", "minLength": 1, "maxLength": 2000 },
+          "observed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "created": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "changed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "resolved": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "kind",
+          "outcome",
+          "summary",
+          "observed",
+          "created",
+          "changed",
+          "resolved"
+        ],
+        "additionalProperties": false
+      },
+      "RoutineRunResourceResultAnyOfMachineHealth": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "default": "machine_health",
+            "type": "string",
+            "enum": ["machine_health"]
+          },
           "outcome": {
             "type": "string",
             "enum": ["healthy", "attention_required"]
           },
           "summary": { "type": "string", "minLength": 1, "maxLength": 2000 },
           "diagnostic": {
-            "$ref": "#/components/schemas/RoutineRunResourceResultDiagnostic"
+            "$ref": "#/components/schemas/ArtifactResourceOneOfMachineDiagnosticContent"
           }
         },
-        "required": ["outcome", "summary", "diagnostic"],
-        "additionalProperties": false
-      },
-      "RoutineRunResourceResultDiagnostic": {
-        "type": "object",
-        "properties": {
-          "schemaVersion": { "type": "number", "enum": [1] },
-          "machine": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string",
-                "maxLength": 100,
-                "pattern": "^[a-z0-9][a-z0-9._-]*$"
-              },
-              "displayName": { "type": "string", "minLength": 1 }
-            },
-            "required": ["id", "displayName"],
-            "additionalProperties": false
-          },
-          "adapter": { "type": "string", "enum": ["local", "ssh"] },
-          "inspectedAt": { "$ref": "#/components/schemas/DateTime" },
-          "system": {
-            "$ref": "#/components/schemas/RoutineRunResourceResultDiagnosticSystem"
-          },
-          "diagnostics": {
-            "$ref": "#/components/schemas/RoutineRunResourceResultDiagnosticDiagnostics"
-          },
-          "services": {
-            "$ref": "#/components/schemas/RoutineRunResourceResultDiagnosticServices"
-          }
-        },
-        "required": [
-          "schemaVersion",
-          "machine",
-          "adapter",
-          "inspectedAt",
-          "system",
-          "diagnostics",
-          "services"
-        ],
-        "additionalProperties": false
-      },
-      "RoutineRunResourceResultDiagnosticDiagnostics": {
-        "type": "array",
-        "items": {
-          "$ref": "#/components/schemas/TaskResourceRunResultDiagnosticDiagnosticsItems"
-        }
-      },
-      "RoutineRunResourceResultDiagnosticServices": {
-        "type": "array",
-        "items": {
-          "$ref": "#/components/schemas/TaskResourceRunResultDiagnosticServicesItems"
-        }
-      },
-      "RoutineRunResourceResultDiagnosticSystem": {
-        "type": "object",
-        "properties": {
-          "hostname": { "type": "string", "minLength": 1 },
-          "platform": { "type": "string", "minLength": 1 },
-          "architecture": { "type": "string", "minLength": 1 },
-          "uptimeSeconds": { "type": "number", "minimum": 0 },
-          "freeMemoryBytes": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          },
-          "totalMemoryBytes": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          }
-        },
-        "required": ["hostname", "platform", "architecture"],
+        "required": ["kind", "outcome", "summary", "diagnostic"],
         "additionalProperties": false
       },
       "SoftwareChangeApprovalRequiredDecision": {
@@ -12389,7 +12839,7 @@
           "projectId": { "type": "string", "pattern": "^project_.*" },
           "sourceKind": { "type": "string", "enum": ["local_git"] },
           "repository": {
-            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifestRepository"
+            "$ref": "#/components/schemas/ExternalSignalListResourceSignalsItemsRepository"
           },
           "revision": { "type": "string", "minLength": 1, "maxLength": 200 },
           "generatedAt": { "$ref": "#/components/schemas/DateTime" },
@@ -12456,16 +12906,6 @@
           }
         },
         "required": ["maxFiles", "maxBytes", "maxFileBytes"],
-        "additionalProperties": false
-      },
-      "TaskResourceInvocationAnyOfWebResearchContextManifestRepository": {
-        "type": "object",
-        "properties": {
-          "provider": { "type": "string", "enum": ["github"] },
-          "owner": { "type": "string", "minLength": 1, "maxLength": 100 },
-          "name": { "type": "string", "minLength": 1, "maxLength": 100 }
-        },
-        "required": ["provider", "owner", "name"],
         "additionalProperties": false
       },
       "TaskResourceInvocationAnyOfWebResearchDecisionEvidence": {
@@ -13512,34 +13952,6 @@
         ],
         "additionalProperties": false
       },
-      "TaskResourceResultDiagnosticServicesItemsObservation": {
-        "type": "object",
-        "properties": {
-          "status": {
-            "type": "string",
-            "enum": ["healthy", "unhealthy", "unknown"]
-          },
-          "checkedAt": { "$ref": "#/components/schemas/DateTime" },
-          "durationMs": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          },
-          "summary": { "type": "string", "maxLength": 4000 },
-          "exitCode": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "minimum": -9007199254740991,
-                "maximum": 9007199254740991
-              },
-              { "type": "null" }
-            ]
-          }
-        },
-        "required": ["status", "checkedAt", "durationMs", "summary"],
-        "additionalProperties": false
-      },
       "TaskResourceResultOneOfListResourcesItemsOneOfDevelopmentCampaign": {
         "type": "object",
         "properties": {
@@ -13694,38 +14106,6 @@
           }
         },
         "required": ["pending", "passed", "failed"],
-        "additionalProperties": false
-      },
-      "TaskResourceRunResultDiagnosticDiagnosticsItems": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "maxLength": 100,
-            "pattern": "^[a-z0-9][a-z0-9._-]*$"
-          },
-          "label": { "type": "string", "minLength": 1 },
-          "observation": {
-            "$ref": "#/components/schemas/TaskResourceResultDiagnosticServicesItemsObservation"
-          }
-        },
-        "required": ["id", "label", "observation"],
-        "additionalProperties": false
-      },
-      "TaskResourceRunResultDiagnosticServicesItems": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "maxLength": 100,
-            "pattern": "^[a-z0-9][a-z0-9._-]*$"
-          },
-          "displayName": { "type": "string", "minLength": 1 },
-          "observation": {
-            "$ref": "#/components/schemas/TaskResourceResultDiagnosticServicesItemsObservation"
-          }
-        },
-        "required": ["id", "displayName", "observation"],
         "additionalProperties": false
       },
       "TaskResourceStepOneOfWorkItemManagementArgumentsOneOfCreateIssue": {
@@ -18574,6 +18954,84 @@
         "summary": "POST /v1/routines/{id}/resume"
       }
     },
+    "/v1/external-signals": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalSignalListResource"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred or an operation failed internally.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        },
+        "operationId": "getV1ExternalSignals",
+        "tags": ["external-awareness"],
+        "summary": "GET /v1/external-signals"
+      }
+    },
+    "/v1/routines/{id}/external-signals": {
+      "get": {
+        "parameters": [
+          {
+            "schema": { "type": "string", "minLength": 1, "maxLength": 200 },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalSignalListResource"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request did not satisfy the declared path, query, header, or body schema.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist for the current owner.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred or an operation failed internally.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        },
+        "operationId": "getV1RoutinesIdExternalSignals",
+        "tags": ["routines"],
+        "summary": "GET /v1/routines/{id}/external-signals"
+      }
+    },
     "/v1/push-notifications/status": {
       "get": {
         "responses": {
@@ -18968,6 +19426,10 @@
       "description": "Long-running development campaigns."
     },
     { "name": "missions", "description": "Autonomous missions." },
-    { "name": "routines", "description": "Scheduled and on-demand routines." }
+    { "name": "routines", "description": "Scheduled and on-demand routines." },
+    {
+      "name": "external-awareness",
+      "description": "Read-only signals observed through approved standing routines."
+    }
   ]
 }

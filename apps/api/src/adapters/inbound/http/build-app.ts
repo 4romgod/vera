@@ -64,11 +64,14 @@ import { registerAttentionRoutes } from './routes/attention-routes.ts';
 import { registerRoutineRoutes } from './routes/routine-routes.ts';
 import { registerPushNotificationRoutes } from './routes/push-notification-routes.ts';
 import { registerIntegrationConnectionRoutes } from './routes/integration-connection-routes.ts';
+import { registerExternalAwarenessRoutes } from './routes/external-awareness-routes.ts';
 import {
   IntegrationConnectionError,
   type IntegrationConnectionService,
 } from '../../../application/integrations/integration-connection-service.ts';
 import type { PushNotificationService } from '../../../application/notifications/push-notification-service.ts';
+import type { ExternalAwarenessOperations } from '../../../ports/external-awareness/external-awareness-operations.ts';
+import { ExternalAwarenessError } from '../../../application/external-awareness/external-awareness-service.ts';
 import {
   RoutineError,
   type RoutineLifecycle,
@@ -123,6 +126,7 @@ export type BuildAppOptions = {
   routines?: RoutineLifecycle & { wake(): void };
   pushNotifications?: PushNotificationService;
   integrations?: IntegrationConnectionService;
+  externalAwareness?: ExternalAwarenessOperations;
   readinessChecks?: {
     name: string;
     check(): Promise<void>;
@@ -454,6 +458,13 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   if (options.routines !== undefined) {
     registerRoutineRoutes(app, { principalId, routines: options.routines });
   }
+  if (options.externalAwareness !== undefined) {
+    registerExternalAwarenessRoutes(app, {
+      principalId,
+      externalAwareness: options.externalAwareness,
+      ...(options.routines === undefined ? {} : { routines: options.routines }),
+    });
+  }
   if (options.pushNotifications !== undefined) {
     registerPushNotificationRoutes(app, {
       principalId,
@@ -464,6 +475,20 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   if (options.close !== undefined) app.addHook('onClose', options.close);
 
   app.setErrorHandler((error, request, reply) => {
+    if (error instanceof ExternalAwarenessError) {
+      const statusCode =
+        error.code === 'awareness_project_not_found'
+          ? 404
+          : error.code === 'awareness_source_invalid'
+            ? 502
+            : error.code === 'awareness_source_unavailable'
+              ? 503
+              : 409;
+      void reply.status(statusCode).send({
+        error: { code: error.code, message: error.message },
+      });
+      return;
+    }
     if (error instanceof IntegrationConnectionError) {
       const statusCode =
         error.code === 'integration_not_found' ||

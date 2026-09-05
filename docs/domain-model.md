@@ -368,6 +368,14 @@ idempotency key, an immutable action snapshot, trigger, state, result or
 failure, and timestamps. Healthy machine checks remain authoritative history
 without becoming attention; unhealthy or failed runs are attention sources.
 
+An `integration_awareness` routine freezes one active connection, its
+non-secret provider account identity, one registered project and repository,
+selected signal categories, and a bounded polling interval. It has read-only
+authority. An `ExternalSignal` is the provider-neutral durable observation
+produced by that routine. Stable owner/watch/provider identity deduplicates it;
+status records whether it is still active, and version records a materially
+new generation. Today and Activity consume signals as projections.
+
 ### Event
 
 An immutable fact recording something that occurred.

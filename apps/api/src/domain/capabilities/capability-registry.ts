@@ -214,7 +214,7 @@ export const CapabilityDefinitions = [
     name: 'routine_management',
     version: 1,
     description:
-      'Create, list, pause, resume, or manually trigger owner-approved recurring standing instructions.',
+      'Create, list, pause, resume, or manually trigger owner-approved recurring machine checks and read-only external-service watches.',
     proposalArgumentsSchema: RoutineManagementArgumentsSchema,
     effect: 'owner_state',
     artifact: {
@@ -224,7 +224,7 @@ export const CapabilityDefinitions = [
     acceptedInputArtifacts: [],
     explicitAdaptiveOutcome: {
       patterns: [
-        /\b(every (?:day|morning|evening)|daily|routine|standing instruction|on a schedule)\b/u,
+        /\b(every (?:day|morning|evening)|daily|routine|standing instruction|on a schedule|watch|monitor)\b/u,
       ],
       description: 'Manage a recurring owner-approved Vera routine.',
     },
@@ -236,6 +236,7 @@ export const CapabilityDefinitions = [
         'owner_request',
         'routine_data',
         'machine_operational_data',
+        'work_item_data',
       ],
       sideEffects: ['standing_instruction_write'],
       credentials: 'server_managed',

@@ -1,6 +1,9 @@
 import { z } from 'zod';
 
-import { GitHubIntegrationDefinition } from '../../../../domain/integrations/integration-connection.ts';
+import {
+  GitHubIntegrationDefinition,
+  GitHubReadOnlyIntegrationDefinition,
+} from '../../../../domain/integrations/integration-connection.ts';
 import type { IntegrationConnector } from '../../../../ports/integrations/integration-connector.ts';
 import {
   defaultGitHubCommandRunner,
@@ -16,7 +19,7 @@ const GitHubAccountSchema = z.looseObject({
 
 export class GitHubCliConnector implements IntegrationConnector {
   public readonly adapterId = 'github_gh_cli';
-  public readonly definition = GitHubIntegrationDefinition;
+  public readonly definition: IntegrationConnector['definition'];
   public readonly credentialBinding = {
     kind: 'host_session' as const,
     host: 'github.com',
@@ -28,10 +31,15 @@ export class GitHubCliConnector implements IntegrationConnector {
     options: {
       command?: string;
       run?: GitHubCommandRunner;
+      workItemManagementEnabled?: boolean;
     } = {},
   ) {
     this.command = options.command ?? 'gh';
     this.run = options.run ?? defaultGitHubCommandRunner;
+    this.definition =
+      options.workItemManagementEnabled !== false
+        ? GitHubIntegrationDefinition
+        : GitHubReadOnlyIntegrationDefinition;
   }
 
   public async inspectAccount() {

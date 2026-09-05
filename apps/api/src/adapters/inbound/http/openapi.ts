@@ -36,6 +36,11 @@ const tags: OpenAPIV3.TagObject[] = [
   { name: 'campaigns', description: 'Long-running development campaigns.' },
   { name: 'missions', description: 'Autonomous missions.' },
   { name: 'routines', description: 'Scheduled and on-demand routines.' },
+  {
+    name: 'external-awareness',
+    description:
+      'Read-only signals observed through approved standing routines.',
+  },
 ];
 
 const errorDescriptions: Readonly<Record<number, string>> = {
@@ -201,6 +206,7 @@ function tagFor(path: string): string {
     return 'missions';
   if (path.startsWith('/v1/routines') || path.startsWith('/v1/routine-'))
     return 'routines';
+  if (path.startsWith('/v1/external-signals')) return 'external-awareness';
   return 'software-delivery';
 }
 
@@ -435,6 +441,8 @@ const publicSchemaNames: Readonly<Record<string, string>> = {
   'postV1Routines response 202': 'RoutineResource',
   'getV1RoutinesIdRuns response 200': 'RoutineRunListResource',
   'postV1RoutinesIdRuns response 202': 'RoutineRunResource',
+  'getV1ExternalSignals response 200': 'ExternalSignalListResource',
+  'getV1RoutinesIdExternalSignals response 200': 'ExternalSignalListResource',
   'getV1PushNotificationsStatus response 200': 'PushNotificationStatus',
   'getV1NotificationDevices response 200': 'NotificationDeviceListResource',
   'postV1NotificationDevices response 200': 'NotificationDeviceResource',

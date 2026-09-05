@@ -91,6 +91,7 @@ const EnvironmentSchema = z.object({
   VERA_WORK_ITEM_ADAPTER: z
     .enum(['disabled', 'github_gh_cli'])
     .default('disabled'),
+  VERA_GITHUB_CONNECTOR: z.enum(['disabled', 'gh_cli']).optional(),
   RESEARCH_OPENAI_BASE_URL: z.url().optional(),
   RESEARCH_OPENAI_API_KEY: z.string().trim().min(1).optional(),
   RESEARCH_OPENAI_MODEL: z.string().trim().min(1).default('gpt-5.4-mini'),
@@ -215,6 +216,9 @@ export type AppConfig = {
   };
   research: WebResearchAdapterConfig;
   workItems?: { adapterId: 'disabled' | 'github_gh_cli' };
+  integrations?: {
+    github: { connectorId: 'disabled' | 'gh_cli' };
+  };
   transcription: SpeechTranscriptionConfig;
   application: {
     workspacesRoot: string;
@@ -576,6 +580,15 @@ export function loadConfig(
     },
     research: createResearchConfig(parsed),
     workItems: { adapterId: parsed.VERA_WORK_ITEM_ADAPTER },
+    integrations: {
+      github: {
+        connectorId:
+          parsed.VERA_GITHUB_CONNECTOR ??
+          (parsed.VERA_WORK_ITEM_ADAPTER === 'github_gh_cli'
+            ? 'gh_cli'
+            : 'disabled'),
+      },
+    },
     transcription: createTranscriptionConfig(parsed),
     application: {
       workspacesRoot: resolve(
