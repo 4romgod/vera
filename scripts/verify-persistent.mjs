@@ -27,6 +27,10 @@ const changeApplicationRoot = join(tmpdir(), `${database}_applications`);
 // rebuildable Redis projection to MongoDB. Leave enough budget for that
 // fallback plus the next poll without relaxing the workflow-level time bound.
 const operationTimeoutMs = 30_000;
+// Persistent startup creates or validates every MongoDB collection and index.
+// Cold hosted infrastructure can take longer than the ordinary local path, so
+// readiness receives the same finite operational budget as later HTTP work.
+const startupTimeoutMs = 30_000;
 const runIds = new Set();
 const temporaryDirectories = new Set([changeApplicationRoot]);
 let child;
@@ -93,7 +97,8 @@ async function startServer(port) {
   processHandle.stdout.on('data', capture);
   processHandle.stderr.on('data', capture);
   const baseUrl = `http://127.0.0.1:${String(port)}`;
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+  const startupDeadline = Date.now() + startupTimeoutMs;
+  while (Date.now() < startupDeadline) {
     if (processHandle.exitCode !== null) {
       throw new Error(`Vera exited during startup.\n${serverOutput}`);
     }
