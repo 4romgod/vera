@@ -42,6 +42,7 @@ const usage = `Usage:
   vera routine resume <routine-id>
   vera routine run <routine-id> [--key <key>]
   vera signal list [--routine <routine-id>]
+  vera signal handle <signal-id> [--objective <objective>] [--key <key>] [--approve]
   vera project add --name <name> --path <absolute-git-root> [--key <key>]
   vera project list
   vera project show <project-id>
@@ -746,6 +747,40 @@ export async function runCli(
         : await client.listRoutineExternalSignals(routineId),
     );
     return 0;
+  }
+  if (resource === 'signal' && action === 'handle') {
+    const objective = option(args, '--objective');
+    const submitted = await client.handleExternalSignal({
+      signalId: positional(args, 2, 'signal-id'),
+      idempotencyKey: option(args, '--key') ?? createKey(),
+      ...(objective === undefined ? {} : { objective }),
+    });
+    let completed = await client.waitForRun(submitted.runId, {
+      until: (task) =>
+        task.runStatus === 'awaiting_approval' || isConversationTerminal(task),
+    });
+    while (completed.runStatus === 'awaiting_approval') {
+      completed = await resolveApproval({
+        task: completed,
+        client,
+        autoApprove: args.includes('--approve'),
+        confirm,
+        stdout,
+        stderr,
+      });
+    }
+    const finalTask = isConversationTerminal(completed)
+      ? completed
+      : await client.waitForRun(completed.runId);
+    const conversation =
+      finalTask.conversationId === undefined
+        ? undefined
+        : await client.getConversation(finalTask.conversationId);
+    print(stdout, {
+      task: finalTask,
+      ...(conversation === undefined ? {} : { conversation }),
+    });
+    return finalTask.runStatus === 'succeeded' ? 0 : 2;
   }
 
   if (resource === 'artifact' && action === 'show') {

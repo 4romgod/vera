@@ -84,6 +84,7 @@ import {
   WorkItemActionArgumentsSchema,
   WorkItemResultSchema,
 } from '../work-items/work-item.ts';
+import { ExternalSignalContextBundleSchema } from '../external-awareness/external-signal-context.ts';
 
 export const TaskStatusSchema = z.enum([
   'active',
@@ -572,6 +573,7 @@ export const TaskFailureSchema = z
       'project_context_failure',
       'conversation_context_failure',
       'memory_context_failure',
+      'external_signal_context_failure',
       'adaptive_goal_failure',
       'budget_exhausted',
       'cancelled',
@@ -613,6 +615,7 @@ export const TaskEventTypeSchema = z.enum([
   'run_cancelled',
   'conversation_context_assembled',
   'memory_context_assembled',
+  'external_signal_context_assembled',
   'conversation_reply_pending',
   'conversation_reply_projected',
   'goal_planned',
@@ -653,6 +656,13 @@ export const TaskAggregateSchema = z
           .regex(/^[a-f0-9]{40,64}$/u)
           .optional(),
         attachments: z.array(AttachmentReferenceSchema).max(5).optional(),
+        externalSignal: z
+          .object({
+            id: z.string().startsWith('external_signal_'),
+            version: z.number().int().positive(),
+          })
+          .strict()
+          .optional(),
         message: z.string().min(1),
         status: TaskStatusSchema,
         createdAt: z.iso.datetime(),
@@ -679,6 +689,7 @@ export const TaskAggregateSchema = z
         context: ProjectContextBundleSchema.optional(),
         conversationContext: ConversationContextBundleSchema.optional(),
         memoryContext: MemoryContextBundleSchema.optional(),
+        externalSignalContext: ExternalSignalContextBundleSchema.optional(),
         conversationReply: ConversationReplyProjectionSchema.optional(),
         goal: z
           .union([GoalExecutionSchema, AdaptiveGoalExecutionSchema])

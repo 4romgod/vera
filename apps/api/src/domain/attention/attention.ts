@@ -51,6 +51,9 @@ export const AttentionTargetSchema = z.discriminatedUnion('kind', [
       externalSignalId: z.string().startsWith('external_signal_'),
       routineId: z.string().startsWith('routine_'),
       url: z.url(),
+      taskId: z.string().startsWith('task_').optional(),
+      runId: z.string().startsWith('run_').optional(),
+      conversationId: z.string().startsWith('conversation_').optional(),
     })
     .strict(),
 ]);

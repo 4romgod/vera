@@ -9,6 +9,7 @@ import type { TaskLifecycleFoundation } from './foundation.ts';
 import type { TaskLifecycleDecisionRecording } from './decision-recording.ts';
 import type { TaskLifecycleAdaptiveGoalOperations } from './adaptive-goal.ts';
 import { shouldAssembleSoftwareDeliveryContext } from '../../software-delivery/software-delivery-context.ts';
+import { assertExternalSignalContextIntegrity } from '../../external-awareness/external-signal-context.ts';
 
 export function createEvaluationOperations(
   runtime: TaskLifecycleRuntime,
@@ -173,6 +174,36 @@ export function createEvaluationOperations(
           );
         }
       }
+      const externalSignalContext =
+        budgetClaim.aggregate.run.externalSignalContext;
+      if (externalSignalContext !== undefined) {
+        try {
+          if (options.externalSignals === undefined) {
+            throw new Error('External signal storage is not configured.');
+          }
+          await assertExternalSignalContextIntegrity({
+            context: externalSignalContext,
+            store: options.externalSignals,
+            principalId: budgetClaim.aggregate.task.principalId,
+            ...(budgetClaim.aggregate.task.projectId === undefined
+              ? {}
+              : { projectId: budgetClaim.aggregate.task.projectId }),
+          });
+        } catch (error) {
+          observer.warning(error, {
+            operation: 'external_signal_context_validation',
+            taskId: budgetClaim.aggregate.task.id,
+            runId: budgetClaim.aggregate.run.id,
+          });
+          return await recordFailure(
+            budgetClaim.aggregate.task.principalId,
+            budgetClaim.aggregate.task.id,
+            'external_signal_context_failure',
+            'Vera could not validate the frozen external signal context.',
+            'run_failed',
+          );
+        }
+      }
       const softwareDeliveryContext =
         options.softwareDeliveryContext !== undefined &&
         shouldAssembleSoftwareDeliveryContext(
@@ -214,6 +245,9 @@ export function createEvaluationOperations(
                   budgetClaim.aggregate.run.conversationContext,
               }),
           ...(memoryContext === undefined ? {} : { memoryContext }),
+          ...(externalSignalContext === undefined
+            ? {}
+            : { externalSignalContext }),
           ...(softwareDeliveryContext === undefined
             ? {}
             : { softwareDeliveryContext }),

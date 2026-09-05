@@ -115,6 +115,8 @@ function fakeApi(overrides: Partial<VeraApi>): VeraApi {
     waitForMission: unavailable,
     listRoutines: unavailable,
     listExternalSignals: unavailable,
+    getExternalSignal: unavailable,
+    handleExternalSignal: unavailable,
     listRoutineExternalSignals: unavailable,
     createRoutine: unavailable,
     decideRoutine: unavailable,
@@ -233,6 +235,70 @@ function publication(
 }
 
 void describe('Vera CLI', () => {
+  void it('handles an external signal through its durable conversation', async () => {
+    const writes: string[] = [];
+    const submitted = task('deciding', {
+      conversationId: 'conversation_signal',
+      externalSignal: { id: 'external_signal_test', version: 1 },
+    });
+    const completed = task('succeeded', {
+      conversationId: 'conversation_signal',
+      externalSignal: { id: 'external_signal_test', version: 1 },
+      conversationReply: {
+        status: 'projected',
+        messageId: 'message_reply',
+        createdAt: '2026-08-25T00:00:00.000Z',
+        projectedAt: '2026-08-25T00:00:01.000Z',
+      },
+    });
+    let handled:
+      | { signalId: string; objective?: string; idempotencyKey: string }
+      | undefined;
+    const exitCode = await runCli(
+      [
+        'signal',
+        'handle',
+        'external_signal_test',
+        '--objective',
+        'Fix the check.',
+        '--key',
+        'signal-key',
+      ],
+      {
+        client: fakeApi({
+          handleExternalSignal: (input) => {
+            handled = input;
+            return Promise.resolve(submitted);
+          },
+          waitForRun: () => Promise.resolve(completed),
+          getConversation: () =>
+            Promise.resolve({
+              schemaVersion: 1,
+              id: 'conversation_signal',
+              title: 'Handle failed checks',
+              status: 'active',
+              messages: [],
+              createdAt: '2026-08-25T00:00:00.000Z',
+              updatedAt: '2026-08-25T00:00:01.000Z',
+            }),
+        }),
+        stdout: {
+          write: (value) => {
+            writes.push(String(value));
+            return true;
+          },
+        },
+      },
+    );
+
+    assert.equal(exitCode, 0);
+    assert.deepEqual(handled, {
+      signalId: 'external_signal_test',
+      objective: 'Fix the check.',
+      idempotencyKey: 'signal-key',
+    });
+    assert.match(writes.join(''), /conversation_signal/u);
+  });
   void it('lists, explicitly connects, verifies, and revokes integrations', async () => {
     const output: string[] = [];
     const calls: string[] = [];

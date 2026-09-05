@@ -1785,6 +1785,67 @@ void describe('Vera HTTP client', () => {
     assert.deepEqual((await client.listExternalSignals()).signals, [signal]);
   });
 
+  void it('starts external-signal triage with an explicit idempotency key', async () => {
+    const client = new VeraClient({
+      baseUrl: 'http://vera.test',
+      fetch: (input, init) => {
+        assert.equal(
+          input,
+          'http://vera.test/v1/external-signals/external_signal_test/triage',
+        );
+        assert.ok(init);
+        assert.equal(init.method, 'POST');
+        assert.equal(
+          new Headers(init.headers).get('idempotency-key'),
+          'signal-handle-test',
+        );
+        const body = init.body;
+        if (typeof body !== 'string') {
+          assert.fail('Expected the triage request body to be JSON text.');
+        }
+        assert.deepEqual(JSON.parse(body), {
+          objective: 'Investigate the failure.',
+        });
+        return Promise.resolve(
+          Response.json(
+            {
+              schemaVersion: 1,
+              taskId: 'task_signal_test',
+              runId: 'run_signal_test',
+              taskStatus: 'active',
+              runStatus: 'deciding',
+              message: 'Investigate the failure.',
+              projectId: 'project_vera',
+              conversationId: 'conversation_signal_test',
+              messageId: 'message_signal_test',
+              externalSignal: { id: 'external_signal_test', version: 2 },
+              createdAt: fixtureTime,
+              updatedAt: fixtureTime,
+              links: {
+                task: '/v1/tasks/task_signal_test',
+                run: '/v1/runs/run_signal_test',
+                events: '/v1/runs/run_signal_test/events',
+                externalSignal: '/v1/external-signals/external_signal_test',
+              },
+            },
+            { status: 202 },
+          ),
+        );
+      },
+    });
+
+    const task = await client.handleExternalSignal({
+      signalId: 'external_signal_test',
+      objective: 'Investigate the failure.',
+      idempotencyKey: 'signal-handle-test',
+    });
+    assert.equal(task.conversationId, 'conversation_signal_test');
+    assert.deepEqual(task.externalSignal, {
+      id: 'external_signal_test',
+      version: 2,
+    });
+  });
+
   void it('waits for a durable routine run to reach a terminal state', async () => {
     let calls = 0;
     const client = new VeraClient({

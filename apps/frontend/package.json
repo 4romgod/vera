@@ -5,7 +5,7 @@
   "main": "expo-router/entry",
   "scripts": {
     "build": "expo export --platform all --output-dir dist",
-    "build:host": "EXPO_PUBLIC_VERA_API_URL=/api expo export --platform web --output-dir dist-host",
+    "build:host": "EXPO_PUBLIC_VERA_API_URL=/api expo export --clear --platform web --output-dir dist-host",
     "dev": "expo start",
     "dev:web": "expo start --web",
     "doctor": "expo-doctor",

@@ -37,6 +37,12 @@ export class MongoDbExternalSignalStore implements ExternalSignalStore {
     this.signals = this.database.collection(COLLECTION);
   }
 
+  public async findById(principalId: string, signalId: string) {
+    await this.ensureConnected();
+    const document = await this.signals.findOne({ principalId, id: signalId });
+    return document === null ? null : this.parse(document);
+  }
+
   public async upsert(signal: ExternalSignal): Promise<{
     created: boolean;
     changed: boolean;

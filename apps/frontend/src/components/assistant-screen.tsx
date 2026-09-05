@@ -26,7 +26,6 @@ import {
   type KnowledgeSearchResponse,
   type KnowledgeSourceResource,
   type AttentionBriefing,
-  type AttentionItem,
   type RoutineResource,
   type RoutineRunResource,
 } from '@vera/client';
@@ -49,6 +48,10 @@ import { useVoiceInput } from '@/voice/use-voice-input';
 import { usePushNotifications } from '@/notifications/use-push-notifications';
 import { useIntegrationConnections } from '@/components/integrations/use-integration-connections';
 import { useCreateExternalWatch } from '@/components/routines/use-create-external-watch';
+import {
+  createAttentionActions,
+  newestAttention,
+} from '@/components/assistant/attention-actions';
 
 const configuredApiUrl = process.env.EXPO_PUBLIC_VERA_API_URL?.trim();
 const defaultApiUrl =
@@ -67,14 +70,6 @@ const speechLocale =
     : configuredSpeechLocale;
 const EMPTY_MESSAGES: ConversationMessageResource[] = [];
 
-function newestAttention(
-  current: AttentionBriefing | undefined,
-  incoming: AttentionBriefing,
-): AttentionBriefing {
-  return current !== undefined && current.generatedAt > incoming.generatedAt
-    ? current
-    : incoming;
-}
 function requestKey(): string {
   return `assistant-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
@@ -819,80 +814,20 @@ export function AssistantScreen() {
     setResources({ open: true, tab });
   }
 
-  const decideAttention = useCallback(
-    async (
-      item: AttentionItem,
-      decision: 'dismiss' | 'snooze' | 'restore',
-    ): Promise<boolean> => {
-      try {
-        const updated = await client.decideAttention({
-          attentionItemId: item.id,
-          decision,
-          ...(decision === 'snooze'
-            ? {
-                snoozedUntil: new Date(
-                  Date.now() + 60 * 60 * 1_000,
-                ).toISOString(),
-              }
-            : {}),
-          idempotencyKey: requestKey(),
-        });
-        if (mounted.current) {
-          setAttention((current) => newestAttention(current, updated));
-          setError(undefined);
-        }
-        return true;
-      } catch (cause) {
-        if (mounted.current) {
-          setError(errorMessage(cause, 'Vera could not update that item.'));
-        }
-        return false;
-      }
-    },
-    [client],
-  );
-
-  async function openAttentionItem(item: AttentionItem): Promise<void> {
-    switch (item.target.kind) {
-      case 'task':
-        if (item.target.conversationId !== undefined) {
-          setResources((current) => ({ ...current, open: false }));
-          await selectConversation(item.target.conversationId);
-        } else {
-          try {
-            const run = await client.getRun(item.target.runId);
-            setActiveRun(run);
-            setResources((current) => ({ ...current, open: false }));
-          } catch (cause) {
-            setError(errorMessage(cause, 'That run could not be opened.'));
-          }
-        }
-        return;
-      case 'personal_task':
-        openResources('tasks');
-        return;
-      case 'reminder':
-        openResources('reminders');
-        return;
-      case 'mission':
-        openResources('missions');
-        return;
-      case 'campaign':
-        openResources('campaigns');
-        return;
-      case 'routine':
-        openResources('routines');
-        return;
-      case 'external_signal':
-        try {
-          await Linking.openURL(item.target.url);
-        } catch (cause) {
-          setError(
-            errorMessage(cause, 'That external signal could not be opened.'),
-          );
-        }
-    }
-  }
+  const { decideAttention, handleAttention, openAttentionItem } =
+    createAttentionActions({
+      client,
+      isMounted: () => mounted.current,
+      onBriefing: (updated) =>
+        setAttention((current) => newestAttention(current, updated)),
+      onCloseResources: () =>
+        setResources((current) => ({ ...current, open: false })),
+      onOpenResources: openResources,
+      onSelectConversation: selectConversation,
+      onRun: setActiveRun,
+      onFollowRun: (task) => void followRun(task),
+      onError: setError,
+    });
 
   async function openNotificationItem(
     notification: NotificationResource,
@@ -1199,6 +1134,7 @@ export function AssistantScreen() {
             setResources((current) => ({ ...current, open: false }))
           }
           onAttentionDecision={decideAttention}
+          onHandleAttention={handleAttention}
           onOpenAttention={(item) => void openAttentionItem(item)}
           onOpenNotification={(notification) =>
             void openNotificationItem(notification)

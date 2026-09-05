@@ -923,6 +923,17 @@ durable Vera reply, and returns the reply with its task identity.
 The `plan` and `change` commands constrain auto-approval to their exact
 capability, then retrieve the resulting artifact.
 
+An active external signal can also enter this same task lifecycle through one
+explicit owner action. The triage service creates an idempotent conversation,
+keeps the owner objective distinct from provider text, and binds the task to an
+integrity-checked signal generation. Today derives a continuation link from
+that task instead of copying task state into the signal. Before the model runs,
+application code verifies the frozen signal against MongoDB authority and
+discloses only a minimized untrusted evidence view. Any resulting project
+context, specialist execution, patch application, publication, or merge still
+uses its existing independent boundary. See
+[ADR-0047](decisions/0047-convert-external-signals-into-owner-directed-work.md).
+
 For V1, accepting a task-producing message returns `202 Accepted` with the
 conversation, task, and run identifiers. Clients poll run, event, approval, and
 artifact resources. Live steering is deferred; changed intent creates a new

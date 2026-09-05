@@ -435,6 +435,17 @@ transitive to issue, pull-request, code, publication, repair, or merge actions.
 Incomplete provider enumeration never resolves an absent signal. See
 [ADR-0046](decisions/0046-project-external-signals-through-approved-standing-watches.md).
 
+Handling a signal is a deliberate new owner request, not an extension of watch
+authority. Vera stores the owner objective separately from a frozen signal
+generation, verifies the signal against durable state immediately before model
+use, and fails closed if it changed, resolved, or moved out of project scope.
+Only category, title, summary, canonical URL, occurrence time, and
+credential-free repository identity cross the configured orchestration-model
+boundary; provider text remains untrusted evidence. Every proposed specialist,
+application, publication, provider write, and merge keeps its own approval and
+policy boundary. See
+[ADR-0047](decisions/0047-convert-external-signals-into-owner-directed-work.md).
+
 ## Data classification
 
 An initial classification scheme should distinguish at least:

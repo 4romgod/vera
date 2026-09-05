@@ -223,6 +223,7 @@ void describe('routine lifecycle', () => {
   void it('replays an external-watch idempotency key without re-freezing external scope', async () => {
     let freezeCalls = 0;
     const externalAwareness: ExternalAwarenessOperations = {
+      get: () => Promise.reject(new Error('Not used by routine lifecycle.')),
       list: () => Promise.resolve([]),
       listByRoutine: () => Promise.resolve([]),
       freeze: (input) => {

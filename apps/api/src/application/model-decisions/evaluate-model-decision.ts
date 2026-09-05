@@ -52,6 +52,7 @@ import {
 } from '../../domain/software-delivery/software-delivery-management.ts';
 import { WorkItemActionArgumentsSchema } from '../../domain/work-items/work-item.ts';
 import { validateSoftwareDeliveryReference } from './resolve-software-delivery-reference.ts';
+import type { ExternalSignalContextBundle } from '../../domain/external-awareness/external-signal-context.ts';
 
 export type EvaluateModelDecision = (
   message: string,
@@ -62,6 +63,7 @@ export type EvaluateModelDecision = (
     temporalContext?: { currentTime?: string; ownerTimeZone?: string };
     attachments?: AttachmentReference[];
     softwareDeliveryContext?: SoftwareDeliveryContext;
+    externalSignalContext?: ExternalSignalContextBundle;
   },
 ) => Promise<DecisionResult>;
 
@@ -864,6 +866,18 @@ export function createEvaluateModelDecision(
         ...(context?.selectedProject === undefined
           ? {}
           : { selectedProject: context.selectedProject }),
+        ...(context?.externalSignalContext === undefined
+          ? {}
+          : {
+              externalSignal: {
+                category: context.externalSignalContext.signal.category,
+                title: context.externalSignalContext.signal.title,
+                summary: context.externalSignalContext.signal.summary,
+                url: context.externalSignalContext.signal.url,
+                occurredAt: context.externalSignalContext.signal.occurredAt,
+                repository: context.externalSignalContext.signal.repository,
+              },
+            }),
         ...(context?.attachments === undefined ||
         context.attachments.length === 0
           ? {}

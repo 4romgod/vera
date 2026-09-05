@@ -318,6 +318,9 @@ export function createAttentionService(options: {
       );
     }
     for (const signal of externalSignals) {
+      const handling = executions.find(
+        (aggregate) => aggregate.task.externalSignal?.id === signal.id,
+      );
       const reason =
         signal.category === 'review_requested'
           ? 'external_review_requested'
@@ -343,6 +346,15 @@ export function createAttentionService(options: {
             externalSignalId: signal.id,
             routineId: signal.routineId,
             url: signal.url,
+            ...(handling === undefined
+              ? {}
+              : {
+                  taskId: handling.task.id,
+                  runId: handling.run.id,
+                  ...(handling.task.conversationId === undefined
+                    ? {}
+                    : { conversationId: handling.task.conversationId }),
+                }),
           },
         }),
       );

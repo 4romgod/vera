@@ -7,6 +7,7 @@ import { RoutineError } from '../../../../src/application/routines/routine-lifec
 import { ExternalSignalSchema } from '../../../../src/domain/external-awareness/external-signal.ts';
 import type { ExternalAwarenessOperations } from '../../../../src/ports/external-awareness/external-awareness-operations.ts';
 import { FakeModelProvider } from '../../../support/fake-model-provider.ts';
+import type { TaskAggregate } from '../../../../src/domain/tasks/task-aggregate.ts';
 
 const apps: ReturnType<typeof buildApp>[] = [];
 const signal = ExternalSignalSchema.parse({
@@ -37,6 +38,7 @@ afterEach(async () => {
 void describe('external awareness HTTP API', () => {
   void it('lists active and routine-scoped signals and rejects an unknown routine', async () => {
     const awareness: ExternalAwarenessOperations = {
+      get: () => Promise.resolve(signal),
       list: () => Promise.resolve([signal]),
       listByRoutine: () => Promise.resolve([signal]),
       freeze: () => Promise.reject(new Error('Not used by list routes.')),
@@ -87,5 +89,76 @@ void describe('external awareness HTTP API', () => {
       missing.json<{ error: { code: string } }>().error.code,
       'routine_not_found',
     );
+  });
+
+  void it('starts signal triage through an idempotent task boundary', async () => {
+    const awareness: ExternalAwarenessOperations = {
+      get: () => Promise.resolve(signal),
+      list: () => Promise.resolve([signal]),
+      listByRoutine: () => Promise.resolve([signal]),
+      freeze: () => Promise.reject(new Error('Not used by triage route.')),
+      execute: () => Promise.reject(new Error('Not used by triage route.')),
+    };
+    const aggregate = {
+      schemaVersion: 1,
+      version: 1,
+      task: {
+        id: 'task_signal_http',
+        requestKey: 'message_signal_http',
+        principalId: 'owner_v1',
+        conversationId: 'conversation_signal_http',
+        messageId: 'message_signal_http',
+        projectId: signal.project.id,
+        externalSignal: { id: signal.id, version: signal.version },
+        message: 'Investigate this signal.',
+        status: 'active',
+        createdAt: '2026-09-05T10:02:00.000Z',
+        updatedAt: '2026-09-05T10:02:00.000Z',
+      },
+      run: {
+        id: 'run_signal_http',
+        status: 'deciding',
+        createdAt: '2026-09-05T10:02:00.000Z',
+        updatedAt: '2026-09-05T10:02:00.000Z',
+      },
+      events: [],
+    } as TaskAggregate;
+    let received: Record<string, unknown> | undefined;
+    const provider = new FakeModelProvider({});
+    const app = buildApp({
+      provider,
+      evaluateModelDecision: createEvaluateModelDecision(provider),
+      externalAwareness: awareness,
+      externalSignalTriage: {
+        handle: (input) => {
+          received = input;
+          return Promise.resolve(aggregate);
+        },
+      },
+    });
+    apps.push(app);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/v1/external-signals/${signal.id}/triage`,
+      headers: { 'idempotency-key': 'phone-tap' },
+      payload: { objective: 'Please investigate this failure.' },
+    });
+
+    assert.equal(response.statusCode, 202, response.body);
+    assert.equal(response.headers.location, '/v1/tasks/task_signal_http');
+    assert.deepEqual(received, {
+      principalId: 'owner_v1',
+      signalId: signal.id,
+      requestKey: 'phone-tap',
+      objective: 'Please investigate this failure.',
+    });
+    const body = response.json<{
+      externalSignal: { id: string; version: number };
+    }>();
+    assert.deepEqual(body.externalSignal, {
+      id: signal.id,
+      version: signal.version,
+    });
   });
 });
