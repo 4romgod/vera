@@ -116,8 +116,15 @@ export type PullRequestObservationResource = NonNullable<
 export type MissionStatus = MissionResource['status'];
 export type MissionPolicyResource =
   MissionPolicyListResource['policies'][number];
-export type RoutineScheduleResource =
-  RoutineResource['approval']['effect']['schedule'];
+export type RoutineTriggerResource =
+  RoutineResource['approval']['effect']['trigger'];
+export type RoutineScheduleResource = Extract<
+  RoutineTriggerResource,
+  { kind: 'schedule' }
+>['schedule'];
+export type RoutineLimitsResource = NonNullable<
+  RoutineResource['approval']['effect']['limits']
+>;
 export type RoutineSummaryResource =
   ArtifactResourceOneOfRoutineManagementResultContentRoutine;
 export type DevelopmentCampaignPolicyResource =

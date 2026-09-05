@@ -61,11 +61,14 @@ void describe('routine worker', () => {
       principalId: 'owner_v1',
       requestKey: 'worker-routine',
       title: 'Daily health',
-      schedule: {
-        kind: 'daily',
-        timeZone: 'UTC',
-        localTime: '08:00',
-        daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+      trigger: {
+        kind: 'schedule',
+        schedule: {
+          kind: 'daily',
+          timeZone: 'UTC',
+          localTime: '08:00',
+          daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+        },
       },
       action: { kind: 'machine_health_check', machineId: 'macmini' },
     });
@@ -105,11 +108,14 @@ void describe('routine worker', () => {
       principalId: 'owner_v1',
       requestKey: 'worker-recovery-routine',
       title: 'Recover health check',
-      schedule: {
-        kind: 'daily',
-        timeZone: 'UTC',
-        localTime: '08:00',
-        daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+      trigger: {
+        kind: 'schedule',
+        schedule: {
+          kind: 'daily',
+          timeZone: 'UTC',
+          localTime: '08:00',
+          daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+        },
       },
       action: { kind: 'machine_health_check', machineId: 'macmini' },
     });

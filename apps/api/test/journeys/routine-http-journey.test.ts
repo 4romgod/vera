@@ -97,6 +97,93 @@ afterEach(async () => {
 });
 
 void describe('durable standing routine journey', () => {
+  void it('holds the event-triggered routine contract closed at the transport boundary', async () => {
+    const app = createApp(config(), { logger: false });
+    apps.push(app);
+
+    const legacy = await app.inject({
+      method: 'POST',
+      url: '/v1/routines',
+      headers: { 'idempotency-key': 'legacy-schedule-body' },
+      payload: {
+        title: 'Legacy shape',
+        schedule: { kind: 'interval', minutes: 15 },
+        action: { kind: 'machine_health_check', machineId: 'test-machine' },
+      },
+    });
+    assert.equal(legacy.statusCode, 400, legacy.body);
+
+    const unbudgeted = await app.inject({
+      method: 'POST',
+      url: '/v1/routines',
+      headers: { 'idempotency-key': 'triage-without-budget' },
+      payload: {
+        title: 'Triage without a budget',
+        trigger: {
+          kind: 'external_signal',
+          integrationId: 'github',
+          projectId: 'project_alpha',
+          categories: ['failed_check'],
+        },
+        action: {
+          kind: 'signal_triage',
+          response: 'investigate_and_propose',
+          disclosure: 'minimized_signal_evidence',
+        },
+      },
+    });
+    assert.equal(unbudgeted.statusCode, 422, unbudgeted.body);
+
+    const mismatched = await app.inject({
+      method: 'POST',
+      url: '/v1/routines',
+      headers: { 'idempotency-key': 'triage-on-a-schedule' },
+      payload: {
+        title: 'Triage on a schedule',
+        trigger: {
+          kind: 'schedule',
+          schedule: { kind: 'interval', minutes: 15 },
+        },
+        action: {
+          kind: 'signal_triage',
+          response: 'investigate_and_propose',
+          disclosure: 'minimized_signal_evidence',
+        },
+      },
+    });
+    assert.equal(mismatched.statusCode, 422, mismatched.body);
+
+    const unknownProject = await app.inject({
+      method: 'POST',
+      url: '/v1/routines',
+      headers: { 'idempotency-key': 'triage-unknown-project' },
+      payload: {
+        title: 'Triage an unregistered project',
+        trigger: {
+          kind: 'external_signal',
+          integrationId: 'github',
+          projectId: 'project_missing',
+          categories: ['failed_check'],
+        },
+        action: {
+          kind: 'signal_triage',
+          response: 'investigate_and_propose',
+          disclosure: 'minimized_signal_evidence',
+        },
+        limits: {
+          expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+          maxOccurrencesPerDay: 5,
+          maxTotalOccurrences: 50,
+        },
+      },
+    });
+    assert.equal(unknownProject.statusCode, 404, unknownProject.body);
+    assert.equal(
+      unknownProject.json<{ error: { code: string } }>().error.code,
+      'awareness_project_not_found',
+    );
+  });
+
   void it('creates through conversation, approves exact authority, executes, and supports pause/resume', async () => {
     const app = createApp(config(), { logger: false });
     apps.push(app);

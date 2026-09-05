@@ -8,19 +8,21 @@ import {
 import type { VeraClient } from '@vera/client';
 import { errorMessage } from '@/components/assistant/run-status';
 
-export type ExternalWatchInput = {
+export type SignalTriageInput = {
   title: string;
   projectId: string;
-  minutes: number;
   categories: (
     | 'review_requested'
     | 'mentioned'
     | 'assigned'
     | 'failed_check'
   )[];
+  expiresAt: string;
+  maxOccurrencesPerDay: number;
+  maxTotalOccurrences: number;
 };
 
-export function useCreateExternalWatch({
+export function useCreateSignalTriage({
   client,
   refreshResources,
   mounted,
@@ -36,20 +38,26 @@ export function useCreateExternalWatch({
   setError: Dispatch<SetStateAction<string | undefined>>;
 }) {
   return useCallback(
-    async (input: ExternalWatchInput): Promise<boolean> => {
+    async (input: SignalTriageInput): Promise<boolean> => {
       setActionId('create');
       try {
         await client.createRoutine({
           title: input.title,
           trigger: {
-            kind: 'schedule',
-            schedule: { kind: 'interval', minutes: input.minutes },
-          },
-          action: {
-            kind: 'integration_awareness',
+            kind: 'external_signal',
             integrationId: 'github',
             projectId: input.projectId,
             categories: input.categories,
+          },
+          action: {
+            kind: 'signal_triage',
+            response: 'investigate_and_propose',
+            disclosure: 'minimized_signal_evidence',
+          },
+          limits: {
+            expiresAt: input.expiresAt,
+            maxOccurrencesPerDay: input.maxOccurrencesPerDay,
+            maxTotalOccurrences: input.maxTotalOccurrences,
           },
           idempotencyKey: requestKey(),
         });
@@ -58,7 +66,10 @@ export function useCreateExternalWatch({
       } catch (cause) {
         if (mounted.current)
           setError(
-            errorMessage(cause, 'Vera could not create that external watch.'),
+            errorMessage(
+              cause,
+              'Vera could not create that standing triage routine.',
+            ),
           );
         return false;
       } finally {

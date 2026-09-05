@@ -334,12 +334,24 @@ provider ticket, and later resolves the delivery receipt. Registration time,
 device status, category preferences, and quiet hours are enforced server-side;
 the device token and provider ticket never cross the public API boundary.
 
-The routine scheduler treats MongoDB as both schedule and authorization truth.
+The routine scheduler treats MongoDB as both trigger and authorization truth.
 It materializes a deterministic run before advancing a daily civil-time
 occurrence, then a lease-coordinated worker executes only the frozen registered
 action snapshot. The first routine action reuses the machine operations port
 for inspection only. Healthy results stay out of Today; unhealthy and failed
 runs join the attention projection without creating duplicate mutable status.
+
+An event-triggered routine has no clock to materialize from, so the same worker
+discovers its occurrences from durable state instead: it lists active
+signal-triggered routines fairly, enforces expiry and the per-day and total
+budget from counted runs, lists in-scope active signals after the routine's
+compound observation-time, signal-identity, and generation cursor, and creates
+one run per signal generation. Run identity is derived from
+the routine and the `(signalId, version)` occurrence key, and creation is
+insert-if-absent, so a crash anywhere in that sequence still yields exactly one
+occurrence. The cursor is an efficiency bound; occurrence identity is the
+correctness boundary. Execution reloads the signal and refuses stale or
+out-of-scope evidence before entering the ordinary triage lifecycle.
 
 ## Request lifecycle
 

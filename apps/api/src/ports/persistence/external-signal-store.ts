@@ -1,5 +1,9 @@
-import type { ExternalSignal } from '../../domain/external-awareness/external-signal.ts';
+import type {
+  ExternalSignal,
+  ExternalSignalCategory,
+} from '../../domain/external-awareness/external-signal.ts';
 import type { NotificationResource } from '../../domain/notifications/notification.ts';
+import type { RoutineSignalCursor } from '../../domain/routines/routine.ts';
 
 export type ExternalSignalStore = {
   findById(
@@ -18,6 +22,14 @@ export type ExternalSignalStore = {
     resolvedAt: string;
   }): Promise<number>;
   listActive(principalId: string, limit: number): Promise<ExternalSignal[]>;
+  listRespondable(input: {
+    principalId: string;
+    integrationId: string;
+    projectId: string;
+    categories: ExternalSignalCategory[];
+    after?: RoutineSignalCursor;
+    limit: number;
+  }): Promise<ExternalSignal[]>;
   listByRoutine(
     principalId: string,
     routineId: string,

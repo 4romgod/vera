@@ -109,6 +109,19 @@ export type ResourcePanelProps = {
       | 'failed_check'
     )[];
   }) => Promise<boolean>;
+  onCreateSignalTriage: (input: {
+    title: string;
+    projectId: string;
+    categories: (
+      | 'review_requested'
+      | 'mentioned'
+      | 'assigned'
+      | 'failed_check'
+    )[];
+    expiresAt: string;
+    maxOccurrencesPerDay: number;
+    maxTotalOccurrences: number;
+  }) => Promise<boolean>;
   onRoutineDecision: (
     routineId: string,
     decision: 'approved' | 'rejected',

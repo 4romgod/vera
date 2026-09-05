@@ -2,22 +2,36 @@ import { createHash, randomUUID } from 'node:crypto';
 
 import {
   RoutineManagementResultSchema,
+  RoutineProposalArgumentsSchema,
   RoutineRunSchema,
   RoutineSchema,
   RoutineSummarySchema,
   type Routine,
   type RoutineManagementArguments,
   type RoutineManagementResult,
+  type RoutineAction,
   type RoutineProposalArguments,
   type RoutineRun,
+  type SignalTriageAction,
 } from '../../domain/routines/routine.ts';
+import type { ExternalSignal } from '../../domain/external-awareness/external-signal.ts';
 import type { MachineOperations } from '../../ports/machines/machine-operations.ts';
 import type { ExternalAwarenessOperations } from '../../ports/external-awareness/external-awareness-operations.ts';
+import type { ExternalSignalTriageStarter } from '../../ports/external-awareness/external-signal-triage.ts';
 import type { RoutineStore } from '../../ports/persistence/routine-store.ts';
 import {
   nextRoutineOccurrence,
   assertValidTimeZone,
 } from './routine-schedule.ts';
+import {
+  advancedCursor,
+  frozenSignalGeneration,
+  occurrenceKeyFor,
+  planSignalOccurrences,
+  signalMatchesTrigger,
+  startOfUtcDay,
+  type RoutineExpiry,
+} from './routine-signal-occurrences.ts';
 
 export type RoutineErrorCode =
   | 'routine_not_found'
@@ -25,6 +39,9 @@ export type RoutineErrorCode =
   | 'routine_machine_not_found'
   | 'routine_service_not_found'
   | 'routine_idempotency_key_reused'
+  | 'routine_proposal_invalid'
+  | 'routine_signal_triage_unavailable'
+  | 'routine_signal_scope_changed'
   | 'routine_approval_already_decided'
   | 'routine_invalid_transition'
   | 'routine_concurrent_transition_failed';
@@ -63,6 +80,7 @@ export type RoutineLifecycle = {
   }): Promise<RoutineRun>;
   listRuns(principalId: string, routineId: string): Promise<RoutineRun[]>;
   materializeDue(routine: Routine): Promise<RoutineRun>;
+  materializeSignalOccurrences(routine: Routine): Promise<RoutineRun[]>;
   executeRun(principalId: string, runId: string): Promise<RoutineRun>;
   invoke(input: {
     principalId: string;
@@ -149,23 +167,39 @@ async function externalOutcome(
   };
 }
 
-async function freezeExternalAction(
-  operations: ExternalAwarenessOperations | undefined,
-  input: Parameters<ExternalAwarenessOperations['freeze']>[0],
-) {
-  if (operations === undefined) {
-    throw new RoutineError(
-      'External awareness is not available on this Vera host.',
-      'routine_invalid_transition',
-    );
+function failureCode(error: unknown, kind: RoutineAction['kind']): string {
+  if (
+    error instanceof RoutineError &&
+    error.code === 'routine_signal_scope_changed'
+  )
+    return error.code;
+  switch (kind) {
+    case 'machine_health_check':
+      return 'machine_inspection_failed';
+    case 'integration_awareness':
+      return 'external_awareness_failed';
+    case 'signal_triage':
+      return 'signal_triage_failed';
   }
-  return operations.freeze(input);
+}
+
+function defaultFailureMessage(kind: RoutineAction['kind']): string {
+  switch (kind) {
+    case 'machine_health_check':
+      return 'The machine inspection failed.';
+    case 'integration_awareness':
+      return 'The external awareness check failed.';
+    case 'signal_triage':
+      return 'The signal triage failed.';
+  }
 }
 
 export function createRoutineLifecycle(options: {
   store: RoutineStore;
   machines: MachineOperations;
   externalAwareness?: ExternalAwarenessOperations;
+  signalTriage?: ExternalSignalTriageStarter;
+  signalOccurrenceBatch?: number;
   clock?: () => Date;
   createId?: (prefix: string) => string;
 }): RoutineLifecycle {
@@ -173,17 +207,58 @@ export function createRoutineLifecycle(options: {
   const createId =
     options.createId ?? ((prefix: string) => `${prefix}_${randomUUID()}`);
 
-  function validateProposal(proposal: RoutineProposalArguments) {
-    if (proposal.schedule.kind === 'daily')
-      assertValidTimeZone(proposal.schedule.timeZone);
+  function requireAwareness() {
+    if (options.externalAwareness === undefined) {
+      throw new RoutineError(
+        'External awareness is not available on this Vera host.',
+        'routine_invalid_transition',
+      );
+    }
+    return options.externalAwareness;
+  }
+
+  function validateProposal(input: RoutineProposalArguments) {
+    // The transport JSON Schema cannot express the trigger/action/limits
+    // pairing, so the proposal is parsed here before anything external is
+    // resolved or frozen.
+    const parsed = RoutineProposalArgumentsSchema.safeParse({
+      title: input.title,
+      trigger: input.trigger,
+      action: input.action,
+      ...(input.limits === undefined ? {} : { limits: input.limits }),
+    });
+    if (!parsed.success) {
+      throw new RoutineError(
+        parsed.error.issues[0]?.message ?? 'The routine proposal is invalid.',
+        'routine_proposal_invalid',
+      );
+    }
+    const proposal = parsed.data;
+    const trigger = proposal.trigger;
+    if (trigger.kind === 'schedule' && trigger.schedule.kind === 'daily')
+      assertValidTimeZone(trigger.schedule.timeZone);
     const action = proposal.action;
-    if (action.kind === 'integration_awareness') {
-      if (options.externalAwareness === undefined) {
+    if (action.kind === 'signal_triage') {
+      requireAwareness();
+      if (options.signalTriage === undefined) {
         throw new RoutineError(
-          'External awareness is not available on this Vera host.',
+          'Signal triage is not available on this Vera host.',
+          'routine_signal_triage_unavailable',
+        );
+      }
+      if (
+        proposal.limits !== undefined &&
+        proposal.limits.expiresAt <= clock().toISOString()
+      ) {
+        throw new RoutineError(
+          'A standing trigger must expire in the future.',
           'routine_invalid_transition',
         );
       }
+      return;
+    }
+    if (action.kind === 'integration_awareness') {
+      requireAwareness();
       return;
     }
     const machine = options.machines.catalog.machines.find(
@@ -253,6 +328,69 @@ export function createRoutineLifecycle(options: {
     routine.updatedAt = now;
   }
 
+  function normalizeProposal(input: RoutineProposalArguments) {
+    const trigger =
+      input.trigger.kind === 'external_signal'
+        ? { ...input.trigger, categories: [...input.trigger.categories].sort() }
+        : input.trigger.schedule.kind === 'daily'
+          ? {
+              ...input.trigger,
+              schedule: {
+                ...input.trigger.schedule,
+                daysOfWeek: [...input.trigger.schedule.daysOfWeek].sort(
+                  (left, right) => left - right,
+                ),
+              },
+            }
+          : input.trigger;
+    const action =
+      input.action.kind === 'integration_awareness'
+        ? { ...input.action, categories: [...input.action.categories].sort() }
+        : input.action.kind === 'machine_health_check'
+          ? {
+              ...input.action,
+              ...(input.action.serviceIds === undefined
+                ? {}
+                : { serviceIds: [...input.action.serviceIds].sort() }),
+            }
+          : input.action;
+    return {
+      title: input.title.trim(),
+      trigger,
+      action,
+      ...(input.limits === undefined ? {} : { limits: input.limits }),
+    };
+  }
+
+  // Projects a frozen approved effect back to the shape the owner requested so
+  // that a repeated idempotency key compares like with like.
+  function requestedShape(effect: Routine['approval']['effect']) {
+    const trigger =
+      effect.trigger.kind === 'external_signal'
+        ? {
+            kind: 'external_signal' as const,
+            integrationId: effect.trigger.integrationId,
+            projectId: effect.trigger.project.id,
+            categories: effect.trigger.categories,
+          }
+        : effect.trigger;
+    const action =
+      effect.action.kind === 'integration_awareness'
+        ? {
+            kind: 'integration_awareness' as const,
+            integrationId: effect.action.integrationId,
+            projectId: effect.action.project.id,
+            categories: effect.action.categories,
+          }
+        : effect.action;
+    return {
+      title: effect.title,
+      trigger,
+      action,
+      ...(effect.limits === undefined ? {} : { limits: effect.limits }),
+    };
+  }
+
   async function create(
     input: RoutineProposalArguments & {
       principalId: string;
@@ -260,48 +398,13 @@ export function createRoutineLifecycle(options: {
     },
   ) {
     validateProposal(input);
-    const normalizedSchedule =
-      input.schedule.kind === 'daily'
-        ? {
-            ...input.schedule,
-            daysOfWeek: [...input.schedule.daysOfWeek].sort(
-              (left, right) => left - right,
-            ),
-          }
-        : input.schedule;
-    const normalizedRequestedAction =
-      input.action.kind === 'integration_awareness'
-        ? {
-            ...input.action,
-            categories: [...input.action.categories].sort(),
-          }
-        : {
-            ...input.action,
-            ...(input.action.serviceIds === undefined
-              ? {}
-              : { serviceIds: [...input.action.serviceIds].sort() }),
-          };
+    const normalized = normalizeProposal(input);
     const existing = await options.store.findByRequestKey(
       input.principalId,
       input.requestKey,
     );
     if (existing !== null) {
-      const existingAction = existing.approval.effect.action;
-      const sameRequestedAction =
-        existingAction.kind === normalizedRequestedAction.kind &&
-        (existingAction.kind === 'machine_health_check'
-          ? stableEqual(existingAction, normalizedRequestedAction)
-          : normalizedRequestedAction.kind === 'integration_awareness' &&
-            existingAction.project.id === normalizedRequestedAction.projectId &&
-            stableEqual(
-              existingAction.categories,
-              normalizedRequestedAction.categories,
-            ));
-      if (
-        existing.approval.effect.title !== input.title.trim() ||
-        !stableEqual(existing.approval.effect.schedule, normalizedSchedule) ||
-        !sameRequestedAction
-      ) {
+      if (!stableEqual(requestedShape(existing.approval.effect), normalized)) {
         throw new RoutineError(
           `Idempotency key ${input.requestKey} belongs to another routine.`,
           'routine_idempotency_key_reused',
@@ -309,23 +412,67 @@ export function createRoutineLifecycle(options: {
       }
       return existing;
     }
-    const action =
-      normalizedRequestedAction.kind === 'integration_awareness'
-        ? await freezeExternalAction(options.externalAwareness, {
+    const trigger =
+      normalized.trigger.kind === 'external_signal'
+        ? await requireAwareness().freezeTrigger({
             principalId: input.principalId,
-            integrationId: normalizedRequestedAction.integrationId,
-            projectId: normalizedRequestedAction.projectId,
-            categories: normalizedRequestedAction.categories,
+            integrationId: normalized.trigger.integrationId,
+            projectId: normalized.trigger.projectId,
+            categories: normalized.trigger.categories,
           })
-        : normalizedRequestedAction;
-    const proposal = {
-      title: input.title.trim(),
-      schedule: normalizedSchedule,
-      action,
-    };
+        : normalized.trigger;
+    const action =
+      normalized.action.kind === 'integration_awareness'
+        ? await requireAwareness().freeze({
+            principalId: input.principalId,
+            integrationId: normalized.action.integrationId,
+            projectId: normalized.action.projectId,
+            categories: normalized.action.categories,
+          })
+        : normalized.action;
+    const authority =
+      action.kind === 'machine_health_check'
+        ? {
+            recurringExecution: true,
+            inspectRegisteredMachine: true,
+            controlMachineServices: false,
+            modifyRoutine: false,
+          }
+        : action.kind === 'integration_awareness'
+          ? {
+              recurringExecution: true,
+              readExternalService: true,
+              modifyExternalService: false,
+              modifyRoutine: false,
+            }
+          : {
+              eventTriggeredExecution: true,
+              readExternalSignals: true,
+              startTriageConversation: true,
+              modifyExternalService: false,
+              applyChanges: false,
+              modifyRoutine: false,
+            };
+    const createdData =
+      action.kind === 'machine_health_check'
+        ? { machineId: action.machineId }
+        : action.kind === 'integration_awareness'
+          ? {
+              integrationId: action.integrationId,
+              projectId: action.project.id,
+              repository: action.repository,
+            }
+          : trigger.kind === 'external_signal'
+            ? {
+                integrationId: trigger.integrationId,
+                projectId: trigger.project.id,
+                categories: trigger.categories,
+                response: action.response,
+              }
+            : {};
     const now = clock().toISOString();
     const routine = RoutineSchema.parse({
-      schemaVersion: 1,
+      schemaVersion: 2,
       version: 1,
       id: deterministicId('routine', input.principalId, input.requestKey),
       requestKey: input.requestKey,
@@ -336,21 +483,13 @@ export function createRoutineLifecycle(options: {
         status: 'pending',
         reason: 'standing_instruction',
         effect: {
-          ...proposal,
-          authority:
-            proposal.action.kind === 'machine_health_check'
-              ? {
-                  recurringExecution: true,
-                  inspectRegisteredMachine: true,
-                  controlMachineServices: false,
-                  modifyRoutine: false,
-                }
-              : {
-                  recurringExecution: true,
-                  readExternalService: true,
-                  modifyExternalService: false,
-                  modifyRoutine: false,
-                },
+          title: normalized.title,
+          trigger,
+          action,
+          ...(normalized.limits === undefined
+            ? {}
+            : { limits: normalized.limits }),
+          authority,
         },
         requestedAt: now,
       },
@@ -361,14 +500,7 @@ export function createRoutineLifecycle(options: {
           sequence: 1,
           type: 'routine_created',
           occurredAt: now,
-          data:
-            proposal.action.kind === 'machine_health_check'
-              ? { machineId: proposal.action.machineId }
-              : {
-                  integrationId: proposal.action.integrationId,
-                  projectId: proposal.action.project.id,
-                  repository: proposal.action.repository,
-                },
+          data: createdData,
         },
       ],
       createdAt: now,
@@ -389,13 +521,14 @@ export function createRoutineLifecycle(options: {
 
   async function createRun(
     routine: Routine,
-    trigger: 'scheduled' | 'manual',
+    trigger: 'scheduled' | 'manual' | 'external_signal',
     scheduledFor: string,
     occurrenceKey: string,
+    signal?: ExternalSignal,
   ) {
     const now = clock().toISOString();
     const run = RoutineRunSchema.parse({
-      schemaVersion: 1,
+      schemaVersion: 2,
       version: 1,
       id: deterministicId('routine_run', routine.id, occurrenceKey),
       routineId: routine.id,
@@ -404,11 +537,31 @@ export function createRoutineLifecycle(options: {
       trigger,
       scheduledFor,
       action: routine.approval.effect.action,
+      ...(signal === undefined
+        ? {}
+        : { signal: frozenSignalGeneration(signal) }),
       status: 'queued',
       createdAt: now,
       updatedAt: now,
     });
-    return (await options.store.createRun(run)).run;
+    return options.store.createRun(run);
+  }
+
+  async function expire(
+    principalId: string,
+    routineId: string,
+    reason: RoutineExpiry,
+  ) {
+    return update(principalId, routineId, (routine) => {
+      if (routine.status !== 'active') return false;
+      const now = clock().toISOString();
+      routine.status = 'expired';
+      routine.expiredAt = now;
+      routine.expiryReason = reason;
+      delete routine.nextRunAt;
+      append(routine, 'routine_expired', now, { reason });
+      return true;
+    });
   }
 
   async function pause(principalId: string, routineId: string) {
@@ -437,13 +590,14 @@ export function createRoutineLifecycle(options: {
         );
       const now = clock().toISOString();
       routine.status = 'active';
-      routine.nextRunAt = nextRoutineOccurrence(
-        routine.approval.effect.schedule,
-        new Date(now),
-        routine.approval.effect.schedule.kind === 'daily'
-          ? routine.lastRunAt
-          : undefined,
-      );
+      const trigger = routine.approval.effect.trigger;
+      if (trigger.kind === 'schedule') {
+        routine.nextRunAt = nextRoutineOccurrence(
+          trigger.schedule,
+          new Date(now),
+          trigger.schedule.kind === 'daily' ? routine.lastRunAt : undefined,
+        );
+      }
       append(routine, 'routine_resumed', now, {});
       return true;
     });
@@ -467,8 +621,156 @@ export function createRoutineLifecycle(options: {
         'Only an active approved routine can run.',
         'routine_invalid_transition',
       );
+    if (routine.approval.effect.trigger.kind !== 'schedule')
+      throw new RoutineError(
+        'An event-triggered routine runs only when a matching signal arrives.',
+        'routine_invalid_transition',
+      );
     const now = clock().toISOString();
-    return createRun(routine, 'manual', now, `manual:${input.requestKey}`);
+    return (
+      await createRun(routine, 'manual', now, `manual:${input.requestKey}`)
+    ).run;
+  }
+
+  async function triageOutcome(
+    principalId: string,
+    routine: Routine,
+    run: RoutineRun,
+    action: SignalTriageAction,
+  ) {
+    const trigger = routine.approval.effect.trigger;
+    const frozen = run.signal;
+    if (trigger.kind !== 'external_signal' || frozen === undefined) {
+      throw new RoutineError(
+        'A signal triage run requires an external-signal trigger.',
+        'routine_invalid_transition',
+      );
+    }
+    const triage = options.signalTriage;
+    if (triage === undefined) {
+      throw new RoutineError(
+        'Signal triage is not available on this Vera host.',
+        'routine_signal_triage_unavailable',
+      );
+    }
+    const signal = await requireAwareness().get(principalId, frozen.id);
+    if (!signalMatchesTrigger(signal, trigger)) {
+      throw new RoutineError(
+        'The signal no longer matches the approved trigger scope.',
+        'routine_signal_scope_changed',
+      );
+    }
+    const skipped = (reason: 'resolved' | 'superseded', summary: string) => ({
+      kind: 'signal_triage' as const,
+      outcome: 'skipped' as const,
+      summary,
+      signalId: frozen.id,
+      signalVersion: frozen.version,
+      skipReason: reason,
+    });
+    if (signal.status !== 'active')
+      return skipped(
+        'resolved',
+        'The signal resolved before triage started; no work was created.',
+      );
+    if (signal.version !== frozen.version)
+      return skipped(
+        'superseded',
+        'A newer generation of this signal has its own occurrence.',
+      );
+    const aggregate = await triage.handle({
+      principalId,
+      signalId: signal.id,
+      requestKey: run.id,
+      ...(action.objective === undefined
+        ? {}
+        : { objective: action.objective }),
+    });
+    return {
+      kind: 'signal_triage' as const,
+      outcome: 'triage_started' as const,
+      summary: `Started triage for ${signal.title}.`.slice(0, 2_000),
+      signalId: signal.id,
+      signalVersion: signal.version,
+      taskId: aggregate.task.id,
+      taskRunId: aggregate.run.id,
+      ...(aggregate.task.conversationId === undefined
+        ? {}
+        : { conversationId: aggregate.task.conversationId }),
+    };
+  }
+
+  async function materializeSignalOccurrences(
+    routine: Routine,
+  ): Promise<RoutineRun[]> {
+    const current = await requireRoutine(routine.principalId, routine.id);
+    const trigger = current.approval.effect.trigger;
+    const limits = current.approval.effect.limits;
+    if (
+      current.status !== 'active' ||
+      trigger.kind !== 'external_signal' ||
+      limits === undefined
+    )
+      return [];
+    const now = clock().toISOString();
+    const plan = planSignalOccurrences({
+      limits,
+      now,
+      totalOccurrences: await options.store.countRuns({
+        principalId: current.principalId,
+        routineId: current.id,
+      }),
+      todayOccurrences: await options.store.countRuns({
+        principalId: current.principalId,
+        routineId: current.id,
+        createdAfter: startOfUtcDay(now),
+      }),
+    });
+    if (plan.kind === 'expired') {
+      await expire(current.principalId, current.id, plan.reason);
+      return [];
+    }
+    if (plan.capacity === 0) return [];
+    const batch = Math.min(plan.capacity, options.signalOccurrenceBatch ?? 20);
+    const candidates = await requireAwareness().listRespondable({
+      principalId: current.principalId,
+      integrationId: trigger.integrationId,
+      projectId: trigger.project.id,
+      categories: trigger.categories,
+      ...(current.signalCursor === undefined
+        ? {}
+        : { after: current.signalCursor }),
+      limit: batch,
+    });
+    const runs: RoutineRun[] = [];
+    const examined: ExternalSignal[] = [];
+    for (const signal of candidates) {
+      if (runs.length >= batch) break;
+      examined.push(signal);
+      const outcome = await createRun(
+        current,
+        'external_signal',
+        signal.lastObservedAt,
+        occurrenceKeyFor(signal),
+        signal,
+      );
+      if (outcome.created) runs.push(outcome.run);
+    }
+    const cursor = advancedCursor(current.signalCursor, examined);
+    if (cursor !== undefined) {
+      await update(current.principalId, current.id, (candidate) => {
+        if (
+          candidate.status !== 'active' ||
+          (candidate.signalCursor !== undefined &&
+            advancedCursor(candidate.signalCursor, examined) === undefined)
+        )
+          return false;
+        candidate.signalCursor = cursor;
+        candidate.updatedAt = clock().toISOString();
+        return true;
+      });
+    }
+    return runs;
   }
 
   async function executeRun(
@@ -526,12 +828,19 @@ export function createRoutineLifecycle(options: {
                   : { serviceIds: executing.action.serviceIds }),
               }),
             )
-          : await externalOutcome(options.externalAwareness, {
-              principalId,
-              routineId: executing.routineId,
-              action: executing.action,
-              observedAt: clock().toISOString(),
-            });
+          : executing.action.kind === 'signal_triage'
+            ? await triageOutcome(
+                principalId,
+                routine,
+                executing,
+                executing.action,
+              )
+            : await externalOutcome(options.externalAwareness, {
+                principalId,
+                routineId: executing.routineId,
+                action: executing.action,
+                observedAt: clock().toISOString(),
+              });
       const now = clock().toISOString();
       const completed = RoutineRunSchema.parse({
         ...executing,
@@ -551,16 +860,11 @@ export function createRoutineLifecycle(options: {
         version: executing.version + 1,
         status: 'failed',
         failure: {
-          code:
-            executing.action.kind === 'machine_health_check'
-              ? 'machine_inspection_failed'
-              : 'external_awareness_failed',
+          code: failureCode(error, executing.action.kind),
           message:
             error instanceof Error
               ? error.message.slice(0, 2_000)
-              : executing.action.kind === 'machine_health_check'
-                ? 'The machine inspection failed.'
-                : 'The external awareness check failed.',
+              : defaultFailureMessage(executing.action.kind),
         },
         completedAt: now,
         updatedAt: now,
@@ -606,9 +910,10 @@ export function createRoutineLifecycle(options: {
         routine.approval.decidedAt = now;
         routine.approval.decidedBy = input.principalId;
         routine.status = input.decision === 'approved' ? 'active' : 'rejected';
-        if (input.decision === 'approved') {
+        const trigger = routine.approval.effect.trigger;
+        if (input.decision === 'approved' && trigger.kind === 'schedule') {
           routine.nextRunAt = nextRoutineOccurrence(
-            routine.approval.effect.schedule,
+            trigger.schedule,
             new Date(now),
           );
         }
@@ -638,22 +943,24 @@ export function createRoutineLifecycle(options: {
           'routine_invalid_transition',
         );
       const scheduledFor = current.nextRunAt;
-      const run = await createRun(
+      const { run } = await createRun(
         current,
         'scheduled',
         scheduledFor,
         `scheduled:${scheduledFor}`,
       );
       await update(current.principalId, current.id, (candidate) => {
+        const trigger = candidate.approval.effect.trigger;
         if (
           candidate.status !== 'active' ||
-          candidate.nextRunAt !== scheduledFor
+          candidate.nextRunAt !== scheduledFor ||
+          trigger.kind !== 'schedule'
         )
           return false;
         const now = clock().toISOString();
         candidate.lastRunAt = scheduledFor;
         candidate.nextRunAt = nextRoutineOccurrence(
-          candidate.approval.effect.schedule,
+          trigger.schedule,
           new Date(scheduledFor),
           scheduledFor,
         );
@@ -662,6 +969,7 @@ export function createRoutineLifecycle(options: {
       });
       return run;
     },
+    materializeSignalOccurrences,
     executeRun,
     async invoke(input) {
       const args = input.arguments;

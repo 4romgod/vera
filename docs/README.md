@@ -83,6 +83,10 @@ errors, polling, uploads, and streaming in that facade.
 ADR-0049 closes the external-signal feedback loop with a derived resolution
 read model, exact project/repository/pull-request repair binding, and
 source-owned final resolution after complete observation.
+ADR-0050 makes a routine triggered rather than only scheduled: a separately
+approved, budgeted, expiring signal-triage routine turns each matching signal
+generation into exactly one durable occurrence and starts that same lifecycle
+without waiting to be asked.
 
 Implementation began on the same date. ADR-0009 accepts the first production
 source layout and model decision boundary. ADR-0010 accepts the durable

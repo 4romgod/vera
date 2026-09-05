@@ -12,6 +12,7 @@ import {
   TaskAggregateSchema,
   type TaskAggregate,
 } from '../../../domain/tasks/task-aggregate.ts';
+import { describeRoutineTrigger } from '../../../domain/routines/routine.ts';
 import type { CapabilityRuntimeRegistry } from '../../../ports/capabilities/capability-runtime.ts';
 import { projectTaskScratchpad } from '../project-task-scratchpad.ts';
 import { assembleMemoryContext } from '../../memories/assemble-memory-context.ts';
@@ -491,7 +492,7 @@ export function createTaskLifecycleFoundation(runtime: TaskLifecycleRuntime) {
         result.summary,
         ...(result.routines ?? []).map(
           (routine) =>
-            `${routine.approval.effect.title} — ${routine.status} — ${routine.id} — ${routine.approval.effect.schedule.kind === 'daily' ? `${routine.approval.effect.schedule.localTime} ${routine.approval.effect.schedule.timeZone}` : `every ${String(routine.approval.effect.schedule.minutes)} minutes`}`,
+            `${routine.approval.effect.title} — ${routine.status} — ${routine.id} — ${describeRoutineTrigger(routine.approval.effect.trigger)}`,
         ),
         ...(result.routine === undefined
           ? []

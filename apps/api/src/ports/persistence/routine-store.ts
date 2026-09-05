@@ -10,6 +10,10 @@ export type RoutineStore = {
   list(principalId: string, limit: number): Promise<Routine[]>;
   replace(routine: Routine, expectedVersion: number): Promise<boolean>;
   findDue(now: string, limit: number): Promise<Routine[]>;
+  findSignalTriggered(input: {
+    after?: { createdAt: string; id: string };
+    limit: number;
+  }): Promise<Routine[]>;
   createRun(run: RoutineRun): Promise<{ created: boolean; run: RoutineRun }>;
   findRunById(principalId: string, runId: string): Promise<RoutineRun | null>;
   listRuns(
@@ -19,6 +23,11 @@ export type RoutineStore = {
   ): Promise<RoutineRun[]>;
   replaceRun(run: RoutineRun, expectedVersion: number): Promise<boolean>;
   findRunnable(limit: number): Promise<RoutineRun[]>;
+  countRuns(input: {
+    principalId: string;
+    routineId: string;
+    createdAfter?: string;
+  }): Promise<number>;
   listAttentionRuns(principalId: string, limit: number): Promise<RoutineRun[]>;
   checkReadiness(): Promise<void>;
   close(): Promise<void>;

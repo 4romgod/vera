@@ -4,9 +4,11 @@ import {
   ExternalSignalJsonSchema,
   ExternalSignalSchema,
   type ExternalSignal,
+  type ExternalSignalCategory,
 } from '../../../../domain/external-awareness/external-signal.ts';
 import { externalSignalNotification } from '../../../../domain/external-awareness/external-signal-notification.ts';
 import type { ExternalSignalStore } from '../../../../ports/persistence/external-signal-store.ts';
+import type { RoutineSignalCursor } from '../../../../domain/routines/routine.ts';
 import { mongoDocumentSchema } from './mongo-json-schema.ts';
 
 const COLLECTION = 'external_signals';
@@ -49,30 +51,50 @@ export class MongoDbExternalSignalStore implements ExternalSignalStore {
     signal: ExternalSignal;
   }> {
     await this.ensureConnected();
-    const currentDocument = await this.signals.findOne({ id: signal.id });
-    if (currentDocument === null) {
-      try {
-        await this.signals.insertOne(signal);
-        return { created: true, changed: true, signal };
-      } catch (error) {
-        if (!isDuplicateKey(error)) throw error;
-        return this.upsert(signal);
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const idDocument = await this.signals.findOne({ id: signal.id });
+      if (idDocument !== null && !hasSameExternalIdentity(idDocument, signal)) {
+        throw new Error(
+          `External signal ${signal.id} conflicts with an existing signal identity.`,
+        );
+      }
+      const currentDocument =
+        idDocument ??
+        (await this.signals.findOne({
+          principalId: signal.principalId,
+          routineId: signal.routineId,
+          externalKey: signal.externalKey,
+        }));
+      if (currentDocument === null) {
+        try {
+          // MongoDB adds `_id` to inserted objects by default. Insert a shallow
+          // copy so a caller can safely reuse its domain value after this call.
+          await this.signals.insertOne({ ...signal });
+          return { created: true, changed: true, signal };
+        } catch (error) {
+          if (!isDuplicateKey(error)) throw error;
+          continue;
+        }
+      }
+      const current = this.parse(currentDocument);
+      const changed = fingerprint(current) !== fingerprint(signal);
+      if (!changed) return { created: false, changed: false, signal: current };
+      const next = ExternalSignalSchema.parse({
+        ...signal,
+        id: current.id,
+        version: current.version + 1,
+      });
+      const result = await this.signals.replaceOne(
+        { id: current.id, version: current.version },
+        next,
+      );
+      if (result.modifiedCount === 1) {
+        return { created: false, changed: true, signal: next };
       }
     }
-    const current = this.parse(currentDocument);
-    const changed = fingerprint(current) !== fingerprint(signal);
-    if (!changed) return { created: false, changed: false, signal: current };
-    const next = ExternalSignalSchema.parse({
-      ...signal,
-      version: current.version + 1,
-    });
-    const result = await this.signals.replaceOne(
-      { id: current.id, version: current.version },
-      next,
+    throw new Error(
+      `External signal ${signal.id} could not be upserted after concurrent updates.`,
     );
-    return result.modifiedCount === 1
-      ? { created: false, changed: true, signal: next }
-      : this.upsert(signal);
   }
 
   public async resolveMissing(input: {
@@ -108,6 +130,46 @@ export class MongoDbExternalSignalStore implements ExternalSignalStore {
         .find({ principalId, status: 'active' })
         .sort({ occurredAt: -1, id: -1 })
         .limit(limit)
+        .toArray()
+    ).map((document) => this.parse(document));
+  }
+
+  public async listRespondable(input: {
+    principalId: string;
+    integrationId: string;
+    projectId: string;
+    categories: ExternalSignalCategory[];
+    after?: RoutineSignalCursor;
+    limit: number;
+  }) {
+    await this.ensureConnected();
+    return (
+      await this.signals
+        .find({
+          principalId: input.principalId,
+          status: 'active',
+          integrationId: input.integrationId,
+          'project.id': input.projectId,
+          category: { $in: input.categories },
+          ...(input.after === undefined
+            ? {}
+            : {
+                $or: [
+                  { lastObservedAt: { $gt: input.after.observedAt } },
+                  {
+                    lastObservedAt: input.after.observedAt,
+                    id: { $gt: input.after.signalId },
+                  },
+                  {
+                    lastObservedAt: input.after.observedAt,
+                    id: input.after.signalId,
+                    version: { $gt: input.after.signalVersion },
+                  },
+                ],
+              }),
+        })
+        .sort({ lastObservedAt: 1, id: 1, version: 1 })
+        .limit(input.limit)
         .toArray()
     ).map((document) => this.parse(document));
   }
@@ -201,6 +263,16 @@ export class MongoDbExternalSignalStore implements ExternalSignalStore {
       ),
       this.signals.createIndex({ principalId: 1, status: 1, occurredAt: -1 }),
       this.signals.createIndex({ principalId: 1, firstObservedAt: 1, id: 1 }),
+      this.signals.createIndex({
+        principalId: 1,
+        status: 1,
+        integrationId: 1,
+        'project.id': 1,
+        category: 1,
+        lastObservedAt: 1,
+        id: 1,
+        version: 1,
+      }),
     ]);
   }
 
@@ -226,6 +298,14 @@ function notificationToSignalId(notificationId: string) {
   return notificationId.startsWith('notification_')
     ? `external_signal_${notificationId.slice('notification_'.length)}`
     : notificationId;
+}
+
+function hasSameExternalIdentity(document: Document, signal: ExternalSignal) {
+  return (
+    document.principalId === signal.principalId &&
+    document.routineId === signal.routineId &&
+    document.externalKey === signal.externalKey
+  );
 }
 
 function isDuplicateKey(error: unknown) {

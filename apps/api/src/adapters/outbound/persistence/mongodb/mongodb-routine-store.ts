@@ -3,11 +3,13 @@ import { MongoClient, type Collection, type Db, type Document } from 'mongodb';
 import {
   RoutineJsonSchema,
   RoutineRunJsonSchema,
-  RoutineRunSchema,
-  RoutineSchema,
   type Routine,
   type RoutineRun,
 } from '../../../../domain/routines/routine.ts';
+import {
+  parseStoredRoutine,
+  parseStoredRoutineRun,
+} from '../../../../domain/routines/routine-compatibility.ts';
 import type { RoutineStore } from '../../../../ports/persistence/routine-store.ts';
 import { mongoDocumentSchema } from './mongo-json-schema.ts';
 
@@ -106,6 +108,34 @@ export class MongoDbRoutineStore implements RoutineStore {
     ).map((value) => this.parseRoutine(value));
   }
 
+  public async findSignalTriggered(input: {
+    after?: { createdAt: string; id: string };
+    limit: number;
+  }) {
+    await this.ensureConnected();
+    return (
+      await this.routines
+        .find({
+          status: 'active',
+          'approval.effect.trigger.kind': 'external_signal',
+          ...(input.after === undefined
+            ? {}
+            : {
+                $or: [
+                  { createdAt: { $gt: input.after.createdAt } },
+                  {
+                    createdAt: input.after.createdAt,
+                    id: { $gt: input.after.id },
+                  },
+                ],
+              }),
+        })
+        .sort({ createdAt: 1, id: 1 })
+        .limit(input.limit)
+        .toArray()
+    ).map((value) => this.parseRoutine(value));
+  }
+
   public async createRun(run: RoutineRun) {
     await this.ensureConnected();
     const result = await this.runs.updateOne(
@@ -160,6 +190,21 @@ export class MongoDbRoutineStore implements RoutineStore {
     ).map((value) => this.parseRun(value));
   }
 
+  public async countRuns(input: {
+    principalId: string;
+    routineId: string;
+    createdAfter?: string;
+  }) {
+    await this.ensureConnected();
+    return this.runs.countDocuments({
+      principalId: input.principalId,
+      routineId: input.routineId,
+      ...(input.createdAfter === undefined
+        ? {}
+        : { createdAt: { $gte: input.createdAfter } }),
+    });
+  }
+
   public async listAttentionRuns(principalId: string, limit: number) {
     await this.ensureConnected();
     return (
@@ -204,12 +249,19 @@ export class MongoDbRoutineStore implements RoutineStore {
       ),
       this.routines.createIndex({ principalId: 1, createdAt: -1 }),
       this.routines.createIndex({ status: 1, nextRunAt: 1 }),
+      this.routines.createIndex({
+        status: 1,
+        'approval.effect.trigger.kind': 1,
+        createdAt: 1,
+        id: 1,
+      }),
       this.runs.createIndex({ id: 1 }, { unique: true }),
       this.runs.createIndex(
         { routineId: 1, occurrenceKey: 1 },
         { unique: true },
       ),
       this.runs.createIndex({ principalId: 1, routineId: 1, createdAt: -1 }),
+      this.runs.createIndex({ principalId: 1, routineId: 1, createdAt: 1 }),
       this.runs.createIndex({ status: 1, createdAt: 1 }),
       this.runs.createIndex({ principalId: 1, status: 1, updatedAt: -1 }),
     ]);
@@ -241,11 +293,11 @@ export class MongoDbRoutineStore implements RoutineStore {
   private parseRoutine(document: Document): Routine {
     const { _id: ignored, ...value } = document;
     void ignored;
-    return RoutineSchema.parse(value);
+    return parseStoredRoutine(value);
   }
   private parseRun(document: Document): RoutineRun {
     const { _id: ignored, ...value } = document;
     void ignored;
-    return RoutineRunSchema.parse(value);
+    return parseStoredRoutineRun(value);
   }
 }

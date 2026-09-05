@@ -645,7 +645,9 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
         error.code === 'routine_machine_not_found' ||
         error.code === 'routine_service_not_found'
           ? 404
-          : 409;
+          : error.code === 'routine_proposal_invalid'
+            ? 422
+            : 409;
       void reply.status(statusCode).send({
         error: { code: error.code, message: error.message },
       });

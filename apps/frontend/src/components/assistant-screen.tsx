@@ -48,6 +48,7 @@ import { useVoiceInput } from '@/voice/use-voice-input';
 import { usePushNotifications } from '@/notifications/use-push-notifications';
 import { useIntegrationConnections } from '@/components/integrations/use-integration-connections';
 import { useCreateExternalWatch } from '@/components/routines/use-create-external-watch';
+import { useCreateSignalTriage } from '@/components/routines/use-create-signal-triage';
 import {
   createAttentionActions,
   newestAttention,
@@ -859,11 +860,14 @@ export function AssistantScreen() {
       try {
         await client.createRoutine({
           title: input.title,
-          schedule: {
-            kind: 'daily',
-            timeZone: input.timeZone,
-            localTime: input.localTime,
-            daysOfWeek: input.daysOfWeek,
+          trigger: {
+            kind: 'schedule',
+            schedule: {
+              kind: 'daily',
+              timeZone: input.timeZone,
+              localTime: input.localTime,
+              daysOfWeek: input.daysOfWeek,
+            },
           },
           action: {
             kind: 'machine_health_check',
@@ -888,6 +892,15 @@ export function AssistantScreen() {
   );
 
   const createExternalWatch = useCreateExternalWatch({
+    client,
+    refreshResources,
+    mounted,
+    requestKey,
+    setActionId: setRoutineActionId,
+    setError,
+  });
+
+  const createSignalTriage = useCreateSignalTriage({
     client,
     refreshResources,
     mounted,
@@ -1163,6 +1176,7 @@ export function AssistantScreen() {
           onMissionCancel={cancelMission}
           onCreateRoutine={createRoutine}
           onCreateExternalWatch={createExternalWatch}
+          onCreateSignalTriage={createSignalTriage}
           onRoutineDecision={routineDecision}
           onPauseRoutine={pauseRoutine}
           onResumeRoutine={resumeRoutine}

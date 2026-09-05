@@ -237,12 +237,61 @@ void describe('deterministic model provider', () => {
         action: 'create',
         routine: {
           title: 'Watch Vera on GitHub',
-          schedule: { kind: 'interval', minutes: 20 },
+          trigger: {
+            kind: 'schedule',
+            schedule: { kind: 'interval', minutes: 20 },
+          },
           action: {
             kind: 'integration_awareness',
             integrationId: 'github',
             projectId: 'project_vera',
             categories: ['review_requested', 'failed_check'],
+          },
+        },
+      },
+    });
+  });
+
+  void it('discloses deterministic defaults for automatic signal triage', async () => {
+    const provider = new DeterministicModelProvider();
+    const result = await provider.generateStructured({
+      purpose: 'orchestration_decision',
+      systemPrompt: 'test',
+      message: JSON.stringify({
+        ownerMessage: 'Investigate failed checks automatically',
+        selectedProject: { id: 'project_vera', displayName: 'Vera' },
+        temporalContext: {
+          currentTime: '2026-09-05T10:00:00.000Z',
+          ownerTimeZone: 'Africa/Johannesburg',
+        },
+      }),
+      outputSchema: { capabilities: ['routine_management'] },
+    });
+    assert.deepEqual(result.candidate, {
+      schemaVersion: 1,
+      kind: 'invoke_capability',
+      decisionSummary:
+        'The owner requested automatic signal triage. I chose a 30-day expiry with at most 5 occurrences per day and 50 in total; the exact standing authority still requires approval.',
+      capability: { name: 'routine_management', version: 1 },
+      arguments: {
+        action: 'create',
+        routine: {
+          title: 'Triage Vera signals',
+          trigger: {
+            kind: 'external_signal',
+            integrationId: 'github',
+            projectId: 'project_vera',
+            categories: ['failed_check'],
+          },
+          action: {
+            kind: 'signal_triage',
+            response: 'investigate_and_propose',
+            disclosure: 'minimized_signal_evidence',
+          },
+          limits: {
+            expiresAt: '2026-10-05T10:00:00.000Z',
+            maxOccurrencesPerDay: 5,
+            maxTotalOccurrences: 50,
           },
         },
       },

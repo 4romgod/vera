@@ -356,17 +356,19 @@ the same current identity active again.
 ### Routine and routine run
 
 A routine is a durable, owner-approved standing instruction. Its approval
-freezes the human title, civil-time schedule, closed action, exact target, and
-explicit authority and prohibitions. A routine is inactive while awaiting
-approval, executable only while active, and non-executable while paused or
-rejected. Changing its effect requires a new routine rather than silently
-reusing approval.
+freezes the human title, one closed trigger, closed action, exact target, any
+budget and expiry, and explicit authority and prohibitions. A trigger is either
+a civil-time `schedule` or an `external_signal` match. A routine is inactive
+while awaiting approval, executable only while active, and non-executable while
+paused, rejected, or expired. Changing its effect requires a new routine rather
+than silently reusing approval.
 
 A routine run is one durable occurrence of that instruction. It has a stable
-identity derived from the routine and scheduled occurrence or manual
-idempotency key, an immutable action snapshot, trigger, state, result or
-failure, and timestamps. Healthy machine checks remain authoritative history
-without becoming attention; unhealthy or failed runs are attention sources.
+identity derived from the routine and its occurrence key — a scheduled
+occurrence, a manual idempotency key, or one exact signal generation — plus an
+immutable action snapshot, trigger, state, result or failure, and timestamps.
+Healthy machine checks remain authoritative history without becoming attention;
+unhealthy or failed runs are attention sources.
 
 An `integration_awareness` routine freezes one active connection, its
 non-secret provider account identity, one registered project and repository,
@@ -375,6 +377,14 @@ authority. An `ExternalSignal` is the provider-neutral durable observation
 produced by that routine. Stable owner/watch/provider identity deduplicates it;
 status records whether it is still active, and version records a materially
 new generation. Today and Activity consume signals as projections.
+
+A `signal_triage` routine is triggered by signal generations rather than by the
+clock. Its approval freezes the integration, one registered project, the signal
+categories it may answer, the permitted response, the model disclosure
+boundary, a per-day and total occurrence budget, and an expiry. Each matching
+generation `(signalId, version)` produces exactly one durable occurrence, which
+starts the ordinary owner-directed triage lifecycle. It confers no authority to
+write to the external service, apply a change, publish, or merge.
 
 ### Event
 

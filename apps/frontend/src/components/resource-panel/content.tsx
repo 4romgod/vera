@@ -259,6 +259,7 @@ export function PanelContent(props: ResourcePanelProps) {
             runs={props.routineRuns}
             onCreate={props.onCreateRoutine}
             onCreateWatch={props.onCreateExternalWatch}
+            onCreateTriage={props.onCreateSignalTriage}
             onDecision={props.onRoutineDecision}
             onPause={props.onPauseRoutine}
             onResume={props.onResumeRoutine}
