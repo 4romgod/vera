@@ -39,6 +39,22 @@ test('defines user services with bounded non-secret environments', () => {
   assert.doesNotMatch(serialized, /API_KEY|TOKEN|PASSWORD/u);
   assert.match(serialized, /VERA_PROFILE/u);
   assert.match(serialized, /127\.0\.0\.1/u);
+
+  const withLiveKit = serviceDefinitions({
+    nodePath: '/opt/vera/bin/node',
+    npmPath: '/opt/vera/bin/npm',
+    livekitPath: '/opt/vera/bin/livekit-server',
+    ownerHome: '/Users/tester',
+    profile: 'ollama',
+  });
+  assert.deepEqual(
+    withLiveKit.map(({ name }) => name),
+    ['livekit', 'api', 'frontend', 'backup'],
+  );
+  assert.doesNotMatch(
+    JSON.stringify(withLiveKit),
+    /LIVEKIT_API_KEY|LIVEKIT_API_SECRET/u,
+  );
 });
 
 test('keeps destructive maintenance inside the Vera state directory', () => {

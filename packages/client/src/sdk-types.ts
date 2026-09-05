@@ -36,6 +36,7 @@ import type {
   PutV1NotificationDevicesIdPreferencesRequest,
   IntegrationCatalogResource,
   GetV1ExternalSignalsResponse,
+  PostV1VoiceSessionsResponse201Session,
 } from './generated/types.gen.ts';
 
 export type RunStatus = TaskResource['runStatus'];
@@ -140,6 +141,10 @@ export type SoftwareDeliveryManagementResult =
   ArtifactResourceOneOfSoftwareDeliveryManagementResultContent;
 
 export type SpeechTranscriptionAudio = Blob | ArrayBuffer;
+export type LiveVoiceSessionResource = PostV1VoiceSessionsResponse201Session;
+export type SpeechDeliveryResource =
+  LiveVoiceSessionResource['deliveries'][number];
+export type LiveVoiceTurnResource = LiveVoiceSessionResource['turns'][number];
 
 export type WaitForRoutineRunOptions = WaitOptions<RoutineRunResource>;
 export type WaitForRunOptions = WaitOptions<TaskResource>;

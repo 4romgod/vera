@@ -25,12 +25,17 @@ The first installed Vera deployment runs on the Mac Mini as the owner's macOS
 - the compiled API and all durable workers run as `dev.vera.api`;
 - a loopback-only static host serves the exported universal web frontend as
   `dev.vera.frontend`;
+- when live conversation is enabled, `dev.vera.livekit` runs the self-hosted
+  realtime transport on loopback and the private Tailscale address;
 - `dev.vera.backup` creates a daily compressed MongoDB archive and applies a
   bounded retention policy.
 
-The service definitions contain only non-secret startup configuration. Vera
-continues to load ignored repository-root environment profiles, whose file mode
-is restricted during installation. The generated service `PATH` explicitly
+The service definitions contain only non-secret startup configuration. The
+LiveKit wrapper reads its key and secret from the same protected profile at
+runtime, rejects production secrets shorter than 32 characters, and does not
+place either value in its plist or wrapper logs. Vera continues to load
+ignored repository-root environment profiles, whose file mode is restricted
+during installation. The generated service `PATH` explicitly
 includes the installed Node, npm, Homebrew, Codex, GitHub, Git, Ollama, and
 Tailscale command locations required by enabled adapters.
 
@@ -61,6 +66,8 @@ flowchart LR
     WEB["Private browser"] -->|"tailnet HTTPS"| TS
     TS -->|"/api"| API["Loopback compiled API + workers"]
     TS -->|"/"| UI["Loopback static frontend"]
+    TS -->|"/livekit"| LK["Private LiveKit LaunchAgent"]
+    API --> LK
     API --> MONGO["MongoDB operational truth"]
     API --> REDIS["Redis scratchpads"]
     API --> OLLAMA["Ollama"]

@@ -36,6 +36,11 @@ function fakeApi(overrides: Partial<VeraApi>): VeraApi {
   };
   return {
     transcribeAudio: unavailable,
+    getLiveVoiceAvailability: unavailable,
+    createLiveVoiceSession: unavailable,
+    getLiveVoiceSession: unavailable,
+    endLiveVoiceSession: unavailable,
+    acknowledgeSpeechDelivery: unavailable,
     uploadAttachment: unavailable,
     getAttachment: unavailable,
     attachmentPreviewUrl: unavailable,

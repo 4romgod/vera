@@ -33,6 +33,10 @@ erDiagram
     PRINCIPAL ||--o{ PROJECT : owns
     PROJECT ||--o{ TASK : provides_context_for
     CONVERSATION ||--o{ MESSAGE : contains
+    CONVERSATION ||--o{ LIVE_VOICE_SESSION : hosts
+    LIVE_VOICE_SESSION ||--o{ VOICE_TURN : finalizes
+    VOICE_TURN o|--|| TASK : submits_as
+    VOICE_TURN ||--o{ SPEECH_DELIVERY : speaks_through
     MESSAGE o|--o{ TASK : requests_or_steers
     PRINCIPAL ||--o{ TASK : owns
     PRINCIPAL ||--o{ PERSONAL_TASK : owns
@@ -98,6 +102,28 @@ Key invariants:
   exact same project scope (or the unscoped scope); and
 - each terminal conversation task durably contributes one Vera reply linked to
   that task.
+
+### Live voice session
+
+A bounded realtime interaction attached to one principal, conversation, and
+optional project. It carries ephemeral audio but owns durable identities for
+finalized turns and released speech. It does not own orchestration decisions or
+capability authority.
+
+A `VoiceTurn` begins before whole-utterance transcription, then links the final
+transcript to exactly one ordinary conversation message and task. A
+`SpeechDelivery` is a write-ahead record of exact text handed to device speech
+synthesis. `played`, `interrupted`, and `delivery_unknown` are observations of
+the client boundary, not claims about what a human heard.
+
+Key invariants:
+
+- one principal has at most one starting, active, or reconnecting session;
+- raw audio and unfinished speech are never durable domain records;
+- finalized voice input has no more authority than typed owner input;
+- a voice turn never creates a second task lifecycle;
+- released but unacknowledged speech is unknown and is not replayed; and
+- speech interruption does not cancel consequential work or grant approval.
 
 ### Project
 

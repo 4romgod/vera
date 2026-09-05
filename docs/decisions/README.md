@@ -69,7 +69,7 @@ erasing why a choice was made.
 | [0045](0045-connect-curated-external-services-through-provider-neutral-capabilities.md) | Accepted | Connect curated external services through durable owner authority and provider-neutral capabilities; use GitHub Issues as the first adapter. |
 | [0046](0046-project-external-signals-through-approved-standing-watches.md) | Accepted | Observe connected services through separately approved, read-only standing watches that project stable provider-neutral signals. |
 | [0047](0047-convert-external-signals-into-owner-directed-work.md) | Accepted | Turn one active signal into an idempotent owner-directed conversation and task without inheriting watch authority. |
-| [0048](0048-conduct-live-voice-sessions-as-a-provisional-speech-adapter.md) | Proposed | Add an explicitly activated live voice mode with durable turn routing and write-ahead speech delivery while ADR-0030 recording remains the default. |
+| [0048](0048-conduct-live-conversations-through-a-durable-voice-session-adapter.md) | Accepted | Conduct private live conversations through durable turns and write-ahead speech delivery while keeping record-and-review voice available. |
 | [0049](0049-derive-signal-resolution-from-authoritative-work.md) | Accepted | Derive signal progress and final resolution from authoritative task, campaign, and provider observation state. |
 | [0050](0050-act-on-external-signals-under-event-triggered-standing-authority.md) | Accepted | Trigger standing routines from external-signal generations and start bounded triage under separate, expiring, budgeted standing authority. |
 

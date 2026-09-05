@@ -9,6 +9,7 @@ export const repositoryRoot = realpathSync(
 );
 
 export const serviceLabels = Object.freeze({
+  livekit: 'dev.vera.livekit',
   api: 'dev.vera.api',
   frontend: 'dev.vera.frontend',
   backup: 'dev.vera.backup',
@@ -113,6 +114,37 @@ export function serviceDefinitions(options) {
     PATH: productionPath(options.nodePath, options.npmPath),
   };
   return [
+    ...(options.livekitPath === undefined
+      ? []
+      : [
+          {
+            name: 'livekit',
+            label: serviceLabels.livekit,
+            path: join(
+              paths.launchAgentsRoot,
+              `${serviceLabels.livekit}.plist`,
+            ),
+            configuration: {
+              Label: serviceLabels.livekit,
+              ProgramArguments: [
+                options.nodePath,
+                join(repositoryRoot, 'scripts', 'livekit-service.mjs'),
+                '--profile',
+                options.profile,
+                '--command',
+                options.livekitPath,
+              ],
+              WorkingDirectory: repositoryRoot,
+              EnvironmentVariables: sharedEnvironment,
+              RunAtLoad: true,
+              KeepAlive: true,
+              ThrottleInterval: 10,
+              ProcessType: 'Background',
+              StandardOutPath: join(paths.logsRoot, 'livekit.stdout.log'),
+              StandardErrorPath: join(paths.logsRoot, 'livekit.stderr.log'),
+            },
+          },
+        ]),
     {
       name: 'api',
       label: serviceLabels.api,

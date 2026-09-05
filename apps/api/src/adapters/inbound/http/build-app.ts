@@ -65,6 +65,7 @@ import { registerRoutineRoutes } from './routes/routine-routes.ts';
 import { registerPushNotificationRoutes } from './routes/push-notification-routes.ts';
 import { registerIntegrationConnectionRoutes } from './routes/integration-connection-routes.ts';
 import { registerExternalAwarenessRoutes } from './routes/external-awareness-routes.ts';
+import { registerLiveVoiceRoutes } from './routes/live-voice-routes.ts';
 import {
   IntegrationConnectionError,
   type IntegrationConnectionService,
@@ -102,6 +103,10 @@ import {
   type EvaluateRequest,
 } from './schemas.ts';
 import { registerErrorResponseValidation } from './response-validation.ts';
+import {
+  LiveVoiceSessionError,
+  type LiveVoiceSessionService,
+} from '../../../application/voice/live-voice-session-service.ts';
 
 export type BuildAppOptions = {
   evaluateModelDecision: EvaluateModelDecision;
@@ -134,6 +139,7 @@ export type BuildAppOptions = {
   externalAwareness?: ExternalAwarenessOperations;
   externalSignalTriage?: ExternalSignalTriageService;
   externalSignalResolution?: ExternalSignalResolutionService;
+  liveVoice?: LiveVoiceSessionService;
   readinessChecks?: {
     name: string;
     check(): Promise<void>;
@@ -484,10 +490,26 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
       service: options.pushNotifications,
     });
   }
+  if (options.liveVoice !== undefined) {
+    registerLiveVoiceRoutes(app, { principalId, voice: options.liveVoice });
+  }
 
   if (options.close !== undefined) app.addHook('onClose', options.close);
 
   app.setErrorHandler((error, request, reply) => {
+    if (error instanceof LiveVoiceSessionError) {
+      const statusCode =
+        error.code === 'voice_session_not_found' ||
+        error.code === 'voice_delivery_not_found'
+          ? 404
+          : error.code === 'live_voice_disabled'
+            ? 503
+            : 409;
+      void reply.status(statusCode).send({
+        error: { code: error.code, message: error.message },
+      });
+      return;
+    }
     if (error instanceof ExternalSignalTriageError) {
       void reply.status(409).send({
         error: { code: error.code, message: error.message },

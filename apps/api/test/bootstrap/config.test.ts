@@ -165,6 +165,98 @@ void describe('application configuration', () => {
     assert.throws(() => loadConfig({ HOST: '0.0.0.0' }), /HOST/u);
   });
 
+  void it('keeps live voice disabled unless its private transport is explicitly configured', () => {
+    assert.deepEqual(loadConfig({}).liveVoice, { enabled: false });
+    assert.throws(
+      () => loadConfig({ VERA_LIVE_VOICE_ENABLED: 'true' }),
+      /VERA_TRANSCRIPTION_PROVIDER/u,
+    );
+    assert.throws(
+      () =>
+        loadConfig({
+          VERA_LIVE_VOICE_ENABLED: 'true',
+          VERA_TRANSCRIPTION_PROVIDER: 'whisper_cpp',
+        }),
+      /LIVEKIT_API_KEY/u,
+    );
+    for (const malformedHost of [
+      'ws://100.064.0.1:7880',
+      'ws://100.64.00.1:7880',
+      'ws://192.168.1.10:7880',
+    ]) {
+      assert.throws(
+        () =>
+          loadConfig({
+            VERA_LIVE_VOICE_ENABLED: 'true',
+            VERA_TRANSCRIPTION_PROVIDER: 'whisper_cpp',
+            LIVEKIT_SERVER_URL: malformedHost,
+            LIVEKIT_API_KEY: 'devkey',
+            LIVEKIT_API_SECRET: 'secret',
+          }),
+        /LIVEKIT_SERVER_URL/u,
+      );
+    }
+    assert.equal(
+      loadConfig({
+        VERA_LIVE_VOICE_ENABLED: 'true',
+        VERA_TRANSCRIPTION_PROVIDER: 'whisper_cpp',
+        LIVEKIT_SERVER_URL: 'ws://[fd7a:115c:a1e0::1]:7880',
+        LIVEKIT_PUBLIC_URL: 'wss://macmini.example.ts.net/livekit',
+        LIVEKIT_API_KEY: 'devkey',
+        LIVEKIT_API_SECRET: 'secret',
+      }).liveVoice?.enabled,
+      true,
+    );
+  });
+
+  void it('allows live voice only through loopback or the private tailnet', () => {
+    assert.deepEqual(
+      loadConfig({
+        VERA_LIVE_VOICE_ENABLED: 'true',
+        VERA_TRANSCRIPTION_PROVIDER: 'whisper_cpp',
+        LIVEKIT_SERVER_URL: 'ws://100.114.81.80:7880',
+        LIVEKIT_PUBLIC_URL: 'wss://macmini.example.ts.net/livekit',
+        LIVEKIT_API_KEY: 'devkey',
+        LIVEKIT_API_SECRET: 'secret',
+      }).liveVoice,
+      {
+        enabled: true,
+        serverUrl: 'ws://100.114.81.80:7880',
+        publicUrl: 'wss://macmini.example.ts.net/livekit',
+        apiKey: 'devkey',
+        apiSecret: 'secret',
+        sessionTtlSeconds: 1_800,
+        reconnectGraceSeconds: 45,
+        endpointSilenceMs: 2_500,
+        maxUtteranceMs: 90_000,
+        readinessTimeoutMs: 3_000,
+      },
+    );
+    for (const variable of ['LIVEKIT_SERVER_URL', 'LIVEKIT_PUBLIC_URL']) {
+      assert.throws(
+        () =>
+          loadConfig({
+            VERA_LIVE_VOICE_ENABLED: 'true',
+            VERA_TRANSCRIPTION_PROVIDER: 'whisper_cpp',
+            LIVEKIT_API_KEY: 'devkey',
+            LIVEKIT_API_SECRET: 'secret',
+            [variable]: 'wss://voice.example.com',
+          }),
+        new RegExp(variable, 'u'),
+      );
+    }
+    assert.throws(
+      () =>
+        loadConfig({
+          VERA_LIVE_VOICE_ENABLED: 'true',
+          VERA_TRANSCRIPTION_PROVIDER: 'whisper_cpp',
+          LIVEKIT_API_KEY: 'unsafe:key',
+          LIVEKIT_API_SECRET: 'secret',
+        }),
+      /LIVEKIT_API_KEY/u,
+    );
+  });
+
   void it('requires conversation history limits to preserve whole turns', () => {
     assert.throws(
       () => loadConfig({ CONVERSATION_CONTEXT_MAX_MESSAGES: '3' }),

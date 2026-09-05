@@ -408,6 +408,37 @@ and submits that exact text through the ordinary conversation path. The UI
 shows elapsed recording time and a separate transcription phase. There is no
 interim recognizer stream, automatic restart, or silence timeout.
 
+For hands-free, multi-turn conversation, use the separate **Start live
+conversation** control. Live mode keeps the microphone open, finalizes a turn
+after a configurable period of silence, submits the transcript through the
+ordinary durable conversation/task lifecycle, and speaks the projected reply.
+Speaking while Vera is reading stops playback; it never cancels consequential
+work or grants an approval. The record-and-review microphone remains available.
+
+Live mode uses self-hosted LiveKit and local Silero VAD. Install the Mac Mini
+development transport once, then run LiveKit and transcription beside the API:
+
+```bash
+brew install livekit
+npm run dev:livekit
+npm run dev:transcription
+npm run tailscale:serve
+npm run tailscale:status
+```
+
+In the selected API profile, set `VERA_LIVE_VOICE_ENABLED=true`,
+`LIVEKIT_SERVER_URL=ws://127.0.0.1:7880`, `LIVEKIT_API_KEY=devkey`,
+`LIVEKIT_API_SECRET=secret`, and set `LIVEKIT_PUBLIC_URL` to the `liveKitUrl`
+printed by `npm run tailscale:status`. The development credentials are valid
+only because LiveKit is bound to loopback and this Mac's tailnet address; use
+`livekit-server generate-keys` for the installed service, whose secret must be
+at least 32 characters.
+
+LiveKit includes native WebRTC modules, so Expo Go cannot run Live mode. Rebuild
+and install Vera's `development` or `preview` Expo client after adding or
+upgrading these modules. The web frontend continues to work through the same
+private URL without a native build.
+
 The API handles completed audio only in memory for the synchronous
 transcription request and never writes it to MongoDB, Redis, artifacts, events,
 or logs. Select transcription independently of Vera's orchestration brain with
@@ -443,20 +474,25 @@ npm run dev:phone
 ```
 
 The command discovers the Mac Mini's MagicDNS HTTPS URL, configures Tailscale
-Serve with the frontend at `/` and the loopback API at `/api`, verifies the API,
+Serve with the frontend at `/`, loopback API at `/api`, and LiveKit WebSocket
+signaling at `/livekit`, verifies the API,
 and starts Expo web on loopback. Open the printed private HTTPS URL in the
 phone's browser. Both the page and API then share one tailnet-only origin, so no
 remote browser origin needs to be added to CORS. Check the routes with
 `npm run tailscale:status`; configure them without starting Expo with
 `npm run tailscale:serve`, and remove them with
-`npm run tailscale:serve:off`. Vera changes only its `/` and `/api` handlers and
+`npm run tailscale:serve:off`. Vera changes only its `/`, `/api`, and `/livekit`
+handlers and
 preserves unrelated Serve routes. Never use Tailscale Funnel for Vera.
 
 ### Install Vera on the Mac Mini
 
 The production installation uses compiled output, an exported static web
-frontend, and owner-scoped macOS LaunchAgents. It does not use `tsx watch` or a
-long-running Expo development server.
+frontend, and owner-scoped macOS LaunchAgents. When Live mode is enabled, the
+same service manager owns a private `dev.vera.livekit` process before starting
+the API; the signing secret remains in the protected environment files rather
+than the LaunchAgent definition. The installation does not use `tsx watch` or
+a long-running Expo development server.
 
 ```bash
 VERA_PROFILE=ollama npm run vera:doctor
@@ -468,7 +504,9 @@ VERA_PROFILE=ollama npm run vera:status
 
 The installer restricts `.env` and the selected profile to the owner, writes
 logs and backups below `~/.vera`, and waits for both `/ready` and the static
-frontend health endpoint. It installs a daily compressed MongoDB backup at
+frontend health endpoint. If `VERA_LIVE_VOICE_ENABLED=true`, `vera:doctor`
+requires `livekit-server` and install, start, stop, restart, status, logs, and
+uninstall include that service automatically. It installs a daily compressed MongoDB backup at
 03:15 local time; `VERA_BACKUP_RETENTION_DAYS` defaults to 14. Redis is
 rebuildable and is not backed up.
 

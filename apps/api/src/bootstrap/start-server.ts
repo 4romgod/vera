@@ -122,6 +122,18 @@ app.log.info(
               timeoutMs: config.transcription.timeoutMs,
             }),
       },
+      liveVoice:
+        config.liveVoice?.enabled === true
+          ? {
+              enabled: true,
+              transport: 'livekit',
+              publicOrigin: new URL(config.liveVoice.publicUrl).origin,
+              sessionTtlSeconds: config.liveVoice.sessionTtlSeconds,
+              reconnectGraceSeconds: config.liveVoice.reconnectGraceSeconds,
+              endpointSilenceMs: config.liveVoice.endpointSilenceMs,
+              maxUtteranceMs: config.liveVoice.maxUtteranceMs,
+            }
+          : { enabled: false },
       push:
         config.push?.provider.adapterId === 'expo'
           ? {

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { readFileSync, realpathSync } from 'node:fs';
+import { isIP } from 'node:net';
 import { fileURLToPath } from 'node:url';
 
 import type { ModelConfig } from '../adapters/outbound/model/model-provider-registry.ts';
@@ -117,6 +118,47 @@ const EnvironmentSchema = z.object({
     .min(1_024)
     .max(25_000_000)
     .default(25_000_000),
+  VERA_LIVE_VOICE_ENABLED: z.enum(['false', 'true']).default('false'),
+  LIVEKIT_SERVER_URL: z.url().default('ws://127.0.0.1:7880'),
+  LIVEKIT_PUBLIC_URL: z.url().default('ws://127.0.0.1:7880'),
+  LIVEKIT_API_KEY: z
+    .string()
+    .trim()
+    .min(3)
+    .max(128)
+    .regex(/^[A-Za-z0-9_-]+$/u)
+    .optional(),
+  LIVEKIT_API_SECRET: z
+    .string()
+    .trim()
+    .min(6)
+    .max(256)
+    .regex(/^[A-Za-z0-9_-]+$/u)
+    .optional(),
+  LIVE_VOICE_SESSION_TTL_SECONDS: z.coerce
+    .number()
+    .int()
+    .min(60)
+    .max(3_600)
+    .default(1_800),
+  LIVE_VOICE_RECONNECT_GRACE_SECONDS: z.coerce
+    .number()
+    .int()
+    .min(5)
+    .max(300)
+    .default(45),
+  LIVE_VOICE_ENDPOINT_SILENCE_MS: z.coerce
+    .number()
+    .int()
+    .min(500)
+    .max(10_000)
+    .default(2_500),
+  LIVE_VOICE_MAX_UTTERANCE_MS: z.coerce
+    .number()
+    .int()
+    .min(5_000)
+    .max(120_000)
+    .default(90_000),
   CHANGE_APPLICATION_ROOT: z.string().min(1).optional(),
   GIT_COMMAND: z.string().min(1).default('git'),
   GH_COMMAND: z.string().min(1).default('gh'),
@@ -220,6 +262,20 @@ export type AppConfig = {
     github: { connectorId: 'disabled' | 'gh_cli' };
   };
   transcription: SpeechTranscriptionConfig;
+  liveVoice?:
+    | { enabled: false }
+    | {
+        enabled: true;
+        serverUrl: string;
+        publicUrl: string;
+        apiKey: string;
+        apiSecret: string;
+        sessionTtlSeconds: number;
+        reconnectGraceSeconds: number;
+        endpointSilenceMs: number;
+        maxUtteranceMs: number;
+        readinessTimeoutMs: number;
+      };
   application: {
     workspacesRoot: string;
   };
@@ -524,6 +580,7 @@ export function loadConfig(
   const parsed = EnvironmentSchema.parse(environment);
 
   const changeCodexModel = parsed.CHANGE_CODEX_MODEL ?? parsed.CODEX_MODEL;
+  const liveVoice = createLiveVoiceConfig(parsed);
   const pushProvider: PushProviderConfig =
     parsed.VERA_PUSH_ADAPTER === 'disabled'
       ? { adapterId: 'disabled' }
@@ -590,6 +647,7 @@ export function loadConfig(
       },
     },
     transcription: createTranscriptionConfig(parsed),
+    liveVoice,
     application: {
       workspacesRoot: resolve(
         parsed.CHANGE_APPLICATION_ROOT ??
@@ -625,6 +683,98 @@ export function loadConfig(
     ),
     missions: loadMissionCatalog(parsed.VERA_MISSION_CATALOG_FILE),
   };
+}
+
+function createLiveVoiceConfig(
+  parsed: z.infer<typeof EnvironmentSchema>,
+): NonNullable<AppConfig['liveVoice']> {
+  if (parsed.VERA_LIVE_VOICE_ENABLED === 'false') return { enabled: false };
+  if (parsed.VERA_TRANSCRIPTION_PROVIDER === 'disabled') {
+    throw new Error(
+      'VERA_TRANSCRIPTION_PROVIDER must be configured when VERA_LIVE_VOICE_ENABLED=true.',
+    );
+  }
+  if (
+    parsed.LIVEKIT_API_KEY === undefined ||
+    parsed.LIVEKIT_API_SECRET === undefined
+  ) {
+    throw new Error(
+      'LIVEKIT_API_KEY and LIVEKIT_API_SECRET are required when VERA_LIVE_VOICE_ENABLED=true.',
+    );
+  }
+  const server = new URL(parsed.LIVEKIT_SERVER_URL);
+  if (
+    !['ws:', 'wss:'].includes(server.protocol) ||
+    !isPrivateLiveKitHost(server.hostname) ||
+    !hasCanonicalNumericHost(parsed.LIVEKIT_SERVER_URL, server) ||
+    server.username.length > 0 ||
+    server.password.length > 0 ||
+    server.search.length > 0 ||
+    server.hash.length > 0
+  ) {
+    throw new Error(
+      'LIVEKIT_SERVER_URL must be a credential-free WebSocket URL on loopback or the private tailnet.',
+    );
+  }
+  const publicUrl = new URL(parsed.LIVEKIT_PUBLIC_URL);
+  if (
+    !['ws:', 'wss:'].includes(publicUrl.protocol) ||
+    publicUrl.username.length > 0 ||
+    publicUrl.password.length > 0 ||
+    publicUrl.search.length > 0 ||
+    publicUrl.hash.length > 0 ||
+    !isPrivateLiveKitHost(publicUrl.hostname) ||
+    !hasCanonicalNumericHost(parsed.LIVEKIT_PUBLIC_URL, publicUrl)
+  ) {
+    throw new Error(
+      'LIVEKIT_PUBLIC_URL must be a credential-free WebSocket URL on loopback or the private tailnet.',
+    );
+  }
+  return {
+    enabled: true,
+    serverUrl: parsed.LIVEKIT_SERVER_URL.replace(/\/+$/u, ''),
+    publicUrl: parsed.LIVEKIT_PUBLIC_URL.replace(/\/+$/u, ''),
+    apiKey: parsed.LIVEKIT_API_KEY,
+    apiSecret: parsed.LIVEKIT_API_SECRET,
+    sessionTtlSeconds: parsed.LIVE_VOICE_SESSION_TTL_SECONDS,
+    reconnectGraceSeconds: parsed.LIVE_VOICE_RECONNECT_GRACE_SECONDS,
+    endpointSilenceMs: parsed.LIVE_VOICE_ENDPOINT_SILENCE_MS,
+    maxUtteranceMs: parsed.LIVE_VOICE_MAX_UTTERANCE_MS,
+    readinessTimeoutMs: parsed.DEPENDENCY_TIMEOUT_MS,
+  };
+}
+
+function hasCanonicalNumericHost(value: string, parsed: URL): boolean {
+  const authority = /^wss?:\/\/([^/?#]+)/iu.exec(value)?.[1];
+  if (authority === undefined || authority.startsWith('[')) return true;
+  const rawHostname = authority.split(':')[0];
+  return (
+    rawHostname === undefined ||
+    !/^[0-9.]+$/u.test(rawHostname) ||
+    rawHostname === parsed.hostname
+  );
+}
+
+function isPrivateLiveKitHost(hostname: string): boolean {
+  if (hostname === 'localhost' || hostname === '127.0.0.1') return true;
+  if (hostname.endsWith('.ts.net')) return true;
+  const unwrapped =
+    hostname.startsWith('[') && hostname.endsWith(']')
+      ? hostname.slice(1, -1)
+      : hostname;
+  if (isIP(unwrapped) === 6) {
+    const normalized = unwrapped.toLowerCase();
+    return (
+      normalized === '::1' ||
+      normalized === '::ffff:127.0.0.1' ||
+      normalized.startsWith('fd7a:115c:a1e0:')
+    );
+  }
+  if (isIP(unwrapped) !== 4) return false;
+  const parts = unwrapped.split('.');
+  if (parts.some((part) => String(Number(part)) !== part)) return false;
+  const octets = parts.map(Number);
+  return octets[0] === 100 && (octets[1] ?? 0) >= 64 && (octets[1] ?? 0) <= 127;
 }
 
 function requirePushProjectId(value: string | undefined): string {

@@ -52,6 +52,11 @@ must not be exposed to an untrusted or shared network.
 | `POST /v1/external-signals/{signalId}/triage` | Idempotently create a project-scoped conversation and task from one active signal | `202` |
 | `GET /v1/routines/{routineId}/external-signals` | List current and resolved signals observed by one routine | `200` |
 | `POST /v1/audio/transcriptions` | Transcribe one completed bounded audio recording without persisting it | `200` |
+| `GET /v1/voice` | Discover whether live conversation transport is enabled | `200` |
+| `POST /v1/voice/sessions` | Idempotently create one scoped live conversation session | `201` |
+| `GET /v1/voice/sessions/{sessionId}` | Read durable session, turn, and speech-delivery state | `200` |
+| `DELETE /v1/voice/sessions/{sessionId}` | End a live session and settle ambiguous playback | `200` |
+| `POST /v1/voice/sessions/{sessionId}/deliveries/{deliveryId}/acknowledgement` | Record observed device playback outcome | `200` |
 | `POST /v1/attachments` | Validate, extract, and durably store one owner-scoped document | `200` or `201` |
 | `GET /v1/attachments/{attachmentId}` | Retrieve attachment metadata and extraction status, never original content | `200` |
 | `GET /v1/attachments/{attachmentId}/preview` | Retrieve a normalized image preview with immutable private caching | `200` |
@@ -179,6 +184,30 @@ canonical pull-request URL. A successful repair remains
 `awaiting_source_confirmation`; only a later complete external poll may report
 `resolved`. See
 [ADR-0049](decisions/0049-derive-signal-resolution-from-authoritative-work.md).
+
+## Live conversation sessions
+
+`GET /v1/voice` is safe capability discovery and returns `enabled: false` when
+LiveKit or transcription is not configured. Creating a session while disabled
+returns `503 live_voice_disabled`.
+
+`POST /v1/voice/sessions` requires an `Idempotency-Key` and accepts a
+conversation, optional project, and explicit `takeover` boolean. It returns a
+short-lived LiveKit URL and participant token scoped to the newly created
+two-participant room. Signing credentials, the internal room name, principal,
+request key, takeover marker, and single-active-session index are never exposed.
+
+The session resource contains bounded finalized turns and speech deliveries.
+Raw audio and unfinished speech never appear. Clients acknowledge a released
+delivery with exactly one observed outcome: `played`, `interrupted`, or
+`delivery_unknown`. Repeating the same outcome is idempotent; contradicting an
+already settled outcome conflicts. Ending a session is idempotent and converts
+released, unacknowledged speech to `delivery_unknown` rather than replaying it.
+
+The transport's control data is versioned and validated again by the client.
+It can display transcripts and released speech, but it cannot grant task or
+approval authority. Final transcripts enter the same durable owner-message and
+task endpoint used by typed conversation.
 
 ## Speech transcription
 
@@ -1048,11 +1077,11 @@ Error envelopes use:
 | Status | Codes | Meaning |
 |---:|---|---|
 | `400` | `invalid_request` | Missing, malformed, too large, or unknown request input. |
-| `404` | `task_not_found`, `run_not_found`, `approval_not_found`, `project_not_found`, `conversation_not_found`, `conversation_message_not_found`, `external_signal_not_found`, `awareness_signal_not_found`, `artifact_not_found`, `attention_item_not_found`, `routine_not_found`, `routine_run_not_found`, `routine_machine_not_found`, `routine_service_not_found`, `change_application_not_found`, `software_change_publication_not_found`, `development_campaign_not_found`, `development_campaign_project_not_found`, `development_campaign_repair_not_found` | The addressed resource, routine target, repair approval, signal, or current attention generation does not exist. |
-| `409` | `idempotency_key_reused`, `approval_already_decided`, `concurrent_transition_failed`, `conversation_message_mismatch`, `external_signal_not_active`, `external_signal_scope_mismatch`, `routine_idempotency_key_reused`, `routine_approval_already_decided`, `routine_invalid_transition`, `routine_signal_triage_unavailable`, `routine_signal_scope_changed`, `routine_concurrent_transition_failed`, `change_application_idempotency_key_reused`, `change_application_approval_already_decided`, `change_application_concurrent_transition_failed`, `change_application_not_cancellable`, `software_change_publication_idempotency_key_reused`, `software_change_publication_approval_already_decided`, `software_change_publication_concurrent_transition_failed`, `software_change_publication_not_cancellable`, `development_campaign_idempotency_key_reused`, `development_campaign_approval_already_decided`, `development_campaign_repair_not_available`, `development_campaign_repair_already_decided`, `development_campaign_repair_conflict`, `development_campaign_concurrent_transition_failed`, `development_campaign_not_cancellable`, `stale_source`, `application_conflict`, `publication_conflict`, `campaign_conflict`, `review_required` | The request conflicts with durable, filesystem, or remote state. |
+| `404` | `task_not_found`, `run_not_found`, `approval_not_found`, `project_not_found`, `conversation_not_found`, `conversation_message_not_found`, `voice_session_not_found`, `voice_delivery_not_found`, `external_signal_not_found`, `awareness_signal_not_found`, `artifact_not_found`, `attention_item_not_found`, `routine_not_found`, `routine_run_not_found`, `routine_machine_not_found`, `routine_service_not_found`, `change_application_not_found`, `software_change_publication_not_found`, `development_campaign_not_found`, `development_campaign_project_not_found`, `development_campaign_repair_not_found` | The addressed resource, routine target, repair approval, signal, voice resource, or current attention generation does not exist. |
+| `409` | `idempotency_key_reused`, `voice_session_active`, `voice_session_not_recoverable`, `voice_delivery_already_settled`, `approval_already_decided`, `concurrent_transition_failed`, `conversation_message_mismatch`, `external_signal_not_active`, `external_signal_scope_mismatch`, `routine_idempotency_key_reused`, `routine_approval_already_decided`, `routine_invalid_transition`, `routine_signal_triage_unavailable`, `routine_signal_scope_changed`, `routine_concurrent_transition_failed`, `change_application_idempotency_key_reused`, `change_application_approval_already_decided`, `change_application_concurrent_transition_failed`, `change_application_not_cancellable`, `software_change_publication_idempotency_key_reused`, `software_change_publication_approval_already_decided`, `software_change_publication_concurrent_transition_failed`, `software_change_publication_not_cancellable`, `development_campaign_idempotency_key_reused`, `development_campaign_approval_already_decided`, `development_campaign_repair_not_available`, `development_campaign_repair_already_decided`, `development_campaign_repair_conflict`, `development_campaign_concurrent_transition_failed`, `development_campaign_not_cancellable`, `stale_source`, `application_conflict`, `publication_conflict`, `campaign_conflict`, `review_required` | The request conflicts with durable, filesystem, or remote state. |
 | `422` | `invalid_attention_decision`, `invalid_project_source`, `routine_proposal_invalid`, `software_change_artifact_required`, `software_change_publication_source_required` | An attention snooze is invalid, a project source is invalid, a routine's trigger, action, and budget disagree, or the selected artifact/application cannot be used for the requested effect. |
 | `502` | `provider_request_rejected`, `provider_response_invalid` | Provider boundary failed while using the diagnostic endpoint. |
-| `503` | `model_not_found`, `provider_unavailable`, `publication_unavailable`, `operational_store_unavailable`, `scratchpad_unavailable`, `planning_capability_unavailable`, `software_change_capability_unavailable`, `development_campaign_capability_unavailable`, `capability_unavailable` | A required runtime dependency is unavailable. The response `dependency` identifies a generic capability runtime when applicable. |
+| `503` | `model_not_found`, `provider_unavailable`, `live_voice_disabled`, `publication_unavailable`, `operational_store_unavailable`, `scratchpad_unavailable`, `planning_capability_unavailable`, `software_change_capability_unavailable`, `development_campaign_capability_unavailable`, `capability_unavailable` | A required runtime dependency is unavailable. The response `dependency` identifies a generic capability runtime when applicable. |
 | `504` | `provider_timeout` | The model provider exceeded its deadline. |
 | `500` | `internal_error`, `application_failed`, `publication_failed`, `merge_failed`, `synchronization_failed` | An unexpected server or managed-effect failure; details remain in structured logs. |
 

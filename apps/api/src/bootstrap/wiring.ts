@@ -112,11 +112,17 @@ import { createExternalSignalTriageService } from '../application/external-aware
 import type { ExternalSignalTriageStarter } from '../ports/external-awareness/external-signal-triage.ts';
 import { createExternalSignalResolutionService } from '../application/external-awareness/external-signal-resolution-service.ts';
 import { resolveLocalGitHubRepository } from '../adapters/outbound/github/github-cli.ts';
+import { InMemoryLiveVoiceSessionStore } from '../adapters/outbound/persistence/memory/in-memory-live-voice-session-store.ts';
+import { MongoDbLiveVoiceSessionStore } from '../adapters/outbound/persistence/mongodb/mongodb-live-voice-session-store.ts';
+import type { LiveVoiceSessionStore } from '../ports/persistence/live-voice-session-store.ts';
+import { LiveKitLiveVoiceTransport } from '../adapters/outbound/voice/livekit-live-voice-transport.ts';
+import { createLiveVoiceSessionService } from '../application/voice/live-voice-session-service.ts';
 
 export function createApp(
   config: AppConfig,
   runtime: { logger?: Parameters<typeof buildApp>[0]['logger'] } = {},
 ) {
+  const liveVoiceConfig = config.liveVoice ?? { enabled: false as const };
   const pushConfig = config.push ?? {
     provider: { adapterId: 'disabled' as const },
     pollIntervalMs: 5_000,
@@ -276,6 +282,14 @@ export function createApp(
     config.storage.mode === 'memory'
       ? new InMemoryExternalSignalStore()
       : new MongoDbExternalSignalStore({
+          uri: config.storage.mongodbUri,
+          database: config.storage.mongodbDatabase,
+          timeoutMs: config.storage.dependencyTimeoutMs,
+        });
+  const liveVoiceSessionStore: LiveVoiceSessionStore =
+    !liveVoiceConfig.enabled || config.storage.mode === 'memory'
+      ? new InMemoryLiveVoiceSessionStore()
+      : new MongoDbLiveVoiceSessionStore({
           uri: config.storage.mongodbUri,
           database: config.storage.mongodbDatabase,
           timeoutMs: config.storage.dependencyTimeoutMs,
@@ -678,6 +692,30 @@ export function createApp(
       lifecycle.progressTask(principalId, taskId),
     recoverInterrupted: () => lifecycle.recoverInterrupted(),
   };
+  const liveVoiceTransport = liveVoiceConfig.enabled
+    ? new LiveKitLiveVoiceTransport(liveVoiceConfig)
+    : undefined;
+  const liveVoice = createLiveVoiceSessionService({
+    store: liveVoiceSessionStore,
+    ...(liveVoiceTransport === undefined
+      ? {}
+      : { transport: liveVoiceTransport }),
+    transcriptions: transcriptionService,
+    conversations: conversationService,
+    tasks: dispatchedLifecycle,
+    sessionTtlSeconds: liveVoiceConfig.enabled
+      ? liveVoiceConfig.sessionTtlSeconds
+      : 1_800,
+    reconnectGraceSeconds: liveVoiceConfig.enabled
+      ? liveVoiceConfig.reconnectGraceSeconds
+      : 45,
+    warning: (error, context) => lifecycleObserver.warning(error, context),
+  });
+  void liveVoice
+    .recoverInterrupted()
+    .catch((error: unknown) =>
+      lifecycleObserver.warning(error, { phase: 'live_voice_recovery' }),
+    );
   const externalSignalTriage = createExternalSignalTriageService({
     awareness: externalAwareness,
     conversations: conversationService,
@@ -701,6 +739,7 @@ export function createApp(
     externalAwareness,
     externalSignalTriage,
     externalSignalResolution,
+    liveVoice,
     capabilities: capabilityService,
     personalTasks: personalTaskService,
     reminders: reminderService,
@@ -830,6 +869,18 @@ export function createApp(
         name: 'integration_connection_store',
         check: () => integrationConnectionStore.checkReadiness(),
       },
+      {
+        name: 'live_voice_session_store',
+        check: () => liveVoiceSessionStore.checkReadiness(),
+      },
+      ...(liveVoiceConfig.enabled
+        ? [
+            {
+              name: 'live_voice_transport',
+              check: () => liveVoice.checkReadiness(),
+            },
+          ]
+        : []),
       ...(pushWorker === undefined
         ? []
         : [
@@ -840,6 +891,7 @@ export function createApp(
           ]),
     ],
     close: async () => {
+      await liveVoice.close();
       await pushWorker?.stop();
       await routineWorker.stop();
       await missionWorker.stop();
@@ -865,6 +917,7 @@ export function createApp(
         pushNotificationStore.close(),
         integrationConnectionStore.close(),
         externalSignalStore.close(),
+        liveVoiceSessionStore.close(),
       ]);
     },
     logger: runtime.logger ?? true,

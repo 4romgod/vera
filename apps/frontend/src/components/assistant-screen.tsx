@@ -45,30 +45,17 @@ import { ResourcePanel, type ResourceTab } from '@/components/resource-panel';
 import { layout, palette } from '@/design/tokens';
 import { useSpokenReply } from '@/voice/use-spoken-reply';
 import { useVoiceInput } from '@/voice/use-voice-input';
+import { useLiveVoice } from '@/voice/use-live-voice';
 import { usePushNotifications } from '@/notifications/use-push-notifications';
 import { useIntegrationConnections } from '@/components/integrations/use-integration-connections';
 import { useCreateExternalWatch } from '@/components/routines/use-create-external-watch';
 import { useCreateSignalTriage } from '@/components/routines/use-create-signal-triage';
+import { apiUrl, speechLocale } from '@/app/runtime-config';
 import {
   createAttentionActions,
   newestAttention,
 } from '@/components/assistant/attention-actions';
 
-const configuredApiUrl = process.env.EXPO_PUBLIC_VERA_API_URL?.trim();
-const defaultApiUrl =
-  process.env.EXPO_OS === 'android'
-    ? 'http://10.0.2.2:4310'
-    : 'http://127.0.0.1:4310';
-const apiUrl =
-  configuredApiUrl === undefined || configuredApiUrl.length === 0
-    ? defaultApiUrl
-    : configuredApiUrl;
-const configuredSpeechLocale =
-  process.env.EXPO_PUBLIC_VERA_SPEECH_LOCALE?.trim();
-const speechLocale =
-  configuredSpeechLocale === undefined || configuredSpeechLocale.length === 0
-    ? 'en-US'
-    : configuredSpeechLocale;
 const EMPTY_MESSAGES: ConversationMessageResource[] = [];
 
 function requestKey(): string {
@@ -175,6 +162,28 @@ export function AssistantScreen() {
           });
         }
       }
+    },
+    onError: setError,
+  });
+  const liveVoice = useLiveVoice({
+    client,
+    speak: spokenReply.speak,
+    stopSpeaking: spokenReply.stop,
+    onTranscript: () => {
+      setDraft('');
+      setDraftFromVoice(false);
+    },
+    onTurnSubmitted: (task) => {
+      setActiveRun(task);
+      if (task.conversationId !== undefined) {
+        void client
+          .getConversation(task.conversationId)
+          .then((updated) => {
+            if (mounted.current) setConversation(updated);
+          })
+          .catch(() => undefined);
+      }
+      void followRun(task);
     },
     onError: setError,
   });
@@ -625,6 +634,7 @@ export function AssistantScreen() {
     followGeneration.current = generation;
     followAbort.current?.abort();
     voiceInput.abort();
+    void liveVoice.stop();
     void spokenReply.stop();
     voiceRunIds.current.clear();
     try {
@@ -647,6 +657,7 @@ export function AssistantScreen() {
     followGeneration.current += 1;
     followAbort.current?.abort();
     voiceInput.abort();
+    void liveVoice.stop();
     void spokenReply.stop();
     voiceRunIds.current.clear();
     setConversation(undefined);
@@ -1021,6 +1032,36 @@ export function AssistantScreen() {
     await voiceInput.start(draft);
   }
 
+  async function toggleLiveVoice(): Promise<void> {
+    try {
+      setError(undefined);
+      if (liveVoice.active) {
+        await liveVoice.stop();
+        await refreshAssistant();
+        return;
+      }
+      if (attachments.length > 0) {
+        setError(
+          'Send or remove attached files before starting a live conversation.',
+        );
+        return;
+      }
+      voiceInput.abort();
+      await spokenReply.stop();
+      const current = await ensureConversation('Live conversation');
+      await liveVoice.start({
+        conversationId: current.id,
+        ...(selectedProjectId === undefined
+          ? {}
+          : { projectId: selectedProjectId }),
+      });
+    } catch (cause) {
+      setError(
+        errorMessage(cause, 'Vera could not start live conversation mode.'),
+      );
+    }
+  }
+
   const footer = (
     <RunFooter
       activeRun={activeRun}
@@ -1069,7 +1110,10 @@ export function AssistantScreen() {
             onMenu={() => setSidebarOpen(true)}
             onRefresh={() => void refreshAssistant()}
             onResources={() => openResources('attention')}
-            onSelectProject={setSelectedProjectId}
+            onSelectProject={(projectId) => {
+              if (liveVoice.active) void liveVoice.stop();
+              setSelectedProjectId(projectId);
+            }}
           />
           <View style={{ minHeight: 0, flex: 1 }}>
             <ConversationView
@@ -1117,6 +1161,11 @@ export function AssistantScreen() {
             onSend={() => void send(draft)}
             onVoice={() => void toggleVoiceInput()}
             onVoiceSend={() => voiceInput.stop('submit')}
+            liveVoiceAvailable={liveVoice.available}
+            liveVoicePhase={liveVoice.phase}
+            liveVoiceTranscript={liveVoice.transcript}
+            onLiveVoiceStart={() => void toggleLiveVoice()}
+            onLiveVoiceStop={() => void toggleLiveVoice()}
           />
         </KeyboardAvoidingView>
 

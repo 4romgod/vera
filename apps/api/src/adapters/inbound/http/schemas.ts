@@ -74,6 +74,7 @@ import {
   PushDeliverySchema,
   PushPreferencesSchema,
 } from '../../../domain/notifications/push-notification.ts';
+import { LiveVoiceSessionObjectSchema } from '../../../domain/voice/live-voice-session.ts';
 
 export const EvaluateRequestSchema = z
   .object({
@@ -184,6 +185,78 @@ export const ResourceIdParamsSchema = z
   .strict();
 
 export type ResourceIdParams = z.infer<typeof ResourceIdParamsSchema>;
+
+export const CreateLiveVoiceSessionRequestSchema = z
+  .object({
+    conversationId: z.string().startsWith('conversation_'),
+    projectId: z.string().startsWith('project_').optional(),
+    takeover: z.boolean().default(false),
+  })
+  .strict();
+export type CreateLiveVoiceSessionRequest = z.infer<
+  typeof CreateLiveVoiceSessionRequestSchema
+>;
+
+export const AcknowledgeSpeechDeliveryRequestSchema = z
+  .object({
+    outcome: z.enum(['played', 'interrupted', 'delivery_unknown']),
+  })
+  .strict();
+export type AcknowledgeSpeechDeliveryRequest = z.infer<
+  typeof AcknowledgeSpeechDeliveryRequestSchema
+>;
+
+export const LiveVoiceSessionResourceSchema = LiveVoiceSessionObjectSchema.omit(
+  {
+    principalId: true,
+    requestKey: true,
+    takeoverRequested: true,
+    activeSlot: true,
+    roomName: true,
+    participantIdentity: true,
+  },
+).strip();
+export const LiveVoiceSessionResponseSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    session: LiveVoiceSessionResourceSchema,
+  })
+  .strict();
+export const CreateLiveVoiceSessionResponseSchema =
+  LiveVoiceSessionResponseSchema.extend({
+    transport: z
+      .object({
+        kind: z.literal('livekit'),
+        url: z.url(),
+        token: z.string().min(1),
+        expiresAt: z.iso.datetime(),
+      })
+      .strict(),
+  }).strict();
+export const LiveVoiceAvailabilityResponseSchema = z
+  .object({ schemaVersion: z.literal(1), enabled: z.boolean() })
+  .strict();
+
+export const CreateLiveVoiceSessionRequestJsonSchema = z.toJSONSchema(
+  CreateLiveVoiceSessionRequestSchema,
+  { target: 'draft-7' },
+);
+export const AcknowledgeSpeechDeliveryRequestJsonSchema = z.toJSONSchema(
+  AcknowledgeSpeechDeliveryRequestSchema,
+  { target: 'draft-7' },
+);
+export const LiveVoiceSessionResponseJsonSchema = z.toJSONSchema(
+  LiveVoiceSessionResponseSchema,
+  { target: 'draft-7' },
+);
+export const CreateLiveVoiceSessionResponseJsonSchema = z.toJSONSchema(
+  CreateLiveVoiceSessionResponseSchema,
+  { target: 'draft-7' },
+);
+export const LiveVoiceAvailabilityResponseJsonSchema = z.toJSONSchema(
+  LiveVoiceAvailabilityResponseSchema,
+  { target: 'draft-7' },
+);
 
 export const ApprovalDecisionRequestSchema = z
   .object({

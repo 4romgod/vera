@@ -59,6 +59,7 @@ export function buildOpenApiApp(): FastifyInstance {
     externalSignalTriage: documentationDependency,
     externalSignalResolution: documentationDependency,
     pushNotifications: documentationDependency,
+    liveVoice: documentationDependency,
   } as unknown as BuildAppOptions);
 }
 

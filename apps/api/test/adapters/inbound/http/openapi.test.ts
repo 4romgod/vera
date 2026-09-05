@@ -24,11 +24,11 @@ void describe('generated OpenAPI contract', () => {
     const documented = operations(document);
 
     assert.equal(document.openapi, '3.1.0');
-    assert.equal(Object.keys(document.paths).length, 79);
-    assert.equal(documented.length, 91);
+    assert.equal(Object.keys(document.paths).length, 83);
+    assert.equal(documented.length, 96);
     assert.equal(
       new Set(documented.map(({ operation }) => operation.operationId)).size,
-      91,
+      96,
     );
     const componentNames = Object.keys(document.components?.schemas ?? {});
     for (const componentName of [
@@ -58,6 +58,15 @@ void describe('generated OpenAPI contract', () => {
     assert.ok(componentNames.every((name) => !name.startsWith('Shared')));
     assert.ok(documented.some(({ path }) => path === '/health'));
     assert.ok(documented.some(({ path }) => path === '/ready'));
+    const createVoice = document.paths['/v1/voice/sessions']?.post;
+    const acknowledgeVoice =
+      document.paths[
+        '/v1/voice/sessions/{id}/deliveries/{deliveryId}/acknowledgement'
+      ]?.post;
+    assert.ok(createVoice?.responses['409']);
+    assert.ok(createVoice.responses['503']);
+    assert.ok(acknowledgeVoice?.responses['404']);
+    assert.ok(acknowledgeVoice.responses['409']);
     assert.ok(
       documented.some(
         ({ method, path }) =>
