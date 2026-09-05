@@ -446,6 +446,20 @@ application, publication, provider write, and merge keeps its own approval and
 policy boundary. See
 [ADR-0047](decisions/0047-convert-external-signals-into-owner-directed-work.md).
 
+Vera may also start that same handling by itself, but only under a second,
+separately approved standing routine. Its approval freezes the integration,
+project, permitted signal categories, permitted response, model disclosure
+boundary, a per-day and total occurrence budget, and an expiry. Scope, budget,
+and expiry are enforced in code before any disclosure; the budget is counted
+from durable runs so concurrent workers cannot inflate it. Each signal
+generation produces exactly one occurrence, and a resolved, superseded, or
+out-of-scope generation is skipped or fails closed rather than reasoned over.
+The authority explicitly excludes external writes, applying changes,
+publication, merge, and routine self-modification, all of which keep their
+existing separate approvals. Pausing or revoking the routine stops future
+occurrences without touching the watch. See
+[ADR-0050](decisions/0050-act-on-external-signals-under-event-triggered-standing-authority.md).
+
 ## Data classification
 
 An initial classification scheme should distinguish at least:

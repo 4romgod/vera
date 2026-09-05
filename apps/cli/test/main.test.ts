@@ -1370,4 +1370,61 @@ void describe('Vera CLI', () => {
       idempotencyKey: 'repair-key',
     });
   });
+
+  void it('creates an exactly bounded event-triggered triage routine', async () => {
+    let received: Parameters<VeraApi['createRoutine']>[0] | undefined;
+    const exitCode = await runCli(
+      [
+        'routine',
+        'triage-signals',
+        '--project',
+        'project_test',
+        '--expires-at',
+        '2026-10-05T00:00:00.000Z',
+        '--categories',
+        'failed_check,review_requested',
+        '--per-day',
+        '3',
+        '--total',
+        '25',
+        '--objective',
+        'Investigate safely.',
+        '--key',
+        'triage-key',
+      ],
+      {
+        client: fakeApi({
+          createRoutine: (input) => {
+            received = input;
+            return Promise.resolve({ id: 'routine_triage' } as never);
+          },
+        }),
+        stdout: { write: () => true },
+        stderr: { write: () => true },
+      },
+    );
+
+    assert.equal(exitCode, 0);
+    assert.deepEqual(received, {
+      title: 'Triage project_test signals',
+      trigger: {
+        kind: 'external_signal',
+        integrationId: 'github',
+        projectId: 'project_test',
+        categories: ['failed_check', 'review_requested'],
+      },
+      action: {
+        kind: 'signal_triage',
+        response: 'investigate_and_propose',
+        disclosure: 'minimized_signal_evidence',
+        objective: 'Investigate safely.',
+      },
+      limits: {
+        expiresAt: '2026-10-05T00:00:00.000Z',
+        maxOccurrencesPerDay: 3,
+        maxTotalOccurrences: 25,
+      },
+      idempotencyKey: 'triage-key',
+    });
+  });
 });

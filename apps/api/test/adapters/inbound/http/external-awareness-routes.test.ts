@@ -42,6 +42,9 @@ void describe('external awareness HTTP API', () => {
       get: () => Promise.resolve(signal),
       list: () => Promise.resolve([signal]),
       listByRoutine: () => Promise.resolve([signal]),
+      listRespondable: () =>
+        Promise.reject(new Error('Not used by this test.')),
+      freezeTrigger: () => Promise.reject(new Error('Not used by this test.')),
       freeze: () => Promise.reject(new Error('Not used by list routes.')),
       execute: () => Promise.reject(new Error('Not used by list routes.')),
     };
@@ -97,6 +100,9 @@ void describe('external awareness HTTP API', () => {
       get: () => Promise.resolve(signal),
       list: () => Promise.resolve([signal]),
       listByRoutine: () => Promise.resolve([signal]),
+      listRespondable: () =>
+        Promise.reject(new Error('Not used by this test.')),
+      freezeTrigger: () => Promise.reject(new Error('Not used by this test.')),
       freeze: () => Promise.reject(new Error('Not used by triage route.')),
       execute: () => Promise.reject(new Error('Not used by triage route.')),
     };

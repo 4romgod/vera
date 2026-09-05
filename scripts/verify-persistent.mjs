@@ -15,6 +15,7 @@ import { MongoDbWorkLeaseStore } from '../apps/api/dist/adapters/outbound/persis
 import { MongoDbProjectMutationLeaseStore } from '../apps/api/dist/adapters/outbound/persistence/mongodb/mongodb-project-mutation-lease-store.js';
 import { MongoDbIntegrationConnectionStore } from '../apps/api/dist/adapters/outbound/persistence/mongodb/mongodb-integration-connection-store.js';
 import { MongoDbExternalSignalStore } from '../apps/api/dist/adapters/outbound/persistence/mongodb/mongodb-external-signal-store.js';
+import { MongoDbRoutineStore } from '../apps/api/dist/adapters/outbound/persistence/mongodb/mongodb-routine-store.js';
 import { VeraClient } from '../packages/client/dist/index.js';
 
 const executeFile = promisify(execFile);
@@ -389,7 +390,8 @@ async function verifyExternalSignalPersistence() {
     database,
     timeoutMs: 3_000,
   });
-  const id = `external_signal_${randomUUID()}`;
+  const suffix = randomUUID();
+  const id = `external_signal_cursor_a_${suffix}`;
   const signal = {
     schemaVersion: 1,
     version: 1,
@@ -413,6 +415,16 @@ async function verifyExternalSignalPersistence() {
   try {
     assert.equal((await first.upsert(signal)).created, true);
     assert.equal((await first.upsert(signal)).created, false);
+    await first.upsert({
+      ...signal,
+      id: `external_signal_cursor_b_${suffix}`,
+      externalKey: 'pull:43:failed-checks',
+    });
+    await first.upsert({
+      ...signal,
+      id: `external_signal_cursor_c_${suffix}`,
+      externalKey: 'pull:44:failed-checks',
+    });
   } finally {
     await first.close();
   }
@@ -422,7 +434,39 @@ async function verifyExternalSignalPersistence() {
     timeoutMs: 3_000,
   });
   try {
-    assert.equal((await recovered.listActive('owner_v1', 10))[0]?.id, id);
+    assert.equal((await recovered.listActive('owner_v1', 10)).length, 3);
+    const firstPage = await recovered.listRespondable({
+      principalId: signal.principalId,
+      integrationId: signal.integrationId,
+      projectId: signal.project.id,
+      categories: [signal.category],
+      limit: 2,
+    });
+    assert.deepEqual(
+      firstPage.map((candidate) => candidate.id),
+      [
+        `external_signal_cursor_a_${suffix}`,
+        `external_signal_cursor_b_${suffix}`,
+      ],
+    );
+    const last = firstPage.at(-1);
+    assert.ok(last);
+    const secondPage = await recovered.listRespondable({
+      principalId: signal.principalId,
+      integrationId: signal.integrationId,
+      projectId: signal.project.id,
+      categories: [signal.category],
+      after: {
+        observedAt: last.lastObservedAt,
+        signalId: last.id,
+        signalVersion: last.version,
+      },
+      limit: 2,
+    });
+    assert.deepEqual(
+      secondPage.map((candidate) => candidate.id),
+      [`external_signal_cursor_c_${suffix}`],
+    );
     assert.equal(
       (await recovered.listNotifications('owner_v1', { limit: 10 }))[0]?.id,
       `notification_${id.slice('external_signal_'.length)}`,
@@ -434,12 +478,95 @@ async function verifyExternalSignalPersistence() {
         activeIds: [],
         resolvedAt: '2026-09-05T10:02:00.000Z',
       }),
-      1,
+      3,
     );
     assert.equal((await recovered.listActive('owner_v1', 10)).length, 0);
   } finally {
     await recovered.close();
   }
+}
+
+async function verifyRoutineCompatibilityPersistence(mongo) {
+  const legacyId = `routine_legacy_${randomUUID()}`;
+  const legacy = {
+    schemaVersion: 1,
+    version: 1,
+    id: legacyId,
+    requestKey: `legacy-${legacyId}`,
+    principalId: 'owner_v1',
+    status: 'paused',
+    approval: {
+      id: `approval_${randomUUID()}`,
+      status: 'approved',
+      reason: 'standing_instruction',
+      effect: {
+        title: 'Legacy persistent routine',
+        schedule: { kind: 'interval', minutes: 15 },
+        action: {
+          kind: 'machine_health_check',
+          machineId: 'verification-machine',
+        },
+        authority: {
+          recurringExecution: true,
+          inspectRegisteredMachine: true,
+          controlMachineServices: false,
+          modifyRoutine: false,
+        },
+      },
+      requestedAt: '2020-01-01T00:00:00.000Z',
+      decidedAt: '2020-01-01T00:00:01.000Z',
+      decidedBy: 'owner_v1',
+    },
+    events: [
+      {
+        schemaVersion: 1,
+        id: `event_${randomUUID()}`,
+        sequence: 1,
+        type: 'routine_created',
+        occurredAt: '2020-01-01T00:00:00.000Z',
+        data: {},
+      },
+    ],
+    createdAt: '2020-01-01T00:00:00.000Z',
+    updatedAt: '2020-01-01T00:00:01.000Z',
+  };
+  await mongo
+    .db(database)
+    .collection('routines')
+    .insertOne(legacy, { bypassDocumentValidation: true });
+  const store = new MongoDbRoutineStore({
+    uri: mongodbUri,
+    database,
+    timeoutMs: 3_000,
+  });
+  try {
+    const upgraded = await store.findById('owner_v1', legacyId);
+    assert.ok(upgraded);
+    assert.equal(upgraded.schemaVersion, 2);
+    assert.deepEqual(upgraded.approval.effect.trigger, {
+      kind: 'schedule',
+      schedule: legacy.approval.effect.schedule,
+    });
+    assert.equal(
+      await store.replace(
+        {
+          ...upgraded,
+          version: upgraded.version + 1,
+          updatedAt: '2020-01-01T00:00:02.000Z',
+        },
+        upgraded.version,
+      ),
+      true,
+    );
+  } finally {
+    await store.close();
+  }
+  const rewritten = await mongo
+    .db(database)
+    .collection('routines')
+    .findOne({ id: legacyId });
+  assert.equal(rewritten?.schemaVersion, 2);
+  assert.equal('schedule' in (rewritten?.approval.effect ?? {}), false);
 }
 
 async function verifyCliJourney(
@@ -820,11 +947,14 @@ async function verifyScenarios(mongo, redis) {
 
   const routineInput = {
     title: 'Persistent verification health check',
-    schedule: {
-      kind: 'daily',
-      timeZone: 'Africa/Johannesburg',
-      localTime: '08:00',
-      daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+    trigger: {
+      kind: 'schedule',
+      schedule: {
+        kind: 'daily',
+        timeZone: 'Africa/Johannesburg',
+        localTime: '08:00',
+        daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+      },
     },
     action: {
       kind: 'machine_health_check',
@@ -1615,6 +1745,7 @@ async function verifyScenarios(mongo, redis) {
   await verifyProjectMutationLeaseExclusion();
   await verifyIntegrationConnectionPersistence();
   await verifyExternalSignalPersistence();
+  await verifyRoutineCompatibilityPersistence(mongo);
 
   const legacyConversation = await client.createConversation({
     title: 'Legacy reply upgrade',
@@ -1831,6 +1962,7 @@ async function verifyScenarios(mongo, redis) {
     projectMutationLeaseExclusionVerified: true,
     integrationConnectionPersistenceVerified: true,
     externalSignalPersistenceVerified: true,
+    routineCompatibilityPersistenceVerified: true,
     cliJourneyVerified: true,
     boundedGoalVerified: true,
     adaptiveGoalVerified: true,

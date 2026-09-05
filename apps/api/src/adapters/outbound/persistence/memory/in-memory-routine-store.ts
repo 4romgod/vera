@@ -83,6 +83,31 @@ export class InMemoryRoutineStore implements RoutineStore {
     );
   }
 
+  public findSignalTriggered(input: {
+    after?: { createdAt: string; id: string };
+    limit: number;
+  }) {
+    return Promise.resolve(
+      [...this.routines.values()]
+        .filter(
+          (routine) =>
+            routine.status === 'active' &&
+            routine.approval.effect.trigger.kind === 'external_signal' &&
+            (input.after === undefined ||
+              routine.createdAt > input.after.createdAt ||
+              (routine.createdAt === input.after.createdAt &&
+                routine.id > input.after.id)),
+        )
+        .sort(
+          (left, right) =>
+            left.createdAt.localeCompare(right.createdAt) ||
+            left.id.localeCompare(right.id),
+        )
+        .slice(0, input.limit)
+        .map((routine) => structuredClone(routine)),
+    );
+  }
+
   public createRun(run: RoutineRun) {
     const key = `${run.routineId}\u0000${run.occurrenceKey}`;
     const id = this.runIdsByOccurrence.get(key);
@@ -138,6 +163,22 @@ export class InMemoryRoutineStore implements RoutineStore {
         .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
         .slice(0, limit)
         .map((run) => structuredClone(run)),
+    );
+  }
+
+  public countRuns(input: {
+    principalId: string;
+    routineId: string;
+    createdAfter?: string;
+  }) {
+    return Promise.resolve(
+      [...this.runs.values()].filter(
+        (run) =>
+          run.principalId === input.principalId &&
+          run.routineId === input.routineId &&
+          (input.createdAfter === undefined ||
+            run.createdAt >= input.createdAfter),
+      ).length,
     );
   }
 

@@ -72,6 +72,19 @@ export function RoutinesPanel(props: {
       | 'failed_check'
     )[];
   }) => Promise<boolean>;
+  onCreateTriage: (input: {
+    title: string;
+    projectId: string;
+    categories: (
+      | 'review_requested'
+      | 'mentioned'
+      | 'assigned'
+      | 'failed_check'
+    )[];
+    expiresAt: string;
+    maxOccurrencesPerDay: number;
+    maxTotalOccurrences: number;
+  }) => Promise<boolean>;
   onDecision: (
     routineId: string,
     decision: 'approved' | 'rejected',
@@ -80,7 +93,7 @@ export function RoutinesPanel(props: {
   onResume: (routineId: string) => Promise<boolean>;
   onRunNow: (routineId: string) => Promise<RoutineRunResource | undefined>;
 }) {
-  const [creating, setCreating] = useState<'machine' | 'watch'>();
+  const [creating, setCreating] = useState<'machine' | 'watch' | 'triage'>();
   const [title, setTitle] = useState('Morning Vera health check');
   const [machineId, setMachineId] = useState(props.machines[0]?.id ?? '');
   const [serviceIds, setServiceIds] = useState<string[]>([]);
@@ -91,6 +104,12 @@ export function RoutinesPanel(props: {
   const [categories, setCategories] = useState<
     ('review_requested' | 'mentioned' | 'assigned' | 'failed_check')[]
   >(['review_requested', 'mentioned', 'assigned', 'failed_check']);
+  const [triageCategories, setTriageCategories] = useState<
+    ('review_requested' | 'mentioned' | 'assigned' | 'failed_check')[]
+  >(['failed_check']);
+  const [triageDays, setTriageDays] = useState('30');
+  const [triagePerDay, setTriagePerDay] = useState('5');
+  const [triageTotal, setTriageTotal] = useState('50');
   const timeZone = useMemo(
     () => Intl.DateTimeFormat().resolvedOptions().timeZone,
     [],
@@ -163,6 +182,41 @@ export function RoutinesPanel(props: {
       setCreating(undefined);
   }
 
+  async function submitTriage() {
+    const project = props.projects.find(({ id }) => id === projectId);
+    const days = Number(triageDays);
+    const perDay = Number(triagePerDay);
+    const total = Number(triageTotal);
+    if (
+      project === undefined ||
+      !githubConnected ||
+      triageCategories.length === 0 ||
+      !Number.isInteger(days) ||
+      days < 1 ||
+      days > 365 ||
+      !Number.isInteger(perDay) ||
+      perDay < 1 ||
+      perDay > 50 ||
+      !Number.isInteger(total) ||
+      total < 1 ||
+      total > 1_000
+    )
+      return;
+    if (
+      await props.onCreateTriage({
+        title: `Triage ${project.displayName} signals`,
+        projectId,
+        categories: triageCategories,
+        expiresAt: new Date(
+          Date.now() + days * 24 * 60 * 60 * 1_000,
+        ).toISOString(),
+        maxOccurrencesPerDay: perDay,
+        maxTotalOccurrences: total,
+      })
+    )
+      setCreating(undefined);
+  }
+
   return (
     <View style={{ gap: spacing.md }}>
       <View
@@ -203,6 +257,11 @@ export function RoutinesPanel(props: {
             label="GitHub watch"
             selected={creating === 'watch'}
             onPress={() => setCreating('watch')}
+          />
+          <Choice
+            label="Handle signals"
+            selected={creating === 'triage'}
+            onPress={() => setCreating('triage')}
           />
         </View>
       )}
@@ -396,6 +455,116 @@ export function RoutinesPanel(props: {
         </View>
       ) : null}
 
+      {creating === 'triage' ? (
+        <View style={cardStyle}>
+          <Text style={eyebrowStyle}>NEW EVENT-TRIGGERED ROUTINE</Text>
+          <Field label="Registered project">
+            <View
+              style={{
+                flexDirection: 'row',
+                flexWrap: 'wrap',
+                gap: spacing.sm,
+              }}
+            >
+              {props.projects.map((project) => (
+                <Choice
+                  key={project.id}
+                  label={project.displayName}
+                  selected={project.id === projectId}
+                  onPress={() => setProjectId(project.id)}
+                />
+              ))}
+            </View>
+          </Field>
+          <Field label="Start work when these signals arrive">
+            <View
+              style={{
+                flexDirection: 'row',
+                flexWrap: 'wrap',
+                gap: spacing.sm,
+              }}
+            >
+              {(
+                [
+                  ['review_requested', 'Review requests'],
+                  ['mentioned', 'Mentions'],
+                  ['assigned', 'Assignments'],
+                  ['failed_check', 'Failed checks'],
+                ] as const
+              ).map(([value, label]) => (
+                <Choice
+                  key={value}
+                  label={label}
+                  selected={triageCategories.includes(value)}
+                  onPress={() =>
+                    setTriageCategories((current) =>
+                      current.includes(value)
+                        ? current.filter((category) => category !== value)
+                        : [...current, value],
+                    )
+                  }
+                />
+              ))}
+            </View>
+          </Field>
+          <Field label="Stop after this many days (1–365)">
+            <TextInput
+              accessibilityLabel="Standing triage duration in days"
+              inputMode="numeric"
+              maxLength={3}
+              onChangeText={setTriageDays}
+              placeholder="30"
+              placeholderTextColor={palette.faint}
+              style={inputStyle}
+              value={triageDays}
+            />
+          </Field>
+          <Field label="At most this many a day (1–50)">
+            <TextInput
+              accessibilityLabel="Maximum triage occurrences a day"
+              inputMode="numeric"
+              maxLength={2}
+              onChangeText={setTriagePerDay}
+              placeholder="5"
+              placeholderTextColor={palette.faint}
+              style={inputStyle}
+              value={triagePerDay}
+            />
+          </Field>
+          <Field label="And this many in total (1–1000)">
+            <TextInput
+              accessibilityLabel="Maximum triage occurrences in total"
+              inputMode="numeric"
+              maxLength={4}
+              onChangeText={setTriageTotal}
+              placeholder="50"
+              placeholderTextColor={palette.faint}
+              style={inputStyle}
+              value={triageTotal}
+            />
+          </Field>
+          <Text
+            selectable
+            style={{ color: palette.muted, fontSize: 12, lineHeight: 18 }}
+          >
+            {githubConnected
+              ? 'Approval lets Vera investigate a matching signal and prepare a proposal without asking first. It never applies a change, writes to GitHub, or merges anything—those still need your separate approval each time.'
+              : 'Connect GitHub in Connections before creating this routine.'}
+          </Text>
+          <SmallButton
+            icon={ShieldCheck}
+            label="Create for approval"
+            onPress={() => void submitTriage()}
+            disabled={
+              props.actionId === 'create' ||
+              !githubConnected ||
+              projectId.length === 0 ||
+              triageCategories.length === 0
+            }
+          />
+        </View>
+      ) : null}
+
       {props.routines.length === 0 && creating === undefined ? (
         <View
           style={[
@@ -471,15 +640,15 @@ function RoutineCard(props: {
             {effect.title}
           </Text>
         </View>
-        {effect.action.kind === 'integration_awareness' ? (
-          <GitPullRequest
+        {effect.action.kind === 'machine_health_check' ? (
+          <Activity
             color={
               props.routine.status === 'active' ? palette.accent : palette.muted
             }
             size={20}
           />
         ) : (
-          <Activity
+          <GitPullRequest
             color={
               props.routine.status === 'active' ? palette.accent : palette.muted
             }
@@ -488,23 +657,39 @@ function RoutineCard(props: {
         )}
       </View>
       <Text style={{ color: palette.textSoft, lineHeight: 20 }}>
-        {effect.schedule.kind === 'daily'
-          ? `${scheduleLabel(effect.schedule.daysOfWeek)} at ${effect.schedule.localTime} · ${effect.schedule.timeZone}`
-          : `Every ${String(effect.schedule.minutes)} minutes`}
+        {triggerLabel(effect.trigger)}
       </Text>
       <Text style={{ color: palette.muted, fontSize: 12 }}>
         {effect.action.kind === 'machine_health_check'
           ? `Machine: ${props.machineName ?? effect.action.machineId} · ${effect.action.serviceIds?.join(', ') ?? 'all services'}`
-          : `GitHub: ${effect.action.repository.owner}/${effect.action.repository.name} · @${effect.action.account.login}`}
+          : effect.action.kind === 'integration_awareness'
+            ? `GitHub: ${effect.action.repository.owner}/${effect.action.repository.name} · @${effect.action.account.login}`
+            : `Investigate and propose · ${effect.trigger.kind === 'external_signal' ? effect.trigger.project.displayName : 'selected project'}`}
       </Text>
-      {effect.action.kind === 'integration_awareness' ? (
+      {signalCategoriesFor(effect) === undefined ? null : (
         <Text style={{ color: palette.muted, fontSize: 12, lineHeight: 18 }}>
           Signals:{' '}
-          {effect.action.categories
-            .map((category) => SIGNAL_LABELS[category])
+          {signalCategoriesFor(effect)
+            ?.map((category) => SIGNAL_LABELS[category])
             .join(', ')}
         </Text>
-      ) : null}
+      )}
+      {effect.limits === undefined ? null : (
+        <Text style={{ color: palette.muted, fontSize: 12, lineHeight: 18 }}>
+          Budget: up to {String(effect.limits.maxOccurrencesPerDay)} a day,{' '}
+          {String(effect.limits.maxTotalOccurrences)} in total · Expires{' '}
+          {new Date(effect.limits.expiresAt).toLocaleString()}
+        </Text>
+      )}
+      {props.routine.expiredAt === undefined ? null : (
+        <Text style={{ color: palette.muted, fontSize: 12, lineHeight: 18 }}>
+          Stopped{' '}
+          {props.routine.expiryReason === 'budget_exhausted'
+            ? 'after using its whole budget'
+            : 'when it expired'}{' '}
+          on {new Date(props.routine.expiredAt).toLocaleString()}
+        </Text>
+      )}
       {props.routine.nextRunAt === undefined ? null : (
         <Text style={{ color: palette.muted, fontSize: 12 }}>
           Next: {new Date(props.routine.nextRunAt).toLocaleString()}
@@ -550,7 +735,9 @@ function RoutineCard(props: {
           <Text style={{ color: palette.accent, fontSize: 11, lineHeight: 17 }}>
             {effect.action.kind === 'machine_health_check'
               ? 'Read-only inspection · No service control · No self-modification'
-              : 'Read-only observation · No external writes · No self-modification'}
+              : effect.action.kind === 'integration_awareness'
+                ? 'Read-only observation · No external writes · No self-modification'
+                : 'Investigates and proposes only · Every change, publish, and merge still needs your separate approval · No external writes · No self-modification'}
           </Text>
           <View style={{ flexDirection: 'row', gap: spacing.sm }}>
             <SmallButton
@@ -574,12 +761,14 @@ function RoutineCard(props: {
       ) : null}
       {props.routine.status === 'active' ? (
         <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-          <SmallButton
-            icon={Play}
-            label="Run now"
-            onPress={() => void props.onRunNow(props.routine.id)}
-            disabled={props.busy}
-          />
+          {effect.trigger.kind === 'schedule' ? (
+            <SmallButton
+              icon={Play}
+              label="Run now"
+              onPress={() => void props.onRunNow(props.routine.id)}
+              disabled={props.busy}
+            />
+          ) : null}
           <SmallButton
             icon={Pause}
             label="Pause"
@@ -598,6 +787,26 @@ function RoutineCard(props: {
       ) : null}
     </View>
   );
+}
+
+function triggerLabel(
+  trigger: RoutineResource['approval']['effect']['trigger'],
+) {
+  if (trigger.kind === 'external_signal')
+    return `Whenever a matching ${trigger.integrationId} signal arrives in ${trigger.project.displayName}`;
+  return trigger.schedule.kind === 'daily'
+    ? `${scheduleLabel(trigger.schedule.daysOfWeek)} at ${trigger.schedule.localTime} · ${trigger.schedule.timeZone}`
+    : `Every ${String(trigger.schedule.minutes)} minutes`;
+}
+
+function signalCategoriesFor(
+  effect: RoutineResource['approval']['effect'],
+): (keyof typeof SIGNAL_LABELS)[] | undefined {
+  if (effect.action.kind === 'integration_awareness')
+    return effect.action.categories;
+  return effect.trigger.kind === 'external_signal'
+    ? effect.trigger.categories
+    : undefined;
 }
 
 function scheduleLabel(days: number[]) {

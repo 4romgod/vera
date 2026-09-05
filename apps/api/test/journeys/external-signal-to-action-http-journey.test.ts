@@ -136,6 +136,9 @@ void describe('external signal to action HTTP journey', () => {
       get: () => Promise.resolve(signal),
       list: () => Promise.resolve([signal]),
       listByRoutine: () => Promise.resolve([signal]),
+      listRespondable: () =>
+        Promise.reject(new Error('Not used by this test.')),
+      freezeTrigger: () => Promise.reject(new Error('Not used by this test.')),
       freeze: () => Promise.reject(new Error('Not used.')),
       execute: () => Promise.reject(new Error('Not used.')),
     };

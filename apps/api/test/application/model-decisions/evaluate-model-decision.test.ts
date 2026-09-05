@@ -27,7 +27,10 @@ void describe('model decision boundary', () => {
         action: 'create',
         routine: {
           title: 'Watch Vera on GitHub',
-          schedule: { kind: 'interval', minutes: 15 },
+          trigger: {
+            kind: 'schedule',
+            schedule: { kind: 'interval', minutes: 15 },
+          },
           action: {
             kind: 'integration_awareness',
             integrationId: 'github',

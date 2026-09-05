@@ -37,6 +37,7 @@ const usage = `Usage:
   vera routine list
   vera routine show <routine-id>
   vera routine watch-github --project <project-id> [--minutes <5-1440>] [--categories <review_requested,mentioned,assigned,failed_check>] [--title <title>] [--key <key>]
+  vera routine triage-signals --project <project-id> --expires-at <iso-instant> [--categories <review_requested,mentioned,assigned,failed_check>] [--per-day <1-50>] [--total <1-1000>] [--objective <objective>] [--title <title>] [--key <key>]
   vera routine decide <routine-id> <approved|rejected>
   vera routine pause <routine-id>
   vera routine resume <routine-id>
@@ -688,7 +689,7 @@ export async function runCli(
       stdout,
       await client.createRoutine({
         title: option(args, '--title') ?? `Watch ${projectId} on GitHub`,
-        schedule: { kind: 'interval', minutes },
+        trigger: { kind: 'schedule', schedule: { kind: 'interval', minutes } },
         action: {
           kind: 'integration_awareness',
           integrationId: 'github',
@@ -699,6 +700,64 @@ export async function runCli(
             | 'assigned'
             | 'failed_check'
           )[],
+        },
+        idempotencyKey: option(args, '--key') ?? createKey(),
+      }),
+    );
+    return 0;
+  }
+  if (resource === 'routine' && action === 'triage-signals') {
+    const allowed = new Set([
+      'review_requested',
+      'mentioned',
+      'assigned',
+      'failed_check',
+    ]);
+    const requested = option(args, '--categories')?.split(',') ?? [
+      'failed_check',
+    ];
+    if (
+      requested.length === 0 ||
+      requested.some((category) => !allowed.has(category))
+    )
+      throw new Error(
+        '--categories must contain review_requested, mentioned, assigned, or failed_check.',
+      );
+    const projectId = requiredOption(args, '--project');
+    const expiresAt = requiredOption(args, '--expires-at');
+    if (Number.isNaN(Date.parse(expiresAt)))
+      throw new Error('--expires-at must be an ISO 8601 instant.');
+    const perDay = positiveIntegerOption(args, '--per-day') ?? 5;
+    const total = positiveIntegerOption(args, '--total') ?? 50;
+    if (perDay > 50) throw new Error('--per-day must be 50 or fewer.');
+    if (total > 1_000) throw new Error('--total must be 1000 or fewer.');
+    print(
+      stdout,
+      await client.createRoutine({
+        title: option(args, '--title') ?? `Triage ${projectId} signals`,
+        trigger: {
+          kind: 'external_signal',
+          integrationId: 'github',
+          projectId,
+          categories: requested as (
+            | 'review_requested'
+            | 'mentioned'
+            | 'assigned'
+            | 'failed_check'
+          )[],
+        },
+        action: {
+          kind: 'signal_triage',
+          response: 'investigate_and_propose',
+          disclosure: 'minimized_signal_evidence',
+          ...(option(args, '--objective') === undefined
+            ? {}
+            : { objective: requiredOption(args, '--objective') }),
+        },
+        limits: {
+          expiresAt: new Date(expiresAt).toISOString(),
+          maxOccurrencesPerDay: perDay,
+          maxTotalOccurrences: total,
         },
         idempotencyKey: option(args, '--key') ?? createKey(),
       }),

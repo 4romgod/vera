@@ -34,6 +34,18 @@ verification. Failed-check repair selection is bound to the exact project,
 repository, and pull-request URL, and Vera reports final resolution only after
 a complete GitHub observation confirms that the original signal is gone.
 
+A routine is now triggered rather than only scheduled. Alongside civil-time
+schedules, the owner can approve a `signal_triage` routine whose trigger is a
+matching external-signal generation in one registered project. Its approval
+freezes the exact categories, the permitted response, the model disclosure
+boundary, a per-day and total occurrence budget, and an expiry. Each matching
+generation becomes exactly one durable, restart-recoverable occurrence, so Vera
+notices a failing pull request, investigates it, and brings back a prepared
+proposal without waiting to be asked. Observation authority still grants
+nothing on its own: code changes, application, publication, merge, provider
+writes, and messaging all keep their existing separate approvals, and pausing
+or revoking the routine stops future occurrences.
+
 The orchestration brain is selected at startup through a provider registry.
 Ollama remains the default owner-controlled provider; OpenAI and Gemini are
 implemented third-party providers, and the deterministic provider remains the

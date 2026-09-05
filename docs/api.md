@@ -158,6 +158,19 @@ not copied into the owner message. The task response exposes the source signal
 identity and generation plus a link back to the signal. See
 [ADR-0047](decisions/0047-convert-external-signals-into-owner-directed-work.md).
 
+`POST /v1/routines` takes one closed `trigger` rather than a bare `schedule`.
+A `signal_triage` routine uses `trigger.kind` `external_signal` and requires
+`limits` with a future `expiresAt`, `maxOccurrencesPerDay`, and
+`maxTotalOccurrences`. Once approved, each matching signal generation becomes
+exactly one durable routine run that starts the same triage lifecycle the owner
+starts by hand; a resolved or superseded generation is recorded as skipped, and
+a generation that has left the approved scope fails the run closed. An
+event-triggered routine rejects `POST /v1/routines/{routineId}/runs`; it runs
+only when a matching signal arrives. Reaching the expiry or the total budget
+moves the routine to the terminal `expired` status. Stored version 1 routines
+are parsed forward into the trigger contract. See
+[ADR-0050](decisions/0050-act-on-external-signals-under-event-triggered-standing-authority.md).
+
 `GET /v1/external-signals/{signalId}/resolution` is a read model, not another
 workflow store. It joins the signal to its owner-scoped triage task and, when
 an exact repair was prepared, the current development campaign. Failed-check
@@ -1036,8 +1049,8 @@ Error envelopes use:
 |---:|---|---|
 | `400` | `invalid_request` | Missing, malformed, too large, or unknown request input. |
 | `404` | `task_not_found`, `run_not_found`, `approval_not_found`, `project_not_found`, `conversation_not_found`, `conversation_message_not_found`, `external_signal_not_found`, `awareness_signal_not_found`, `artifact_not_found`, `attention_item_not_found`, `routine_not_found`, `routine_run_not_found`, `routine_machine_not_found`, `routine_service_not_found`, `change_application_not_found`, `software_change_publication_not_found`, `development_campaign_not_found`, `development_campaign_project_not_found`, `development_campaign_repair_not_found` | The addressed resource, routine target, repair approval, signal, or current attention generation does not exist. |
-| `409` | `idempotency_key_reused`, `approval_already_decided`, `concurrent_transition_failed`, `conversation_message_mismatch`, `external_signal_not_active`, `external_signal_scope_mismatch`, `routine_idempotency_key_reused`, `routine_approval_already_decided`, `routine_invalid_transition`, `routine_concurrent_transition_failed`, `change_application_idempotency_key_reused`, `change_application_approval_already_decided`, `change_application_concurrent_transition_failed`, `change_application_not_cancellable`, `software_change_publication_idempotency_key_reused`, `software_change_publication_approval_already_decided`, `software_change_publication_concurrent_transition_failed`, `software_change_publication_not_cancellable`, `development_campaign_idempotency_key_reused`, `development_campaign_approval_already_decided`, `development_campaign_repair_not_available`, `development_campaign_repair_already_decided`, `development_campaign_repair_conflict`, `development_campaign_concurrent_transition_failed`, `development_campaign_not_cancellable`, `stale_source`, `application_conflict`, `publication_conflict`, `campaign_conflict`, `review_required` | The request conflicts with durable, filesystem, or remote state. |
-| `422` | `invalid_attention_decision`, `invalid_project_source`, `software_change_artifact_required`, `software_change_publication_source_required` | An attention snooze is invalid, a project source is invalid, or the selected artifact/application cannot be used for the requested effect. |
+| `409` | `idempotency_key_reused`, `approval_already_decided`, `concurrent_transition_failed`, `conversation_message_mismatch`, `external_signal_not_active`, `external_signal_scope_mismatch`, `routine_idempotency_key_reused`, `routine_approval_already_decided`, `routine_invalid_transition`, `routine_signal_triage_unavailable`, `routine_signal_scope_changed`, `routine_concurrent_transition_failed`, `change_application_idempotency_key_reused`, `change_application_approval_already_decided`, `change_application_concurrent_transition_failed`, `change_application_not_cancellable`, `software_change_publication_idempotency_key_reused`, `software_change_publication_approval_already_decided`, `software_change_publication_concurrent_transition_failed`, `software_change_publication_not_cancellable`, `development_campaign_idempotency_key_reused`, `development_campaign_approval_already_decided`, `development_campaign_repair_not_available`, `development_campaign_repair_already_decided`, `development_campaign_repair_conflict`, `development_campaign_concurrent_transition_failed`, `development_campaign_not_cancellable`, `stale_source`, `application_conflict`, `publication_conflict`, `campaign_conflict`, `review_required` | The request conflicts with durable, filesystem, or remote state. |
+| `422` | `invalid_attention_decision`, `invalid_project_source`, `routine_proposal_invalid`, `software_change_artifact_required`, `software_change_publication_source_required` | An attention snooze is invalid, a project source is invalid, a routine's trigger, action, and budget disagree, or the selected artifact/application cannot be used for the requested effect. |
 | `502` | `provider_request_rejected`, `provider_response_invalid` | Provider boundary failed while using the diagnostic endpoint. |
 | `503` | `model_not_found`, `provider_unavailable`, `publication_unavailable`, `operational_store_unavailable`, `scratchpad_unavailable`, `planning_capability_unavailable`, `software_change_capability_unavailable`, `development_campaign_capability_unavailable`, `capability_unavailable` | A required runtime dependency is unavailable. The response `dependency` identifies a generic capability runtime when applicable. |
 | `504` | `provider_timeout` | The model provider exceeded its deadline. |

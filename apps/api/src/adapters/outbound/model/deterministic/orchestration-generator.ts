@@ -342,8 +342,15 @@ export function generateOrchestrationDecision(
   const routineInterval = /\bevery\s+(\d{1,4})\s+minutes?\b/u.exec(
     normalizedMessage,
   )?.[1];
+  const requestsSignalTriage =
+    projectId !== undefined &&
+    /\b(handle|triage|look into|investigate)\b/u.test(normalizedMessage) &&
+    /\b(automatically|by yourself|on your own|without asking me)\b/u.test(
+      normalizedMessage,
+    );
   const requestsGitHubWatch =
     projectId !== undefined &&
+    !requestsSignalTriage &&
     /\b(watch|monitor)\b/u.test(normalizedMessage) &&
     /\b(github|review requests?|mentions?|assignments?|failed (?:checks?|ci))\b/u.test(
       normalizedMessage,
@@ -378,62 +385,98 @@ export function generateOrchestrationDecision(
           : canManageRoutines &&
               /\b(list|show)\b.*\broutines?\b/u.test(normalizedMessage)
             ? ({ action: 'list' } as const)
-            : canManageRoutines && requestsGitHubWatch
+            : canManageRoutines &&
+                requestsSignalTriage &&
+                projectId !== undefined
               ? ({
                   action: 'create',
                   routine: {
-                    title: `Watch ${projectName} on GitHub`,
-                    schedule: {
-                      kind: 'interval',
-                      minutes:
-                        routineInterval === undefined
-                          ? 15
-                          : Math.min(
-                              1440,
-                              Math.max(5, Number(routineInterval)),
-                            ),
-                    },
-                    action: {
-                      kind: 'integration_awareness',
+                    title: `Triage ${projectName} signals`,
+                    trigger: {
+                      kind: 'external_signal',
                       integrationId: 'github',
                       projectId,
                       categories:
                         awarenessCategories.length === 0
-                          ? [
-                              'review_requested',
-                              'mentioned',
-                              'assigned',
-                              'failed_check',
-                            ]
+                          ? ['failed_check']
                           : awarenessCategories,
+                    },
+                    action: {
+                      kind: 'signal_triage',
+                      response: 'investigate_and_propose',
+                      disclosure: 'minimized_signal_evidence',
+                    },
+                    limits: {
+                      expiresAt: new Date(
+                        Date.parse(currentTime) + 30 * 86_400_000,
+                      ).toISOString(),
+                      maxOccurrencesPerDay: 5,
+                      maxTotalOccurrences: 50,
                     },
                   },
                 } as const)
-              : canManageRoutines &&
-                  selectedMachine !== undefined &&
-                  /\b(every (?:day|morning|evening)|daily|routine|standing instruction)\b/u.test(
-                    normalizedMessage,
-                  )
+              : canManageRoutines && requestsGitHubWatch
                 ? ({
                     action: 'create',
                     routine: {
-                      title: 'Daily machine health check',
-                      schedule: {
-                        kind: 'daily',
-                        timeZone: ownerTimeZone,
-                        localTime: routineTime ?? '08:00',
-                        daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+                      title: `Watch ${projectName} on GitHub`,
+                      trigger: {
+                        kind: 'schedule',
+                        schedule: {
+                          kind: 'interval',
+                          minutes:
+                            routineInterval === undefined
+                              ? 15
+                              : Math.min(
+                                  1440,
+                                  Math.max(5, Number(routineInterval)),
+                                ),
+                        },
                       },
                       action: {
-                        kind: 'machine_health_check',
-                        machineId: selectedMachine.id,
-                        ...(selectedService === undefined
-                          ? {}
-                          : { serviceIds: [selectedService.id] }),
+                        kind: 'integration_awareness',
+                        integrationId: 'github',
+                        projectId,
+                        categories:
+                          awarenessCategories.length === 0
+                            ? [
+                                'review_requested',
+                                'mentioned',
+                                'assigned',
+                                'failed_check',
+                              ]
+                            : awarenessCategories,
                       },
                     },
                   } as const)
-                : undefined;
+                : canManageRoutines &&
+                    selectedMachine !== undefined &&
+                    /\b(every (?:day|morning|evening)|daily|routine|standing instruction)\b/u.test(
+                      normalizedMessage,
+                    )
+                  ? ({
+                      action: 'create',
+                      routine: {
+                        title: 'Daily machine health check',
+                        trigger: {
+                          kind: 'schedule',
+                          schedule: {
+                            kind: 'daily',
+                            timeZone: ownerTimeZone,
+                            localTime: routineTime ?? '08:00',
+                            daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+                          },
+                        },
+                        action: {
+                          kind: 'machine_health_check',
+                          machineId: selectedMachine.id,
+                          ...(selectedService === undefined
+                            ? {}
+                            : { serviceIds: [selectedService.id] }),
+                        },
+                      },
+                    } as const)
+                  : undefined;
   const personalTaskId = /personal_task_[a-z0-9-]+/u.exec(ownerMessage)?.[0];
   const personalTaskAction =
     canManagePersonalTasks &&
@@ -763,7 +806,10 @@ export function generateOrchestrationDecision(
               schemaVersion: 1,
               kind: 'invoke_capability',
               decisionSummary:
-                'The owner requested management of a recurring standing instruction.',
+                routineAction.action === 'create' &&
+                routineAction.routine.action.kind === 'signal_triage'
+                  ? 'The owner requested automatic signal triage. I chose a 30-day expiry with at most 5 occurrences per day and 50 in total; the exact standing authority still requires approval.'
+                  : 'The owner requested management of a recurring standing instruction.',
               capability: { name: 'routine_management', version: 1 },
               arguments: routineAction,
             }

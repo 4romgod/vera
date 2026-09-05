@@ -635,6 +635,10 @@ but creating one produces an inactive routine with its own exact standing
 approval. Therefore the capability itself is approval-free while recurring
 execution is not.
 
+Every routine carries exactly one trigger. `schedule` runs the action on civil
+time; `external_signal` runs it when a matching signal generation appears. The
+trigger is frozen in the approval, so changing it requires a new routine.
+
 The first routine action is `machine_health_check`: one registered machine and
 an optional exact set of registered services. The resulting standing authority
 permits recurring read-only inspection and explicitly prohibits service
@@ -649,6 +653,15 @@ external writes. Observed signals may inform a later capability proposal, but
 they never confer that capability's authority or bypass its exact approval.
 See
 [ADR-0046](decisions/0046-project-external-signals-through-approved-standing-watches.md).
+
+The third routine action is `signal_triage`, and it is the only action paired
+with an `external_signal` trigger. Its standing authority permits Vera to start
+one bounded investigation per matching signal generation and to prepare a
+proposal; it explicitly prohibits external writes, applying changes, and
+routine mutation. Every consequential step the investigation proposes keeps its
+own exact approval. The trigger requires a finite per-day and total occurrence
+budget plus an expiry, both enforced in code from durable runs. See
+[ADR-0050](decisions/0050-act-on-external-signals-under-event-triggered-standing-authority.md).
 
 ## Implemented web-research capability
 

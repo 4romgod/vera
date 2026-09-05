@@ -2,12 +2,13 @@ import type {
   TaskResource,
   RoutineRunResource,
   PostV1RoutinesRequestAction,
+  PostV1RoutinesRequestLimits,
+  PostV1RoutinesRequestTrigger,
 } from '../generated/types.gen.ts';
 import type {
   RunStatus,
   DevelopmentCampaignStatus,
   MissionStatus,
-  RoutineScheduleResource,
   WaitForRoutineRunOptions,
   WaitForRunOptions,
   WaitForDevelopmentCampaignOptions,
@@ -108,8 +109,9 @@ export class AutomationClient extends SoftwareDeliveryClient {
 
   public async createRoutine(input: {
     title: string;
-    schedule: RoutineScheduleResource;
+    trigger: PostV1RoutinesRequestTrigger;
     action: PostV1RoutinesRequestAction;
+    limits?: PostV1RoutinesRequestLimits;
     idempotencyKey: string;
   }) {
     return this.generatedRequest(
@@ -118,8 +120,9 @@ export class AutomationClient extends SoftwareDeliveryClient {
         headers: { 'idempotency-key': input.idempotencyKey },
         body: {
           title: input.title,
-          schedule: input.schedule,
+          trigger: input.trigger,
           action: input.action,
+          ...(input.limits === undefined ? {} : { limits: input.limits }),
         },
       }),
     );

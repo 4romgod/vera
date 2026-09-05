@@ -3838,20 +3838,23 @@
         "type": "object",
         "properties": {
           "title": { "type": "string", "minLength": 1, "maxLength": 200 },
-          "schedule": {
-            "$ref": "#/components/schemas/PostV1RoutinesRequestSchedule"
+          "trigger": {
+            "$ref": "#/components/schemas/PostV1RoutinesRequestTrigger"
           },
           "action": {
             "$ref": "#/components/schemas/PostV1RoutinesRequestAction"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/PostV1RoutinesRequestLimits"
           }
         },
-        "required": ["title", "schedule", "action"],
+        "required": ["title", "trigger", "action"],
         "additionalProperties": false
       },
       "RoutineResource": {
         "type": "object",
         "properties": {
-          "schemaVersion": { "type": "number", "enum": [1] },
+          "schemaVersion": { "type": "number", "enum": [2] },
           "version": {
             "type": "integer",
             "exclusiveMinimum": 0,
@@ -3862,13 +3865,27 @@
           "principalId": { "type": "string", "minLength": 1 },
           "status": {
             "type": "string",
-            "enum": ["awaiting_approval", "active", "paused", "rejected"]
+            "enum": [
+              "awaiting_approval",
+              "active",
+              "paused",
+              "rejected",
+              "expired"
+            ]
           },
           "approval": {
             "$ref": "#/components/schemas/RoutineResourceApproval"
           },
           "nextRunAt": { "$ref": "#/components/schemas/DateTime" },
           "lastRunAt": { "$ref": "#/components/schemas/DateTime" },
+          "signalCursor": {
+            "$ref": "#/components/schemas/RoutineResourceSignalCursor"
+          },
+          "expiredAt": { "$ref": "#/components/schemas/DateTime" },
+          "expiryReason": {
+            "type": "string",
+            "enum": ["expiry_reached", "budget_exhausted"]
+          },
           "events": { "$ref": "#/components/schemas/RoutineResourceEvents" },
           "createdAt": { "$ref": "#/components/schemas/DateTime" },
           "updatedAt": { "$ref": "#/components/schemas/DateTime" }
@@ -3904,7 +3921,7 @@
       "RoutineRunResource": {
         "type": "object",
         "properties": {
-          "schemaVersion": { "type": "number", "enum": [1] },
+          "schemaVersion": { "type": "number", "enum": [2] },
           "version": {
             "type": "integer",
             "exclusiveMinimum": 0,
@@ -3918,9 +3935,13 @@
             "minLength": 1,
             "maxLength": 300
           },
-          "trigger": { "type": "string", "enum": ["scheduled", "manual"] },
+          "trigger": {
+            "type": "string",
+            "enum": ["scheduled", "manual", "external_signal"]
+          },
           "scheduledFor": { "$ref": "#/components/schemas/DateTime" },
           "action": { "$ref": "#/components/schemas/RoutineRunResourceAction" },
+          "signal": { "$ref": "#/components/schemas/RoutineRunResourceSignal" },
           "status": {
             "type": "string",
             "enum": ["queued", "executing", "succeeded", "failed", "cancelled"]
@@ -4846,7 +4867,7 @@
       "ArtifactResourceOneOfRoutineManagementResultContentRoutine": {
         "type": "object",
         "properties": {
-          "schemaVersion": { "type": "number", "enum": [1] },
+          "schemaVersion": { "type": "number", "enum": [2] },
           "version": {
             "type": "integer",
             "exclusiveMinimum": 0,
@@ -4855,7 +4876,13 @@
           "id": { "type": "string", "pattern": "^routine_.*" },
           "status": {
             "type": "string",
-            "enum": ["awaiting_approval", "active", "paused", "rejected"]
+            "enum": [
+              "awaiting_approval",
+              "active",
+              "paused",
+              "rejected",
+              "expired"
+            ]
           },
           "approval": {
             "$ref": "#/components/schemas/RoutineResourceApproval"
@@ -8664,14 +8691,17 @@
         "type": "object",
         "properties": {
           "title": { "type": "string", "minLength": 1, "maxLength": 200 },
-          "schedule": {
-            "$ref": "#/components/schemas/PostV1RoutinesRequestSchedule"
+          "trigger": {
+            "$ref": "#/components/schemas/PostV1RoutinesRequestTrigger"
           },
           "action": {
             "$ref": "#/components/schemas/PostV1RoutinesRequestAction"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/PostV1RoutinesRequestLimits"
           }
         },
-        "required": ["title", "schedule", "action"],
+        "required": ["title", "trigger", "action"],
         "additionalProperties": false
       },
       "PostV1RoutinesRequestAction": {
@@ -8681,6 +8711,9 @@
           },
           {
             "$ref": "#/components/schemas/PostV1RoutinesRequestActionOneOfIntegrationAwareness"
+          },
+          {
+            "$ref": "#/components/schemas/RoutineRunResourceActionOneOfSignalTriage"
           }
         ]
       },
@@ -8708,10 +8741,77 @@
         "required": ["kind", "integrationId", "projectId", "categories"],
         "additionalProperties": false
       },
-      "PostV1RoutinesRequestSchedule": {
+      "PostV1RoutinesRequestLimits": {
+        "type": "object",
+        "properties": {
+          "expiresAt": { "$ref": "#/components/schemas/DateTime" },
+          "maxOccurrencesPerDay": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          },
+          "maxTotalOccurrences": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "expiresAt",
+          "maxOccurrencesPerDay",
+          "maxTotalOccurrences"
+        ],
+        "additionalProperties": false
+      },
+      "PostV1RoutinesRequestTrigger": {
         "oneOf": [
           {
-            "$ref": "#/components/schemas/PostV1RoutinesRequestScheduleOneOfDaily"
+            "$ref": "#/components/schemas/PostV1RoutinesRequestTriggerOneOfSchedule"
+          },
+          {
+            "$ref": "#/components/schemas/PostV1RoutinesRequestTriggerOneOfExternalSignal"
+          }
+        ]
+      },
+      "PostV1RoutinesRequestTriggerOneOfExternalSignal": {
+        "type": "object",
+        "properties": {
+          "kind": { "type": "string", "enum": ["external_signal"] },
+          "integrationId": { "type": "string", "enum": ["github"] },
+          "projectId": { "type": "string", "pattern": "^project_.*" },
+          "categories": {
+            "minItems": 1,
+            "maxItems": 4,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "review_requested",
+                "mentioned",
+                "assigned",
+                "failed_check"
+              ]
+            }
+          }
+        },
+        "required": ["kind", "integrationId", "projectId", "categories"],
+        "additionalProperties": false
+      },
+      "PostV1RoutinesRequestTriggerOneOfSchedule": {
+        "type": "object",
+        "properties": {
+          "kind": { "type": "string", "enum": ["schedule"] },
+          "schedule": {
+            "$ref": "#/components/schemas/PostV1RoutinesRequestTriggerOneOfScheduleSchedule"
+          }
+        },
+        "required": ["kind", "schedule"],
+        "additionalProperties": false
+      },
+      "PostV1RoutinesRequestTriggerOneOfScheduleSchedule": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/TaskResourceEffectTriggerOneOfScheduleScheduleOneOfDaily"
           },
           {
             "type": "object",
@@ -8723,25 +8823,6 @@
             "additionalProperties": false
           }
         ]
-      },
-      "PostV1RoutinesRequestScheduleOneOfDaily": {
-        "type": "object",
-        "properties": {
-          "kind": { "type": "string", "enum": ["daily"] },
-          "timeZone": { "type": "string", "minLength": 1, "maxLength": 100 },
-          "localTime": {
-            "type": "string",
-            "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$"
-          },
-          "daysOfWeek": {
-            "minItems": 1,
-            "maxItems": 7,
-            "type": "array",
-            "items": { "type": "integer", "minimum": 0, "maximum": 6 }
-          }
-        },
-        "required": ["kind", "timeZone", "localTime", "daysOfWeek"],
-        "additionalProperties": false
       },
       "ProjectListResourceProjectsItems": {
         "type": "object",
@@ -9004,7 +9085,7 @@
       "RoutineListResourceRoutinesItems": {
         "type": "object",
         "properties": {
-          "schemaVersion": { "type": "number", "enum": [1] },
+          "schemaVersion": { "type": "number", "enum": [2] },
           "version": {
             "type": "integer",
             "exclusiveMinimum": 0,
@@ -9015,13 +9096,27 @@
           "principalId": { "type": "string", "minLength": 1 },
           "status": {
             "type": "string",
-            "enum": ["awaiting_approval", "active", "paused", "rejected"]
+            "enum": [
+              "awaiting_approval",
+              "active",
+              "paused",
+              "rejected",
+              "expired"
+            ]
           },
           "approval": {
             "$ref": "#/components/schemas/RoutineResourceApproval"
           },
           "nextRunAt": { "$ref": "#/components/schemas/DateTime" },
           "lastRunAt": { "$ref": "#/components/schemas/DateTime" },
+          "signalCursor": {
+            "$ref": "#/components/schemas/RoutineResourceSignalCursor"
+          },
+          "expiredAt": { "$ref": "#/components/schemas/DateTime" },
+          "expiryReason": {
+            "type": "string",
+            "enum": ["expiry_reached", "budget_exhausted"]
+          },
           "events": { "$ref": "#/components/schemas/RoutineResourceEvents" },
           "createdAt": { "$ref": "#/components/schemas/DateTime" },
           "updatedAt": { "$ref": "#/components/schemas/DateTime" }
@@ -9063,15 +9158,18 @@
         "type": "object",
         "properties": {
           "title": { "type": "string", "minLength": 1, "maxLength": 200 },
-          "schedule": {
-            "$ref": "#/components/schemas/PostV1RoutinesRequestSchedule"
+          "trigger": {
+            "$ref": "#/components/schemas/RoutineResourceApprovalEffectTrigger"
           },
           "action": { "$ref": "#/components/schemas/RoutineRunResourceAction" },
+          "limits": {
+            "$ref": "#/components/schemas/PostV1RoutinesRequestLimits"
+          },
           "authority": {
             "$ref": "#/components/schemas/RoutineResourceApprovalEffectAuthority"
           }
         },
-        "required": ["title", "schedule", "action", "authority"],
+        "required": ["title", "trigger", "action", "authority"],
         "additionalProperties": false
       },
       "RoutineResourceApprovalEffectAuthority": {
@@ -9081,6 +9179,9 @@
           },
           {
             "$ref": "#/components/schemas/RoutineResourceApprovalEffectAuthorityAnyOfVariant2"
+          },
+          {
+            "$ref": "#/components/schemas/RoutineResourceApprovalEffectAuthorityAnyOfVariant3"
           }
         ]
       },
@@ -9116,6 +9217,72 @@
         ],
         "additionalProperties": false
       },
+      "RoutineResourceApprovalEffectAuthorityAnyOfVariant3": {
+        "type": "object",
+        "properties": {
+          "eventTriggeredExecution": { "type": "boolean", "enum": [true] },
+          "readExternalSignals": { "type": "boolean", "enum": [true] },
+          "startTriageConversation": { "type": "boolean", "enum": [true] },
+          "modifyExternalService": { "type": "boolean", "enum": [false] },
+          "applyChanges": { "type": "boolean", "enum": [false] },
+          "modifyRoutine": { "type": "boolean", "enum": [false] }
+        },
+        "required": [
+          "eventTriggeredExecution",
+          "readExternalSignals",
+          "startTriageConversation",
+          "modifyExternalService",
+          "applyChanges",
+          "modifyRoutine"
+        ],
+        "additionalProperties": false
+      },
+      "RoutineResourceApprovalEffectTrigger": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/PostV1RoutinesRequestTriggerOneOfSchedule"
+          },
+          {
+            "$ref": "#/components/schemas/RoutineResourceApprovalEffectTriggerOneOfExternalSignal"
+          }
+        ]
+      },
+      "RoutineResourceApprovalEffectTriggerOneOfExternalSignal": {
+        "type": "object",
+        "properties": {
+          "kind": { "type": "string", "enum": ["external_signal"] },
+          "integrationId": { "type": "string", "enum": ["github"] },
+          "categories": {
+            "minItems": 1,
+            "maxItems": 4,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "review_requested",
+                "mentioned",
+                "assigned",
+                "failed_check"
+              ]
+            }
+          },
+          "project": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string", "pattern": "^project_.*" },
+              "displayName": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              }
+            },
+            "required": ["id", "displayName"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["kind", "integrationId", "categories", "project"],
+        "additionalProperties": false
+      },
       "RoutineResourceEvents": {
         "minItems": 1,
         "maxItems": 10000,
@@ -9139,7 +9306,8 @@
               "routine_approved",
               "routine_rejected",
               "routine_paused",
-              "routine_resumed"
+              "routine_resumed",
+              "routine_expired"
             ]
           },
           "occurredAt": { "$ref": "#/components/schemas/DateTime" },
@@ -9159,10 +9327,24 @@
         ],
         "additionalProperties": false
       },
+      "RoutineResourceSignalCursor": {
+        "type": "object",
+        "properties": {
+          "observedAt": { "$ref": "#/components/schemas/DateTime" },
+          "signalId": { "type": "string", "pattern": "^external_signal_.*" },
+          "signalVersion": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": ["observedAt", "signalId", "signalVersion"],
+        "additionalProperties": false
+      },
       "RoutineRunListResourceRunsItems": {
         "type": "object",
         "properties": {
-          "schemaVersion": { "type": "number", "enum": [1] },
+          "schemaVersion": { "type": "number", "enum": [2] },
           "version": {
             "type": "integer",
             "exclusiveMinimum": 0,
@@ -9176,9 +9358,13 @@
             "minLength": 1,
             "maxLength": 300
           },
-          "trigger": { "type": "string", "enum": ["scheduled", "manual"] },
+          "trigger": {
+            "type": "string",
+            "enum": ["scheduled", "manual", "external_signal"]
+          },
           "scheduledFor": { "$ref": "#/components/schemas/DateTime" },
           "action": { "$ref": "#/components/schemas/RoutineRunResourceAction" },
+          "signal": { "$ref": "#/components/schemas/RoutineRunResourceSignal" },
           "status": {
             "type": "string",
             "enum": ["queued", "executing", "succeeded", "failed", "cancelled"]
@@ -9221,6 +9407,9 @@
           },
           {
             "$ref": "#/components/schemas/RoutineRunResourceActionOneOfIntegrationAwareness"
+          },
+          {
+            "$ref": "#/components/schemas/RoutineRunResourceActionOneOfSignalTriage"
           }
         ]
       },
@@ -9308,6 +9497,20 @@
         "required": ["kind", "machineId"],
         "additionalProperties": false
       },
+      "RoutineRunResourceActionOneOfSignalTriage": {
+        "type": "object",
+        "properties": {
+          "kind": { "type": "string", "enum": ["signal_triage"] },
+          "response": { "type": "string", "enum": ["investigate_and_propose"] },
+          "disclosure": {
+            "type": "string",
+            "enum": ["minimized_signal_evidence"]
+          },
+          "objective": { "type": "string", "minLength": 1, "maxLength": 2000 }
+        },
+        "required": ["kind", "response", "disclosure"],
+        "additionalProperties": false
+      },
       "RoutineRunResourceResult": {
         "anyOf": [
           {
@@ -9315,6 +9518,9 @@
           },
           {
             "$ref": "#/components/schemas/RoutineRunResourceResultAnyOfExternalAwareness"
+          },
+          {
+            "$ref": "#/components/schemas/RoutineRunResourceResultAnyOfSignalTriage"
           }
         ]
       },
@@ -9377,6 +9583,64 @@
           }
         },
         "required": ["kind", "outcome", "summary", "diagnostic"],
+        "additionalProperties": false
+      },
+      "RoutineRunResourceResultAnyOfSignalTriage": {
+        "type": "object",
+        "properties": {
+          "kind": { "type": "string", "enum": ["signal_triage"] },
+          "outcome": {
+            "type": "string",
+            "enum": ["triage_started", "skipped"]
+          },
+          "summary": { "type": "string", "minLength": 1, "maxLength": 2000 },
+          "signalId": { "type": "string", "pattern": "^external_signal_.*" },
+          "signalVersion": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "skipReason": {
+            "type": "string",
+            "enum": ["resolved", "superseded"]
+          },
+          "taskId": { "type": "string", "pattern": "^task_.*" },
+          "taskRunId": { "type": "string", "pattern": "^run_.*" },
+          "conversationId": { "type": "string", "pattern": "^conversation_.*" }
+        },
+        "required": ["kind", "outcome", "summary", "signalId", "signalVersion"],
+        "additionalProperties": false
+      },
+      "RoutineRunResourceSignal": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "pattern": "^external_signal_.*" },
+          "version": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "review_requested",
+              "mentioned",
+              "assigned",
+              "failed_check"
+            ]
+          },
+          "externalKey": { "type": "string", "minLength": 1, "maxLength": 500 },
+          "url": { "type": "string", "format": "uri" },
+          "observedAt": { "$ref": "#/components/schemas/DateTime" }
+        },
+        "required": [
+          "id",
+          "version",
+          "category",
+          "externalKey",
+          "url",
+          "observedAt"
+        ],
         "additionalProperties": false
       },
       "SoftwareChangeApprovalRequiredDecision": {
@@ -11575,6 +11839,25 @@
           { "$ref": "#/components/schemas/ExecuteGoalDecision" },
           { "$ref": "#/components/schemas/PursueGoalDecision" }
         ]
+      },
+      "TaskResourceEffectTriggerOneOfScheduleScheduleOneOfDaily": {
+        "type": "object",
+        "properties": {
+          "kind": { "type": "string", "enum": ["daily"] },
+          "timeZone": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "localTime": {
+            "type": "string",
+            "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$"
+          },
+          "daysOfWeek": {
+            "minItems": 1,
+            "maxItems": 7,
+            "type": "array",
+            "items": { "type": "integer", "minimum": 0, "maximum": 6 }
+          }
+        },
+        "required": ["kind", "timeZone", "localTime", "daysOfWeek"],
+        "additionalProperties": false
       },
       "TaskResourceGoalAnyOfVariant1StepsItems": {
         "oneOf": [

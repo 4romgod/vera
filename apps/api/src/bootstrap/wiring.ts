@@ -109,6 +109,7 @@ import type { ExternalSignalStore } from '../ports/persistence/external-signal-s
 import { GitHubAwarenessSource } from '../adapters/outbound/external-awareness/github/github-awareness-source.ts';
 import { createExternalAwarenessService } from '../application/external-awareness/external-awareness-service.ts';
 import { createExternalSignalTriageService } from '../application/external-awareness/external-signal-triage-service.ts';
+import type { ExternalSignalTriageStarter } from '../ports/external-awareness/external-signal-triage.ts';
 import { createExternalSignalResolutionService } from '../application/external-awareness/external-signal-resolution-service.ts';
 import { resolveLocalGitHubRepository } from '../adapters/outbound/github/github-cli.ts';
 
@@ -429,10 +430,22 @@ export function createApp(
             lifecycleObserver.warning(error, context),
         });
   pushWorkerReference.current = pushWorker;
+  // Triage depends on the task lifecycle, which depends on the capability
+  // registry, which depends on this routine lifecycle. The reference is bound
+  // once, later in this composition root.
+  const signalTriageReference: { current?: ExternalSignalTriageStarter } = {};
   const routineLifecycle = createRoutineLifecycle({
     store: routineStore,
     machines: machineOperations,
     externalAwareness,
+    signalTriage: {
+      handle: (input) => {
+        const triage = signalTriageReference.current;
+        if (triage === undefined)
+          throw new Error('Signal triage is not available yet.');
+        return triage.handle(input);
+      },
+    },
   });
   const routineWorkerReference: { current?: { wake(): void } } = {};
   const capabilities = createCapabilityRuntimeRegistry({
@@ -670,6 +683,7 @@ export function createApp(
     conversations: conversationService,
     tasks: dispatchedLifecycle,
   });
+  signalTriageReference.current = externalSignalTriage;
   const externalSignalResolution = createExternalSignalResolutionService({
     awareness: externalAwareness,
     executions: store,

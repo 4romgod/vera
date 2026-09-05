@@ -1,6 +1,10 @@
-import type { ExternalSignal } from '../../../../domain/external-awareness/external-signal.ts';
+import type {
+  ExternalSignal,
+  ExternalSignalCategory,
+} from '../../../../domain/external-awareness/external-signal.ts';
 import { externalSignalNotification } from '../../../../domain/external-awareness/external-signal-notification.ts';
 import type { NotificationResource } from '../../../../domain/notifications/notification.ts';
+import type { RoutineSignalCursor } from '../../../../domain/routines/routine.ts';
 import type { ExternalSignalStore } from '../../../../ports/persistence/external-signal-store.ts';
 
 export class InMemoryExternalSignalStore implements ExternalSignalStore {
@@ -76,6 +80,36 @@ export class InMemoryExternalSignalStore implements ExternalSignalStore {
     );
   }
 
+  public listRespondable(input: {
+    principalId: string;
+    integrationId: string;
+    projectId: string;
+    categories: ExternalSignalCategory[];
+    after?: RoutineSignalCursor;
+    limit: number;
+  }) {
+    return Promise.resolve(
+      [...this.signals.values()]
+        .filter(
+          (signal) =>
+            signal.principalId === input.principalId &&
+            signal.status === 'active' &&
+            signal.integrationId === input.integrationId &&
+            signal.project.id === input.projectId &&
+            input.categories.includes(signal.category) &&
+            (input.after === undefined ||
+              signalAfterCursor(signal, input.after)),
+        )
+        .sort(
+          (left, right) =>
+            left.lastObservedAt.localeCompare(right.lastObservedAt) ||
+            left.id.localeCompare(right.id),
+        )
+        .slice(0, input.limit)
+        .map((signal) => structuredClone(signal)),
+    );
+  }
+
   public listByRoutine(principalId: string, routineId: string, limit: number) {
     return Promise.resolve(
       this.sorted(principalId)
@@ -119,6 +153,19 @@ export class InMemoryExternalSignalStore implements ExternalSignalStore {
       )
       .map((signal) => structuredClone(signal));
   }
+}
+
+function signalAfterCursor(
+  signal: ExternalSignal,
+  cursor: RoutineSignalCursor,
+) {
+  return (
+    signal.lastObservedAt > cursor.observedAt ||
+    (signal.lastObservedAt === cursor.observedAt &&
+      (signal.id > cursor.signalId ||
+        (signal.id === cursor.signalId &&
+          signal.version > cursor.signalVersion)))
+  );
 }
 
 function signalFingerprint(signal: ExternalSignal) {

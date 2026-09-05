@@ -60,6 +60,31 @@ export function createExternalAwarenessService(options: {
       options.signals.listActive(principalId, limit),
     listByRoutine: (principalId, routineId, limit = 100) =>
       options.signals.listByRoutine(principalId, routineId, limit),
+    listRespondable: (input) => options.signals.listRespondable(input),
+    async freezeTrigger(input) {
+      const project = await options.projects.findProjectById(
+        input.principalId,
+        input.projectId,
+      );
+      if (project === null) {
+        throw new ExternalAwarenessError(
+          `Project ${input.projectId} was not found.`,
+          'awareness_project_not_found',
+        );
+      }
+      if (sourceFor(input.integrationId) === undefined) {
+        throw new ExternalAwarenessError(
+          `${input.integrationId} awareness is not available on this Vera host.`,
+          'awareness_source_unavailable',
+        );
+      }
+      return {
+        kind: 'external_signal',
+        integrationId: input.integrationId,
+        project: { id: project.id, displayName: project.displayName },
+        categories: [...input.categories].sort(),
+      };
+    },
     async freeze(input) {
       const project = await options.projects.findProjectById(
         input.principalId,

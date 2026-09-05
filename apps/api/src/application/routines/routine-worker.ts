@@ -33,6 +33,7 @@ export function createRoutineWorker(options: {
   let running = false;
   let loop: Promise<void> | undefined;
   let wakeWaiter: (() => void) | undefined;
+  let signalRoutineCursor: { createdAt: string; id: string } | undefined;
 
   async function withLease(id: string, operation: () => Promise<void>) {
     const acquiredAt = clock();
@@ -79,6 +80,37 @@ export function createRoutineWorker(options: {
         })
       )
         progressed += 1;
+    }
+    let triggered = await options.store.findSignalTriggered({
+      ...(signalRoutineCursor === undefined
+        ? {}
+        : { after: signalRoutineCursor }),
+      limit: options.concurrency,
+    });
+    if (triggered.length === 0 && signalRoutineCursor !== undefined) {
+      signalRoutineCursor = undefined;
+      triggered = await options.store.findSignalTriggered({
+        limit: options.concurrency,
+      });
+    }
+    // Only materialized occurrences count as progress. Claiming the lease and
+    // finding nothing must let the loop sleep instead of spinning.
+    for (const routine of triggered) {
+      // Move the local fairness cursor before touching the routine. A single
+      // malformed dependency or transient store failure must not pin every
+      // later event-triggered routine behind this one forever; the failed
+      // routine is visited again after the cursor wraps.
+      signalRoutineCursor = {
+        createdAt: routine.createdAt,
+        id: routine.id,
+      };
+      let created = 0;
+      await withLease(`signals_${routine.id}`, async () => {
+        created = (
+          await options.lifecycle.materializeSignalOccurrences(routine)
+        ).length;
+      });
+      progressed += created;
     }
     const runnable = await options.store.findRunnable(options.concurrency * 4);
     for (const run of runnable.slice(0, options.concurrency)) {

@@ -94,11 +94,14 @@ void describe('routine lifecycle', () => {
       principalId: 'owner_v1',
       requestKey: 'routine-test-create',
       title: 'Morning health',
-      schedule: {
-        kind: 'daily',
-        timeZone: 'Africa/Johannesburg',
-        localTime: '08:00',
-        daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+      trigger: {
+        kind: 'schedule',
+        schedule: {
+          kind: 'daily',
+          timeZone: 'Africa/Johannesburg',
+          localTime: '08:00',
+          daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+        },
       },
       action: {
         kind: 'machine_health_check',
@@ -147,11 +150,14 @@ void describe('routine lifecycle', () => {
       principalId: 'owner_v1',
       requestKey: 'routine-unhealthy',
       title: 'Health',
-      schedule: {
-        kind: 'daily',
-        timeZone: 'UTC',
-        localTime: '08:00',
-        daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+      trigger: {
+        kind: 'schedule',
+        schedule: {
+          kind: 'daily',
+          timeZone: 'UTC',
+          localTime: '08:00',
+          daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+        },
       },
       action: {
         kind: 'machine_health_check',
@@ -202,7 +208,10 @@ void describe('routine lifecycle', () => {
       principalId: 'owner_v1',
       requestKey: 'interval-resume',
       title: 'Interval health',
-      schedule: { kind: 'interval', minutes: 15 },
+      trigger: {
+        kind: 'schedule',
+        schedule: { kind: 'interval', minutes: 15 },
+      },
       action: { kind: 'machine_health_check', machineId: 'macmini' },
     });
     const approved = await lifecycle.decideApproval({
@@ -226,6 +235,9 @@ void describe('routine lifecycle', () => {
       get: () => Promise.reject(new Error('Not used by routine lifecycle.')),
       list: () => Promise.resolve([]),
       listByRoutine: () => Promise.resolve([]),
+      listRespondable: () =>
+        Promise.reject(new Error('Not used by this test.')),
+      freezeTrigger: () => Promise.reject(new Error('Not used by this test.')),
       freeze: (input) => {
         freezeCalls += 1;
         if (freezeCalls > 1) throw new Error('External scope was re-frozen.');
@@ -256,7 +268,10 @@ void describe('routine lifecycle', () => {
       principalId: 'owner_v1',
       requestKey: 'github-watch-replay',
       title: 'Watch GitHub',
-      schedule: { kind: 'interval' as const, minutes: 15 },
+      trigger: {
+        kind: 'schedule' as const,
+        schedule: { kind: 'interval' as const, minutes: 15 },
+      },
       action: {
         kind: 'integration_awareness' as const,
         integrationId: 'github' as const,

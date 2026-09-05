@@ -5,6 +5,10 @@ import { MongoTaskAggregateJsonSchema } from '../../../../../src/adapters/outbou
 import { toMongoJsonSchema } from '../../../../../src/adapters/outbound/persistence/mongodb/mongo-json-schema.ts';
 import { MongoSoftwareChangeApplicationJsonSchema } from '../../../../../src/adapters/outbound/persistence/mongodb/mongodb-change-application-store.ts';
 import { MongoIntegrationConnectionJsonSchema } from '../../../../../src/adapters/outbound/persistence/mongodb/mongodb-integration-connection-store.ts';
+import {
+  MongoRoutineJsonSchema,
+  MongoRoutineRunJsonSchema,
+} from '../../../../../src/adapters/outbound/persistence/mongodb/mongodb-routine-store.ts';
 
 function asRecord(value: unknown): Record<string, unknown> {
   assert.equal(typeof value, 'object');
@@ -125,5 +129,21 @@ void describe('MongoDB JSON Schema conversion', () => {
     assert.equal('credentials' in properties, false);
     assert.equal('token' in properties, false);
     assert.deepEqual(unsupportedPaths(schema), []);
+  });
+
+  void it('keeps the versioned routine validators within the supported dialect', () => {
+    const routine = asRecord(MongoRoutineJsonSchema);
+    const routineProperties = asRecord(routine.properties);
+    assert.deepEqual(routineProperties._id, { bsonType: 'objectId' });
+    assert.deepEqual(asRecord(routineProperties.schemaVersion).enum, [2]);
+    assert.ok('signalCursor' in routineProperties);
+    assert.ok('expiryReason' in routineProperties);
+    assert.deepEqual(unsupportedPaths(routine), []);
+
+    const run = asRecord(MongoRoutineRunJsonSchema);
+    const runProperties = asRecord(run.properties);
+    assert.deepEqual(asRecord(runProperties.schemaVersion).enum, [2]);
+    assert.ok('signal' in runProperties);
+    assert.deepEqual(unsupportedPaths(run), []);
   });
 });

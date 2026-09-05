@@ -1859,7 +1859,7 @@ void describe('Vera HTTP client', () => {
         const status = calls === 1 ? 'executing' : 'succeeded';
         return Promise.resolve(
           Response.json({
-            schemaVersion: 1,
+            schemaVersion: 2,
             version: calls,
             id: 'routine_run_test',
             routineId: 'routine_test',

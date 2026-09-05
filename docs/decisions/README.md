@@ -67,6 +67,11 @@ erasing why a choice was made.
 | [0043](0043-generate-openapi-from-runtime-http-contracts.md) | Accepted | Generate a checked OpenAPI contract from runtime routes and migrate mechanical client code behind the existing SDK facade. |
 | [0044](0044-generate-the-typescript-sdk-with-hey-api-and-axios.md) | Accepted | Generate the low-level TypeScript SDK with pinned Hey API and Axios behind the stable client facade. |
 | [0045](0045-connect-curated-external-services-through-provider-neutral-capabilities.md) | Accepted | Connect curated external services through durable owner authority and provider-neutral capabilities; use GitHub Issues as the first adapter. |
+| [0046](0046-project-external-signals-through-approved-standing-watches.md) | Accepted | Observe connected services through separately approved, read-only standing watches that project stable provider-neutral signals. |
+| [0047](0047-convert-external-signals-into-owner-directed-work.md) | Accepted | Turn one active signal into an idempotent owner-directed conversation and task without inheriting watch authority. |
+| [0048](0048-conduct-live-voice-sessions-as-a-provisional-speech-adapter.md) | Proposed | Add an explicitly activated live voice mode with durable turn routing and write-ahead speech delivery while ADR-0030 recording remains the default. |
+| [0049](0049-derive-signal-resolution-from-authoritative-work.md) | Accepted | Derive signal progress and final resolution from authoritative task, campaign, and provider observation state. |
+| [0050](0050-act-on-external-signals-under-event-triggered-standing-authority.md) | Accepted | Trigger standing routines from external-signal generations and start bounded triage under separate, expiring, budgeted standing authority. |
 
 ADRs 0001–0008 were accepted 24 August 2026 following the owner's review of
 the foundation documentation. ADR-0007 accepted a semantic boundary without
@@ -169,6 +174,20 @@ ADR-0046 makes connected services proactively useful through separately
 approved read-only standing watches. Stable provider-neutral signals feed
 Today, Activity, and push, while completeness-aware reconciliation and strict
 scope checks prevent drift, duplication, and false resolution.
+ADR-0047 makes an observed signal actionable without letting provider text
+become an owner request: one idempotent triage conversation and task, verified
+signal evidence, and every capability step still separately approved.
+ADR-0048 proposes live voice as a second, explicitly activated experience
+adapter. Every finalized turn remains one durable task; routing settles before
+direct speech, and each bounded text segment is journaled before release while
+ambiguous playout remains explicit. Effect claims stay templated from validated
+events, the conversational model receives no tools, realtime media remains
+tailnet-private, and the owner-controlled recorder stays unchanged.
+ADR-0050 completes the awareness loop by making a routine trigger, not only a
+schedule. A separately approved, expiring, budgeted signal-triage routine turns
+each matching signal generation into exactly one durable occurrence and enters
+the ADR-0047 lifecycle by itself. Observation authority still grants nothing,
+and every consequential effect keeps its own approval.
 
 ## ADR rules
 

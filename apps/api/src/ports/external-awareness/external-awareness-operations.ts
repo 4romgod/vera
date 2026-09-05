@@ -2,7 +2,11 @@ import type {
   ExternalSignalCategory,
   ExternalSignalObservation,
 } from '../../domain/external-awareness/external-signal.ts';
-import type { RoutineAction } from '../../domain/routines/routine.ts';
+import type {
+  ExternalSignalTrigger,
+  RoutineAction,
+  RoutineSignalCursor,
+} from '../../domain/routines/routine.ts';
 import type { ExternalSignal } from '../../domain/external-awareness/external-signal.ts';
 
 export type IntegrationAwarenessAction = Extract<
@@ -18,12 +22,26 @@ export type ExternalAwarenessOperations = {
     routineId: string,
     limit?: number,
   ): Promise<ExternalSignal[]>;
+  listRespondable(input: {
+    principalId: string;
+    integrationId: string;
+    projectId: string;
+    categories: ExternalSignalCategory[];
+    after?: RoutineSignalCursor;
+    limit: number;
+  }): Promise<ExternalSignal[]>;
   freeze(input: {
     principalId: string;
     integrationId: 'github';
     projectId: string;
     categories: ExternalSignalCategory[];
   }): Promise<IntegrationAwarenessAction>;
+  freezeTrigger(input: {
+    principalId: string;
+    integrationId: 'github';
+    projectId: string;
+    categories: ExternalSignalCategory[];
+  }): Promise<ExternalSignalTrigger>;
   execute(input: {
     principalId: string;
     routineId: string;
