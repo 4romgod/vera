@@ -75,6 +75,15 @@ destinations.
   cutoff. While recording, two distinct controls stop into an editable
   transcript or stop, transcribe, and send through the typed-message path.
   Transcription runs once after capture and never submits on its own.
+- **Start live conversation** is a separate, explicit mode. Its persistent
+  status distinguishes connecting, listening, hearing, thinking, speaking,
+  reconnecting, and stopping. The Stop target remains visible throughout the
+  session; typed input, attachments, and record/review capture are unavailable
+  until live mode ends.
+- Live mode displays finalized transcript text, permits long configured
+  thinking pauses, and interrupts Vera's device speech when new owner speech
+  begins. Disconnect never masquerades as listening, and transport failure
+  returns the composer to a recoverable idle state with a visible explanation.
 - Run progress, cancellation, and approval remain inside the conversation where
   the relevant intent was expressed.
 - The composer exposes one paperclip rather than separate media controls. Its

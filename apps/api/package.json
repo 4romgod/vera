@@ -18,8 +18,12 @@
   },
   "dependencies": {
     "@fastify/cors": "^11.1.0",
+    "@livekit/agents": "^1.8.0",
+    "@livekit/agents-plugin-silero": "^1.8.0",
+    "@livekit/rtc-node": "^0.13.34",
     "fastify": "5.12.1",
     "heic-convert": "^2.1.0",
+    "livekit-server-sdk": "^2.18.0",
     "mongodb": "^7.6.0",
     "pdfjs-dist": "^6.2.108",
     "redis": "^6.2.1",

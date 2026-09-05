@@ -16,6 +16,7 @@ import { MongoDbProjectMutationLeaseStore } from '../apps/api/dist/adapters/outb
 import { MongoDbIntegrationConnectionStore } from '../apps/api/dist/adapters/outbound/persistence/mongodb/mongodb-integration-connection-store.js';
 import { MongoDbExternalSignalStore } from '../apps/api/dist/adapters/outbound/persistence/mongodb/mongodb-external-signal-store.js';
 import { MongoDbRoutineStore } from '../apps/api/dist/adapters/outbound/persistence/mongodb/mongodb-routine-store.js';
+import { MongoDbLiveVoiceSessionStore } from '../apps/api/dist/adapters/outbound/persistence/mongodb/mongodb-live-voice-session-store.js';
 import { VeraClient } from '../packages/client/dist/index.js';
 
 const executeFile = promisify(execFile);
@@ -567,6 +568,59 @@ async function verifyRoutineCompatibilityPersistence(mongo) {
     .findOne({ id: legacyId });
   assert.equal(rewritten?.schemaVersion, 2);
   assert.equal('schedule' in (rewritten?.approval.effect ?? {}), false);
+}
+
+async function verifyLiveVoiceSessionPersistence() {
+  const first = new MongoDbLiveVoiceSessionStore({
+    uri: mongodbUri,
+    database,
+    timeoutMs: startupTimeoutMs,
+  });
+  const second = new MongoDbLiveVoiceSessionStore({
+    uri: mongodbUri,
+    database,
+    timeoutMs: startupTimeoutMs,
+  });
+  const startedAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 1_800_000).toISOString();
+  const session = (suffix) => ({
+    schemaVersion: 1,
+    version: 1,
+    id: `voice_session_persistent_${suffix}`,
+    principalId: 'owner_v1',
+    requestKey: `persistent-live-voice-${suffix}`,
+    takeoverRequested: false,
+    activeSlot: 1,
+    conversationId: 'conversation_persistent_voice',
+    roomName: `vera_voice_persistent_${suffix}`,
+    participantIdentity: `vera_owner_persistent_${suffix}`,
+    status: 'starting',
+    expiresAt,
+    startedAt,
+    updatedAt: startedAt,
+    turns: [],
+    deliveries: [],
+  });
+  try {
+    const created = await first.create(session('first'));
+    assert.equal(created.created, true);
+    await assert.rejects(second.create(session('second')), /already active/u);
+    const { activeSlot: ignoredActiveSlot, ...inactiveSession } =
+      created.session;
+    void ignoredActiveSlot;
+    const ended = {
+      ...inactiveSession,
+      version: 2,
+      status: 'ended',
+      endedAt: startedAt,
+      updatedAt: startedAt,
+    };
+    assert.equal(await first.replace(ended, 1), true);
+    assert.equal((await second.create(session('second'))).created, true);
+    assert.equal((await first.findRecoverable()).length, 1);
+  } finally {
+    await Promise.all([first.close(), second.close()]);
+  }
 }
 
 async function verifyCliJourney(
@@ -1746,6 +1800,7 @@ async function verifyScenarios(mongo, redis) {
   await verifyIntegrationConnectionPersistence();
   await verifyExternalSignalPersistence();
   await verifyRoutineCompatibilityPersistence(mongo);
+  await verifyLiveVoiceSessionPersistence();
 
   const legacyConversation = await client.createConversation({
     title: 'Legacy reply upgrade',
@@ -1978,6 +2033,7 @@ async function verifyScenarios(mongo, redis) {
     durableDevicePushVerified: true,
     legacyConversationUpgradeVerified: true,
     roleScopedMessageIdempotencyVerified: true,
+    durableLiveVoiceSessionVerified: true,
   };
 }
 

@@ -11,10 +11,19 @@ export function useSpokenReply(options: {
   const generation = useRef(0);
   const mounted = useRef(true);
   const onError = useRef(options.onError);
+  const pending = useRef<
+    | {
+        generation: number;
+        settle(outcome: 'played' | 'interrupted' | 'delivery_unknown'): void;
+      }
+    | undefined
+  >(undefined);
   onError.current = options.onError;
 
   const stop = useCallback(async () => {
     generation.current += 1;
+    pending.current?.settle('interrupted');
+    pending.current = undefined;
     await Speech.stop();
     if (mounted.current) setMessageId(undefined);
   }, []);
@@ -24,47 +33,63 @@ export function useSpokenReply(options: {
     return () => {
       mounted.current = false;
       generation.current += 1;
+      pending.current?.settle('delivery_unknown');
+      pending.current = undefined;
       void Speech.stop();
     };
   }, []);
 
   const speak = useCallback(
-    async (nextMessageId: string, text: string) => {
+    async (
+      nextMessageId: string,
+      text: string,
+    ): Promise<'played' | 'interrupted' | 'delivery_unknown'> => {
       const chunks = splitSpeech(text);
-      if (chunks.length === 0) return;
+      if (chunks.length === 0) return 'played';
 
       const nextGeneration = generation.current + 1;
       generation.current = nextGeneration;
+      pending.current?.settle('interrupted');
+      pending.current = undefined;
       await Speech.stop();
-      if (generation.current !== nextGeneration || !mounted.current) return;
+      if (generation.current !== nextGeneration || !mounted.current)
+        return 'interrupted';
       setMessageId(nextMessageId);
-
-      const speakChunk = (index: number) => {
-        if (generation.current !== nextGeneration) return;
-        if (index >= chunks.length) {
+      return new Promise((resolve) => {
+        let settled = false;
+        const settle = (
+          outcome: 'played' | 'interrupted' | 'delivery_unknown',
+        ) => {
+          if (settled) return;
+          settled = true;
+          if (pending.current?.generation === nextGeneration)
+            pending.current = undefined;
           if (mounted.current) setMessageId(undefined);
-          return;
-        }
-        const chunk = chunks[index];
-        Speech.speak(chunk, {
-          language: options.locale,
-          rate: 0.95,
-          onDone: () => speakChunk(index + 1),
-          onStopped: () => {
-            if (generation.current === nextGeneration && mounted.current) {
-              setMessageId(undefined);
-            }
-          },
-          onError: () => {
-            if (generation.current === nextGeneration && mounted.current) {
-              setMessageId(undefined);
+          resolve(outcome);
+        };
+        pending.current = { generation: nextGeneration, settle };
+        const speakChunk = (index: number) => {
+          if (generation.current !== nextGeneration) {
+            settle('interrupted');
+            return;
+          }
+          if (index >= chunks.length) {
+            settle('played');
+            return;
+          }
+          Speech.speak(chunks[index], {
+            language: options.locale,
+            rate: 0.95,
+            onDone: () => speakChunk(index + 1),
+            onStopped: () => settle('interrupted'),
+            onError: () => {
               onError.current('Vera could not play this reply aloud.');
-            }
-          },
-        });
-      };
-
-      speakChunk(0);
+              settle('delivery_unknown');
+            },
+          });
+        };
+        speakChunk(0);
+      });
     },
     [options.locale],
   );

@@ -4,8 +4,8 @@
 request lifecycle, architectural invariants, initial modular API shape, V1
 operational storage, and the first Mac Mini deployment topology); general
 progress transport remains open
-**Version:** 1.5
-**Last updated:** 4 September 2026
+**Version:** 1.6
+**Last updated:** 5 September 2026
 **Accepted:** 24 August 2026 (owner) — post-V1 progress transport and deployment
 topology are deferred; V1 uses HTTP polling. The initial Fastify/Zod modular API
 is accepted by ADR-0009. MongoDB operational truth and the Redis scratchpad are
@@ -32,6 +32,8 @@ Deterministic attention delivery through an owner-device registry, durable
 outbox, and provider-neutral push worker is accepted by ADR-0039.
 The owner-scoped Mac Mini service topology and explicit update boundary are
 accepted by ADR-0040.
+Private hands-free live conversation, durable turn identity, and observed
+speech-delivery acknowledgement are accepted by ADR-0048.
 
 ## Purpose
 
@@ -91,7 +93,7 @@ flowchart TB
     subgraph Experience["Experience plane"]
         CLI["CLI / Postman"]
         FRONTEND["Universal frontend<br/>(web, iOS, Android)"]
-        VOICE["Voice experience adapters<br/>(recording, transcription, playback)"]
+        VOICE["Voice experience adapters<br/>(record/review and live sessions)"]
     end
 
     subgraph Boundary["External boundary"]
@@ -858,6 +860,29 @@ flowchart LR
     OPENAI --> TEXT
     TEXT -->|"explicit Send"| CONV["Conversation and task lifecycle"]
     TX -. "no durable audio write" .-> STORES["MongoDB / Redis"]
+```
+
+[ADR-0048](decisions/0048-conduct-live-conversations-through-a-durable-voice-session-adapter.md)
+adds a separate hands-free mode without changing that recorder. A self-hosted
+LiveKit room carries continuous audio over the private tailnet. A server worker
+uses local Silero VAD to finalize bounded utterances, sends each ephemeral WAV
+through the same transcription port, and submits the final transcript through
+the ordinary conversation and task lifecycle. MongoDB owns session, turn, and
+speech-delivery truth; LiveKit owns no task state and Redis is not required for
+voice-session correctness. V1 assigns realtime rooms to one authoritative API
+process; active-active API serving requires a future distributed runtime lease
+and is not implied by MongoDB's duplicate-session exclusion. Device speech
+synthesis consumes only exact text that Vera has durably prepared and released.
+
+```mermaid
+flowchart LR
+    PHONE["Expo client"] -->|"private WebRTC audio"| LK["Self-hosted LiveKit"]
+    LK --> VAD["Silero endpointing worker"]
+    VAD -->|"ephemeral finalized WAV"| TX["Transcription port"]
+    TX -->|"one final transcript"| TASK["Conversation + task lifecycle"]
+    TASK -->|"projected reply"| JOURNAL["Speech delivery journal"]
+    JOURNAL -->|"released exact text"| PHONE
+    PHONE -->|"playout outcome"| JOURNAL
 ```
 
 Health is process liveness.

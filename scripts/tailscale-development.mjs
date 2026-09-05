@@ -2,8 +2,10 @@ import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 
 const VERA_API_PATH = '/api';
+const VERA_LIVEKIT_PATH = '/livekit';
 const VERA_API_TARGET = 'http://127.0.0.1:4310';
 const VERA_FRONTEND_TARGET = 'http://localhost:8081';
+const VERA_LIVEKIT_TARGET = 'http://127.0.0.1:7880';
 
 function fail(message) {
   process.stderr.write(`${message}\n`);
@@ -78,7 +80,8 @@ function isPhoneConfiguration(configuration) {
   const handlers = handlerTargets(configuration);
   return (
     handlers.get('/') === VERA_FRONTEND_TARGET &&
-    handlers.get(VERA_API_PATH) === VERA_API_TARGET
+    handlers.get(VERA_API_PATH) === VERA_API_TARGET &&
+    handlers.get(VERA_LIVEKIT_PATH) === VERA_LIVEKIT_TARGET
   );
 }
 
@@ -96,6 +99,7 @@ function configurePhoneServe() {
   const conflictingPath = [
     ['/', VERA_FRONTEND_TARGET],
     [VERA_API_PATH, VERA_API_TARGET],
+    [VERA_LIVEKIT_PATH, VERA_LIVEKIT_TARGET],
   ].find(([path, expected]) => {
     const actual = handlers.get(path);
     return actual !== undefined && actual !== expected;
@@ -111,6 +115,14 @@ function configurePhoneServe() {
       '--bg',
       `--set-path=${VERA_API_PATH}`,
       VERA_API_TARGET,
+    ]);
+  }
+  if (handlers.get(VERA_LIVEKIT_PATH) !== VERA_LIVEKIT_TARGET) {
+    runTailscale([
+      'serve',
+      '--bg',
+      `--set-path=${VERA_LIVEKIT_PATH}`,
+      VERA_LIVEKIT_TARGET,
     ]);
   }
   if (handlers.get('/') !== VERA_FRONTEND_TARGET) {
@@ -202,6 +214,7 @@ switch (action) {
     const managedPaths = [
       ['/', VERA_FRONTEND_TARGET],
       [VERA_API_PATH, VERA_API_TARGET],
+      [VERA_LIVEKIT_PATH, VERA_LIVEKIT_TARGET],
     ].filter(([path, target]) => handlers.get(path) === target);
     if (managedPaths.length === 0 || isEmptyConfiguration(serve)) {
       process.stdout.write('Tailscale Serve is already disabled.\n');
@@ -222,6 +235,7 @@ switch (action) {
         {
           frontendUrl: current.apiUrl,
           apiUrl: `${current.apiUrl}${VERA_API_PATH}`,
+          liveKitUrl: `${current.apiUrl.replace(/^https:/u, 'wss:')}${VERA_LIVEKIT_PATH}`,
           serve: tailscaleJson(['serve', 'status', '--json']),
         },
         null,

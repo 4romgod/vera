@@ -15,6 +15,8 @@ import {
 import { palette, radius, shadow, spacing } from '@/design/tokens';
 import type { VoiceInputPhase } from '@/voice/use-voice-input';
 import type { AttachmentReference } from '@vera/client';
+import { LiveVoiceControls } from '@/components/live-voice-controls';
+import type { LiveVoicePhase } from '@/voice/use-live-voice';
 
 export type ComposerAttachment = {
   localId: string;
@@ -44,10 +46,16 @@ export function MessageComposer(props: {
   onSend: () => void;
   onVoice: () => void;
   onVoiceSend: () => void;
+  liveVoiceAvailable?: boolean;
+  liveVoicePhase: LiveVoicePhase;
+  liveVoiceTranscript?: string;
+  onLiveVoiceStart: () => void;
+  onLiveVoiceStop: () => void;
 }) {
   const recording = props.voicePhase === 'recording';
   const sendDisabled =
     props.busy ||
+    props.liveVoicePhase !== 'idle' ||
     props.attachments.some((attachment) => attachment.status !== 'ready') ||
     (!recording &&
       (props.voicePhase !== 'idle' || props.draft.trim().length === 0));
@@ -70,6 +78,14 @@ export function MessageComposer(props: {
           gap: spacing.sm,
         }}
       >
+        <LiveVoiceControls
+          available={props.liveVoiceAvailable}
+          disabled={props.busy || props.voicePhase !== 'idle'}
+          phase={props.liveVoicePhase}
+          transcript={props.liveVoiceTranscript}
+          onStart={props.onLiveVoiceStart}
+          onStop={props.onLiveVoiceStop}
+        />
         <VoiceInputStatus
           phase={props.voicePhase}
           durationMs={props.voiceDurationMs}
@@ -180,7 +196,9 @@ export function MessageComposer(props: {
         >
           <TextInput
             accessibilityLabel="Message Vera"
-            editable={props.voicePhase === 'idle'}
+            editable={
+              props.voicePhase === 'idle' && props.liveVoicePhase === 'idle'
+            }
             multiline
             onChangeText={props.onChange}
             onSubmitEditing={props.onSend}
@@ -204,7 +222,10 @@ export function MessageComposer(props: {
             accessibilityLabel="Attach a file"
             accessibilityRole="button"
             disabled={
-              props.busy || props.attaching || props.attachments.length >= 5
+              props.busy ||
+              props.liveVoicePhase !== 'idle' ||
+              props.attaching ||
+              props.attachments.length >= 5
             }
             onPress={props.onAttach}
             style={({ pressed }) => ({
@@ -214,7 +235,9 @@ export function MessageComposer(props: {
               justifyContent: 'center',
               borderRadius: radius.md,
               opacity:
-                props.attaching || props.attachments.length >= 5
+                props.liveVoicePhase !== 'idle' ||
+                props.attaching ||
+                props.attachments.length >= 5
                   ? 0.35
                   : pressed
                     ? 0.72
@@ -229,7 +252,7 @@ export function MessageComposer(props: {
             )}
           </Pressable>
           <VoiceInputButton
-            disabled={props.busy}
+            disabled={props.busy || props.liveVoicePhase !== 'idle'}
             phase={props.voicePhase}
             onPress={props.onVoice}
           />

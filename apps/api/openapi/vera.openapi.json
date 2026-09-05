@@ -4346,6 +4346,69 @@
         "required": ["schemaVersion", "deliveries"],
         "additionalProperties": false
       },
+      "GetV1VoiceResponse200": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": { "type": "number", "enum": [1] },
+          "enabled": { "type": "boolean" }
+        },
+        "required": ["schemaVersion", "enabled"],
+        "additionalProperties": false
+      },
+      "PostV1VoiceSessionsRequest": {
+        "type": "object",
+        "properties": {
+          "conversationId": { "type": "string", "pattern": "^conversation_.*" },
+          "projectId": { "type": "string", "pattern": "^project_.*" },
+          "takeover": { "default": false, "type": "boolean" }
+        },
+        "required": ["conversationId", "takeover"],
+        "additionalProperties": false
+      },
+      "PostV1VoiceSessionsResponse201": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": { "type": "number", "enum": [1] },
+          "session": {
+            "$ref": "#/components/schemas/PostV1VoiceSessionsResponse201Session"
+          },
+          "transport": {
+            "type": "object",
+            "properties": {
+              "kind": { "type": "string", "enum": ["livekit"] },
+              "url": { "type": "string", "format": "uri" },
+              "token": { "type": "string", "minLength": 1 },
+              "expiresAt": { "$ref": "#/components/schemas/DateTime" }
+            },
+            "required": ["kind", "url", "token", "expiresAt"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["schemaVersion", "session", "transport"],
+        "additionalProperties": false
+      },
+      "GetV1VoiceSessionsIdResponse200": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": { "type": "number", "enum": [1] },
+          "session": {
+            "$ref": "#/components/schemas/PostV1VoiceSessionsResponse201Session"
+          }
+        },
+        "required": ["schemaVersion", "session"],
+        "additionalProperties": false
+      },
+      "PostV1VoiceSessionsIdDeliveriesDeliveryIdAcknowledgementRequest": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": ["played", "interrupted", "delivery_unknown"]
+          }
+        },
+        "required": ["outcome"],
+        "additionalProperties": false
+      },
       "ArtifactResourceOneOfAttachmentAnalysisContent": {
         "type": "object",
         "properties": {
@@ -8823,6 +8886,125 @@
             "additionalProperties": false
           }
         ]
+      },
+      "PostV1VoiceSessionsResponse201Session": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": { "type": "number", "enum": [1] },
+          "version": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "id": { "type": "string", "pattern": "^voice_session_.*" },
+          "conversationId": { "type": "string", "pattern": "^conversation_.*" },
+          "projectId": { "type": "string", "pattern": "^project_.*" },
+          "status": {
+            "type": "string",
+            "enum": ["starting", "active", "reconnecting", "ended", "failed"]
+          },
+          "expiresAt": { "$ref": "#/components/schemas/DateTime" },
+          "startedAt": { "$ref": "#/components/schemas/DateTime" },
+          "updatedAt": { "$ref": "#/components/schemas/DateTime" },
+          "connectedAt": { "$ref": "#/components/schemas/DateTime" },
+          "endedAt": { "$ref": "#/components/schemas/DateTime" },
+          "failure": { "type": "string", "minLength": 1, "maxLength": 2000 },
+          "turns": {
+            "$ref": "#/components/schemas/PostV1VoiceSessionsResponse201SessionTurns"
+          },
+          "deliveries": {
+            "$ref": "#/components/schemas/PostV1VoiceSessionsResponse201SessionDeliveries"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "version",
+          "id",
+          "conversationId",
+          "status",
+          "expiresAt",
+          "startedAt",
+          "updatedAt",
+          "turns",
+          "deliveries"
+        ],
+        "additionalProperties": false
+      },
+      "PostV1VoiceSessionsResponse201SessionDeliveries": {
+        "maxItems": 300,
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/PostV1VoiceSessionsResponse201SessionDeliveriesItems"
+        }
+      },
+      "PostV1VoiceSessionsResponse201SessionDeliveriesItems": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "pattern": "^speech_delivery_.*" },
+          "turnId": { "type": "string", "pattern": "^voice_turn_.*" },
+          "kind": {
+            "type": "string",
+            "enum": ["approval", "response", "failure"]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "prepared",
+              "released",
+              "played",
+              "interrupted",
+              "delivery_unknown"
+            ]
+          },
+          "content": { "type": "string", "minLength": 1, "maxLength": 20000 },
+          "messageId": { "type": "string", "pattern": "^message_.*" },
+          "preparedAt": { "$ref": "#/components/schemas/DateTime" },
+          "releasedAt": { "$ref": "#/components/schemas/DateTime" },
+          "settledAt": { "$ref": "#/components/schemas/DateTime" }
+        },
+        "required": ["id", "turnId", "kind", "state", "content", "preparedAt"],
+        "additionalProperties": false
+      },
+      "PostV1VoiceSessionsResponse201SessionTurns": {
+        "maxItems": 100,
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/PostV1VoiceSessionsResponse201SessionTurnsItems"
+        }
+      },
+      "PostV1VoiceSessionsResponse201SessionTurnsItems": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "pattern": "^voice_turn_.*" },
+          "sequence": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "transcribing",
+              "submitted",
+              "awaiting_approval",
+              "settled",
+              "failed"
+            ]
+          },
+          "transcript": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000
+          },
+          "messageId": { "type": "string", "pattern": "^message_.*" },
+          "taskId": { "type": "string", "pattern": "^task_.*" },
+          "runId": { "type": "string", "pattern": "^run_.*" },
+          "failure": { "type": "string", "minLength": 1, "maxLength": 2000 },
+          "createdAt": { "$ref": "#/components/schemas/DateTime" },
+          "updatedAt": { "$ref": "#/components/schemas/DateTime" }
+        },
+        "required": ["id", "sequence", "status", "createdAt", "updatedAt"],
+        "additionalProperties": false
       },
       "ProjectListResourceProjectsItems": {
         "type": "object",
@@ -20076,6 +20258,277 @@
         "operationId": "getV1PushDeliveries",
         "tags": ["notifications"],
         "summary": "GET /v1/push-deliveries"
+      }
+    },
+    "/v1/voice": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetV1VoiceResponse200"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred or an operation failed internally.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        },
+        "operationId": "getV1Voice",
+        "tags": ["software-delivery"],
+        "summary": "GET /v1/voice"
+      }
+    },
+    "/v1/voice/sessions": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostV1VoiceSessionsRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": { "type": "string", "minLength": 8, "maxLength": 200 },
+            "in": "header",
+            "name": "idempotency-key",
+            "required": true
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostV1VoiceSessionsResponse201"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request did not satisfy the declared path, query, header, or body schema.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred or an operation failed internally.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        },
+        "operationId": "postV1VoiceSessions",
+        "tags": ["software-delivery"],
+        "summary": "POST /v1/voice/sessions"
+      }
+    },
+    "/v1/voice/sessions/{id}": {
+      "get": {
+        "parameters": [
+          {
+            "schema": { "type": "string", "minLength": 1, "maxLength": 200 },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetV1VoiceSessionsIdResponse200"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request did not satisfy the declared path, query, header, or body schema.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred or an operation failed internally.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        },
+        "operationId": "getV1VoiceSessionsId",
+        "tags": ["software-delivery"],
+        "summary": "GET /v1/voice/sessions/{id}"
+      },
+      "delete": {
+        "parameters": [
+          {
+            "schema": { "type": "string", "minLength": 1, "maxLength": 200 },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetV1VoiceSessionsIdResponse200"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request did not satisfy the declared path, query, header, or body schema.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred or an operation failed internally.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        },
+        "operationId": "deleteV1VoiceSessionsId",
+        "tags": ["software-delivery"],
+        "summary": "DELETE /v1/voice/sessions/{id}"
+      }
+    },
+    "/v1/voice/sessions/{id}/deliveries/{deliveryId}/acknowledgement": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostV1VoiceSessionsIdDeliveriesDeliveryIdAcknowledgementRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": { "type": "string", "pattern": "^voice_session_" },
+            "in": "path",
+            "name": "id",
+            "required": true
+          },
+          {
+            "schema": { "type": "string", "pattern": "^speech_delivery_" },
+            "in": "path",
+            "name": "deliveryId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetV1VoiceSessionsIdResponse200"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request did not satisfy the declared path, query, header, or body schema.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred or an operation failed internally.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        },
+        "operationId": "postV1VoiceSessionsIdDeliveriesDeliveryIdAcknowledgement",
+        "tags": ["software-delivery"],
+        "summary": "POST /v1/voice/sessions/{id}/deliveries/{deliveryId}/acknowledgement"
       }
     }
   },

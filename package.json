@@ -16,6 +16,8 @@
     "@hey-api/json-schema-ref-parser": {
       "js-yaml": "4.3.1"
     },
+    "adm-zip": "0.6.0",
+    "sharp": "0.35.4",
     "xcode": {
       "uuid": "11.1.1"
     }
@@ -26,9 +28,10 @@
     "cli": "npm run dev --workspace @vera/cli --",
     "client:generate": "npm run client:generate --workspace @vera/client",
     "check": "npm run openapi:check && npm run client:generate && npm run format:check && npm run lint && npm run check:scripts && npm run typecheck && npm test",
-    "check:scripts": "node --check scripts/verify-persistent.mjs && node --check scripts/verify-live-model.mjs && node --check scripts/tailscale-development.mjs && node --check scripts/local-transcription.mjs && node --check scripts/lib/vera-operations.mjs && node --check scripts/static-frontend.mjs && node --check scripts/vera-service.mjs",
+    "check:scripts": "node --check scripts/verify-persistent.mjs && node --check scripts/verify-live-model.mjs && node --check scripts/tailscale-development.mjs && node --check scripts/local-transcription.mjs && node --check scripts/livekit-development.mjs && node --check scripts/livekit-service.mjs && node --check scripts/lib/vera-operations.mjs && node --check scripts/static-frontend.mjs && node --check scripts/vera-service.mjs",
     "dev": "npm run dev --workspace @vera/api",
     "dev:frontend": "npm run dev --workspace @vera/frontend",
+    "dev:livekit": "node scripts/livekit-development.mjs",
     "dev:phone": "node scripts/tailscale-development.mjs frontend",
     "dev:transcription": "node scripts/local-transcription.mjs",
     "dev:web": "npm run dev:web --workspace @vera/frontend",

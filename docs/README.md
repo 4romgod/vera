@@ -56,6 +56,9 @@ originally added reviewed device speech input and durable-reply playback.
 ADR-0030 replaces its unreliable recognizer with owner-controlled recording and
 an ephemeral provider-neutral transcription API without creating a second
 execution path or durable audio store.
+ADR-0048 adds explicit hands-free live conversation through private LiveKit,
+local Silero endpointing, the ordinary durable task path, and write-ahead
+speech-delivery acknowledgement without enabling voice approvals.
 ADR-0029 adds a separately approved, durable publication lifecycle that can
 commit a staged application, create its Vera branch, and open one exact GitHub
 pull request without granting the coding specialist repository credentials.
@@ -252,6 +255,8 @@ Separately governed software publication is accepted in
 Owner-controlled recording and provider-neutral transcription are accepted in
 [ADR-0030](decisions/0030-transcribe-owner-controlled-recordings-through-a-provider-neutral-boundary.md),
 which supersedes ADR-0028's device-recognition approach.
+Hands-free live conversation and its private realtime transport are accepted in
+[ADR-0048](decisions/0048-conduct-live-conversations-through-a-durable-voice-session-adapter.md).
 Bounded development campaigns are accepted in
 [ADR-0034](decisions/0034-delegate-bounded-development-campaigns-through-one-owner-approval.md).
 Bounded unattended missions that stop at one pull request are accepted in

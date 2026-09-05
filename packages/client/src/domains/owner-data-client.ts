@@ -21,6 +21,9 @@ import type {
   GetV1IntegrationsResponse,
   GetV1IntegrationConnectionsResponse,
   PostV1IntegrationConnectionsResponse,
+  GetV1VoiceResponse200,
+  GetV1VoiceSessionsIdResponse200,
+  PostV1VoiceSessionsResponse201,
 } from '../generated/types.gen.ts';
 import type {
   KnowledgeScope,
@@ -80,10 +83,79 @@ import {
   postV1RunsIdCancellation,
   postV1Tasks,
   putV1NotificationDevicesIdPreferences,
+  deleteV1VoiceSessionsId,
+  getV1Voice,
+  getV1VoiceSessionsId,
+  postV1VoiceSessions,
+  postV1VoiceSessionsIdDeliveriesDeliveryIdAcknowledgement,
 } from '../generated/sdk.gen.ts';
 import { VeraHttpTransport } from '../http/transport.ts';
 
 export class OwnerDataClient extends VeraHttpTransport {
+  public async getLiveVoiceAvailability(): Promise<GetV1VoiceResponse200> {
+    return this.generatedRequest(getV1Voice({ client: this.generatedClient }));
+  }
+
+  public async createLiveVoiceSession(input: {
+    conversationId: string;
+    projectId?: string;
+    takeover?: boolean;
+    idempotencyKey: string;
+  }): Promise<PostV1VoiceSessionsResponse201> {
+    return this.generatedRequest(
+      postV1VoiceSessions({
+        client: this.generatedClient,
+        headers: { 'idempotency-key': input.idempotencyKey },
+        body: {
+          conversationId: input.conversationId,
+          takeover: input.takeover ?? false,
+          ...(input.projectId === undefined
+            ? {}
+            : { projectId: input.projectId }),
+        },
+      }),
+    );
+  }
+
+  public async getLiveVoiceSession(
+    sessionId: string,
+  ): Promise<GetV1VoiceSessionsIdResponse200> {
+    return this.generatedRequest(
+      getV1VoiceSessionsId({
+        client: this.generatedClient,
+        path: { id: sessionId },
+      }),
+    );
+  }
+
+  public async endLiveVoiceSession(
+    sessionId: string,
+  ): Promise<GetV1VoiceSessionsIdResponse200> {
+    return this.generatedRequest(
+      deleteV1VoiceSessionsId({
+        client: this.generatedClient,
+        path: { id: sessionId },
+      }),
+    );
+  }
+
+  public async acknowledgeSpeechDelivery(input: {
+    sessionId: string;
+    deliveryId: string;
+    outcome: 'played' | 'interrupted' | 'delivery_unknown';
+  }): Promise<GetV1VoiceSessionsIdResponse200> {
+    return this.generatedRequest(
+      postV1VoiceSessionsIdDeliveriesDeliveryIdAcknowledgement({
+        client: this.generatedClient,
+        path: {
+          id: input.sessionId,
+          deliveryId: input.deliveryId,
+        },
+        body: { outcome: input.outcome },
+      }),
+    );
+  }
+
   public async listIntegrations(): Promise<GetV1IntegrationsResponse> {
     return this.generatedRequest(
       getV1Integrations({ client: this.generatedClient }),

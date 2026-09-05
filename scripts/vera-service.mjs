@@ -148,8 +148,20 @@ async function doctor(profile, options = {}) {
     (process.env.VERA_VISION_PROVIDER ?? process.env.VERA_MODEL_PROVIDER) ===
       'ollama';
   if (usesOllama) required.push('ollama');
+  const usesLiveVoice = process.env.VERA_LIVE_VOICE_ENABLED === 'true';
+  if (usesLiveVoice) {
+    if ((process.env.LIVEKIT_API_SECRET?.trim().length ?? 0) < 32) {
+      fail(
+        'Installed live voice requires a LIVEKIT_API_SECRET of at least 32 characters. Generate one with livekit-server generate-keys.',
+      );
+    }
+    required.push('livekit-server');
+  }
+  const executablePaths = new Map();
   for (const executable of required) {
-    line('pass', executable, requireExecutable(executable));
+    const path = requireExecutable(executable);
+    executablePaths.set(executable, path);
+    line('pass', executable, path);
   }
 
   command(
@@ -212,7 +224,13 @@ async function doctor(profile, options = {}) {
     validateCompiledConfiguration(nodePath, profile);
     line('pass', 'Vera configuration', 'schema-valid');
   }
-  return { nodePath, npmPath };
+  return {
+    nodePath,
+    npmPath,
+    ...(usesLiveVoice
+      ? { livekitPath: executablePaths.get('livekit-server') }
+      : {}),
+  };
 }
 
 function launchDomain() {
@@ -317,9 +335,17 @@ async function install(profile) {
 }
 
 async function requireInstalledDefinitions(profile) {
+  loadSelectedEnvironment(profile);
   const nodePath = requireExecutable('node');
   const npmPath = requireExecutable('npm');
-  const definitions = serviceDefinitions({ nodePath, npmPath, profile });
+  const definitions = serviceDefinitions({
+    nodePath,
+    npmPath,
+    profile,
+    ...(process.env.VERA_LIVE_VOICE_ENABLED === 'true'
+      ? { livekitPath: requireExecutable('livekit-server') }
+      : {}),
+  });
   for (const definition of definitions) {
     const result = await stat(definition.path).catch(() => undefined);
     if (result === undefined) {
@@ -369,9 +395,17 @@ async function endpointStatus(url, predicate) {
 }
 
 async function status(profile) {
+  loadSelectedEnvironment(profile);
   const nodePath = requireExecutable('node');
   const npmPath = requireExecutable('npm');
-  const definitions = serviceDefinitions({ nodePath, npmPath, profile });
+  const definitions = serviceDefinitions({
+    nodePath,
+    npmPath,
+    profile,
+    ...(process.env.VERA_LIVE_VOICE_ENABLED === 'true'
+      ? { livekitPath: requireExecutable('livekit-server') }
+      : {}),
+  });
   process.stdout.write('Vera service status\n');
   for (const definition of definitions) {
     line(
@@ -404,6 +438,8 @@ async function logs(follow) {
     join(paths.logsRoot, 'api.stderr.log'),
     join(paths.logsRoot, 'frontend.stdout.log'),
     join(paths.logsRoot, 'frontend.stderr.log'),
+    join(paths.logsRoot, 'livekit.stdout.log'),
+    join(paths.logsRoot, 'livekit.stderr.log'),
     join(paths.logsRoot, 'backup.stderr.log'),
   ];
   const args = ['-n', '120', ...(follow ? ['-f'] : []), ...files];
@@ -607,7 +643,12 @@ async function update(profile) {
 async function uninstall(profile) {
   const nodePath = requireExecutable('node');
   const npmPath = requireExecutable('npm');
-  const definitions = serviceDefinitions({ nodePath, npmPath, profile });
+  const definitions = serviceDefinitions({
+    nodePath,
+    npmPath,
+    profile,
+    livekitPath: executablePath('livekit-server') ?? '/usr/bin/false',
+  });
   for (const definition of definitions) {
     await bootout(definition);
     await unlink(definition.path).catch((error) => {
