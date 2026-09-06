@@ -34,6 +34,7 @@ import type {
 } from '@vera/client';
 
 import { palette, radius, spacing } from '@/design/tokens';
+import { useHoverCapability } from '@/components/layout/use-hover-capability';
 import { ConversationMessage } from './conversation-message.tsx';
 import {
   PULL_REFRESH_TRIGGER_DISTANCE,
@@ -72,6 +73,7 @@ export const ConversationView = forwardRef<
     ) => void;
   }
 >(function ConversationView(props, ref) {
+  const supportsHover = useHoverCapability();
   const webRefresh = useWebPullToRefresh({
     initiallyAtTop: props.messages.length === 0,
     refreshing: props.refreshing,
@@ -161,6 +163,7 @@ export const ConversationView = forwardRef<
             client={props.client}
             message={item}
             speaking={props.speakingMessageId === item.id}
+            supportsHover={supportsHover}
             task={
               item.taskId === undefined
                 ? undefined
@@ -247,7 +250,7 @@ function EmptyConversation(props: {
       }}
     >
       <LinearGradient
-        colors={['rgba(167,129,30,0.18)', 'rgba(9,11,14,0)']}
+        colors={[palette.accentGlow, 'rgba(9,11,14,0)']}
         style={{
           position: 'absolute',
           top: '14%',

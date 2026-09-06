@@ -6,6 +6,7 @@ import type { AttachmentService } from '../../../../application/attachments/atta
 import { conversationResponse, taskResponse } from '../presenters.ts';
 import {
   ConversationResponseJsonSchema,
+  ConversationDeletionResponseJsonSchema,
   ConversationsResponseJsonSchema,
   CreateConversationMessageRequestJsonSchema,
   CreateConversationRequestJsonSchema,
@@ -79,6 +80,21 @@ export function registerConversationRoutes(
           options.principalId,
           request.params.id,
         ),
+      ),
+  );
+
+  app.delete<{ Params: ResourceIdParams }>(
+    '/v1/conversations/:id',
+    {
+      schema: {
+        params: ResourceIdParamsJsonSchema,
+        response: { 200: ConversationDeletionResponseJsonSchema },
+      },
+    },
+    async (request) =>
+      options.conversations.removeConversation(
+        options.principalId,
+        request.params.id,
       ),
   );
 

@@ -7,6 +7,8 @@ export default tseslint.config(
       '**/dist/**',
       '**/dist-host/**',
       '**/node_modules/**',
+      '**/.venv*/**',
+      '**/__pycache__/**',
       'packages/client/src/generated/**',
       'packages/client/scripts/**/*.mjs',
       'eslint.config.js',

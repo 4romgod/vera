@@ -35,6 +35,8 @@ function fakeApi(overrides: Partial<VeraApi>): VeraApi {
     throw new Error('Unexpected client call.');
   };
   return {
+    getSpeechSynthesisAvailability: unavailable,
+    synthesizeSpeech: unavailable,
     transcribeAudio: unavailable,
     getLiveVoiceAvailability: unavailable,
     createLiveVoiceSession: unavailable,
@@ -79,6 +81,7 @@ function fakeApi(overrides: Partial<VeraApi>): VeraApi {
     getProject: unavailable,
     createConversation: unavailable,
     listConversations: unavailable,
+    deleteConversation: unavailable,
     getConversation: unavailable,
     appendMessage: unavailable,
     submitTask: unavailable,

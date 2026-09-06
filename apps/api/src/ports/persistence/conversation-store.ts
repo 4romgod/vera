@@ -13,6 +13,11 @@ export type ConversationStore = {
     conversationId: string,
   ): Promise<Conversation | null>;
   listConversations(principalId: string): Promise<ConversationSummary[]>;
+  removeConversation(input: {
+    principalId: string;
+    conversationId: string;
+    removedAt: string;
+  }): Promise<Conversation | null>;
   appendMessage(
     principalId: string,
     conversationId: string,

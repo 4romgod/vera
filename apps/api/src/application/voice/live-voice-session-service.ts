@@ -372,7 +372,7 @@ export function createLiveVoiceSessionService(options: {
         });
         const expiryDelay = Math.max(
           1,
-          Date.parse(session.expiresAt) - Date.now(),
+          Date.parse(session.expiresAt) - Date.parse(clock()),
         );
         active.set(session.id, {
           handle,

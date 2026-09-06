@@ -2,6 +2,7 @@
 .DS_Store
 .env
 .env.*
+.venv*
 !.env.example
 !.env.*.example
 dist/
@@ -15,3 +16,4 @@ packages/client/src/generated/
 config/machines.json
 config/development-campaigns.json
 config/missions.json
+__pycache__

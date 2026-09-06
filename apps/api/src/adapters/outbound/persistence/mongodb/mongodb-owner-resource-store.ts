@@ -178,7 +178,7 @@ export class MongoDbOwnerResourceStore implements OwnerResourceStore {
     await this.ensureConnected();
     const documents = await this.conversations
       .aggregate([
-        { $match: { principalId } },
+        { $match: { principalId, status: 'active' } },
         { $sort: { updatedAt: -1 } },
         {
           $project: {
@@ -205,6 +205,35 @@ export class MongoDbOwnerResourceStore implements OwnerResourceStore {
     });
   }
 
+  public async removeConversation(input: {
+    principalId: string;
+    conversationId: string;
+    removedAt: string;
+  }): Promise<Conversation | null> {
+    await this.ensureConnected();
+    const removed = await this.conversations.findOneAndUpdate(
+      {
+        principalId: input.principalId,
+        id: input.conversationId,
+        status: 'active',
+      },
+      {
+        $set: {
+          status: 'removed',
+          removedAt: input.removedAt,
+          updatedAt: input.removedAt,
+        },
+      },
+      { returnDocument: 'after' },
+    );
+    if (removed !== null) return this.parseConversation(removed);
+    const existing = await this.conversations.findOne({
+      principalId: input.principalId,
+      id: input.conversationId,
+    });
+    return existing === null ? null : this.parseConversation(existing);
+  }
+
   public async appendMessage(
     principalId: string,
     conversationId: string,
@@ -220,6 +249,7 @@ export class MongoDbOwnerResourceStore implements OwnerResourceStore {
       {
         principalId,
         id: conversationId,
+        ...(message.role === 'owner' ? { status: 'active' } : {}),
         messages: {
           $not: {
             $elemMatch: {
@@ -242,6 +272,9 @@ export class MongoDbOwnerResourceStore implements OwnerResourceStore {
       throw new Error(`Conversation ${conversationId} was not found.`);
     }
     const conversation = this.parseConversation(document);
+    if (conversation.status === 'removed' && message.role === 'owner') {
+      throw new Error(`Conversation ${conversationId} was not found.`);
+    }
     const storedMessage = conversation.messages.find(
       (candidate) =>
         candidate.role === message.role &&

@@ -1,5 +1,6 @@
 import { FileText, Sparkles, UserRound } from 'lucide-react-native';
 import { Image } from 'expo-image';
+import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import type {
@@ -8,18 +9,19 @@ import type {
   VeraApi,
 } from '@vera/client';
 
-import { SpokenReplyButton } from '@/components/voice-controls';
 import { palette, radius, spacing } from '@/design/tokens';
 import {
   AssistantResultCard,
   hasStructuredResult,
 } from './assistant-result-card.tsx';
+import { MessageActions } from './message-actions.tsx';
 
 export function ConversationMessage(props: {
   message: ConversationMessageResource;
   client: VeraApi;
   task?: TaskResource | null;
   speaking: boolean;
+  supportsHover: boolean;
   onSpeak: () => void;
   onReuseAttachment: (
     attachment: NonNullable<ConversationMessageResource['attachments']>[number],
@@ -27,8 +29,15 @@ export function ConversationMessage(props: {
 }) {
   const owner = props.message.role === 'owner';
   const structured = !owner && hasStructuredResult(props.task);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const actionsVisible = !props.supportsHover || hovered || focused;
   return (
-    <View
+    <Pressable
+      onBlur={() => setFocused(false)}
+      onFocus={() => setFocused(true)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
       style={{
         width: '100%',
         flexDirection: 'row',
@@ -65,7 +74,7 @@ export function ConversationMessage(props: {
           style={{
             flexDirection: 'row',
             alignItems: 'center',
-            justifyContent: owner ? 'flex-end' : 'space-between',
+            justifyContent: owner ? 'flex-end' : 'flex-start',
             gap: spacing.md,
           }}
         >
@@ -85,12 +94,6 @@ export function ConversationMessage(props: {
               {owner ? 'YOU' : 'VERA'}
             </Text>
           </View>
-          {!owner ? (
-            <SpokenReplyButton
-              speaking={props.speaking}
-              onPress={props.onSpeak}
-            />
-          ) : null}
         </View>
         {structured && props.task !== null && props.task !== undefined ? (
           <AssistantResultCard client={props.client} task={props.task} />
@@ -98,12 +101,14 @@ export function ConversationMessage(props: {
           <View
             style={{
               borderWidth: owner ? 1 : 0,
-              borderColor: '#3A372A',
+              borderColor: palette.ownerMessageLine,
               borderCurve: 'continuous',
               borderRadius: owner ? radius.lg : 0,
               paddingHorizontal: owner ? spacing.lg : 0,
               paddingVertical: owner ? spacing.md : 0,
-              backgroundColor: owner ? '#181814' : 'transparent',
+              backgroundColor: owner
+                ? palette.ownerMessageSurface
+                : 'transparent',
             }}
           >
             <Text
@@ -167,7 +172,15 @@ export function ConversationMessage(props: {
             ))}
           </View>
         )}
+        <MessageActions
+          content={props.message.content}
+          createdAt={props.message.createdAt}
+          onSpeak={props.onSpeak}
+          owner={owner}
+          speaking={props.speaking}
+          visible={actionsVisible}
+        />
       </View>
-    </View>
+    </Pressable>
   );
 }

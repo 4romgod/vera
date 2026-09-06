@@ -283,6 +283,32 @@ void describe('Vera HTTP client', () => {
     updatedAt: '2026-09-04T00:00:00.000Z',
   };
 
+  void it('removes a conversation through the typed owner boundary', async () => {
+    const client = new VeraClient({
+      baseUrl: 'http://vera.test',
+      fetch: (input, init) => {
+        assert.equal(
+          input,
+          'http://vera.test/v1/conversations/conversation_test',
+        );
+        assert.equal(init?.method, 'DELETE');
+        return Promise.resolve(
+          Response.json({
+            schemaVersion: 1,
+            id: 'conversation_test',
+            status: 'removed',
+            removedAt: fixtureTime,
+          }),
+        );
+      },
+    });
+
+    const removed = await client.deleteConversation('conversation_test');
+
+    assert.equal(removed.status, 'removed');
+    assert.equal(removed.removedAt, fixtureTime);
+  });
+
   void it('uploads document bytes with a transport type separate from the declared media type', async () => {
     const bytes = new TextEncoder().encode('Vera attachment').buffer;
     const client = new VeraClient({
@@ -400,6 +426,72 @@ void describe('Vera HTTP client', () => {
     });
 
     assert.equal(result.text, 'Native recording.');
+  });
+
+  void it('discovers and downloads bounded WAV speech through typed boundaries', async () => {
+    const wav = new Uint8Array([82, 73, 70, 70, 4, 0, 0, 0, 87, 65, 86, 69]);
+    const client = new VeraClient({
+      baseUrl: 'http://vera.test',
+      fetch: (input, init) => {
+        const url =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        if (url.endsWith('/v1/speech') && init?.method === 'POST') {
+          assert.equal(
+            init.body,
+            JSON.stringify({ text: 'Hello.', voice: 'anna' }),
+          );
+          return Promise.resolve(
+            new Response(wav, {
+              headers: {
+                'content-type': 'audio/wav',
+                'x-vera-speech-provider': 'pocket_tts',
+                'x-vera-speech-model': 'pocket-tts-100m',
+                'x-vera-speech-voice': 'alba',
+              },
+            }),
+          );
+        }
+        return Promise.resolve(
+          Response.json({
+            schemaVersion: 1,
+            enabled: true,
+            provider: 'pocket_tts',
+            model: 'pocket-tts-100m',
+            voice: 'alba',
+            voices: ['alba', 'anna'],
+            dataBoundary: 'owner_controlled',
+          }),
+        );
+      },
+    });
+
+    assert.equal((await client.getSpeechSynthesisAvailability()).enabled, true);
+    const speech = await client.synthesizeSpeech({
+      text: 'Hello.',
+      voice: 'anna',
+    });
+    assert.equal(speech.bytes.byteLength, wav.byteLength);
+    assert.equal(speech.provider, 'pocket_tts');
+    assert.equal(speech.voice, 'alba');
+  });
+
+  void it('rejects malformed speech audio from the API', async () => {
+    const client = new VeraClient({
+      fetch: () =>
+        Promise.resolve(
+          new Response(Uint8Array.of(1, 2, 3), {
+            headers: { 'content-type': 'audio/wav' },
+          }),
+        ),
+    });
+    await assert.rejects(
+      client.synthesizeSpeech({ text: 'Hello.' }),
+      /invalid speech audio/u,
+    );
   });
 
   void it('invokes the default fetch with its global receiver in browser runtimes', async () => {

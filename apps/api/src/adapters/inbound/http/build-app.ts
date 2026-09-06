@@ -66,6 +66,7 @@ import { registerPushNotificationRoutes } from './routes/push-notification-route
 import { registerIntegrationConnectionRoutes } from './routes/integration-connection-routes.ts';
 import { registerExternalAwarenessRoutes } from './routes/external-awareness-routes.ts';
 import { registerLiveVoiceRoutes } from './routes/live-voice-routes.ts';
+import { registerSpeechSynthesisRoutes } from './routes/speech-synthesis-routes.ts';
 import {
   IntegrationConnectionError,
   type IntegrationConnectionService,
@@ -107,6 +108,11 @@ import {
   LiveVoiceSessionError,
   type LiveVoiceSessionService,
 } from '../../../application/voice/live-voice-session-service.ts';
+import type { SpeechSynthesisService } from '../../../application/speech/speech-synthesis-service.ts';
+import {
+  SpeechSynthesisProviderError,
+  type SpeechSynthesisErrorCode,
+} from '../../../ports/speech/speech-synthesis-provider.ts';
 
 export type BuildAppOptions = {
   evaluateModelDecision: EvaluateModelDecision;
@@ -140,6 +146,7 @@ export type BuildAppOptions = {
   externalSignalTriage?: ExternalSignalTriageService;
   externalSignalResolution?: ExternalSignalResolutionService;
   liveVoice?: LiveVoiceSessionService;
+  speech?: SpeechSynthesisService;
   readinessChecks?: {
     name: string;
     check(): Promise<void>;
@@ -220,6 +227,37 @@ function publicTranscriptionMessage(code: SpeechTranscriptionErrorCode) {
       return 'Voice transcription timed out.';
     case 'transcription_unavailable':
       return 'The transcription provider is unavailable.';
+  }
+}
+
+function speechFailureStatus(
+  code: SpeechSynthesisErrorCode,
+): 422 | 502 | 503 | 504 {
+  switch (code) {
+    case 'speech_rejected':
+      return 422;
+    case 'speech_response_invalid':
+      return 502;
+    case 'speech_not_configured':
+    case 'speech_unavailable':
+      return 503;
+    case 'speech_timeout':
+      return 504;
+  }
+}
+
+function publicSpeechMessage(code: SpeechSynthesisErrorCode): string {
+  switch (code) {
+    case 'speech_not_configured':
+      return 'Server speech synthesis is not configured on this Vera server.';
+    case 'speech_rejected':
+      return 'The speech provider rejected this text.';
+    case 'speech_response_invalid':
+      return 'The speech provider returned invalid audio.';
+    case 'speech_timeout':
+      return 'Speech synthesis timed out.';
+    case 'speech_unavailable':
+      return 'The speech provider is unavailable.';
   }
 }
 
@@ -493,6 +531,9 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   if (options.liveVoice !== undefined) {
     registerLiveVoiceRoutes(app, { principalId, voice: options.liveVoice });
   }
+  if (options.speech !== undefined) {
+    registerSpeechSynthesisRoutes(app, options.speech);
+  }
 
   if (options.close !== undefined) app.addHook('onClose', options.close);
 
@@ -735,6 +776,19 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
         error: {
           code: error.code,
           message: publicTranscriptionMessage(error.code),
+        },
+      });
+      return;
+    }
+    if (error instanceof SpeechSynthesisProviderError) {
+      request.log.error(
+        { err: error, errorCode: error.code },
+        'Speech synthesis provider request failed',
+      );
+      void reply.status(speechFailureStatus(error.code)).send({
+        error: {
+          code: error.code,
+          message: publicSpeechMessage(error.code),
         },
       });
       return;

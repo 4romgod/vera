@@ -25,6 +25,7 @@ import {
   repositoryRoot,
   runtimePaths,
   serviceDefinitions,
+  serviceLabels,
 } from './lib/vera-operations.mjs';
 
 const usage = `Usage:
@@ -84,6 +85,37 @@ function loadSelectedEnvironment(profile) {
   const [profileFile, baseFile] = environmentFiles(profile);
   loadEnvFile(profileFile);
   loadEnvFile(baseFile);
+}
+
+function usesPocketSpeech() {
+  return process.env.VERA_SPEECH_PROVIDER === 'pocket_tts';
+}
+
+function speechBaseUrl() {
+  return process.env.POCKET_TTS_BASE_URL ?? 'http://127.0.0.1:8091';
+}
+
+async function prepareSpeechRuntime(profile) {
+  loadSelectedEnvironment(profile);
+  if (!usesPocketSpeech()) return;
+  const uvPath = requireExecutable('uv');
+  command(
+    uvPath,
+    [
+      'sync',
+      '--directory',
+      join(repositoryRoot, 'services', 'pocket-tts'),
+      '--frozen',
+      '--extra',
+      'engine',
+    ],
+    {
+      label: 'Install Pocket TTS runtime',
+      timeoutMs: 30 * 60_000,
+      inherit: true,
+    },
+  );
+  line('pass', 'Pocket TTS runtime', 'installed from the committed lockfile');
 }
 
 function validateCompiledConfiguration(nodePath, profile) {
@@ -157,6 +189,8 @@ async function doctor(profile, options = {}) {
     }
     required.push('livekit-server');
   }
+  const usesSpeech = usesPocketSpeech();
+  if (usesSpeech) required.push('uv');
   const executablePaths = new Map();
   for (const executable of required) {
     const path = requireExecutable(executable);
@@ -186,6 +220,26 @@ async function doctor(profile, options = {}) {
       timeoutMs: 10_000,
     });
     line('pass', 'Ollama', 'reachable');
+  }
+  if (usesSpeech) {
+    const uvPath = executablePaths.get('uv');
+    command(
+      uvPath,
+      [
+        'run',
+        '--directory',
+        join(repositoryRoot, 'services', 'pocket-tts'),
+        '--frozen',
+        '--extra',
+        'engine',
+        '--no-sync',
+        'python',
+        '-c',
+        'import pocket_tts',
+      ],
+      { label: 'Pocket TTS runtime', timeoutMs: 120_000 },
+    );
+    line('pass', 'Pocket TTS', 'runtime importable');
   }
   command('codex', ['login', 'status'], {
     label: 'Codex authentication',
@@ -230,6 +284,7 @@ async function doctor(profile, options = {}) {
     ...(usesLiveVoice
       ? { livekitPath: executablePaths.get('livekit-server') }
       : {}),
+    ...(usesSpeech ? { speechUvPath: executablePaths.get('uv') } : {}),
   };
 }
 
@@ -284,6 +339,23 @@ async function writeDefinition(definition) {
   await rename(temporaryPath, definition.path);
 }
 
+async function removeObsoleteOptionalDefinitions(definitions, paths) {
+  const activeLabels = new Set(
+    definitions.map((definition) => definition.label),
+  );
+  for (const label of [serviceLabels.livekit, serviceLabels.speech]) {
+    if (activeLabels.has(label)) continue;
+    const definition = {
+      label,
+      path: join(paths.launchAgentsRoot, `${label}.plist`),
+    };
+    await bootout(definition);
+    await unlink(definition.path).catch((error) => {
+      if (error?.code !== 'ENOENT') throw error;
+    });
+  }
+}
+
 async function waitForEndpoint(url, predicate, timeoutMs = 45_000) {
   const deadline = Date.now() + timeoutMs;
   let lastError;
@@ -304,6 +376,7 @@ async function waitForEndpoint(url, predicate, timeoutMs = 45_000) {
 }
 
 async function install(profile) {
+  await prepareSpeechRuntime(profile);
   const executables = await doctor(profile, { requireBuild: true });
   const paths = runtimePaths();
   await Promise.all([
@@ -315,11 +388,20 @@ async function install(profile) {
     environmentFiles(profile).map((path) => chmod(path, 0o600)),
   );
   const definitions = serviceDefinitions({ ...executables, profile });
+  await removeObsoleteOptionalDefinitions(definitions, paths);
   for (const definition of definitions) {
     await bootout(definition);
     await writeDefinition(definition);
     await bootstrap(definition);
     line('pass', 'Installed service', definition.label);
+  }
+  if (usesPocketSpeech()) {
+    await waitForEndpoint(
+      `${speechBaseUrl()}/ready`,
+      (body) => body?.status === 'ready',
+      5 * 60_000,
+    );
+    line('pass', 'Pocket TTS', 'ready on loopback');
   }
   await waitForEndpoint(
     'http://127.0.0.1:4310/ready',
@@ -345,6 +427,7 @@ async function requireInstalledDefinitions(profile) {
     ...(process.env.VERA_LIVE_VOICE_ENABLED === 'true'
       ? { livekitPath: requireExecutable('livekit-server') }
       : {}),
+    ...(usesPocketSpeech() ? { speechUvPath: requireExecutable('uv') } : {}),
   });
   for (const definition of definitions) {
     const result = await stat(definition.path).catch(() => undefined);
@@ -358,6 +441,13 @@ async function requireInstalledDefinitions(profile) {
 async function start(profile) {
   const definitions = await requireInstalledDefinitions(profile);
   for (const definition of definitions) await bootstrap(definition);
+  if (usesPocketSpeech()) {
+    await waitForEndpoint(
+      `${speechBaseUrl()}/ready`,
+      (body) => body?.status === 'ready',
+      5 * 60_000,
+    );
+  }
   await waitForEndpoint(
     'http://127.0.0.1:4310/ready',
     (body) => body?.status === 'ready',
@@ -405,6 +495,7 @@ async function status(profile) {
     ...(process.env.VERA_LIVE_VOICE_ENABLED === 'true'
       ? { livekitPath: requireExecutable('livekit-server') }
       : {}),
+    ...(usesPocketSpeech() ? { speechUvPath: requireExecutable('uv') } : {}),
   });
   process.stdout.write('Vera service status\n');
   for (const definition of definitions) {
@@ -419,6 +510,17 @@ async function status(profile) {
     (body) => body?.status === 'ready',
   );
   line(apiStatus === 'ready' ? 'pass' : 'warn', 'API endpoint', apiStatus);
+  if (usesPocketSpeech()) {
+    const speechStatus = await endpointStatus(
+      `${speechBaseUrl()}/ready`,
+      (body) => body?.status === 'ready',
+    );
+    line(
+      speechStatus === 'ready' ? 'pass' : 'warn',
+      'Speech endpoint',
+      speechStatus,
+    );
+  }
   const frontendStatus = await endpointStatus(
     'http://127.0.0.1:8081/_health',
     (body) => body?.status === 'ok',
@@ -440,6 +542,8 @@ async function logs(follow) {
     join(paths.logsRoot, 'frontend.stderr.log'),
     join(paths.logsRoot, 'livekit.stdout.log'),
     join(paths.logsRoot, 'livekit.stderr.log'),
+    join(paths.logsRoot, 'speech.stdout.log'),
+    join(paths.logsRoot, 'speech.stderr.log'),
     join(paths.logsRoot, 'backup.stderr.log'),
   ];
   const args = ['-n', '120', ...(follow ? ['-f'] : []), ...files];
@@ -636,6 +740,7 @@ async function update(profile) {
     timeoutMs: 30 * 60_000,
     inherit: true,
   });
+  await prepareSpeechRuntime(profile);
   await restart(profile);
   line('pass', 'Update', `${local.slice(0, 7)} → ${remote.slice(0, 7)}`);
 }
@@ -648,6 +753,7 @@ async function uninstall(profile) {
     npmPath,
     profile,
     livekitPath: executablePath('livekit-server') ?? '/usr/bin/false',
+    speechUvPath: executablePath('uv') ?? '/usr/bin/false',
   });
   for (const definition of definitions) {
     await bootout(definition);

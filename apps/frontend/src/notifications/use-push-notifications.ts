@@ -11,6 +11,7 @@ import type {
   PushPreferences,
   VeraClient,
 } from '@vera/client';
+import { palette } from '../design/tokens.ts';
 import { parseAttentionDeepLink } from './attention-deep-link.ts';
 
 const INSTALLATION_KEY = 'vera.notificationInstallationId.v1';
@@ -142,7 +143,7 @@ export function usePushNotifications(options: {
           name: 'Vera attention',
           importance: notifications.AndroidImportance.HIGH,
           vibrationPattern: [0, 250, 150, 250],
-          lightColor: '#F3C94F',
+          lightColor: palette.accent,
         });
       let permissions = await notifications.getPermissionsAsync();
       if (!permissions.granted)

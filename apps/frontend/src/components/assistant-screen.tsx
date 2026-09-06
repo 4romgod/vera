@@ -1,15 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { fetch as expoFetch } from 'expo/fetch';
+import { useRouter } from 'expo-router';
 import {
   FlatList,
   KeyboardAvoidingView,
-  Linking,
   View,
   useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  VeraClient,
   type ConversationMessageResource,
   type ConversationResource,
   type ConversationSummaryResource,
@@ -29,6 +27,7 @@ import {
   type RoutineResource,
   type RoutineRunResource,
 } from '@vera/client';
+import { useVeraClient } from '@/api/use-vera-client';
 import { AssistantHeader } from '@/components/assistant/assistant-header';
 import { ConversationSidebar } from '@/components/assistant/conversation-sidebar';
 import { ConversationView } from '@/components/assistant/conversation-view';
@@ -36,43 +35,42 @@ import { MessageComposer } from '@/components/assistant/message-composer';
 import { latestConversationProjectId } from '@/components/assistant/presentation';
 import { useTaskDetails } from '@/components/assistant/use-task-details';
 import { useAttachments } from '@/components/assistant/use-attachments';
+import { useConversationDeletion } from '@/components/assistant/use-conversation-deletion';
 import {
   ErrorToast,
   RunFooter,
   errorMessage,
 } from '@/components/assistant/run-status';
 import { ResourcePanel, type ResourceTab } from '@/components/resource-panel';
+import { useWorkspacePanelWidths } from '@/components/layout/use-workspace-panel-widths';
 import { layout, palette } from '@/design/tokens';
 import { useSpokenReply } from '@/voice/use-spoken-reply';
+import { createSpeechSynthesisClient } from '@/voice/speech-synthesis-client';
 import { useVoiceInput } from '@/voice/use-voice-input';
 import { useLiveVoice } from '@/voice/use-live-voice';
 import { usePushNotifications } from '@/notifications/use-push-notifications';
 import { useIntegrationConnections } from '@/components/integrations/use-integration-connections';
 import { useCreateExternalWatch } from '@/components/routines/use-create-external-watch';
 import { useCreateSignalTriage } from '@/components/routines/use-create-signal-triage';
-import { apiUrl, speechLocale } from '@/app/runtime-config';
+import { speechLocale } from '@/config/runtime-config';
 import {
   createAttentionActions,
   newestAttention,
 } from '@/components/assistant/attention-actions';
+import { createAssistantRequestKey } from '@/components/assistant/request-key';
+import { openNotificationTarget } from '@/components/assistant/open-notification-target';
 
 const EMPTY_MESSAGES: ConversationMessageResource[] = [];
 
-function requestKey(): string {
-  return `assistant-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-}
-
 export function AssistantScreen() {
+  const router = useRouter();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const compact = width < layout.compactBreakpoint;
-  const client = useMemo(
-    () =>
-      new VeraClient({
-        baseUrl: apiUrl,
-        fetch: (input, init) => expoFetch(input, init),
-      }),
-    [],
+  const client = useVeraClient();
+  const speechSynthesis = useMemo(
+    () => createSpeechSynthesisClient(client),
+    [client],
   );
   const [conversations, setConversations] = useState<
     ConversationSummaryResource[]
@@ -110,6 +108,7 @@ export function AssistantScreen() {
     open: boolean;
     tab: ResourceTab;
   }>({ open: false, tab: 'attention' });
+  const panelWidths = useWorkspacePanelWidths(width, resources.open);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const [draftFromVoice, setDraftFromVoice] = useState(false);
@@ -139,6 +138,7 @@ export function AssistantScreen() {
   const spokenReply = useSpokenReply({
     locale: speechLocale,
     onError: setError,
+    speechSynthesis,
   });
   const voiceInput = useVoiceInput({
     transcribe: async ({ audio, contentType, signal }) => {
@@ -192,6 +192,14 @@ export function AssistantScreen() {
   const unreadNotifications = notifications.filter(
     (notification) => notification.status === 'unread',
   ).length;
+  const deleteConversation = useConversationDeletion({
+    client,
+    selectedConversationId: conversation?.id,
+    mounted,
+    setConversations,
+    onDeleteSelected: startConversation,
+    onError: setError,
+  });
 
   useEffect(() => {
     mounted.current = true;
@@ -314,7 +322,7 @@ export function AssistantScreen() {
     setFocusedAttentionItemId(attentionItemId);
     setResources({ open: true, tab: 'attention' });
   }, []);
-  const pushNotifications = usePushNotifications({
+  usePushNotifications({
     client,
     onAttention: openPushAttention,
     onRefresh: refreshNotifications,
@@ -327,7 +335,7 @@ export function AssistantScreen() {
       policyId: string;
       objective: string;
     }) => {
-      const idempotencyKey = requestKey();
+      const idempotencyKey = createAssistantRequestKey();
       const subject = input.objective.trim().replace(/\s+/gu, ' ');
       const title = `feat: ${subject}`.slice(0, 256);
       try {
@@ -427,7 +435,7 @@ export function AssistantScreen() {
       try {
         const campaign = await client.requestDevelopmentCampaignRepair({
           campaignId,
-          idempotencyKey: requestKey(),
+          idempotencyKey: createAssistantRequestKey(),
         });
         if (mounted.current) {
           setCampaigns((current) =>
@@ -676,7 +684,7 @@ export function AssistantScreen() {
     if (conversation !== undefined) return conversation;
     const created = await client.createConversation({
       title: title.slice(0, 200),
-      idempotencyKey: requestKey(),
+      idempotencyKey: createAssistantRequestKey(),
     });
     setConversation(created);
     return created;
@@ -761,7 +769,7 @@ export function AssistantScreen() {
       const submitted = await client.appendMessage({
         conversationId: current.id,
         content: normalized,
-        idempotencyKey: requestKey(),
+        idempotencyKey: createAssistantRequestKey(),
         ...(selectedProjectId === undefined
           ? {}
           : { projectId: selectedProjectId }),
@@ -844,15 +852,8 @@ export function AssistantScreen() {
   async function openNotificationItem(
     notification: NotificationResource,
   ): Promise<void> {
-    const url =
-      'externalSignalId' in notification
-        ? notification.url
-        : 'missionId' in notification
-          ? notification.pullRequestUrl
-          : undefined;
-    if (url === undefined) return;
     try {
-      await Linking.openURL(url);
+      await openNotificationTarget(notification);
     } catch (cause) {
       setError(errorMessage(cause, 'That activity link could not be opened.'));
     }
@@ -887,7 +888,7 @@ export function AssistantScreen() {
               ? {}
               : { serviceIds: input.serviceIds }),
           },
-          idempotencyKey: requestKey(),
+          idempotencyKey: createAssistantRequestKey(),
         });
         await refreshResources();
         return true;
@@ -906,7 +907,7 @@ export function AssistantScreen() {
     client,
     refreshResources,
     mounted,
-    requestKey,
+    requestKey: createAssistantRequestKey,
     setActionId: setRoutineActionId,
     setError,
   });
@@ -915,7 +916,7 @@ export function AssistantScreen() {
     client,
     refreshResources,
     mounted,
-    requestKey,
+    requestKey: createAssistantRequestKey,
     setActionId: setRoutineActionId,
     setError,
   });
@@ -983,7 +984,7 @@ export function AssistantScreen() {
       try {
         const run = await client.runRoutineNow({
           routineId,
-          idempotencyKey: requestKey(),
+          idempotencyKey: createAssistantRequestKey(),
         });
         if (mounted.current)
           setRoutineRuns((current) => ({
@@ -1090,9 +1091,12 @@ export function AssistantScreen() {
           notifications={unreadNotifications}
           open={!compact || sidebarOpen}
           tasks={tasks.length}
+          {...panelWidths.sidebar}
           onClose={() => setSidebarOpen(false)}
+          onDelete={deleteConversation}
           onNew={startConversation}
           onOpenResources={openResources}
+          onOpenSettings={() => router.push('/settings')}
           onSelect={(id) => void selectConversation(id)}
         />
 
@@ -1182,16 +1186,14 @@ export function AssistantScreen() {
           routines={routines}
           routineRuns={routineRuns}
           routineActionId={routineActionId}
-          integrations={integrationConnections.integrations}
           integrationConnections={integrationConnections.connections}
-          integrationActionId={integrationConnections.actionId}
           campaignPolicies={campaignPolicies}
           notifications={notifications}
-          pushNotifications={pushNotifications}
           open={resources.open}
           reminders={reminders}
           tab={resources.tab}
           tasks={tasks}
+          {...panelWidths.inspector}
           onClose={() =>
             setResources((current) => ({ ...current, open: false }))
           }
@@ -1230,9 +1232,6 @@ export function AssistantScreen() {
           onPauseRoutine={pauseRoutine}
           onResumeRoutine={resumeRoutine}
           onRunRoutineNow={runRoutineNow}
-          onConnectIntegration={integrationConnections.connect}
-          onVerifyIntegration={integrationConnections.verify}
-          onRevokeIntegration={integrationConnections.revoke}
           onTab={(tab) => setResources({ open: true, tab })}
         />
 

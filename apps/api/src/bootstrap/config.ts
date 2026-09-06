@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import type { ModelConfig } from '../adapters/outbound/model/model-provider-registry.ts';
 import type { WebResearchAdapterConfig } from '../adapters/outbound/capabilities/web-research/web-research-adapter-registry.ts';
 import type { SpeechTranscriptionConfig } from '../adapters/outbound/transcription/speech-transcription-provider-registry.ts';
+import type { SpeechSynthesisConfig } from '../adapters/outbound/speech/speech-synthesis-provider-registry.ts';
 import type { PushProviderConfig } from '../adapters/outbound/notifications/push-notification-provider-registry.ts';
 import {
   MachineCatalogSchema,
@@ -117,6 +118,21 @@ const EnvironmentSchema = z.object({
     .int()
     .min(1_024)
     .max(25_000_000)
+    .default(25_000_000),
+  VERA_SPEECH_PROVIDER: z.enum(['disabled', 'pocket_tts']).default('disabled'),
+  POCKET_TTS_BASE_URL: z.url().default('http://127.0.0.1:8091'),
+  POCKET_TTS_VOICE: z
+    .string()
+    .trim()
+    .regex(/^[a-z][a-z0-9_-]{0,63}$/u)
+    .default('alba'),
+  SPEECH_TIMEOUT_MS: z.coerce.number().int().min(1_000).default(120_000),
+  SPEECH_READINESS_TIMEOUT_MS: z.coerce.number().int().min(250).default(3_000),
+  SPEECH_MAX_AUDIO_BYTES: z.coerce
+    .number()
+    .int()
+    .min(1_024)
+    .max(50_000_000)
     .default(25_000_000),
   VERA_LIVE_VOICE_ENABLED: z.enum(['false', 'true']).default('false'),
   LIVEKIT_SERVER_URL: z.url().default('ws://127.0.0.1:7880'),
@@ -262,6 +278,7 @@ export type AppConfig = {
     github: { connectorId: 'disabled' | 'gh_cli' };
   };
   transcription: SpeechTranscriptionConfig;
+  speech?: SpeechSynthesisConfig;
   liveVoice?:
     | { enabled: false }
     | {
@@ -574,6 +591,45 @@ function createTranscriptionConfig(
   };
 }
 
+function normalizeLoopbackHttpOrigin(label: string, value: string): string {
+  const url = new URL(value);
+  if (
+    url.protocol !== 'http:' ||
+    !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) ||
+    (url.pathname !== '' && url.pathname !== '/') ||
+    url.username.length > 0 ||
+    url.password.length > 0 ||
+    url.search.length > 0 ||
+    url.hash.length > 0
+  ) {
+    throw new Error(
+      `${label} must be a credential-free plain HTTP origin on loopback.`,
+    );
+  }
+  return value.replace(/\/+$/u, '');
+}
+
+function createSpeechConfig(
+  parsed: z.infer<typeof EnvironmentSchema>,
+): SpeechSynthesisConfig {
+  const maxTextCharacters = 20_000;
+  if (parsed.VERA_SPEECH_PROVIDER === 'disabled') {
+    return { provider: 'disabled', maxTextCharacters };
+  }
+  return {
+    provider: 'pocket_tts',
+    baseUrl: normalizeLoopbackHttpOrigin(
+      'POCKET_TTS_BASE_URL',
+      parsed.POCKET_TTS_BASE_URL,
+    ),
+    voice: parsed.POCKET_TTS_VOICE,
+    timeoutMs: parsed.SPEECH_TIMEOUT_MS,
+    readinessTimeoutMs: parsed.SPEECH_READINESS_TIMEOUT_MS,
+    maxAudioBytes: parsed.SPEECH_MAX_AUDIO_BYTES,
+    maxTextCharacters,
+  };
+}
+
 export function loadConfig(
   environment: NodeJS.ProcessEnv = process.env,
 ): AppConfig {
@@ -647,6 +703,7 @@ export function loadConfig(
       },
     },
     transcription: createTranscriptionConfig(parsed),
+    speech: createSpeechConfig(parsed),
     liveVoice,
     application: {
       workspacesRoot: resolve(

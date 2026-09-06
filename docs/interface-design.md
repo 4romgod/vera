@@ -1,7 +1,7 @@
 # Vera Interface Design
 
 **Status:** Implemented design language
-**Last updated:** 5 September 2026
+**Last updated:** 6 September 2026
 
 ## Purpose
 
@@ -15,7 +15,7 @@ preserving the approvals, provenance, and control required by the
 The interface uses a **quiet intelligence** visual language:
 
 - deep graphite surfaces rather than pure black;
-- warm, readable text with restrained muted-gold accents;
+- warm, readable text with restrained sky-blue accents;
 - generous spacing and continuous corners;
 - subtle depth and motion instead of decorative sci-fi effects;
 - human language in the primary interface, with exact technical data available
@@ -33,12 +33,15 @@ flowchart TD
     SHELL --> HISTORY["Conversation history: supporting"]
     SHELL --> CONTEXT["Personal or project context"]
     SHELL --> OWNER["Owner data: secondary"]
+    SHELL --> SETTINGS["Settings: dedicated destination"]
     OWNER --> MEMORY["Memory"]
     OWNER --> TODAY["Today: current attention"]
     OWNER --> TASKS["Tasks"]
     OWNER --> REMINDERS["Reminders"]
     OWNER --> ACTIVITY["Activity"]
-    OWNER --> CONNECTIONS["Connections"]
+    SETTINGS --> CONNECTIONS["Connections"]
+    SETTINGS --> VOICE["Voice"]
+    SETTINGS --> NOTIFICATION_SETTINGS["Notifications"]
     CHAT --> CONTROL["Progress, cancellation, and exact approvals"]
     CHAT --> RESULTS["Human-readable results"]
     RESULTS --> DETAILS["Technical details on demand"]
@@ -53,19 +56,31 @@ destinations.
 - On compact screens, the conversation list is a full-height modal drawer and
   owner data is a near-full-height bottom sheet.
 - On wide screens, conversation history remains visible and owner data opens as
-  a right-side inspector.
+  a right-side inspector. Both panel borders expose a pointer resize target;
+  widths remain bounded so conversation stays usable and are remembered only
+  on that device.
 - The conversation header exposes one compact context selector. `Personal` is
   the human-facing label for no project scope.
 - The message viewport is independently scrollable and the composer remains
   keyboard- and safe-area-aware.
 - Web document and application backgrounds use the same canvas color so browser
   overscroll and mobile viewport gaps cannot reveal a white page.
+- Settings is a dedicated route rather than an inspector tab. Voice,
+  Connections, and Notifications are settings domains with stable tabs;
+  Today, Memory, Tasks, and Activity remain primary workspaces because they are
+  things the owner uses rather than configuration.
 
 ## Interaction rules
 
 - All primary controls have at least a 44 by 44 point target and an accessible
   name.
 - Prompt starters populate an editable draft and never submit automatically.
+- The conversation search field uses Vera's own quiet accent focus treatment;
+  browser-native inner outlines must not compete with the field boundary.
+- Conversation rows expose a delete action on individual hover or focus and
+  keep it visible on touch devices. Deletion requires confirmation, updates
+  history only after the API succeeds, and returns the active workspace to a
+  new conversation when its current conversation is removed.
 - The owner can refresh Vera without reloading the browser: the header exposes
   an always-available refresh action, and pulling down from the top of the
   conversation refreshes on native and web surfaces. Refresh preserves the
@@ -81,11 +96,29 @@ destinations.
   session; typed input, attachments, and record/review capture are unavailable
   until live mode ends.
 - Live mode displays finalized transcript text, permits long configured
-  thinking pauses, and interrupts Vera's device speech when new owner speech
+  thinking pauses, and interrupts Vera's active speech playback when new owner speech
   begins. Disconnect never masquerades as listening, and transport failure
   returns the composer to a recoverable idle state with a visible explanation.
+- The Voice settings tab identifies whether Vera is using owner-controlled
+  neural speech or device fallback. With Pocket TTS enabled, it shows the exact
+  server model, owner-controlled boundary, and bounded neural voices currently
+  advertised by the server. Neural selections and previews use Vera's speech
+  API; Read aloud and live conversation use that same selected neural voice.
+  The operating-system/browser catalog remains a distinctly labelled fallback,
+  and each fallback preview always uses device speech. It never presents those
+  entries as neural AI voices or promotes novelty voices merely because their
+  names sort first. Neural and fallback selections, fallback speed, and fallback
+  pitch persist only on that device. A neural-service failure remains visible
+  and never silently changes Vera to a system voice.
 - Run progress, cancellation, and approval remain inside the conversation where
   the relevant intent was expressed.
+- Every owner and Vera message ends with a quiet metadata row. It exposes a
+  copy action with visible success or failure feedback and the message's durable
+  creation time; older messages add the date so the delivery context is never
+  ambiguous. Vera's read-aloud control lives in the same row rather than
+  competing with the message identity. Pointer-precise devices reveal this row
+  only while its individual message is hovered or focused; touch devices keep
+  it visible because they have no equivalent hover interaction.
 - The composer exposes one paperclip rather than separate media controls. Its
   file picker accepts up to five text, Markdown, JSON, PDF, JPEG, PNG, WebP,
   GIF, HEIC, HEIF, AVIF, or TIFF attachments. Each selected file shows

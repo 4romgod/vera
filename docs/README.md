@@ -1,7 +1,7 @@
 # Vera Documentation Guide
 
 **Status:** Active index
-**Last updated:** 5 September 2026
+**Last updated:** 6 September 2026
 
 ## Purpose
 
@@ -59,6 +59,12 @@ execution path or durable audio store.
 ADR-0048 adds explicit hands-free live conversation through private LiveKit,
 local Silero endpointing, the ordinary durable task path, and write-ahead
 speech-delivery acknowledgement without enabling voice approvals.
+[ADR-0053](decisions/0053-synthesize-speech-through-a-local-provider-boundary.md)
+adds consistent owner-controlled neural output through a provider-neutral API
+and locked Pocket TTS sidecar while preserving device speech as fallback.
+[ADR-0055](decisions/0055-select-neural-and-device-fallback-voices-explicitly.md)
+separates server-advertised neural voices from operating-system fallbacks so
+selection, preview, and failure behavior remain truthful.
 ADR-0029 adds a separately approved, durable publication lifecycle that can
 commit a staged application, create its Vera branch, and open one exact GitHub
 pull request without granting the coding specialist repository credentials.
@@ -138,6 +144,7 @@ flowchart TD
 | [V1 Definition](v1-definition.md) | Accepted | What exact architectural claim must the first version prove? |
 | [Engineering Method](engineering-method.md) | Accepted | How do we turn discovery into bounded, verifiable implementation work? |
 | [Architecture decisions](decisions/README.md) | Mixed — see index | Which consequential choices are recommended, why, and with what consequences? |
+| [Operator runbooks](runbooks/README.md) | Active | How does a new operator provision, start, verify, stop, and recover Vera? |
 
 The API's concrete source placement and dependency rules are documented in
 [`apps/api/README.md`](../apps/api/README.md).

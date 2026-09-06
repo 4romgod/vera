@@ -117,12 +117,18 @@ import { MongoDbLiveVoiceSessionStore } from '../adapters/outbound/persistence/m
 import type { LiveVoiceSessionStore } from '../ports/persistence/live-voice-session-store.ts';
 import { LiveKitLiveVoiceTransport } from '../adapters/outbound/voice/livekit-live-voice-transport.ts';
 import { createLiveVoiceSessionService } from '../application/voice/live-voice-session-service.ts';
+import { createSpeechSynthesisProvider } from '../adapters/outbound/speech/speech-synthesis-provider-registry.ts';
+import { createSpeechSynthesisService } from '../application/speech/speech-synthesis-service.ts';
 
 export function createApp(
   config: AppConfig,
   runtime: { logger?: Parameters<typeof buildApp>[0]['logger'] } = {},
 ) {
   const liveVoiceConfig = config.liveVoice ?? { enabled: false as const };
+  const speechConfig = config.speech ?? {
+    provider: 'disabled' as const,
+    maxTextCharacters: 20_000,
+  };
   const pushConfig = config.push ?? {
     provider: { adapterId: 'disabled' as const },
     pollIntervalMs: 5_000,
@@ -493,6 +499,10 @@ export function createApp(
     provider: transcriptionProvider,
     maxAudioBytes: config.transcription.maxAudioBytes,
   });
+  const speechProvider = createSpeechSynthesisProvider(speechConfig);
+  const speechService = createSpeechSynthesisService({
+    provider: speechProvider,
+  });
   const capabilityService = createCapabilityService({ registry: capabilities });
   const evaluateModelDecision = createEvaluateModelDecision(
     provider,
@@ -748,6 +758,7 @@ export function createApp(
     knowledge: knowledgeService,
     attention: attentionService,
     transcriptions: transcriptionService,
+    speech: speechService,
     attachments: attachmentService,
     machines: machineService,
     changeApplications: {
@@ -878,6 +889,14 @@ export function createApp(
             {
               name: 'live_voice_transport',
               check: () => liveVoice.checkReadiness(),
+            },
+          ]
+        : []),
+      ...(speechProvider.enabled
+        ? [
+            {
+              name: 'speech_synthesis_provider',
+              check: () => speechService.checkReadiness(),
             },
           ]
         : []),

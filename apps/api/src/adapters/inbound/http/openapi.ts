@@ -32,6 +32,7 @@ const tags: OpenAPIV3.TagObject[] = [
   { name: 'attention', description: 'Owner attention briefing and decisions.' },
   { name: 'attachments', description: 'Attachment upload and retrieval.' },
   { name: 'transcription', description: 'Speech-to-text transcription.' },
+  { name: 'speech', description: 'Provider-neutral text-to-speech output.' },
   { name: 'software-delivery', description: 'Governed software delivery.' },
   { name: 'campaigns', description: 'Long-running development campaigns.' },
   { name: 'missions', description: 'Autonomous missions.' },
@@ -100,6 +101,7 @@ const unprocessableOperations = new Set([
   'post /v1/attention-items/{id}/decision',
   'post /v1/attachments',
   'post /v1/audio/transcriptions',
+  'post /v1/speech',
   'post /v1/artifacts/{id}/applications',
   'post /v1/change-applications/{id}/publications',
   'post /v1/development-campaigns/{id}/repairs',
@@ -110,10 +112,12 @@ const unprocessableOperations = new Set([
 ]);
 
 const unavailableOperations = new Set([
+  'get /v1/speech',
   'post /v1/integration-connections',
   'post /v1/integration-connections/{id}/verification',
   'post /v1/model-decisions',
   'post /v1/audio/transcriptions',
+  'post /v1/speech',
   'post /v1/development-campaigns',
   'post /v1/development-campaigns/{id}/repairs',
   'post /v1/missions',
@@ -123,6 +127,7 @@ const unavailableOperations = new Set([
 const upstreamOperations = new Set([
   'post /v1/model-decisions',
   'post /v1/audio/transcriptions',
+  'post /v1/speech',
 ]);
 
 const notFoundOperations = new Set([
@@ -201,6 +206,7 @@ function tagFor(path: string): string {
   if (path.startsWith('/v1/attention')) return 'attention';
   if (path.startsWith('/v1/attachments')) return 'attachments';
   if (path.startsWith('/v1/audio/transcriptions')) return 'transcription';
+  if (path.startsWith('/v1/speech')) return 'speech';
   if (path.startsWith('/v1/development-campaign')) return 'campaigns';
   if (path.startsWith('/v1/missions') || path.startsWith('/v1/mission-'))
     return 'missions';
@@ -324,6 +330,32 @@ function documentBinaryAndStreamingOperations(
           { schema: { type: 'string', format: 'binary' } },
         ]),
       ),
+    };
+  }
+
+  const speech = document.paths['/v1/speech']?.post;
+  if (speech !== undefined) {
+    speech.responses['200'] = {
+      description: 'Synthesized mono WAV audio.',
+      headers: {
+        'X-Vera-Speech-Provider': {
+          description: 'Configured synthesis adapter.',
+          schema: { type: 'string' },
+        },
+        'X-Vera-Speech-Model': {
+          description: 'Model used to synthesize this audio.',
+          schema: { type: 'string' },
+        },
+        'X-Vera-Speech-Voice': {
+          description: 'Configured stock voice identifier.',
+          schema: { type: 'string' },
+        },
+      },
+      content: {
+        'audio/wav': {
+          schema: { type: 'string', format: 'binary' },
+        },
+      },
     };
   }
 

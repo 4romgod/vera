@@ -36,6 +36,7 @@ import type {
   PutV1NotificationDevicesIdPreferencesRequest,
   IntegrationCatalogResource,
   GetV1ExternalSignalsResponse,
+  GetV1SpeechResponse200,
   PostV1VoiceSessionsResponse201Session,
 } from './generated/types.gen.ts';
 
@@ -141,6 +142,14 @@ export type SoftwareDeliveryManagementResult =
   ArtifactResourceOneOfSoftwareDeliveryManagementResultContent;
 
 export type SpeechTranscriptionAudio = Blob | ArrayBuffer;
+export type SpeechSynthesisAvailability = GetV1SpeechResponse200;
+export type SpeechSynthesisAudio = {
+  bytes: ArrayBuffer;
+  contentType: 'audio/wav';
+  provider?: string;
+  model?: string;
+  voice?: string;
+};
 export type LiveVoiceSessionResource = PostV1VoiceSessionsResponse201Session;
 export type SpeechDeliveryResource =
   LiveVoiceSessionResource['deliveries'][number];

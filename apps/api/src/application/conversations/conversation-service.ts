@@ -2,8 +2,10 @@ import { randomUUID } from 'node:crypto';
 
 import {
   ConversationMessageSchema,
+  ConversationDeletionSchema,
   ConversationSchema,
   type Conversation,
+  type ConversationDeletion,
   type ConversationSummary,
 } from '../../domain/conversations/conversation.ts';
 import type { ConversationStore } from '../../ports/persistence/conversation-store.ts';
@@ -22,6 +24,10 @@ export type ConversationService = {
     conversationId: string,
   ): Promise<Conversation>;
   listConversations(principalId: string): Promise<ConversationSummary[]>;
+  removeConversation(
+    principalId: string,
+    conversationId: string,
+  ): Promise<ConversationDeletion>;
   appendOwnerMessage(input: {
     principalId: string;
     conversationId: string;
@@ -66,6 +72,12 @@ export function createConversationService(options: {
         updatedAt: now,
       });
       const result = await options.store.createConversation(conversation);
+      if (result.conversation.status === 'removed') {
+        throw new ResourceError(
+          `Conversation ${result.conversation.id} was removed.`,
+          'conversation_not_found',
+        );
+      }
       if (!result.created && result.conversation.title !== conversation.title) {
         throw new ResourceError(
           `Idempotency key ${input.creationKey} is already associated with different conversation input.`,
@@ -80,7 +92,7 @@ export function createConversationService(options: {
         principalId,
         conversationId,
       );
-      if (conversation === null) {
+      if (conversation === null || conversation.status === 'removed') {
         throw new ResourceError(
           `Conversation ${conversationId} was not found.`,
           'conversation_not_found',
@@ -92,7 +104,37 @@ export function createConversationService(options: {
     listConversations: (principalId) =>
       options.store.listConversations(principalId),
 
+    async removeConversation(principalId, conversationId) {
+      const removed = await options.store.removeConversation({
+        principalId,
+        conversationId,
+        removedAt: clock(),
+      });
+      if (removed === null) {
+        throw new ResourceError(
+          `Conversation ${conversationId} was not found.`,
+          'conversation_not_found',
+        );
+      }
+      return ConversationDeletionSchema.parse({
+        schemaVersion: 1,
+        id: removed.id,
+        status: 'removed',
+        removedAt: removed.removedAt,
+      });
+    },
+
     async appendOwnerMessage(input) {
+      const conversation = await options.store.findConversationById(
+        input.principalId,
+        input.conversationId,
+      );
+      if (conversation === null || conversation.status === 'removed') {
+        throw new ResourceError(
+          `Conversation ${input.conversationId} was not found.`,
+          'conversation_not_found',
+        );
+      }
       if (input.projectId !== undefined) {
         const project = await options.store.findProjectById(
           input.principalId,

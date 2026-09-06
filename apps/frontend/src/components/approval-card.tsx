@@ -128,7 +128,9 @@ export function ApprovalCard(props: {
             </View>
           ))}
           {effects.includes('third_party_disclosure') ? (
-            <Text style={{ color: '#F4C86A', fontSize: 12, lineHeight: 18 }}>
+            <Text
+              style={{ color: palette.warning, fontSize: 12, lineHeight: 18 }}
+            >
               Approval sends the selected document text and normalized images to
               the named third-party model provider.
             </Text>

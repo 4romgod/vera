@@ -871,8 +871,10 @@ the ordinary conversation and task lifecycle. MongoDB owns session, turn, and
 speech-delivery truth; LiveKit owns no task state and Redis is not required for
 voice-session correctness. V1 assigns realtime rooms to one authoritative API
 process; active-active API serving requires a future distributed runtime lease
-and is not implied by MongoDB's duplicate-session exclusion. Device speech
-synthesis consumes only exact text that Vera has durably prepared and released.
+and is not implied by MongoDB's duplicate-session exclusion. Speech synthesis
+consumes only exact text that Vera has durably prepared and released. The API's
+provider-neutral output port selects an owner-controlled Pocket TTS sidecar;
+clients use device speech only when that server provider is explicitly disabled.
 
 ```mermaid
 flowchart LR
@@ -881,9 +883,20 @@ flowchart LR
     VAD -->|"ephemeral finalized WAV"| TX["Transcription port"]
     TX -->|"one final transcript"| TASK["Conversation + task lifecycle"]
     TASK -->|"projected reply"| JOURNAL["Speech delivery journal"]
-    JOURNAL -->|"released exact text"| PHONE
+    JOURNAL -->|"released exact text"| SPEECH["Speech synthesis port"]
+    SPEECH -->|"loopback JSON"| POCKET["Pocket TTS Python sidecar"]
+    POCKET -->|"bounded WAV"| PHONE
+    SPEECH -. "provider disabled" .-> DEVICE["Device speech fallback"]
+    DEVICE --> PHONE
     PHONE -->|"playout outcome"| JOURNAL
 ```
+
+The Python service is a replaceable outbound adapter rather than part of the
+application kernel. `uv` owns its pinned runtime and lockfile, launchd supervises
+it before the API, and it binds only to loopback. Readiness checks the configured
+voice against the sidecar manifest. Text and generated audio remain ephemeral.
+See
+[ADR-0053](decisions/0053-synthesize-speech-through-a-local-provider-boundary.md).
 
 Health is process liveness.
 Readiness verifies provider connectivity, configured-model availability,
@@ -907,6 +920,7 @@ GET    /v1/projects/{project_id}
 POST   /v1/conversations                 # requires Idempotency-Key
 GET    /v1/conversations
 GET    /v1/conversations/{conversation_id}
+DELETE /v1/conversations/{conversation_id}
 POST   /v1/conversations/{conversation_id}/messages
 GET    /v1/tasks/{task_id}
 GET    /v1/runs/{run_id}
@@ -951,6 +965,12 @@ GET    /v1/health
 Clients should create new conversations or continue existing ones through
 ordinary UI actions. They retain opaque identifiers in the background; the
 owner should not have to speak or type IDs.
+
+Conversation removal is an owner-scoped tombstone rather than immediate
+physical deletion. Owner reads and new messages fail closed for removed
+aggregates, while a late Vera reply from already-authorized work may still be
+projected idempotently. Linked tasks and audit history remain authoritative;
+future physical erasure requires an explicit retention policy.
 
 The shared TypeScript client wraps these resources without owning
 orchestration semantics. The owner CLI uses that client and renders the exact

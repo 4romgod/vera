@@ -11,6 +11,7 @@ import type {
 import {
   displayConversationTitle,
   filterConversations,
+  formatMessageTimestamp,
   groupConversations,
   goalProgressStages,
   latestConversationProjectId,
@@ -87,6 +88,36 @@ void describe('assistant presentation', () => {
       ],
     );
     assert.deepEqual(conversations, [earlier, recent, today]);
+  });
+
+  void it('shows message delivery time with enough date context', () => {
+    const now = new Date(2026, 7, 26, 17, 30);
+
+    assert.equal(
+      formatMessageTimestamp(
+        new Date(2026, 7, 26, 14, 4).toISOString(),
+        now,
+        'en-US',
+      ),
+      '2:04 PM',
+    );
+    assert.equal(
+      formatMessageTimestamp(
+        new Date(2026, 7, 25, 14, 4).toISOString(),
+        now,
+        'en-US',
+      ),
+      'Aug 25, 2:04 PM',
+    );
+    assert.equal(
+      formatMessageTimestamp(
+        new Date(2025, 7, 25, 14, 4).toISOString(),
+        now,
+        'en-US',
+      ),
+      'Aug 25, 2025, 2:04 PM',
+    );
+    assert.equal(formatMessageTimestamp('not-a-date', now, 'en-US'), '');
   });
 
   void it('finds the latest project context without modern array helpers', () => {

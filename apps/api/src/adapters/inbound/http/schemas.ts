@@ -28,6 +28,7 @@ import {
   SoftwareDeliveryManagementResultArtifactSchema,
 } from '../../../domain/artifacts/artifact.ts';
 import {
+  ConversationDeletionSchema,
   ConversationSchema,
   ConversationSummarySchema,
 } from '../../../domain/conversations/conversation.ts';
@@ -206,6 +207,63 @@ export type AcknowledgeSpeechDeliveryRequest = z.infer<
   typeof AcknowledgeSpeechDeliveryRequestSchema
 >;
 
+export const SpeechSynthesisRequestSchema = z
+  .object({
+    text: z.string().trim().min(1).max(20_000),
+    voice: z
+      .string()
+      .regex(/^[a-z][a-z0-9_-]{0,63}$/u)
+      .optional(),
+  })
+  .strict();
+export type SpeechSynthesisRequest = z.infer<
+  typeof SpeechSynthesisRequestSchema
+>;
+
+export const SpeechSynthesisAvailabilityResponseSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    enabled: z.boolean(),
+    provider: z.string().min(1).optional(),
+    model: z.string().min(1).optional(),
+    voice: z.string().min(1).optional(),
+    voices: z.array(z.string().min(1)).min(1).max(64).optional(),
+    dataBoundary: z.enum(['owner_controlled', 'third_party']).optional(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const details = [
+      value.provider,
+      value.model,
+      value.voice,
+      value.voices,
+      value.dataBoundary,
+    ];
+    if (value.enabled && details.some((detail) => detail === undefined)) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Enabled speech synthesis requires provider details.',
+      });
+    }
+    if (!value.enabled && details.some((detail) => detail !== undefined)) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Disabled speech synthesis must not expose provider details.',
+      });
+    }
+    if (
+      value.enabled &&
+      value.voice !== undefined &&
+      value.voices !== undefined &&
+      !value.voices.includes(value.voice)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'The default speech voice must be in the advertised catalog.',
+      });
+    }
+  });
+
 export const LiveVoiceSessionResourceSchema = LiveVoiceSessionObjectSchema.omit(
   {
     principalId: true,
@@ -255,6 +313,14 @@ export const CreateLiveVoiceSessionResponseJsonSchema = z.toJSONSchema(
 );
 export const LiveVoiceAvailabilityResponseJsonSchema = z.toJSONSchema(
   LiveVoiceAvailabilityResponseSchema,
+  { target: 'draft-7' },
+);
+export const SpeechSynthesisRequestJsonSchema = z.toJSONSchema(
+  SpeechSynthesisRequestSchema,
+  { target: 'draft-7' },
+);
+export const SpeechSynthesisAvailabilityResponseJsonSchema = z.toJSONSchema(
+  SpeechSynthesisAvailabilityResponseSchema,
   { target: 'draft-7' },
 );
 
@@ -430,7 +496,9 @@ export const ProjectsResponseSchema = z
 export const ConversationResponseSchema = ConversationSchema.omit({
   principalId: true,
   creationKey: true,
+  removedAt: true,
 }).extend({
+  status: z.literal('active'),
   messages: z.array(
     ConversationSchema.shape.messages.element.omit({ requestKey: true }),
   ),
@@ -442,6 +510,8 @@ export const ConversationsResponseSchema = z
     conversations: z.array(ConversationSummarySchema),
   })
   .strict();
+
+export const ConversationDeletionResponseSchema = ConversationDeletionSchema;
 
 export const ArtifactResponseSchema = z.discriminatedUnion('type', [
   ImplementationPlanArtifactSchema.omit({ principalId: true }),
@@ -814,6 +884,11 @@ export const ConversationResponseJsonSchema = z.toJSONSchema(
 
 export const ConversationsResponseJsonSchema = z.toJSONSchema(
   ConversationsResponseSchema,
+  { target: 'draft-7' },
+);
+
+export const ConversationDeletionResponseJsonSchema = z.toJSONSchema(
+  ConversationDeletionResponseSchema,
   { target: 'draft-7' },
 );
 

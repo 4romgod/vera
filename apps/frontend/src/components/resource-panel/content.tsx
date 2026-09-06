@@ -21,12 +21,11 @@ import type {
   NotificationResource,
 } from '@vera/client';
 import { IconButton } from '@/components/ui/icon-button';
-import { layout, palette, radius, shadow, spacing } from '@/design/tokens';
+import { palette, radius, shadow, spacing } from '@/design/tokens';
 import { humanizeIdentifier } from '../assistant/presentation.ts';
 import { AttentionPanel } from '../attention/attention-panel.tsx';
 import { RoutinesPanel } from '../routines/routines-panel.tsx';
-import { NotificationSettings } from '../notifications/notification-settings.tsx';
-import { ConnectionsPanel } from '../integrations/connections-panel.tsx';
+import { PanelResizeHandle } from '@/components/layout/panel-resize-handle';
 import type { ResourcePanelProps } from './contracts.ts';
 import { resourceTabs } from './tabs.ts';
 import {
@@ -105,7 +104,8 @@ export function PanelContent(props: ResourcePanelProps) {
   return (
     <View
       style={{
-        width: props.compact ? '100%' : layout.inspectorWidth,
+        width: props.compact ? '100%' : props.width,
+        flexShrink: 0,
         maxHeight: props.compact ? '92%' : '100%',
         alignSelf: 'flex-end',
         borderLeftWidth: props.compact ? 0 : 1,
@@ -122,6 +122,16 @@ export function PanelContent(props: ResourcePanelProps) {
         boxShadow: shadow.floating,
       }}
     >
+      {props.compact ? null : (
+        <PanelResizeHandle
+          edge="left"
+          maximumWidth={props.maximumWidth}
+          minimumWidth={props.minimumWidth}
+          width={props.width}
+          onResize={props.onResize}
+          onResizeEnd={props.onResizeEnd}
+        />
+      )}
       {props.compact ? (
         <View
           style={{
@@ -173,10 +183,13 @@ export function PanelContent(props: ResourcePanelProps) {
         contentContainerStyle={{
           flexDirection: 'row',
           gap: spacing.sm,
-          paddingBottom: spacing.lg,
+          paddingHorizontal: 2,
+          paddingVertical: 2,
+          paddingBottom: spacing.md,
         }}
         horizontal
         showsHorizontalScrollIndicator={false}
+        style={{ flexGrow: 0, flexShrink: 0 }}
       >
         {resourceTabs.map((tab) => {
           const Icon = tab.icon;
@@ -237,16 +250,6 @@ export function PanelContent(props: ResourcePanelProps) {
             onDecision={props.onAttentionDecision}
             onHandle={props.onHandleAttention}
             onOpen={props.onOpenAttention}
-          />
-        ) : null}
-        {props.tab === 'connections' ? (
-          <ConnectionsPanel
-            actionId={props.integrationActionId}
-            connections={props.integrationConnections}
-            integrations={props.integrations}
-            onConnect={props.onConnectIntegration}
-            onRevoke={props.onRevokeIntegration}
-            onVerify={props.onVerifyIntegration}
           />
         ) : null}
         {props.tab === 'routines' ? (
@@ -634,9 +637,6 @@ export function PanelContent(props: ResourcePanelProps) {
             ))
           : null}
 
-        {props.tab === 'notifications' ? (
-          <NotificationSettings controller={props.pushNotifications} />
-        ) : null}
         {props.tab === 'notifications' && props.notifications.length === 0 ? (
           <Empty
             icon={Bell}
