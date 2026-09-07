@@ -280,6 +280,9 @@ Owner-controlled recording, provider-neutral transcription, and reviewed reply
 playback are accepted in
 [ADR-0030](docs/decisions/0030-transcribe-owner-controlled-recordings-through-a-provider-neutral-boundary.md),
 which supersedes ADR-0028's platform speech recognizer.
+Owner-controlled neural speech behind a provider-neutral API and locked Python
+sidecar is accepted in
+[ADR-0053](docs/decisions/0053-synthesize-speech-through-a-local-provider-boundary.md).
 Registered local and SSH machine operations, exact service-action approvals,
 and verified postconditions are accepted in
 [ADR-0033](docs/decisions/0033-govern-machine-operations-through-registered-actions.md).
@@ -326,6 +329,13 @@ architecture decisions are indexed under `docs/decisions/`.
 5. Prefer evidence from tests, traces, and inspection over AI agreement.
 
 ## Run it
+
+For a clean-machine, ordered handoff path, start with the
+[local development runbook](docs/runbooks/local-development.md). For the
+owner-scoped macOS background service, use the
+[installed Mac service runbook](docs/runbooks/installed-mac-service.md).
+Common failures and recovery steps live in the
+[operator troubleshooting guide](docs/runbooks/troubleshooting.md).
 
 Requirements:
 
@@ -380,6 +390,31 @@ the tailnet. Override its command, model file, or loopback origin with
 `WHISPER_CPP_BASE_URL`. Alternatively, an OpenAI profile can set
 `VERA_TRANSCRIPTION_PROVIDER=openai`; it reuses `OPENAI_API_KEY` unless a
 transcription-only key is provided.
+
+For a consistent local neural voice, set the following in the selected profile:
+
+```dotenv
+VERA_SPEECH_PROVIDER=pocket_tts
+POCKET_TTS_BASE_URL=http://127.0.0.1:8091
+POCKET_TTS_VOICE=alba
+POCKET_TTS_ALLOWED_VOICES=alba,anna
+```
+
+Install the locked Python runtime once and start the loopback sidecar before the
+API during development:
+
+```bash
+uv sync --directory services/pocket-tts --frozen --extra engine
+VERA_PROFILE=ollama npm run dev:speech
+```
+
+`npm run vera:install -- --profile ollama` performs that sync and supervises
+Pocket TTS automatically for installed operation. Its first start downloads
+the model weights. `POCKET_TTS_VOICE` is the default while
+`POCKET_TTS_ALLOWED_VOICES` is the bounded catalog exposed to the frontend.
+The frontend discovers that catalog through Vera's API and uses the selected
+neural voice for preview, Read aloud, and live replies; device speech remains
+the declared fallback when server speech is explicitly disabled.
 
 Open the URL printed by Expo (normally `http://localhost:8081`). The frontend
 uses the public client/API contract

@@ -21,10 +21,20 @@ export const ConversationSchema = z
     principalId: z.string().min(1),
     creationKey: z.string().min(1),
     title: z.string().trim().min(1).max(200),
-    status: z.literal('active'),
+    status: z.enum(['active', 'removed']),
     messages: z.array(ConversationMessageSchema),
+    removedAt: z.iso.datetime().optional(),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
+  })
+  .strict();
+
+export const ConversationDeletionSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    id: z.string().startsWith('conversation_'),
+    status: z.literal('removed'),
+    removedAt: z.iso.datetime(),
   })
   .strict();
 
@@ -44,5 +54,6 @@ export const ConversationSummarySchema = z
   .strict();
 
 export type Conversation = z.infer<typeof ConversationSchema>;
+export type ConversationDeletion = z.infer<typeof ConversationDeletionSchema>;
 export type ConversationMessage = z.infer<typeof ConversationMessageSchema>;
 export type ConversationSummary = z.infer<typeof ConversationSummarySchema>;

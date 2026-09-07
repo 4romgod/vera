@@ -43,6 +43,10 @@ void describe('application configuration', () => {
       provider: 'disabled',
       maxAudioBytes: 25_000_000,
     });
+    assert.deepEqual(config.speech, {
+      provider: 'disabled',
+      maxTextCharacters: 20_000,
+    });
     assert.deepEqual(config.publication, {
       adapterId: 'github_gh_cli',
       gitCommand: 'git',
@@ -439,6 +443,41 @@ void describe('application configuration', () => {
         }),
       /loopback host/u,
     );
+  });
+
+  void it('configures local speech synthesis independently and only on loopback', () => {
+    assert.deepEqual(
+      loadConfig({
+        VERA_SPEECH_PROVIDER: 'pocket_tts',
+        POCKET_TTS_BASE_URL: 'http://localhost:8091/',
+        POCKET_TTS_VOICE: 'anna',
+        SPEECH_TIMEOUT_MS: '45000',
+        SPEECH_MAX_AUDIO_BYTES: '12000000',
+      }).speech,
+      {
+        provider: 'pocket_tts',
+        baseUrl: 'http://localhost:8091',
+        voice: 'anna',
+        timeoutMs: 45_000,
+        readinessTimeoutMs: 3_000,
+        maxAudioBytes: 12_000_000,
+        maxTextCharacters: 20_000,
+      },
+    );
+    for (const value of [
+      'https://127.0.0.1:8091',
+      'http://192.168.1.2:8091',
+      'http://user:secret@127.0.0.1:8091',
+    ]) {
+      assert.throws(
+        () =>
+          loadConfig({
+            VERA_SPEECH_PROVIDER: 'pocket_tts',
+            POCKET_TTS_BASE_URL: value,
+          }),
+        /POCKET_TTS_BASE_URL/u,
+      );
+    }
   });
 
   void it('loads and validates the operator-owned machine catalog from the repository root', () => {

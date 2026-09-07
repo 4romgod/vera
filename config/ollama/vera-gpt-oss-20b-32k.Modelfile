@@ -1,0 +1,4 @@
+FROM gpt-oss:20b
+
+# Vera's currently qualified local orchestration context window.
+PARAMETER num_ctx 32768

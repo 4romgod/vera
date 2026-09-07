@@ -14,10 +14,8 @@ import type {
   RoutineResource,
   RoutineRunResource,
   ProjectResource,
-  IntegrationDefinitionResource,
   IntegrationConnectionResource,
 } from '@vera/client';
-import type { PushNotificationController } from '@/notifications/use-push-notifications';
 
 export type ResourceTab =
   | 'attention'
@@ -29,13 +27,15 @@ export type ResourceTab =
   | 'machines'
   | 'routines'
   | 'missions'
-  | 'campaigns'
-  | 'connections';
+  | 'campaigns';
 
 export type ResourcePanelProps = {
   compact: boolean;
   open: boolean;
   tab: ResourceTab;
+  width: number;
+  minimumWidth: number;
+  maximumWidth: number;
   attention?: AttentionBriefing;
   focusedAttentionItemId?: string;
   memories: MemoryResource[];
@@ -43,7 +43,6 @@ export type ResourcePanelProps = {
   tasks: PersonalTaskResource[];
   reminders: ReminderResource[];
   notifications: NotificationResource[];
-  pushNotifications: PushNotificationController;
   machines: MachineCatalogResource['machines'];
   campaigns: DevelopmentCampaignResource[];
   campaignPolicies: DevelopmentCampaignPolicyResource[];
@@ -52,9 +51,7 @@ export type ResourcePanelProps = {
   routineRuns: Partial<Record<string, RoutineRunResource[]>>;
   routineActionId?: string;
   projects: ProjectResource[];
-  integrations: IntegrationDefinitionResource[];
   integrationConnections: IntegrationConnectionResource[];
-  integrationActionId?: string;
   onTab: (tab: ResourceTab) => void;
   onAttentionDecision: (
     item: AttentionItem,
@@ -64,6 +61,8 @@ export type ResourcePanelProps = {
   onHandleAttention: (item: AttentionItem) => Promise<boolean>;
   onOpenNotification: (notification: NotificationResource) => void;
   onClose: () => void;
+  onResize: (width: number) => void;
+  onResizeEnd: (width: number) => void;
   onMemoryCommand: (command: string) => void;
   onKnowledgeCommand: (command: string) => void;
   onSearchKnowledge: (query: string) => Promise<KnowledgeSearchResponse>;
@@ -131,7 +130,4 @@ export type ResourcePanelProps = {
   onRunRoutineNow: (
     routineId: string,
   ) => Promise<RoutineRunResource | undefined>;
-  onConnectIntegration: (integrationId: string) => Promise<boolean>;
-  onVerifyIntegration: (connectionId: string) => Promise<boolean>;
-  onRevokeIntegration: (connectionId: string) => Promise<boolean>;
 };

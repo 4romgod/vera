@@ -35,6 +35,18 @@ test('defines user services with bounded non-secret environments', () => {
     definitions.map(({ name }) => name),
     ['api', 'frontend', 'backup'],
   );
+
+  const withSpeech = serviceDefinitions({
+    nodePath: '/opt/vera/bin/node',
+    npmPath: '/opt/vera/bin/npm',
+    speechUvPath: '/opt/vera/bin/uv',
+    ownerHome: '/Users/tester',
+    profile: 'ollama',
+  });
+  assert.deepEqual(
+    withSpeech.map(({ name }) => name),
+    ['speech', 'api', 'frontend', 'backup'],
+  );
   const serialized = JSON.stringify(definitions);
   assert.doesNotMatch(serialized, /API_KEY|TOKEN|PASSWORD/u);
   assert.match(serialized, /VERA_PROFILE/u);

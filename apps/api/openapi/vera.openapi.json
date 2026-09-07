@@ -550,6 +550,17 @@
         ],
         "additionalProperties": false
       },
+      "DeleteV1ConversationsIdResponse200": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": { "type": "number", "enum": [1] },
+          "id": { "type": "string", "pattern": "^conversation_.*" },
+          "status": { "type": "string", "enum": ["removed"] },
+          "removedAt": { "$ref": "#/components/schemas/DateTime" }
+        },
+        "required": ["schemaVersion", "id", "status", "removedAt"],
+        "additionalProperties": false
+      },
       "PostV1ConversationsIdMessagesRequest": {
         "type": "object",
         "properties": {
@@ -4407,6 +4418,37 @@
           }
         },
         "required": ["outcome"],
+        "additionalProperties": false
+      },
+      "GetV1SpeechResponse200": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": { "type": "number", "enum": [1] },
+          "enabled": { "type": "boolean" },
+          "provider": { "type": "string", "minLength": 1 },
+          "model": { "type": "string", "minLength": 1 },
+          "voice": { "type": "string", "minLength": 1 },
+          "voices": {
+            "minItems": 1,
+            "maxItems": 64,
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "dataBoundary": {
+            "type": "string",
+            "enum": ["owner_controlled", "third_party"]
+          }
+        },
+        "required": ["schemaVersion", "enabled"],
+        "additionalProperties": false
+      },
+      "PostV1SpeechRequest": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string", "minLength": 1, "maxLength": 20000 },
+          "voice": { "type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$" }
+        },
+        "required": ["text"],
         "additionalProperties": false
       },
       "ArtifactResourceOneOfAttachmentAnalysisContent": {
@@ -15922,6 +15964,55 @@
         "operationId": "getV1ConversationsId",
         "tags": ["conversations"],
         "summary": "GET /v1/conversations/{id}"
+      },
+      "delete": {
+        "parameters": [
+          {
+            "schema": { "type": "string", "minLength": 1, "maxLength": 200 },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteV1ConversationsIdResponse200"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request did not satisfy the declared path, query, header, or body schema.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist for the current owner.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred or an operation failed internally.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        },
+        "operationId": "deleteV1ConversationsId",
+        "tags": ["conversations"],
+        "summary": "DELETE /v1/conversations/{id}"
       }
     },
     "/v1/conversations/{id}/messages": {
@@ -20530,6 +20621,126 @@
         "tags": ["software-delivery"],
         "summary": "POST /v1/voice/sessions/{id}/deliveries/{deliveryId}/acknowledgement"
       }
+    },
+    "/v1/speech": {
+      "get": {
+        "tags": ["speech"],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetV1SpeechResponse200"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred or an operation failed internally.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "503": {
+            "description": "A required provider, capability, or notification service is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        },
+        "operationId": "getV1Speech",
+        "summary": "GET /v1/speech"
+      },
+      "post": {
+        "tags": ["speech"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PostV1SpeechRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Synthesized mono WAV audio.",
+            "headers": {
+              "X-Vera-Speech-Provider": {
+                "description": "Configured synthesis adapter.",
+                "schema": { "type": "string" }
+              },
+              "X-Vera-Speech-Model": {
+                "description": "Model used to synthesize this audio.",
+                "schema": { "type": "string" }
+              },
+              "X-Vera-Speech-Voice": {
+                "description": "Configured stock voice identifier.",
+                "schema": { "type": "string" }
+              }
+            },
+            "content": {
+              "audio/wav": {
+                "schema": { "type": "string", "format": "binary" }
+              }
+            }
+          },
+          "400": {
+            "description": "The request did not satisfy the declared path, query, header, or body schema.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "422": {
+            "description": "The request is well-formed but cannot be applied to the referenced resources.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred or an operation failed internally.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "502": {
+            "description": "An upstream model or transcription provider returned an invalid response.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "503": {
+            "description": "A required provider, capability, or notification service is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "504": {
+            "description": "An upstream model or transcription provider timed out.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        },
+        "operationId": "postV1Speech",
+        "summary": "POST /v1/speech"
+      }
     }
   },
   "servers": [
@@ -20575,6 +20786,10 @@
       "description": "Attachment upload and retrieval."
     },
     { "name": "transcription", "description": "Speech-to-text transcription." },
+    {
+      "name": "speech",
+      "description": "Provider-neutral text-to-speech output."
+    },
     {
       "name": "software-delivery",
       "description": "Governed software delivery."

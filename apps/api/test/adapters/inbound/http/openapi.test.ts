@@ -24,11 +24,11 @@ void describe('generated OpenAPI contract', () => {
     const documented = operations(document);
 
     assert.equal(document.openapi, '3.1.0');
-    assert.equal(Object.keys(document.paths).length, 83);
-    assert.equal(documented.length, 96);
+    assert.equal(Object.keys(document.paths).length, 84);
+    assert.equal(documented.length, 99);
     assert.equal(
       new Set(documented.map(({ operation }) => operation.operationId)).size,
-      96,
+      99,
     );
     const componentNames = Object.keys(document.components?.schemas ?? {});
     for (const componentName of [
@@ -58,6 +58,9 @@ void describe('generated OpenAPI contract', () => {
     assert.ok(componentNames.every((name) => !name.startsWith('Shared')));
     assert.ok(documented.some(({ path }) => path === '/health'));
     assert.ok(documented.some(({ path }) => path === '/ready'));
+    assert.ok(
+      document.paths['/v1/conversations/{id}']?.delete?.responses['200'],
+    );
     const createVoice = document.paths['/v1/voice/sessions']?.post;
     const acknowledgeVoice =
       document.paths[
@@ -101,6 +104,7 @@ void describe('generated OpenAPI contract', () => {
     const document = await createOpenApiDocument();
     const attachment = document.paths['/v1/attachments']?.post;
     const transcription = document.paths['/v1/audio/transcriptions']?.post;
+    const speech = document.paths['/v1/speech']?.post;
     const preview = document.paths['/v1/attachments/{id}/preview']?.get;
     const stream = document.paths['/v1/notifications/stream']?.get;
 
@@ -120,6 +124,14 @@ void describe('generated OpenAPI contract', () => {
       'audio/wav',
       'audio/x-wav',
     ]);
+    assert.ok(
+      speech?.responses['200'] !== undefined &&
+        !('$ref' in speech.responses['200']) &&
+        speech.responses['200'].content?.['audio/wav'] &&
+        speech.responses['200'].headers?.['X-Vera-Speech-Provider'] &&
+        speech.responses['200'].headers['X-Vera-Speech-Model'] &&
+        speech.responses['200'].headers['X-Vera-Speech-Voice'],
+    );
     assert.ok(
       preview?.responses['200'] !== undefined &&
         !('$ref' in preview.responses['200']) &&

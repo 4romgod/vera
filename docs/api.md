@@ -52,6 +52,8 @@ must not be exposed to an untrusted or shared network.
 | `POST /v1/external-signals/{signalId}/triage` | Idempotently create a project-scoped conversation and task from one active signal | `202` |
 | `GET /v1/routines/{routineId}/external-signals` | List current and resolved signals observed by one routine | `200` |
 | `POST /v1/audio/transcriptions` | Transcribe one completed bounded audio recording without persisting it | `200` |
+| `GET /v1/speech` | Discover the configured provider-neutral speech synthesizer | `200` |
+| `POST /v1/speech` | Synthesize bounded reply text into mono WAV audio | `200` |
 | `GET /v1/voice` | Discover whether live conversation transport is enabled | `200` |
 | `POST /v1/voice/sessions` | Idempotently create one scoped live conversation session | `201` |
 | `GET /v1/voice/sessions/{sessionId}` | Read durable session, turn, and speech-delivery state | `200` |
@@ -86,6 +88,7 @@ must not be exposed to an untrusted or shared network.
 | `POST /v1/conversations` | Create a conversation | `201` |
 | `GET /v1/conversations` | List conversations | `200` |
 | `GET /v1/conversations/{conversationId}` | Retrieve messages and task links | `200` |
+| `DELETE /v1/conversations/{conversationId}` | Remove a conversation from owner-visible history | `200` |
 | `POST /v1/conversations/{conversationId}/messages` | Add owner intent and create its task | `202` |
 | `POST /v1/tasks` | Submit owner intent as a durable task and first run | `202` |
 | `GET /v1/tasks/{taskId}` | Retrieve the current task/run projection | `200` |
@@ -242,6 +245,37 @@ The response metadata describes transcription only. Raw audio and this response
 are not stored by the endpoint. If the owner sends the returned text, the
 ordinary conversation/task contract governs that separate request. Provider
 credentials never enter the public client.
+
+## Speech synthesis
+
+`GET /v1/speech` checks the configured speech provider and reports whether
+server speech is enabled. When enabled, it returns the provider, model, default
+stock voice, complete currently advertised neural-voice allowlist, and data
+boundary. Discovery does not synthesize audio. A configured provider that
+cannot be reached returns a sanitized provider error rather than pretending
+that neural speech is disabled.
+
+`POST /v1/speech` accepts a closed JSON object containing `text` between 1 and
+20,000 characters and an optional `voice` from the advertised allowlist. When
+`voice` is absent, the configured server default is used. It returns bounded
+`audio/wav` bytes. The
+`X-Vera-Speech-Provider`, `X-Vera-Speech-Model`, and `X-Vera-Speech-Voice`
+headers identify the configured synthesis path without exposing internal URLs.
+The endpoint is ephemeral: it does not persist request text or generated audio.
+
+```http
+POST /v1/speech
+Content-Type: application/json
+
+{"text":"Hi, I’m Vera.","voice":"anna"}
+```
+
+The API calls only its configured `SpeechSynthesisProvider`. Pocket TTS is the
+first implementation and must use a plain loopback HTTP origin. Disabled speech
+returns `503 speech_not_configured`; invalid text returns `422
+speech_rejected`; a syntactically valid voice that is not currently advertised
+also returns `422 speech_rejected`. Unavailable, malformed, and timed-out providers map to
+sanitized `503`, `502`, and `504` responses respectively.
 
 ## Attachments and document/image analysis
 
@@ -657,6 +691,13 @@ stable message ID and `pending` or `projected` status. The worker recovers a
 pending projection idempotently. A polling client should treat a conversation
 task as settled only after this status is `projected`, even if the run has
 already reached a terminal status.
+
+`DELETE /v1/conversations/{conversationId}` idempotently removes a
+conversation from owner-visible reads. The API retains a durable tombstone so
+an already-running task can safely project its terminal Vera reply; removal
+does not erase linked tasks, runs, artifacts, or audit events. Removed
+conversations reject new owner messages and cannot be restored through the
+public API.
 
 For owner-controlled orchestration providers, a task may also expose a
 `memoryContextManifest`. It identifies the exact bounded, revisioned memory
@@ -1081,7 +1122,7 @@ Error envelopes use:
 | `409` | `idempotency_key_reused`, `voice_session_active`, `voice_session_not_recoverable`, `voice_delivery_already_settled`, `approval_already_decided`, `concurrent_transition_failed`, `conversation_message_mismatch`, `external_signal_not_active`, `external_signal_scope_mismatch`, `routine_idempotency_key_reused`, `routine_approval_already_decided`, `routine_invalid_transition`, `routine_signal_triage_unavailable`, `routine_signal_scope_changed`, `routine_concurrent_transition_failed`, `change_application_idempotency_key_reused`, `change_application_approval_already_decided`, `change_application_concurrent_transition_failed`, `change_application_not_cancellable`, `software_change_publication_idempotency_key_reused`, `software_change_publication_approval_already_decided`, `software_change_publication_concurrent_transition_failed`, `software_change_publication_not_cancellable`, `development_campaign_idempotency_key_reused`, `development_campaign_approval_already_decided`, `development_campaign_repair_not_available`, `development_campaign_repair_already_decided`, `development_campaign_repair_conflict`, `development_campaign_concurrent_transition_failed`, `development_campaign_not_cancellable`, `stale_source`, `application_conflict`, `publication_conflict`, `campaign_conflict`, `review_required` | The request conflicts with durable, filesystem, or remote state. |
 | `422` | `invalid_attention_decision`, `invalid_project_source`, `routine_proposal_invalid`, `software_change_artifact_required`, `software_change_publication_source_required` | An attention snooze is invalid, a project source is invalid, a routine's trigger, action, and budget disagree, or the selected artifact/application cannot be used for the requested effect. |
 | `502` | `provider_request_rejected`, `provider_response_invalid` | Provider boundary failed while using the diagnostic endpoint. |
-| `503` | `model_not_found`, `provider_unavailable`, `live_voice_disabled`, `publication_unavailable`, `operational_store_unavailable`, `scratchpad_unavailable`, `planning_capability_unavailable`, `software_change_capability_unavailable`, `development_campaign_capability_unavailable`, `capability_unavailable` | A required runtime dependency is unavailable. The response `dependency` identifies a generic capability runtime when applicable. |
+| `503` | `model_not_found`, `provider_unavailable`, `speech_not_configured`, `speech_unavailable`, `live_voice_disabled`, `publication_unavailable`, `operational_store_unavailable`, `scratchpad_unavailable`, `planning_capability_unavailable`, `software_change_capability_unavailable`, `development_campaign_capability_unavailable`, `capability_unavailable` | A required runtime dependency is unavailable. The response `dependency` identifies a generic capability runtime when applicable. |
 | `504` | `provider_timeout` | The model provider exceeded its deadline. |
 | `500` | `internal_error`, `application_failed`, `publication_failed`, `merge_failed`, `synchronization_failed` | An unexpected server or managed-effect failure; details remain in structured logs. |
 

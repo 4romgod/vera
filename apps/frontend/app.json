@@ -22,7 +22,8 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "dev.vera.app"
+      "bundleIdentifier": "dev.vera.app",
+      "bitcode": false
     },
     "android": {
       "package": "dev.vera.app",
@@ -34,7 +35,13 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.CAMERA",
+        "android.permission.INTERNET",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.WAKE_LOCK",
+        "android.permission.BLUETOOTH"
       ]
     },
     "web": {
@@ -47,7 +54,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "f0eca6e6-a27e-4bea-9da4-2686a9f3f163"
+        "projectId": "926773e7-995d-48aa-a46c-75699f1ad41b"
       }
     },
     "owner": "gatherle"

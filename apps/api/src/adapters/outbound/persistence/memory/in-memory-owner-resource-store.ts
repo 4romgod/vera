@@ -138,7 +138,11 @@ export class InMemoryOwnerResourceStore implements OwnerResourceStore {
   ): Promise<ConversationSummary[]> {
     return Promise.resolve(
       [...this.conversations.values()]
-        .filter((conversation) => conversation.principalId === principalId)
+        .filter(
+          (conversation) =>
+            conversation.principalId === principalId &&
+            conversation.status === 'active',
+        )
         .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
         .map((conversation) => {
           const lastMessage = conversation.messages.at(-1);
@@ -146,7 +150,7 @@ export class InMemoryOwnerResourceStore implements OwnerResourceStore {
             schemaVersion: 1 as const,
             id: conversation.id,
             title: conversation.title,
-            status: conversation.status,
+            status: 'active' as const,
             messageCount: conversation.messages.length,
             ...(lastMessage === undefined
               ? {}
@@ -166,6 +170,23 @@ export class InMemoryOwnerResourceStore implements OwnerResourceStore {
     );
   }
 
+  public removeConversation(input: {
+    principalId: string;
+    conversationId: string;
+    removedAt: string;
+  }): Promise<Conversation | null> {
+    const conversation = this.conversations.get(input.conversationId);
+    if (conversation?.principalId !== input.principalId) {
+      return Promise.resolve(null);
+    }
+    if (conversation.status === 'active') {
+      conversation.status = 'removed';
+      conversation.removedAt = input.removedAt;
+      conversation.updatedAt = input.removedAt;
+    }
+    return Promise.resolve(structuredClone(conversation));
+  }
+
   public appendMessage(
     principalId: string,
     conversationId: string,
@@ -176,6 +197,11 @@ export class InMemoryOwnerResourceStore implements OwnerResourceStore {
     message: ConversationMessage;
   }> {
     const conversation = this.requireConversation(principalId, conversationId);
+    if (conversation.status === 'removed' && message.role === 'owner') {
+      return Promise.reject(
+        new Error(`Conversation ${conversationId} was not found.`),
+      );
+    }
     const existing = conversation.messages.find(
       (candidate) =>
         candidate.role === message.role &&

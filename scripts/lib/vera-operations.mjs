@@ -10,6 +10,7 @@ export const repositoryRoot = realpathSync(
 
 export const serviceLabels = Object.freeze({
   livekit: 'dev.vera.livekit',
+  speech: 'dev.vera.speech',
   api: 'dev.vera.api',
   frontend: 'dev.vera.frontend',
   backup: 'dev.vera.backup',
@@ -142,6 +143,34 @@ export function serviceDefinitions(options) {
               ProcessType: 'Background',
               StandardOutPath: join(paths.logsRoot, 'livekit.stdout.log'),
               StandardErrorPath: join(paths.logsRoot, 'livekit.stderr.log'),
+            },
+          },
+        ]),
+    ...(options.speechUvPath === undefined
+      ? []
+      : [
+          {
+            name: 'speech',
+            label: serviceLabels.speech,
+            path: join(paths.launchAgentsRoot, `${serviceLabels.speech}.plist`),
+            configuration: {
+              Label: serviceLabels.speech,
+              ProgramArguments: [
+                options.nodePath,
+                join(repositoryRoot, 'scripts', 'pocket-tts-service.mjs'),
+                '--profile',
+                options.profile,
+                '--command',
+                options.speechUvPath,
+              ],
+              WorkingDirectory: repositoryRoot,
+              EnvironmentVariables: sharedEnvironment,
+              RunAtLoad: true,
+              KeepAlive: true,
+              ThrottleInterval: 10,
+              ProcessType: 'Background',
+              StandardOutPath: join(paths.logsRoot, 'speech.stdout.log'),
+              StandardErrorPath: join(paths.logsRoot, 'speech.stderr.log'),
             },
           },
         ]),

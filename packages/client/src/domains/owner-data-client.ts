@@ -12,9 +12,11 @@ import type {
   PushNotificationStatus,
   AttentionBriefing,
   SpeechTranscriptionResource,
+  GetV1SpeechResponse200,
   TaskResource,
   ProjectResource,
   ConversationResource,
+  DeleteV1ConversationsIdResponse200,
   ArtifactResource,
   CapabilityCatalogResource,
   RunEventsResource,
@@ -32,6 +34,7 @@ import type {
   NotificationStreamEvent,
   PushPreferences,
   SpeechTranscriptionAudio,
+  SpeechSynthesisAudio,
 } from '../sdk-types.ts';
 import {
   zGetV1NotificationsResponse,
@@ -39,6 +42,7 @@ import {
   zPostV1AudioTranscriptionsResponse,
 } from '../generated/zod.gen.ts';
 import {
+  deleteV1ConversationsId,
   deleteV1KnowledgeSourcesId,
   getV1ArtifactsId,
   getV1AttachmentsId,
@@ -86,12 +90,66 @@ import {
   deleteV1VoiceSessionsId,
   getV1Voice,
   getV1VoiceSessionsId,
+  getV1Speech,
   postV1VoiceSessions,
   postV1VoiceSessionsIdDeliveriesDeliveryIdAcknowledgement,
 } from '../generated/sdk.gen.ts';
 import { VeraHttpTransport } from '../http/transport.ts';
 
 export class OwnerDataClient extends VeraHttpTransport {
+  public async getSpeechSynthesisAvailability(): Promise<GetV1SpeechResponse200> {
+    return this.generatedRequest(getV1Speech({ client: this.generatedClient }));
+  }
+
+  public async synthesizeSpeech(input: {
+    text: string;
+    voice?: string;
+    signal?: AbortSignal;
+  }): Promise<SpeechSynthesisAudio> {
+    const response = await this.fetch(`${this.baseUrl}/v1/speech`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        text: input.text,
+        ...(input.voice === undefined ? {} : { voice: input.voice }),
+      }),
+      ...(input.signal === undefined ? {} : { signal: input.signal }),
+    });
+    if (!response.ok) throw await this.apiError(response);
+
+    const contentType = response.headers.get('content-type')?.split(';')[0];
+    if (contentType !== 'audio/wav') {
+      throw new Error(
+        'Vera returned speech audio with an unsupported media type.',
+      );
+    }
+    const contentLength = Number(response.headers.get('content-length'));
+    const maximumBytes = 25_000_000;
+    if (Number.isFinite(contentLength) && contentLength > maximumBytes) {
+      throw new Error(
+        'Vera returned speech audio larger than the client limit.',
+      );
+    }
+    const bytes = await response.arrayBuffer();
+    if (bytes.byteLength < 12 || bytes.byteLength > maximumBytes) {
+      throw new Error('Vera returned invalid speech audio.');
+    }
+    const signature = new TextDecoder('ascii').decode(bytes.slice(0, 12));
+    if (!signature.startsWith('RIFF') || signature.slice(8) !== 'WAVE') {
+      throw new Error('Vera returned invalid WAV speech audio.');
+    }
+    const provider = header(response, 'x-vera-speech-provider');
+    const model = header(response, 'x-vera-speech-model');
+    const voice = header(response, 'x-vera-speech-voice');
+    return {
+      bytes,
+      contentType: 'audio/wav',
+      ...(provider === undefined ? {} : { provider }),
+      ...(model === undefined ? {} : { model }),
+      ...(voice === undefined ? {} : { voice }),
+    };
+  }
+
   public async getLiveVoiceAvailability(): Promise<GetV1VoiceResponse200> {
     return this.generatedRequest(getV1Voice({ client: this.generatedClient }));
   }
@@ -712,6 +770,17 @@ export class OwnerDataClient extends VeraHttpTransport {
     );
   }
 
+  public deleteConversation(
+    conversationId: string,
+  ): Promise<DeleteV1ConversationsIdResponse200> {
+    return this.generatedRequest(
+      deleteV1ConversationsId({
+        client: this.generatedClient,
+        path: { id: conversationId },
+      }),
+    );
+  }
+
   public appendMessage(input: {
     conversationId: string;
     content: string;
@@ -823,4 +892,8 @@ export class OwnerDataClient extends VeraHttpTransport {
       }),
     );
   }
+}
+
+function header(response: Response, name: string): string | undefined {
+  return response.headers.get(name) ?? undefined;
 }

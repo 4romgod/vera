@@ -40,6 +40,31 @@ export function formatConversationTime(
     : updated.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
+export function formatMessageTimestamp(
+  createdAt: string,
+  now = new Date(),
+  locale?: string,
+): string {
+  const created = new Date(createdAt);
+  if (Number.isNaN(created.valueOf())) return '';
+
+  const sameDay = created.toDateString() === now.toDateString();
+  if (sameDay) {
+    return created.toLocaleTimeString(locale, {
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  }
+
+  return created.toLocaleString(locale, {
+    month: 'short',
+    day: 'numeric',
+    year: created.getFullYear() === now.getFullYear() ? undefined : 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 export function groupConversations(
   conversations: ConversationSummaryResource[],
   now = new Date(),

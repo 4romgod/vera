@@ -7,6 +7,10 @@ import { createApp } from './wiring.ts';
 const environmentFiles = loadEnvironmentFiles();
 const config = loadConfig();
 const visionConfig = config.vision ?? config.model;
+const speechConfig = config.speech ?? {
+  provider: 'disabled' as const,
+  maxTextCharacters: 20_000,
+};
 const app = createApp(config, {
   logger: createRuntimeLoggerConfiguration(),
 });
@@ -122,6 +126,18 @@ app.log.info(
               timeoutMs: config.transcription.timeoutMs,
             }),
       },
+      speech:
+        speechConfig.provider === 'pocket_tts'
+          ? {
+              provider: speechConfig.provider,
+              model: 'pocket-tts-3.1.0',
+              voice: speechConfig.voice,
+              dataBoundary: 'owner_controlled',
+              origin: new URL(speechConfig.baseUrl).origin,
+              timeoutMs: speechConfig.timeoutMs,
+              maxAudioBytes: speechConfig.maxAudioBytes,
+            }
+          : { provider: 'disabled' },
       liveVoice:
         config.liveVoice?.enabled === true
           ? {

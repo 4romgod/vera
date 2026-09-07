@@ -72,6 +72,11 @@ erasing why a choice was made.
 | [0048](0048-conduct-live-conversations-through-a-durable-voice-session-adapter.md) | Accepted | Conduct private live conversations through durable turns and write-ahead speech delivery while keeping record-and-review voice available. |
 | [0049](0049-derive-signal-resolution-from-authoritative-work.md) | Accepted | Derive signal progress and final resolution from authoritative task, campaign, and provider observation state. |
 | [0050](0050-act-on-external-signals-under-event-triggered-standing-authority.md) | Accepted | Trigger standing routines from external-signal generations and start bounded triage under separate, expiring, budgeted standing authority. |
+| [0051](0051-select-device-speech-voices-through-local-preferences.md) | Accepted | Select, preview, and tune installed speech voices through versioned device-local preferences shared by every spoken reply. |
+| [0052](0052-separate-settings-and-resize-desktop-workspace-panels.md) | Accepted | Move configuration into a dedicated tabbed Settings route and add bounded, device-local desktop panel resizing. |
+| [0053](0053-synthesize-speech-through-a-local-provider-boundary.md) | Accepted | Synthesize Vera's consistent neural voice through a provider-neutral API port and owner-controlled Pocket TTS sidecar. |
+| [0054](0054-remove-conversations-through-a-durable-tombstone.md) | Accepted | Remove conversations from owner-visible history while retaining a minimal tombstone for task settlement and audit integrity. |
+| [0055](0055-select-neural-and-device-fallback-voices-explicitly.md) | Accepted | Discover allowed neural voices through Vera and keep neural and device-fallback selection and preview behavior explicit. |
 
 ADRs 0001–0008 were accepted 24 August 2026 following the owner's review of
 the foundation documentation. ADR-0007 accepted a semantic boundary without
@@ -188,6 +193,22 @@ schedule. A separately approved, expiring, budgeted signal-triage routine turns
 each matching signal generation into exactly one durable occurrence and enters
 the ADR-0047 lifecycle by itself. Observation authority still grants nothing,
 and every consequential effect keeps its own approval.
+ADR-0051 turns device speech from an arbitrary platform default into an
+intentional part of Vera's interface. The frontend ranks and previews installed
+voices, applies one bounded rate and pitch to every spoken reply, and persists
+the platform-specific choice only on the device where it is valid.
+ADR-0052 separates configuration from active work with a dedicated Settings
+route and reserves the inspector for contextual resources. Desktop panel borders
+become bounded, accessible resize handles whose final widths remain local to the
+device; compact drawers and sheets are unchanged.
+ADR-0053 makes owner-controlled neural speech the configurable server path.
+Pocket TTS runs behind a locked, loopback-only Python sidecar and a
+provider-neutral TypeScript port; clients receive bounded WAV audio while
+device speech remains an explicit fallback rather than Vera's identity.
+ADR-0055 lets the owner select among neural voices currently advertised by the
+configured provider without confusing them with operating-system fallback
+voices. Neural and fallback previews use their named engines, and an unavailable
+neural provider never causes a silent change of voice.
 
 ## ADR rules
 
