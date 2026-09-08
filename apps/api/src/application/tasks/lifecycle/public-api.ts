@@ -14,6 +14,7 @@ import type { TaskLifecycleAdaptiveGoalOperations } from './adaptive-goal.ts';
 import type { TaskLifecycleEvaluationOperations } from './evaluation.ts';
 import type { TaskLifecycleExecutionOperations } from './execution.ts';
 import type { TaskLifecycleProgressOperations } from './progress.ts';
+import { RunBudgetSchema } from '../../../domain/tasks/run-budget.ts';
 
 export function createTaskLifecycleApi(
   runtime: TaskLifecycleRuntime,
@@ -42,6 +43,10 @@ export function createTaskLifecycleApi(
   } = operations;
   return {
     async submit(input) {
+      const assignedBudget = RunBudgetSchema.parse({
+        limits: input.budgetLimits ?? budget.limits,
+        consumed: { modelCalls: 0, capabilityInvocations: 0, retries: 0 },
+      });
       const existing = await options.store.findByRequestKey(
         input.principalId,
         input.requestKey,
@@ -95,7 +100,7 @@ export function createTaskLifecycleApi(
           sequence: 3,
           type: 'budget_assigned',
           occurredAt: now,
-          data: { limits: budget.limits },
+          data: { limits: assignedBudget.limits },
         },
       ];
       if (conversationContext !== undefined) {
@@ -182,7 +187,7 @@ export function createTaskLifecycleApi(
           status: 'deciding',
           createdAt: now,
           updatedAt: now,
-          budget: structuredClone(budget),
+          budget: structuredClone(assignedBudget),
           ...(conversationContext === undefined ? {} : { conversationContext }),
           ...(memoryContext === undefined ? {} : { memoryContext }),
           ...(externalSignalContext === undefined

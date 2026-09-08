@@ -9,6 +9,7 @@ import type {
 } from '@vera/client';
 
 import {
+  adoptedWorkspaceSummary,
   isSafeGitHubPullRequestUrl,
   publicationDraftForArtifact,
   selectDeliveryApplication,
@@ -33,6 +34,53 @@ function publication(
 }
 
 void describe('software delivery presentation', () => {
+  void it('summarizes the exact adopted working-tree provenance', () => {
+    assert.equal(
+      adoptedWorkspaceSummary({
+        mode: 'adopted',
+        snapshot: {
+          schemaVersion: 1,
+          baseRevision: 'a'.repeat(40),
+          snapshotSha256: 'b'.repeat(64),
+          patchSha256: 'c'.repeat(64),
+          files: [
+            {
+              relativePath: 'staged.ts',
+              operation: 'create',
+              afterSha256: 'd'.repeat(64),
+              bytes: 1,
+              staged: true,
+              unstaged: false,
+              untracked: false,
+            },
+            {
+              relativePath: 'both.ts',
+              operation: 'update',
+              beforeSha256: 'e'.repeat(64),
+              afterSha256: 'f'.repeat(64),
+              bytes: 2,
+              staged: true,
+              unstaged: true,
+              untracked: false,
+            },
+            {
+              relativePath: 'new.ts',
+              operation: 'create',
+              afterSha256: '1'.repeat(64),
+              bytes: 3,
+              staged: false,
+              unstaged: true,
+              untracked: true,
+            },
+          ],
+          totalFiles: 3,
+          totalBytes: 6,
+        },
+      }),
+      '3 existing files · 2 staged · 1 unstaged · 1 untracked',
+    );
+    assert.equal(adoptedWorkspaceSummary({ mode: 'clean' }), undefined);
+  });
   void it('finds software changes produced directly or through a goal', () => {
     const direct = {
       output: {

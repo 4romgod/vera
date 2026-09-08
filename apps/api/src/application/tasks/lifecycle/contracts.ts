@@ -57,6 +57,7 @@ export type TaskLifecycle = {
     messageId?: string;
     attachments?: AttachmentReference[];
     externalSignalId?: string;
+    budgetLimits?: RunBudget['limits'];
   }): Promise<TaskAggregate>;
   getTask(principalId: string, taskId: string): Promise<TaskAggregate>;
   getRun(principalId: string, runId: string): Promise<TaskAggregate>;

@@ -289,8 +289,12 @@ export function useSpokenReply(options: {
         if (generation.current !== nextGeneration) return;
         await audioPlayer.play(audio.bytes);
       } catch {
-        if (!controller.signal.aborted && generation.current === nextGeneration)
+        if (
+          !controller.signal.aborted &&
+          generation.current === nextGeneration
+        ) {
           onError.current('Vera could not preview this neural voice.');
+        }
       } finally {
         if (synthesisAbort.current === controller)
           synthesisAbort.current = undefined;

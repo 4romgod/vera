@@ -134,8 +134,17 @@ export class OwnerDataClient extends VeraHttpTransport {
     if (bytes.byteLength < 12 || bytes.byteLength > maximumBytes) {
       throw new Error('Vera returned invalid speech audio.');
     }
-    const signature = new TextDecoder('ascii').decode(bytes.slice(0, 12));
-    if (!signature.startsWith('RIFF') || signature.slice(8) !== 'WAVE') {
+    const signature = new Uint8Array(bytes, 0, 12);
+    if (
+      signature[0] !== 0x52 ||
+      signature[1] !== 0x49 ||
+      signature[2] !== 0x46 ||
+      signature[3] !== 0x46 ||
+      signature[8] !== 0x57 ||
+      signature[9] !== 0x41 ||
+      signature[10] !== 0x56 ||
+      signature[11] !== 0x45
+    ) {
       throw new Error('Vera returned invalid WAV speech audio.');
     }
     const provider = header(response, 'x-vera-speech-provider');

@@ -6,6 +6,10 @@ import {
 } from '../../../domain/artifacts/artifact.ts';
 import { sameCapabilityDestination } from '../../../domain/capabilities/capability-destination.ts';
 import {
+  sameWorkingTreeSnapshotReference,
+  workingTreeSnapshotReference,
+} from '../../../domain/projects/project-context.ts';
+import {
   CapabilityInvocationSchema,
   type TaskAggregate,
 } from '../../../domain/tasks/task-aggregate.ts';
@@ -97,6 +101,9 @@ export function createExecutionOperations(
           ...(candidate.run.approval.contextManifest === undefined
             ? {}
             : { contextManifest: candidate.run.approval.contextManifest }),
+          ...(candidate.run.approval.workingTree === undefined
+            ? {}
+            : { workingTree: candidate.run.approval.workingTree }),
           ...(candidate.run.approval.destination === undefined
             ? {}
             : { destination: candidate.run.approval.destination }),
@@ -623,6 +630,16 @@ export function createExecutionOperations(
         );
       }
       if (
+        !sameWorkingTreeSnapshotReference(
+          claimedInvocation.workingTree,
+          executionAggregate.run.approval?.workingTree,
+        )
+      ) {
+        throw new Error(
+          'The claimed working-tree snapshot differs from the approved snapshot.',
+        );
+      }
+      if (
         !sameArtifactReferences(
           claimedInvocation.decisionEvidence,
           executionAggregate.run.approval?.decisionEvidence,
@@ -692,6 +709,18 @@ export function createExecutionOperations(
       }
       if (context !== undefined && projectReference !== undefined) {
         assertProjectContextIntegrity(context, projectReference.id);
+        if (
+          !sameWorkingTreeSnapshotReference(
+            context.workingTree === undefined
+              ? undefined
+              : workingTreeSnapshotReference(context.workingTree),
+            claimedInvocation.workingTree,
+          )
+        ) {
+          throw new Error(
+            'The authoritative project context differs from the approved working-tree snapshot.',
+          );
+        }
       }
       const activeGoal = executionAggregate.run.goal;
       if (activeGoal !== undefined) {

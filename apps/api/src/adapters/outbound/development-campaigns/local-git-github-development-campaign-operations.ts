@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { isAbsolute, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
-import { promisify } from 'node:util';
+import { isDeepStrictEqual, promisify } from 'node:util';
 import { z } from 'zod';
 
 import type { SoftwareChangePublication } from '../../../domain/changes/software-change-publication.ts';
@@ -16,7 +16,12 @@ import {
   type DevelopmentCampaignEffect,
   type DevelopmentCampaignRepair,
 } from '../../../domain/development-campaigns/development-campaign.ts';
+import { matchesAdoptedWorkspaceFile } from '../../../domain/development-campaigns/development-campaign-workspace.ts';
 import type { Project } from '../../../domain/projects/project.ts';
+import {
+  workingTreeSnapshotReference,
+  type WorkingTreeSnapshot,
+} from '../../../domain/projects/project-context.ts';
 import {
   DevelopmentCampaignOperationError,
   type DevelopmentCampaignOperations,
@@ -25,6 +30,10 @@ import {
   boundedEvidenceText,
   readGitHubReviewEvidence,
 } from './github-review-evidence.ts';
+import {
+  inspectLocalGitWorkingTree,
+  WorkingTreeInspectionError,
+} from '../project-context/local-git-working-tree.ts';
 
 const executeFile = promisify(execFile);
 const maxCommandOutputBytes = 8_000;
@@ -370,12 +379,29 @@ function pathIsProtected(path: string, prefixes: readonly string[]) {
   });
 }
 
+function adoptedWorkspaceLimits(limits: DevelopmentCampaignEffect['limits']) {
+  return {
+    maxFiles: limits.maxChangedFiles,
+    maxBytes: limits.maxChangedBytes,
+    maxFileBytes: limits.maxChangedBytes,
+    maxPatchBytes: 1_000_000,
+  };
+}
+
 export class LocalGitGitHubDevelopmentCampaignOperations
   implements DevelopmentCampaignOperations
 {
   public readonly adapterId = 'local_git_github' as const;
   private readonly run: CommandRunner;
   private readonly clock: () => string;
+  private readonly inspectWorkingTree: (input: {
+    rootPath: string;
+    maxFiles?: number;
+    maxBytes?: number;
+    maxFileBytes?: number;
+    maxPatchBytes?: number;
+    clock?: () => string;
+  }) => Promise<WorkingTreeSnapshot | null>;
 
   public constructor(
     private readonly options: {
@@ -384,10 +410,13 @@ export class LocalGitGitHubDevelopmentCampaignOperations
       ghCommand?: string;
       run?: CommandRunner;
       clock?: () => string;
+      inspectWorkingTree?: typeof inspectLocalGitWorkingTree;
     },
   ) {
     this.run = options.run ?? defaultRunner;
     this.clock = options.clock ?? (() => new Date().toISOString());
+    this.inspectWorkingTree =
+      options.inspectWorkingTree ?? inspectLocalGitWorkingTree;
   }
 
   public async checkReadiness() {
@@ -395,6 +424,20 @@ export class LocalGitGitHubDevelopmentCampaignOperations
       this.run(this.gitCommand, ['--version']),
       this.run(this.ghCommand, ['auth', 'status']),
     ]);
+  }
+
+  private async captureWorkingTree(
+    input: Parameters<typeof inspectLocalGitWorkingTree>[0],
+    failureCode: 'campaign_conflict' | 'review_required',
+  ) {
+    try {
+      return await this.inspectWorkingTree(input);
+    } catch (error) {
+      if (error instanceof WorkingTreeInspectionError) {
+        throw new DevelopmentCampaignOperationError(error.message, failureCode);
+      }
+      throw error;
+    }
   }
 
   public listPolicies(projects: Project[]) {
@@ -453,25 +496,27 @@ export class LocalGitGitHubDevelopmentCampaignOperations
         );
       }
     }
-    const [branch, head, remoteHead, remote, status] = await Promise.all([
+    const [branch, head, remoteHead, remote, workingTree] = await Promise.all([
       this.git(projectRoot, ['branch', '--show-current']),
       this.git(projectRoot, ['rev-parse', 'HEAD']),
       this.remoteRevision(projectRoot, policy.baseBranch),
       this.git(projectRoot, ['remote', 'get-url', 'origin']),
-      this.git(projectRoot, [
-        'status',
-        '--porcelain=v1',
-        '--untracked-files=all',
-      ]),
+      this.captureWorkingTree(
+        {
+          rootPath: projectRoot,
+          ...adoptedWorkspaceLimits(policy.limits),
+          clock: this.clock,
+        },
+        'campaign_conflict',
+      ),
     ]);
     if (
       trim(branch.stdout) !== policy.baseBranch ||
       remoteHead === null ||
-      trim(head.stdout) !== remoteHead ||
-      trim(status.stdout).length > 0
+      trim(head.stdout) !== remoteHead
     ) {
       throw new DevelopmentCampaignOperationError(
-        'The project must be clean, on the configured base branch, and synchronized with origin before campaign approval.',
+        'The project must be on the configured base branch and synchronized with origin before campaign approval.',
         'campaign_conflict',
       );
     }
@@ -490,6 +535,13 @@ export class LocalGitGitHubDevelopmentCampaignOperations
       repository: parseGitHubRemote(remote.stdout),
       baseBranch: policy.baseBranch,
       baseRevision: remoteHead,
+      workspace:
+        workingTree === null
+          ? { mode: 'clean' }
+          : {
+              mode: 'adopted',
+              snapshot: workingTreeSnapshotReference(workingTree),
+            },
       objective: input.objective,
       ticket: input.ticket,
       delivery: input.delivery,
@@ -514,7 +566,10 @@ export class LocalGitGitHubDevelopmentCampaignOperations
       },
       authority: {
         implementation: 'bounded_capabilities',
-        application: 'exact_generated_patch',
+        application:
+          workingTree === null
+            ? 'exact_generated_patch'
+            : 'exact_adopted_and_generated_patch',
         verification: 'configured_commands',
         publication: 'create_one_pull_request',
         observation: 'github_checks_and_reviews',
@@ -539,24 +594,35 @@ export class LocalGitGitHubDevelopmentCampaignOperations
         'campaign_conflict',
       );
     }
-    const [branch, head, remoteHead, status] = await Promise.all([
+    const [branch, head, remoteHead, workingTree] = await Promise.all([
       this.git(input.project.source.rootPath, ['branch', '--show-current']),
       this.git(input.project.source.rootPath, ['rev-parse', 'HEAD']),
       this.remoteRevision(
         input.project.source.rootPath,
         input.effect.baseBranch,
       ),
-      this.git(input.project.source.rootPath, [
-        'status',
-        '--porcelain=v1',
-        '--untracked-files=all',
-      ]),
+      this.captureWorkingTree(
+        {
+          rootPath: input.project.source.rootPath,
+          ...adoptedWorkspaceLimits(input.effect.limits),
+          clock: this.clock,
+        },
+        'review_required',
+      ),
     ]);
+    const expectedWorkspace = input.effect.workspace ?? { mode: 'clean' };
+    const currentWorkspace =
+      workingTree === null
+        ? { mode: 'clean' as const }
+        : {
+            mode: 'adopted' as const,
+            snapshot: workingTreeSnapshotReference(workingTree),
+          };
     if (
       trim(branch.stdout) !== input.effect.baseBranch ||
       trim(head.stdout) !== input.effect.baseRevision ||
       remoteHead !== input.effect.baseRevision ||
-      trim(status.stdout).length > 0
+      !isDeepStrictEqual(currentWorkspace, expectedWorkspace)
     ) {
       throw new DevelopmentCampaignOperationError(
         'The project base changed after campaign approval.',
@@ -591,8 +657,10 @@ export class LocalGitGitHubDevelopmentCampaignOperations
     if (
       result.files.length > effect.limits.maxChangedFiles ||
       changedBytes > effect.limits.maxChangedBytes ||
-      result.files.some((file) =>
-        pathIsProtected(file.relativePath, effect.protectedPathPrefixes),
+      result.files.some(
+        (file) =>
+          pathIsProtected(file.relativePath, effect.protectedPathPrefixes) &&
+          !matchesAdoptedWorkspaceFile(effect, file),
       )
     ) {
       throw new DevelopmentCampaignOperationError(

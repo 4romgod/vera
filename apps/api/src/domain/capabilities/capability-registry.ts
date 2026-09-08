@@ -310,7 +310,7 @@ export const CapabilityDefinitions = [
     name: 'mission_management',
     version: 1,
     description:
-      'Draft one bounded, owner-approved software mission that may produce one verified pull request and can never merge it.',
+      'Draft one bounded, owner-approved end-to-end software mission that may review and complete existing project changes, produce one verified pull request, and can never merge it.',
     proposalArgumentsSchema: MissionProposalArgumentsSchema,
     effect: 'owner_state',
     artifact: {

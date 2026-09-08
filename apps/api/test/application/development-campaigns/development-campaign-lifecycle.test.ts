@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { describe, it } from 'node:test';
 
 import { InMemoryDevelopmentCampaignStore } from '../../../src/adapters/outbound/persistence/memory/in-memory-development-campaign-store.ts';
@@ -14,6 +15,11 @@ import type { SoftwareChangeApplication } from '../../../src/domain/changes/soft
 import type { SoftwareChangePublication } from '../../../src/domain/changes/software-change-publication.ts';
 import type { DevelopmentCampaignEffect } from '../../../src/domain/development-campaigns/development-campaign.ts';
 import type { Project } from '../../../src/domain/projects/project.ts';
+import {
+  workingTreeSnapshotHashPayload,
+  workingTreeSnapshotReference,
+  type WorkingTreeSnapshot,
+} from '../../../src/domain/projects/project-context.ts';
 import type { TaskAggregate } from '../../../src/domain/tasks/task-aggregate.ts';
 import type { CapabilityRuntimeRegistry } from '../../../src/ports/capabilities/capability-runtime.ts';
 import type { DevelopmentCampaignOperations } from '../../../src/ports/development-campaigns/development-campaign-operations.ts';
@@ -42,6 +48,55 @@ const destination = {
   transport: 'local_process',
   dataBoundary: 'third_party' as const,
 };
+
+const ownerBaseline = 'before\n';
+const ownerCurrent = 'owner change\n';
+
+function ownerWorkingTree(): WorkingTreeSnapshot {
+  const patch = [
+    'diff --git a/README.md b/README.md',
+    '--- a/README.md',
+    '+++ b/README.md',
+    '@@ -1 +1 @@',
+    '-before',
+    '+owner change',
+    '',
+  ].join('\n');
+  const files = [
+    {
+      relativePath: 'README.md',
+      operation: 'update' as const,
+      beforeSha256: createHash('sha256').update(ownerBaseline).digest('hex'),
+      afterSha256: createHash('sha256').update(ownerCurrent).digest('hex'),
+      bytes: Buffer.byteLength(ownerCurrent),
+      staged: true,
+      unstaged: false,
+      untracked: false,
+    },
+  ];
+  const patchSha256 = createHash('sha256').update(patch).digest('hex');
+  return {
+    schemaVersion: 1,
+    baseRevision,
+    patch,
+    patchSha256,
+    snapshotSha256: createHash('sha256')
+      .update(
+        JSON.stringify(
+          workingTreeSnapshotHashPayload({
+            baseRevision,
+            patchSha256,
+            files,
+          }),
+        ),
+      )
+      .digest('hex'),
+    files,
+    totalFiles: 1,
+    totalBytes: Buffer.byteLength(ownerCurrent),
+    capturedAt: now,
+  };
+}
 
 function project(): Project {
   return {
@@ -75,6 +130,7 @@ function task(
     },
   },
   projectRevision = baseRevision,
+  workingTree?: WorkingTreeSnapshot,
 ): TaskAggregate {
   const artifactId = `artifact_attempt_${String(attempt)}`;
   const approval =
@@ -101,6 +157,9 @@ function task(
             limits: { maxFiles: 100, maxFileBytes: 1, maxTotalBytes: 1 },
             exclusions: [],
           },
+          ...(workingTree === undefined
+            ? {}
+            : { workingTree: workingTreeSnapshotReference(workingTree) }),
           destination,
           authority: softwareAuthority,
           requestedAt: now,
@@ -140,6 +199,48 @@ function task(
         },
       },
       ...(approval === undefined ? {} : { approval }),
+      ...(workingTree === undefined
+        ? {}
+        : {
+            context: {
+              manifest: {
+                schemaVersion: 1,
+                projectId: 'project_campaign',
+                sourceKind: 'local_git',
+                revision: projectRevision,
+                generatedAt: now,
+                entries: [
+                  {
+                    relativePath: 'README.md',
+                    sha256: createHash('sha256')
+                      .update(ownerBaseline)
+                      .digest('hex'),
+                    bytes: Buffer.byteLength(ownerBaseline),
+                    selectionReason: 'Owner working-tree baseline.',
+                    classification: 'documentation',
+                  },
+                ],
+                totalFiles: 1,
+                totalBytes: Buffer.byteLength(ownerBaseline),
+                limits: {
+                  maxFiles: 20,
+                  maxBytes: 10_000,
+                  maxFileBytes: 10_000,
+                },
+                exclusions: [],
+              },
+              documents: [
+                {
+                  relativePath: 'README.md',
+                  sha256: createHash('sha256')
+                    .update(ownerBaseline)
+                    .digest('hex'),
+                  content: ownerBaseline,
+                },
+              ],
+              workingTree,
+            },
+          }),
       ...(status === 'succeeded'
         ? {
             output: {
@@ -294,12 +395,20 @@ async function setup(
     protectedPath?: boolean;
     pendingRemoteChecks?: boolean;
     failedRemoteChecks?: boolean;
+    adoptOwnerChanges?: boolean;
   } = {},
 ) {
   const resources = new InMemoryOwnerResourceStore();
   await resources.createProject(project());
   const store = new InMemoryDevelopmentCampaignStore();
   let taskAttempt = 0;
+  let initialSubmissionHadRevision: boolean | undefined;
+  let initialBudgetLimits:
+    | Parameters<TaskLifecycle['submit']>[0]['budgetLimits']
+    | undefined;
+  const workingTree = options.adoptOwnerChanges
+    ? ownerWorkingTree()
+    : undefined;
   const tasks = new Map<string, TaskAggregate>();
   const submissions = new Map<
     number,
@@ -312,8 +421,12 @@ async function setup(
     }
   >();
   const taskLifecycle = {
-    submit(input: { message: string; projectRevision?: string }) {
+    submit(input: Parameters<TaskLifecycle['submit']>[0]) {
       taskAttempt += 1;
+      if (taskAttempt === 1) {
+        initialSubmissionHadRevision = input.projectRevision !== undefined;
+        initialBudgetLimits = input.budgetLimits;
+      }
       const objective = /Use objective exactly: ([^\n]+)/u.exec(
         input.message,
       )?.[1];
@@ -338,7 +451,13 @@ async function setup(
             };
       const revision = input.projectRevision ?? baseRevision;
       submissions.set(taskAttempt, { requested, revision });
-      const aggregate = task(taskAttempt, 'deciding', requested, revision);
+      const aggregate = task(
+        taskAttempt,
+        'deciding',
+        requested,
+        revision,
+        workingTree,
+      );
       tasks.set(aggregate.task.id, aggregate);
       return Promise.resolve(aggregate);
     },
@@ -353,6 +472,7 @@ async function setup(
         'awaiting_approval',
         submission.requested,
         submission.revision,
+        workingTree,
       );
       tasks.set(taskId, aggregate);
       return Promise.resolve(structuredClone(aggregate));
@@ -365,6 +485,7 @@ async function setup(
         'succeeded',
         submission.requested,
         submission.revision,
+        workingTree,
       );
       tasks.set(aggregate.task.id, aggregate);
       return Promise.resolve(structuredClone(aggregate));
@@ -476,6 +597,22 @@ async function setup(
         repository: { owner: 'owner', name: 'vera' },
         baseBranch: 'main',
         baseRevision,
+        ...(workingTree === undefined
+          ? {}
+          : {
+              workspace: {
+                mode: 'adopted' as const,
+                snapshot: {
+                  schemaVersion: 1 as const,
+                  baseRevision: workingTree.baseRevision,
+                  snapshotSha256: workingTree.snapshotSha256,
+                  patchSha256: workingTree.patchSha256,
+                  files: workingTree.files,
+                  totalFiles: workingTree.totalFiles,
+                  totalBytes: workingTree.totalBytes,
+                },
+              },
+            }),
         objective: input.objective,
         ticket: input.ticket,
         delivery: input.delivery,
@@ -507,7 +644,10 @@ async function setup(
         },
         authority: {
           implementation: 'bounded_capabilities',
-          application: 'exact_generated_patch',
+          application:
+            workingTree === undefined
+              ? 'exact_generated_patch'
+              : 'exact_adopted_and_generated_patch',
           verification: 'configured_commands',
           publication: 'create_one_pull_request',
           observation: 'github_checks_and_reviews',
@@ -610,6 +750,8 @@ async function setup(
     verificationCalls: () => verificationCalls,
     observationCalls: () => observationCalls,
     mergeCalls: () => mergeCalls,
+    initialSubmissionHadRevision: () => initialSubmissionHadRevision,
+    initialBudgetLimits: () => initialBudgetLimits,
   };
 }
 
@@ -681,6 +823,23 @@ void describe('development campaign lifecycle', () => {
     assert.equal(completed.result.mergeRevision, mergeRevision);
     assert.equal(completed.result.baseRevision, mergeRevision);
     assert.equal(completed.approval.effect.authority.directBasePush, false);
+  });
+
+  void it('delegates an exact adopted working tree without forcing clean-revision context', async () => {
+    const value = await setup({ adoptOwnerChanges: true });
+    const approved = await createApproved(value.lifecycle);
+    const completed = await runToTerminal(value.lifecycle, approved.id);
+
+    assert.equal(
+      completed.status,
+      'succeeded',
+      JSON.stringify(completed.failure),
+    );
+    assert.equal(completed.approval.effect.workspace?.mode, 'adopted');
+    assert.equal(value.initialSubmissionHadRevision(), false);
+    assert.equal(value.initialBudgetLimits()?.maxContextFileBytes, 40_000);
+    assert.equal(value.initialBudgetLimits()?.maxContextBytes, 210_000);
+    assert.equal(value.initialBudgetLimits()?.maxArtifactBytes, 210_000);
   });
 
   void it('stops at a verified pull request when merge authority is prohibited', async () => {

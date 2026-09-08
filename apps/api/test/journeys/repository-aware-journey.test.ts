@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { mkdtemp, mkdir, rm, unlink, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import {
+  chmod,
+  mkdtemp,
+  mkdir,
+  rm,
+  symlink,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, it } from 'node:test';
@@ -412,7 +421,178 @@ void describe('generic repository-aware planning journey', () => {
     );
   });
 
-  void it('omits a tracked file deleted from the working tree', async () => {
+  void it('freezes staged, unstaged, and untracked provenance in one exact snapshot', async () => {
+    const rootPath = await createRepository({
+      name: 'mixed-working-tree',
+      sourceMarker: 'clean-marker',
+    });
+    const sourcePath = join(rootPath, 'src', 'request-tracing.ts');
+    await writeFile(
+      sourcePath,
+      'export const repositoryMarker = "staged-marker";\n',
+    );
+    await executeFile('git', ['add', 'src/request-tracing.ts'], {
+      cwd: rootPath,
+    });
+    await writeFile(
+      sourcePath,
+      'export const repositoryMarker = "final-marker";\n',
+    );
+
+    const bundle = await new LocalGitProjectContextAssembler().assemble({
+      project: {
+        schemaVersion: 1,
+        id: 'project_mixed_working_tree',
+        principalId: 'owner_v1',
+        registrationKey: 'mixed-working-tree',
+        displayName: 'Mixed working tree',
+        normalizedName: 'mixed working tree',
+        source: { kind: 'local_git', rootPath },
+        status: 'active',
+        createdAt: '2026-08-25T00:00:00.000Z',
+        updatedAt: '2026-08-25T00:00:00.000Z',
+      },
+      objective: 'Complete request tracing from the current work.',
+      ticket: {
+        reference: 'MIXED-1',
+        details: 'Review and complete current request tracing.',
+      },
+      limits: { maxFiles: 10, maxBytes: 50_000, maxFileBytes: 20_000 },
+    });
+
+    const workingTree = bundle.workingTree;
+    assert.ok(workingTree);
+    const source = workingTree.files.find(
+      (file) => file.relativePath === 'src/request-tracing.ts',
+    );
+    const untracked = workingTree.files.find(
+      (file) => file.relativePath === 'untracked.txt',
+    );
+    assert.equal(source?.operation, 'update');
+    assert.equal(source.staged, true);
+    assert.equal(source.unstaged, true);
+    assert.equal(untracked?.operation, 'create');
+    assert.equal(untracked.untracked, true);
+    assert.match(workingTree.patch, /final-marker/u);
+    assert.doesNotMatch(workingTree.patch, /staged-marker/u);
+  });
+
+  void it('rejects changed credential-like files instead of omitting them', async () => {
+    const rootPath = await createRepository({
+      name: 'unsafe-working-tree',
+      sourceMarker: 'clean-marker',
+    });
+    await writeFile(join(rootPath, '.env'), 'SECRET_VALUE=changed\n');
+
+    await assert.rejects(
+      new LocalGitProjectContextAssembler().assemble({
+        project: {
+          schemaVersion: 1,
+          id: 'project_unsafe_working_tree',
+          principalId: 'owner_v1',
+          registrationKey: 'unsafe-working-tree',
+          displayName: 'Unsafe working tree',
+          normalizedName: 'unsafe working tree',
+          source: { kind: 'local_git', rootPath },
+          status: 'active',
+          createdAt: '2026-08-25T00:00:00.000Z',
+          updatedAt: '2026-08-25T00:00:00.000Z',
+        },
+        objective: 'Complete request tracing from the current work.',
+        ticket: {
+          reference: 'UNSAFE-1',
+          details: 'Review and complete current request tracing.',
+        },
+        limits: { maxFiles: 10, maxBytes: 50_000, maxFileBytes: 20_000 },
+      }),
+      /unsafe path: \.env/u,
+    );
+  });
+
+  void it('rejects executable additions and deleted symlinks', async () => {
+    const executableRoot = await createRepository({
+      name: 'executable-working-tree',
+      sourceMarker: 'clean-marker',
+    });
+    const executablePath = join(executableRoot, 'run.sh');
+    await writeFile(executablePath, '#!/bin/sh\nexit 0\n');
+    await chmod(executablePath, 0o755);
+
+    await assert.rejects(
+      new LocalGitProjectContextAssembler().assemble({
+        project: {
+          schemaVersion: 1,
+          id: 'project_executable_working_tree',
+          principalId: 'owner_v1',
+          registrationKey: 'executable-working-tree',
+          displayName: 'Executable working tree',
+          normalizedName: 'executable working tree',
+          source: { kind: 'local_git', rootPath: executableRoot },
+          status: 'active',
+          createdAt: '2026-08-25T00:00:00.000Z',
+          updatedAt: '2026-08-25T00:00:00.000Z',
+        },
+        objective: 'Complete request tracing from the current work.',
+        ticket: {
+          reference: 'EXECUTABLE-1',
+          details: 'Review and complete current request tracing.',
+        },
+        limits: { maxFiles: 10, maxBytes: 50_000, maxFileBytes: 20_000 },
+      }),
+      /not a supported non-executable regular file/u,
+    );
+
+    const symlinkRoot = await createRepository({
+      name: 'symlink-working-tree',
+      sourceMarker: 'clean-marker',
+    });
+    const symlinkPath = join(symlinkRoot, 'src', 'request-tracing-link.ts');
+    await symlink('request-tracing.ts', symlinkPath);
+    await executeFile('git', ['add', 'src/request-tracing-link.ts'], {
+      cwd: symlinkRoot,
+    });
+    await executeFile(
+      'git',
+      [
+        '-c',
+        'user.name=Vera Test',
+        '-c',
+        'user.email=vera-test@example.invalid',
+        'commit',
+        '--quiet',
+        '-m',
+        'symlink fixture',
+      ],
+      { cwd: symlinkRoot },
+    );
+    await unlink(symlinkPath);
+
+    await assert.rejects(
+      new LocalGitProjectContextAssembler().assemble({
+        project: {
+          schemaVersion: 1,
+          id: 'project_symlink_working_tree',
+          principalId: 'owner_v1',
+          registrationKey: 'symlink-working-tree',
+          displayName: 'Symlink working tree',
+          normalizedName: 'symlink working tree',
+          source: { kind: 'local_git', rootPath: symlinkRoot },
+          status: 'active',
+          createdAt: '2026-08-25T00:00:00.000Z',
+          updatedAt: '2026-08-25T00:00:00.000Z',
+        },
+        objective: 'Complete request tracing from the current work.',
+        ticket: {
+          reference: 'SYMLINK-1',
+          details: 'Review and complete current request tracing.',
+        },
+        limits: { maxFiles: 10, maxBytes: 50_000, maxFileBytes: 20_000 },
+      }),
+      /not a supported non-executable regular file/u,
+    );
+  });
+
+  void it('captures a tracked deletion while preserving its immutable baseline', async () => {
     const rootPath = await createRepository({
       name: 'deleted-file',
       sourceMarker: 'removed-before-assembly',
@@ -437,16 +617,112 @@ void describe('generic repository-aware planning journey', () => {
       limits: { maxFiles: 10, maxBytes: 50_000, maxFileBytes: 20_000 },
     });
 
-    assert.equal(bundle.manifest.revision.endsWith('+working-tree'), true);
-    assert.equal(
-      bundle.manifest.entries.some(
-        (entry) => entry.relativePath === 'src/request-tracing.ts',
-      ),
-      false,
-    );
-    assert.doesNotMatch(
+    const revision = (
+      await executeFile('git', ['rev-parse', 'HEAD'], { cwd: rootPath })
+    ).stdout.trim();
+    assert.equal(bundle.manifest.revision, revision);
+    assert.equal(bundle.workingTree?.baseRevision, revision);
+    assert.deepEqual(bundle.workingTree.files, [
+      {
+        relativePath: 'src/request-tracing.ts',
+        operation: 'delete',
+        beforeSha256: createHash('sha256')
+          .update(
+            'export const repositoryMarker = "removed-before-assembly";\n',
+          )
+          .digest('hex'),
+        bytes: 0,
+        staged: false,
+        unstaged: true,
+        untracked: false,
+      },
+      {
+        relativePath: 'untracked.txt',
+        operation: 'create',
+        afterSha256: createHash('sha256')
+          .update('must-not-be-selected\n')
+          .digest('hex'),
+        bytes: Buffer.byteLength('must-not-be-selected\n'),
+        staged: false,
+        unstaged: true,
+        untracked: true,
+      },
+    ]);
+    assert.match(
       bundle.documents.map((document) => document.content).join('\n'),
       /removed-before-assembly/u,
+    );
+  });
+
+  void it('adopts a lockfile-sized tracked change when campaign limits authorize it', async () => {
+    const rootPath = await createRepository({
+      name: 'large-lockfile',
+      sourceMarker: 'large-lockfile-marker',
+    });
+    const lockPath = join(rootPath, 'package-lock.json');
+    const original = `${Array.from(
+      { length: 22_000 },
+      (_, index) => `"dependency-${String(index)}": "1.0.0"`,
+    ).join('\n')}\n`;
+    await writeFile(lockPath, original);
+    await executeFile('git', ['add', 'package-lock.json'], { cwd: rootPath });
+    await executeFile(
+      'git',
+      [
+        '-c',
+        'user.name=Vera Test',
+        '-c',
+        'user.email=vera-test@example.invalid',
+        'commit',
+        '--quiet',
+        '-m',
+        'large lock fixture',
+      ],
+      { cwd: rootPath },
+    );
+    const updated = original.replace(
+      '"dependency-11000": "1.0.0"',
+      '"dependency-11000": "1.0.1"',
+    );
+    await writeFile(lockPath, updated);
+
+    const bundle = await new LocalGitProjectContextAssembler().assemble({
+      project: {
+        schemaVersion: 1,
+        id: 'project_large_lockfile',
+        principalId: 'owner_v1',
+        registrationKey: 'large-lockfile',
+        displayName: 'Large lockfile',
+        normalizedName: 'large lockfile',
+        source: { kind: 'local_git', rootPath },
+        status: 'active',
+        createdAt: '2026-08-25T00:00:00.000Z',
+        updatedAt: '2026-08-25T00:00:00.000Z',
+      },
+      objective: 'Review and complete the existing dependency update.',
+      ticket: {
+        reference: 'LOCK-1',
+        details: 'Review and complete the existing dependency update.',
+      },
+      limits: {
+        maxFiles: 40,
+        maxBytes: 800_000,
+        maxFileBytes: 700_000,
+      },
+    });
+
+    assert.ok(bundle.workingTree);
+    assert.equal(
+      bundle.workingTree.files[0]?.relativePath,
+      'package-lock.json',
+    );
+    assert.ok(Buffer.byteLength(updated) > 500_000);
+    assert.equal(bundle.workingTree.files[0].bytes, Buffer.byteLength(updated));
+    assert.equal(
+      bundle.documents.find(
+        (document) => document.relativePath === 'package-lock.json',
+      )?.content,
+      original,
     );
   });
 
@@ -616,8 +892,18 @@ void describe('generic repository-aware planning journey', () => {
           projectId: string;
           entries: { relativePath: string }[];
         };
+        workingTree: {
+          snapshotSha256: string;
+          totalFiles: number;
+          files: {
+            relativePath: string;
+            operation: string;
+            untracked: boolean;
+          }[];
+        };
       };
     }>();
+    assert.ok(pending.approval, submitted.body);
     assert.deepEqual(pending.approval.destination, {
       schemaVersion: 1,
       adapterId: 'codex_cli',
@@ -636,6 +922,24 @@ void describe('generic repository-aware planning journey', () => {
         (entry) => entry.relativePath !== '.env',
       ),
     );
+    assert.match(
+      pending.approval.workingTree.snapshotSha256,
+      /^[a-f0-9]{64}$/u,
+    );
+    assert.equal(pending.approval.workingTree.totalFiles, 1);
+    assert.deepEqual(pending.approval.workingTree.files, [
+      {
+        relativePath: 'untracked.txt',
+        operation: 'create',
+        untracked: true,
+        staged: false,
+        unstaged: true,
+        bytes: Buffer.byteLength('must-not-be-selected\n'),
+        afterSha256: createHash('sha256')
+          .update('must-not-be-selected\n')
+          .digest('hex'),
+      },
+    ]);
 
     const approved = await app.inject({
       method: 'POST',
@@ -654,6 +958,10 @@ void describe('generic repository-aware planning journey', () => {
     assert.match(completed.conversationReply.messageId, /^message_reply_/u);
     assert.equal(invocations.length, 1);
     assert.equal(invocations[0]?.context.manifest.projectId, projectId);
+    assert.equal(
+      invocations[0].context.workingTree?.snapshotSha256,
+      pending.approval.workingTree.snapshotSha256,
+    );
     assert.doesNotMatch(
       invocations[0].context.documents.map((item) => item.content).join('\n'),
       /SECRET_VALUE|must-not-be-selected/u,

@@ -2,8 +2,8 @@
 
 **Status:** Accepted (capability declaration shape, invocation lifecycle,
 selection checks, and resource/delegation budget model)
-**Version:** 1.0
-**Last updated:** 5 September 2026
+**Version:** 1.1
+**Last updated:** 7 September 2026
 **Accepted:** 24 August 2026 (owner); declarative runtime, catalog, and
 `web_research@1` accepted by ADR-0020 on 25 August 2026; bounded composition
 accepted by ADR-0021 on 26 August 2026; provider-neutral integration actions
@@ -18,6 +18,8 @@ conversational software-delivery control is accepted by ADR-0042; and curated
 external connections with `work_item_management@1` are accepted by ADR-0045 on
 5 September 2026; project external awareness through approved standing watches
 is accepted by ADR-0046 on 5 September 2026.
+Adaptive adoption of observed repository work is accepted by ADR-0056 on 7
+September 2026.
 
 ## Purpose
 
@@ -591,7 +593,9 @@ returns one versioned implementation-plan artifact.
 For V1:
 
 - Vera invokes it through a versioned adapter contract after validating input;
-- the capability receives only context displayed in the approval request;
+- the capability receives only context displayed in the approval request,
+  including the exact frozen working-tree paths and provenance when the
+  registered checkout contains supported owner changes;
 - raw credentials are never capability input;
 - invocation state, progress, errors, and artifacts are exposed through Vera's
   polled resources;
@@ -783,6 +787,15 @@ application and publication effects. The specialist remains replaceable and
 receives no test-policy, GitHub-credential, check-observation, or merge
 authority. See
 [ADR-0034](decisions/0034-delegate-bounded-development-campaigns-through-one-owner-approval.md).
+
+A campaign may also freeze one supported staged, unstaged, and untracked
+working-tree snapshot as owner-supplied starting evidence. The approval binds
+its exact paths, operations, hashes, and base commit. The coding specialist sees
+that snapshot only in an isolated repository, while Vera computes the final
+artifact against the immutable clean base. Later workspace drift requires new
+review, and a protected file may pass through only when it is byte-for-byte the
+already-approved owner change. See
+[ADR-0056](decisions/0056-coordinate-software-delivery-from-observed-repository-state.md).
 
 A hosted-check failure or reviewer change request does not extend that original
 authority. Vera persists bounded remote evidence and asks the owner to approve

@@ -71,7 +71,8 @@ export function createLiveVoiceSessionService(options: {
   const active = new Map<string, ActiveSession>();
   const state = new LiveVoiceSessionState(options.store, clock);
   let closed = false;
-  let recoveryBarrier: Promise<number> = Promise.resolve(0);
+  let recoveryComplete = false;
+  let recoveryBarrier: Promise<number> | undefined;
 
   async function publish(
     sessionId: string,
@@ -212,19 +213,22 @@ export function createLiveVoiceSessionService(options: {
       reason,
     });
     const now = clock();
-    const ended = await state.mutate(principalId, sessionId, (current) => ({
-      ...current,
-      version: current.version + 1,
-      status: 'ended',
-      activeSlot: undefined,
-      updatedAt: now,
-      endedAt: now,
-      deliveries: current.deliveries.map((delivery) =>
-        delivery.state === 'released'
-          ? { ...delivery, state: 'delivery_unknown', settledAt: now }
-          : delivery,
-      ),
-    }));
+    const ended = await state.mutate(principalId, sessionId, (current) => {
+      const { activeSlot: ignoredActiveSlot, ...inactive } = current;
+      void ignoredActiveSlot;
+      return {
+        ...inactive,
+        version: current.version + 1,
+        status: 'ended',
+        updatedAt: now,
+        endedAt: now,
+        deliveries: current.deliveries.map((delivery) =>
+          delivery.state === 'released'
+            ? { ...delivery, state: 'delivery_unknown', settledAt: now }
+            : delivery,
+        ),
+      };
+    });
     await stopRuntime(sessionId);
     return ended;
   }
@@ -246,23 +250,45 @@ export function createLiveVoiceSessionService(options: {
     const now = clock();
     const recoverable = await options.store.findRecoverable();
     for (const session of recoverable) {
-      await state.mutate(session.principalId, session.id, (current) => ({
-        ...current,
-        version: current.version + 1,
-        status: 'failed',
-        activeSlot: undefined,
-        failure:
-          'The live transport process restarted. Finalized turns remain in the ordinary task ledger; start a new live session.',
-        updatedAt: now,
-        endedAt: now,
-        deliveries: current.deliveries.map((delivery) =>
-          delivery.state === 'released'
-            ? { ...delivery, state: 'delivery_unknown', settledAt: now }
-            : delivery,
-        ),
-      }));
+      await state.mutate(session.principalId, session.id, (current) => {
+        const { activeSlot: ignoredActiveSlot, ...inactive } = current;
+        void ignoredActiveSlot;
+        return {
+          ...inactive,
+          version: current.version + 1,
+          status: 'failed',
+          failure:
+            'The live transport process restarted. Finalized turns remain in the ordinary task ledger; start a new live session.',
+          updatedAt: now,
+          endedAt: now,
+          deliveries: current.deliveries.map((delivery) =>
+            delivery.state === 'released'
+              ? { ...delivery, state: 'delivery_unknown', settledAt: now }
+              : delivery,
+          ),
+        };
+      });
     }
     return recoverable.length;
+  }
+
+  function ensureRecovery(): Promise<number> {
+    if (recoveryComplete) return Promise.resolve(0);
+    if (recoveryBarrier !== undefined) return recoveryBarrier;
+    const attempt = performRecovery().then((count) => {
+      recoveryComplete = true;
+      return count;
+    });
+    recoveryBarrier = attempt;
+    void attempt.then(
+      () => {
+        if (recoveryBarrier === attempt) recoveryBarrier = undefined;
+      },
+      () => {
+        if (recoveryBarrier === attempt) recoveryBarrier = undefined;
+      },
+    );
+    return attempt;
   }
 
   return {
@@ -275,7 +301,7 @@ export function createLiveVoiceSessionService(options: {
         );
       }
       if (closed) throw new Error('Live voice session service is closed.');
-      await recoveryBarrier;
+      await ensureRecovery();
       await options.conversations.getConversation(
         input.principalId,
         input.conversationId,
@@ -425,17 +451,16 @@ export function createLiveVoiceSessionService(options: {
       });
     },
     recoverInterrupted() {
-      recoveryBarrier = recoveryBarrier.then(performRecovery);
-      return recoveryBarrier;
+      return ensureRecovery();
     },
     async checkReadiness() {
-      await recoveryBarrier;
+      await ensureRecovery();
       await options.transport?.checkReadiness();
     },
     async close() {
       if (closed) return;
       closed = true;
-      await recoveryBarrier.catch((error: unknown) =>
+      await recoveryBarrier?.catch((error: unknown) =>
         options.warning?.(error, { phase: 'recovery_during_close' }),
       );
       await Promise.all([...active.keys()].map((id) => stopRuntime(id)));

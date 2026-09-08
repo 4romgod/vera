@@ -11,6 +11,7 @@ import {
 import { containsControlCharacter } from '../../../domain/shared/text-safety.ts';
 import type { ProjectContextAssembler } from '../../../ports/projects/project-context-assembler.ts';
 import { parseGitHubRepositoryRemote } from '../github/github-cli.ts';
+import { inspectLocalGitWorkingTree } from './local-git-working-tree.ts';
 
 const executeFile = promisify(execFile);
 const gitCommandTimeoutMs = 30_000;
@@ -500,15 +501,23 @@ export class LocalGitProjectContextAssembler
     if (requestedRevision !== undefined && head !== requestedRevision) {
       throw new Error('The requested project revision is not an exact commit.');
     }
-    const dirty =
-      requestedRevision === undefined &&
-      (
-        await runGit(configuredRoot, [
-          'status',
-          '--porcelain',
-          '--untracked-files=no',
-        ])
-      ).trim().length > 0;
+    const workingTree =
+      requestedRevision === undefined
+        ? await inspectLocalGitWorkingTree({
+            rootPath: configuredRoot,
+            maxFiles: input.limits.maxFiles,
+            maxBytes: input.limits.maxBytes,
+            maxFileBytes: input.limits.maxFileBytes,
+          })
+        : null;
+    const changedPaths = new Set(
+      workingTree?.files.map((file) => file.relativePath) ?? [],
+    );
+    const createdPaths = new Set(
+      workingTree?.files.flatMap((file) =>
+        file.operation === 'create' ? [file.relativePath] : [],
+      ) ?? [],
+    );
     let repository:
       | { provider: 'github'; owner: string; name: string }
       | undefined;
@@ -546,7 +555,11 @@ export class LocalGitProjectContextAssembler
                 ? [path]
                 : [];
             })
-    ).filter((path) => isEligiblePath(path));
+    ).filter(
+      (path) =>
+        !createdPaths.has(path) &&
+        (changedPaths.has(path) || isEligiblePath(path)),
+    );
     const requestText = `${input.objective} ${input.ticket.reference} ${input.ticket.details}`;
     const rawRequestTokens = tokenize(requestText);
     const relevantRequestTokens = requestTokens(requestText);
@@ -604,17 +617,21 @@ export class LocalGitProjectContextAssembler
         };
         return {
           ...candidate,
-          score: rankCandidate({ path: relativePath, ...candidate }),
+          score:
+            rankCandidate({ path: relativePath, ...candidate }) +
+            (changedPaths.has(relativePath) ? 10_000 : 0),
         };
       })
-      .filter((candidate) =>
-        primaryMatchedPaths.size === 0
-          ? isRootEvidence(candidate.relativePath)
-          : candidate.anchorMatches.length > 0 ||
-            candidate.pathMatches.length > 0 ||
-            (!hasMatchedAnchors && candidate.contentMatches.length > 0) ||
-            candidate.relatedToMatchedFile ||
-            isRootEvidence(candidate.relativePath),
+      .filter(
+        (candidate) =>
+          changedPaths.has(candidate.relativePath) ||
+          (primaryMatchedPaths.size === 0
+            ? isRootEvidence(candidate.relativePath)
+            : candidate.anchorMatches.length > 0 ||
+              candidate.pathMatches.length > 0 ||
+              (!hasMatchedAnchors && candidate.contentMatches.length > 0) ||
+              candidate.relatedToMatchedFile ||
+              isRootEvidence(candidate.relativePath)),
       )
       .sort((left, right) => {
         const scoreDifference = right.score - left.score;
@@ -654,11 +671,12 @@ export class LocalGitProjectContextAssembler
     for (const candidate of candidates) {
       if (documents.length >= input.limits.maxFiles) break;
       const { relativePath } = candidate;
+      const requiredByWorkingTree = changedPaths.has(relativePath);
       let buffer: Buffer;
-      if (requestedRevision !== undefined) {
+      if (requestedRevision !== undefined || workingTree !== null) {
         buffer = await runGitBuffer(configuredRoot, [
           'show',
-          `${requestedRevision}:${relativePath}`,
+          `${requestedRevision ?? head}:${relativePath}`,
         ]);
       } else {
         const absolutePath = resolve(configuredRoot, relativePath);
@@ -694,10 +712,16 @@ export class LocalGitProjectContextAssembler
         buffer = await readFile(canonicalFile);
       }
       if (buffer.byteLength > input.limits.maxFileBytes) {
+        if (requiredByWorkingTree) {
+          throw new Error(
+            `The working-tree baseline for ${relativePath} exceeds the context limit.`,
+          );
+        }
         skippedOversize += 1;
         continue;
       }
       if (
+        !requiredByWorkingTree &&
         candidate.classification === 'documentation' &&
         (documentationFiles >= maxDocumentationFiles ||
           documentationBytes + buffer.byteLength > maxDocumentationBytes)
@@ -706,10 +730,20 @@ export class LocalGitProjectContextAssembler
         continue;
       }
       if (buffer.includes(0)) {
+        if (requiredByWorkingTree) {
+          throw new Error(
+            `The working-tree baseline for ${relativePath} is binary.`,
+          );
+        }
         skippedBinary += 1;
         continue;
       }
       if (totalBytes + buffer.byteLength > input.limits.maxBytes) {
+        if (requiredByWorkingTree) {
+          throw new Error(
+            'The complete working-tree baseline exceeds the context byte limit.',
+          );
+        }
         skippedOversize += 1;
         continue;
       }
@@ -718,6 +752,11 @@ export class LocalGitProjectContextAssembler
       try {
         content = new TextDecoder('utf-8', { fatal: true }).decode(buffer);
       } catch {
+        if (requiredByWorkingTree) {
+          throw new Error(
+            `The working-tree baseline for ${relativePath} is not valid UTF-8.`,
+          );
+        }
         skippedInvalidText += 1;
         continue;
       }
@@ -742,14 +781,14 @@ export class LocalGitProjectContextAssembler
         projectId: input.project.id,
         sourceKind: 'local_git',
         ...(repository === undefined ? {} : { repository }),
-        revision: dirty ? `${head}+working-tree` : head,
+        revision: head,
         generatedAt: new Date().toISOString(),
         entries,
         totalFiles: entries.length,
         totalBytes,
         limits: input.limits,
         exclusions: [
-          'Only Git-tracked regular text files are eligible.',
+          'Baseline context contains Git-tracked regular text files; supported staged, unstaged, and untracked text changes are captured separately as exact working-tree evidence.',
           'Environment files, credential-like paths, agent instruction files, dependencies, build output, binaries, and symlinks are excluded.',
           `${String(skippedOversize)} candidate files were excluded by byte limits.`,
           `${String(skippedBinary)} candidate files were excluded as binary.`,
@@ -759,6 +798,7 @@ export class LocalGitProjectContextAssembler
         ],
       },
       documents,
+      ...(workingTree === null ? {} : { workingTree }),
     });
   }
 }

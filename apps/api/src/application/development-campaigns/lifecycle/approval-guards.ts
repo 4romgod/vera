@@ -6,6 +6,14 @@ import {
   SoftwareChangeProposalArgumentsSchema,
 } from '../../../domain/capabilities/capability-registry.ts';
 import type { DevelopmentCampaign } from '../../../domain/development-campaigns/development-campaign.ts';
+import {
+  campaignWorkspace,
+  matchesAdoptedWorkspaceFile,
+} from '../../../domain/development-campaigns/development-campaign-workspace.ts';
+import {
+  sameWorkingTreeSnapshotReference,
+  workingTreeSnapshotReference,
+} from '../../../domain/projects/project-context.ts';
 import type { TaskAggregate } from '../../../domain/tasks/task-aggregate.ts';
 import { DevelopmentCampaignOperationError } from '../../../ports/development-campaigns/development-campaign-operations.ts';
 import { pathIsProtected, stableEqual } from './support.ts';
@@ -22,6 +30,23 @@ export function assertTaskApproval(
     objective: campaign.approval.effect.objective,
     ticket: campaign.approval.effect.ticket,
   };
+  const expectedWorkspace =
+    attempt?.kind === 'pull_request_repair'
+      ? ({ mode: 'clean' } as const)
+      : campaignWorkspace(campaign.approval.effect);
+  const taskWorkspace = aggregate.run.context?.workingTree;
+  const contextMatchesWorkspace =
+    expectedWorkspace.mode === 'clean'
+      ? taskWorkspace === undefined
+      : taskWorkspace !== undefined &&
+        stableEqual(
+          workingTreeSnapshotReference(taskWorkspace),
+          expectedWorkspace.snapshot,
+        );
+  const approvalMatchesWorkspace = sameWorkingTreeSnapshotReference(
+    approval?.workingTree,
+    expectedWorkspace.mode === 'clean' ? undefined : expectedWorkspace.snapshot,
+  );
   if (approval?.status !== 'pending') {
     throw new DevelopmentCampaignOperationError(
       'The delegated task does not expose one pending exact approval.',
@@ -39,6 +64,8 @@ export function assertTaskApproval(
     !stableEqual(allowed.authority, approval.authority) ||
     approval.project?.id !== campaign.approval.effect.project.id ||
     approval.contextManifest?.revision !== sourceRevision ||
+    !contextMatchesWorkspace ||
+    !approvalMatchesWorkspace ||
     (approval.attachments?.length ?? 0) > 0 ||
     (approval.decisionEvidence?.length ?? 0) > 0
   ) {
@@ -103,8 +130,12 @@ export function assertApplicationApproval(
     effect.baseRevision !== sourceRevision ||
     effect.files.length > campaignEffect.limits.maxChangedFiles ||
     changedBytes > campaignEffect.limits.maxChangedBytes ||
-    effect.files.some((file) =>
-      pathIsProtected(file.relativePath, campaignEffect.protectedPathPrefixes),
+    effect.files.some(
+      (file) =>
+        pathIsProtected(
+          file.relativePath,
+          campaignEffect.protectedPathPrefixes,
+        ) && !matchesAdoptedWorkspaceFile(campaignEffect, file),
     )
   ) {
     throw new DevelopmentCampaignOperationError(

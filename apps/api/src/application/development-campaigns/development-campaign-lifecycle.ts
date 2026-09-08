@@ -3,6 +3,7 @@ import {
   DevelopmentCampaignSchema,
   type DevelopmentCampaign,
 } from '../../domain/development-campaigns/development-campaign.ts';
+import { DefaultRunBudget } from '../../domain/tasks/run-budget.ts';
 import { DevelopmentCampaignOperationError } from '../../ports/development-campaigns/development-campaign-operations.ts';
 import {
   DevelopmentCampaignError,
@@ -197,13 +198,38 @@ export function createDevelopmentCampaignLifecycle(
       objective: effect.objective,
       ticket: effect.ticket,
     };
+    const adoptsApprovedWorkspace =
+      pullRequestRepair === undefined && effect.workspace?.mode === 'adopted';
+    const taskBudgetLimits = adoptsApprovedWorkspace
+      ? {
+          ...DefaultRunBudget.limits,
+          maxContextFiles: Math.max(
+            DefaultRunBudget.limits.maxContextFiles,
+            effect.limits.maxChangedFiles,
+          ),
+          maxContextBytes:
+            DefaultRunBudget.limits.maxContextBytes +
+            effect.limits.maxChangedBytes,
+          maxContextFileBytes: Math.max(
+            DefaultRunBudget.limits.maxContextFileBytes,
+            effect.limits.maxChangedBytes,
+          ),
+          maxArtifactBytes: Math.max(
+            DefaultRunBudget.limits.maxArtifactBytes,
+            Math.min(1_200_000, effect.limits.maxChangedBytes + 200_000),
+          ),
+        }
+      : undefined;
     const task = await options.tasks.submit({
       principalId: campaign.principalId,
       requestKey: `development-campaign:${campaign.id}:attempt:${String(number)}`,
       projectId: effect.project.id,
-      ...(pullRequestRepair === undefined
+      ...(pullRequestRepair === undefined && adoptsApprovedWorkspace
         ? {}
         : { projectRevision: sourceRevision }),
+      ...(taskBudgetLimits === undefined
+        ? {}
+        : { budgetLimits: taskBudgetLimits }),
       message:
         pullRequestRepair === undefined
           ? repairMessage(effect, number, previous)

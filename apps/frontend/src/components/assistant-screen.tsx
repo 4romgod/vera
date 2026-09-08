@@ -1,11 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
-import {
-  FlatList,
-  KeyboardAvoidingView,
-  View,
-  useWindowDimensions,
-} from 'react-native';
+import { FlatList, View, useWindowDimensions } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   type ConversationMessageResource,
@@ -32,6 +28,7 @@ import { AssistantHeader } from '@/components/assistant/assistant-header';
 import { ConversationSidebar } from '@/components/assistant/conversation-sidebar';
 import { ConversationView } from '@/components/assistant/conversation-view';
 import { MessageComposer } from '@/components/assistant/message-composer';
+import { keyboardAvoidingBehavior } from '@/components/assistant/keyboard-layout';
 import { latestConversationProjectId } from '@/components/assistant/presentation';
 import { useTaskDetails } from '@/components/assistant/use-task-details';
 import { useAttachments } from '@/components/assistant/use-attachments';
@@ -1101,7 +1098,7 @@ export function AssistantScreen() {
         />
 
         <KeyboardAvoidingView
-          behavior={process.env.EXPO_OS === 'ios' ? 'padding' : undefined}
+          behavior={keyboardAvoidingBehavior(process.env.EXPO_OS)}
           style={{ minWidth: 0, flex: 1, backgroundColor: palette.canvas }}
         >
           <AssistantHeader
