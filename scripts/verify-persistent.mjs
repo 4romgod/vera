@@ -605,17 +605,20 @@ async function verifyLiveVoiceSessionPersistence() {
     const created = await first.create(session('first'));
     assert.equal(created.created, true);
     await assert.rejects(second.create(session('second')), /already active/u);
-    const { activeSlot: ignoredActiveSlot, ...inactiveSession } =
-      created.session;
-    void ignoredActiveSlot;
     const ended = {
-      ...inactiveSession,
+      ...created.session,
       version: 2,
       status: 'ended',
+      activeSlot: undefined,
       endedAt: startedAt,
       updatedAt: startedAt,
     };
     assert.equal(await first.replace(ended, 1), true);
+    const persisted = await mongo
+      .db(database)
+      .collection('live_voice_sessions')
+      .findOne({ id: ended.id });
+    assert.equal(Object.hasOwn(persisted ?? {}, 'activeSlot'), false);
     assert.equal((await second.create(session('second'))).created, true);
     assert.equal((await first.findRecoverable()).length, 1);
   } finally {
@@ -1054,9 +1057,10 @@ async function verifyScenarios(mongo, redis) {
     knowledgeSource.id,
   );
 
+  const planningProjectRoot = await createGitFixture();
   const projectInput = {
     displayName: 'Vera persistent verification',
-    rootPath: root,
+    rootPath: planningProjectRoot,
     idempotencyKey: 'persistent-verification-project',
   };
   const project = await client.registerProject(projectInput);

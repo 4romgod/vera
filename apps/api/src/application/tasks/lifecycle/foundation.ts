@@ -7,6 +7,7 @@ import {
 import type { CapabilityAuthority } from '../../../domain/capabilities/capability-registry.ts';
 import type { ConversationContextBundle } from '../../../domain/conversations/conversation-context.ts';
 import { ConversationMessageSchema } from '../../../domain/conversations/conversation.ts';
+import { workingTreeSnapshotReference } from '../../../domain/projects/project-context.ts';
 import {
   ApprovalSchema,
   TaskAggregateSchema,
@@ -261,6 +262,13 @@ export function createTaskLifecycleFoundation(runtime: TaskLifecycleRuntime) {
               displayName: goal.project?.displayName,
             },
             contextManifest: aggregate.run.context?.manifest,
+            ...(aggregate.run.context?.workingTree === undefined
+              ? {}
+              : {
+                  workingTree: workingTreeSnapshotReference(
+                    aggregate.run.context.workingTree,
+                  ),
+                }),
           }
         : {}),
       ...(inputs.length === 0 ? {} : { inputArtifacts: inputs }),
@@ -741,6 +749,8 @@ export function createTaskLifecycleFoundation(runtime: TaskLifecycleRuntime) {
       aggregate.task.conversationId !== input.conversationId ||
       aggregate.task.messageId !== input.messageId ||
       aggregate.task.externalSignal?.id !== input.externalSignalId ||
+      JSON.stringify(aggregate.run.budget?.limits ?? runtime.budget.limits) !==
+        JSON.stringify(input.budgetLimits ?? runtime.budget.limits) ||
       JSON.stringify(aggregate.task.attachments ?? []) !==
         JSON.stringify(input.attachments ?? [])
     ) {

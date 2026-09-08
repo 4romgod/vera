@@ -4,8 +4,8 @@
 request lifecycle, architectural invariants, initial modular API shape, V1
 operational storage, and the first Mac Mini deployment topology); general
 progress transport remains open
-**Version:** 1.6
-**Last updated:** 5 September 2026
+**Version:** 1.7
+**Last updated:** 7 September 2026
 **Accepted:** 24 August 2026 (owner) — post-V1 progress transport and deployment
 topology are deferred; V1 uses HTTP polling. The initial Fastify/Zod modular API
 is accepted by ADR-0009. MongoDB operational truth and the Redis scratchpad are
@@ -440,6 +440,11 @@ declared artifact compatibility. The lifecycle advances one step at a time and
 freezes a new approval whenever destination, authority, context, or artifact
 disclosure changes. This is the implemented substrate for assistant-level
 outcomes without adopting a provider-owned or unbounded agent loop.
+
+When the approved project context contains supported working-tree changes, the
+approval and invocation both carry the exact snapshot reference. Execution
+revalidates that reference against the authoritative context before a
+specialist receives the frozen patch.
 
 A goal remains one run while it is short, sequential, and serves one outcome.
 Independent delegated work will use child tasks so it can carry its own
@@ -1015,6 +1020,7 @@ not create a privileged coding path.
 ```mermaid
 flowchart TB
     OWNER["Owner approves one objective and envelope"] --> CAMPAIGN["Development campaign aggregate"]
+    WORKSPACE["Clean base or exact owner working-tree snapshot"] --> CAMPAIGN
     POLICY["Operator policy catalog"] --> CAMPAIGN
     CAMPAIGN --> TASK["Task and capability lifecycle"]
     TASK --> APP["Managed-worktree application"]
@@ -1035,6 +1041,12 @@ publication, and synchronization with ordinary repository operations. Provider
 selection remains late-bound in the capability runtime; test, merge, and policy
 authority remain deterministic code. See
 [ADR-0034](decisions/0034-delegate-bounded-development-campaigns-through-one-owner-approval.md).
+The starting checkout no longer has to be clean: supported owner changes are
+captured and hashed before approval, reproduced only inside the specialist's
+isolated workspace, and combined with the generated result as one patch against
+the immutable base. The live checkout must still match the approved snapshot
+exactly whenever an attempt begins. See
+[ADR-0056](decisions/0056-coordinate-software-delivery-from-observed-repository-state.md).
 Remote repair adds a second, narrower approval rather than widening the first:
 GitHub evidence is bounded untrusted input, historical context is assembled
 from the exact PR head, and only a non-forced fast-forward of the existing PR
@@ -1047,6 +1059,11 @@ Missions add outcome selection without widening campaign execution authority.
 The orchestration capability can write only a draft. The mission aggregate
 then becomes the single consequential approval boundary and embeds the exact
 subordinate campaign effect it will authorize.
+
+An explicit request to review, finish, test, and publish work already present in
+the selected repository is also a mission-shaped request. The embedded campaign
+may adopt that exact observed workspace under ADR-0056; the mission still stops
+after one verified pull request.
 
 ```mermaid
 flowchart TB

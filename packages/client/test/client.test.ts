@@ -428,7 +428,7 @@ void describe('Vera HTTP client', () => {
     assert.equal(result.text, 'Native recording.');
   });
 
-  void it('discovers and downloads bounded WAV speech through typed boundaries', async () => {
+  void it('downloads bounded WAV speech without requiring an ASCII text decoder', async () => {
     const wav = new Uint8Array([82, 73, 70, 70, 4, 0, 0, 0, 87, 65, 86, 69]);
     const client = new VeraClient({
       baseUrl: 'http://vera.test',
@@ -470,10 +470,28 @@ void describe('Vera HTTP client', () => {
     });
 
     assert.equal((await client.getSpeechSynthesisAvailability()).enabled, true);
-    const speech = await client.synthesizeSpeech({
-      text: 'Hello.',
-      voice: 'anna',
-    });
+    const originalTextDecoder = globalThis.TextDecoder;
+    class NativeTextDecoder extends originalTextDecoder {
+      public constructor(
+        label?: string,
+        options?: ConstructorParameters<typeof TextDecoder>[1],
+      ) {
+        if (label === 'ascii') {
+          throw new RangeError('Unknown encoding: ascii');
+        }
+        super(label, options);
+      }
+    }
+    globalThis.TextDecoder = NativeTextDecoder;
+    let speech;
+    try {
+      speech = await client.synthesizeSpeech({
+        text: 'Hello.',
+        voice: 'anna',
+      });
+    } finally {
+      globalThis.TextDecoder = originalTextDecoder;
+    }
     assert.equal(speech.bytes.byteLength, wav.byteLength);
     assert.equal(speech.provider, 'pocket_tts');
     assert.equal(speech.voice, 'alba');

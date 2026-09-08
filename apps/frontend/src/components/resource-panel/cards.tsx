@@ -7,7 +7,10 @@ import type {
 } from '@vera/client';
 import { palette, radius, spacing } from '@/design/tokens';
 import { humanizeIdentifier } from '../assistant/presentation.ts';
-import { isSafeGitHubPullRequestUrl } from '../assistant/software-delivery/model.ts';
+import {
+  adoptedWorkspaceSummary,
+  isSafeGitHubPullRequestUrl,
+} from '../assistant/software-delivery/model.ts';
 
 export function CampaignCard(props: {
   campaign: DevelopmentCampaignResource;
@@ -22,6 +25,7 @@ export function CampaignCard(props: {
 }) {
   const campaign = props.campaign;
   const effect = campaign.approval.effect;
+  const startingWork = adoptedWorkspaceSummary(effect.workspace);
   const missionControlled = effect.approvalController?.kind === 'mission';
   const repair = campaign.repairs?.at(-1);
   const cancellable = [
@@ -60,6 +64,11 @@ export function CampaignCard(props: {
         Base: {effect.baseRevision.slice(0, 12)} · Ticket:{' '}
         {effect.ticket.reference}
       </Text>
+      {startingWork === undefined ? null : (
+        <Text selectable style={{ color: palette.accent, fontSize: 11 }}>
+          Starting work: {startingWork}
+        </Text>
+      )}
       {missionControlled ? (
         <Text selectable style={{ color: palette.accent, fontSize: 11 }}>
           Approval is controlled by its bounded mission.
@@ -219,6 +228,9 @@ export function MissionCard(props: {
 }) {
   const { mission } = props;
   const effect = mission.approval.effect;
+  const startingWork = adoptedWorkspaceSummary(
+    effect.campaign.effect.workspace,
+  );
   const terminal = [
     'succeeded',
     'rejected',
@@ -253,6 +265,11 @@ export function MissionCard(props: {
       <Text selectable style={{ color: palette.muted, fontSize: 11 }}>
         PR: {effect.campaign.effect.delivery.pullRequest.title}
       </Text>
+      {startingWork === undefined ? null : (
+        <Text selectable style={{ color: palette.accent, fontSize: 11 }}>
+          Starting work: {startingWork}
+        </Text>
+      )}
       {mission.result === undefined ? null : (
         <SmallButton
           disabled={!isSafeGitHubPullRequestUrl(mission.result.pullRequestUrl)}

@@ -36,6 +36,7 @@ import { DecisionResultSchema } from '../model/execution-decision.ts';
 import {
   ProjectContextBundleSchema,
   ProjectContextManifestSchema,
+  WorkingTreeSnapshotReferenceSchema,
 } from '../projects/project-context.ts';
 import { RunBudgetSchema } from './run-budget.ts';
 import { SoftwareChangeSchema } from '../changes/software-change.ts';
@@ -118,6 +119,7 @@ const ApprovalIdentitySchema = z
       .strict()
       .optional(),
     contextManifest: ProjectContextManifestSchema.optional(),
+    workingTree: WorkingTreeSnapshotReferenceSchema.optional(),
     destination: CapabilityDestinationSchema.optional(),
     authority: CapabilityAuthoritySchema.optional(),
     inputArtifacts: z.array(ArtifactReferenceSchema).max(2).optional(),
@@ -273,6 +275,7 @@ const CapabilityInvocationIdentitySchema = z
       .strict()
       .optional(),
     contextManifest: ProjectContextManifestSchema.optional(),
+    workingTree: WorkingTreeSnapshotReferenceSchema.optional(),
     destination: CapabilityDestinationSchema.optional(),
     authority: CapabilityAuthoritySchema.optional(),
     inputArtifacts: z.array(ArtifactReferenceSchema).max(2).optional(),

@@ -10,6 +10,10 @@ import type {
   DevelopmentCampaignRepair,
 } from '../../../../src/domain/development-campaigns/development-campaign.ts';
 import type { Project } from '../../../../src/domain/projects/project.ts';
+import {
+  workingTreeSnapshotHashPayload,
+  type WorkingTreeSnapshot,
+} from '../../../../src/domain/projects/project-context.ts';
 
 const now = '2026-08-27T12:00:00.000Z';
 const revision = 'a'.repeat(40);
@@ -27,12 +31,61 @@ const project: Project = {
   updatedAt: now,
 };
 
+function workingTreeSnapshot(marker = 'owner-change'): WorkingTreeSnapshot {
+  const patch = [
+    'diff --git a/README.md b/README.md',
+    '--- a/README.md',
+    '+++ b/README.md',
+    '@@ -1 +1 @@',
+    '-before',
+    `+${marker}`,
+    '',
+  ].join('\n');
+  const files = [
+    {
+      relativePath: 'README.md',
+      operation: 'update' as const,
+      beforeSha256: createHash('sha256').update('before\n').digest('hex'),
+      afterSha256: createHash('sha256').update(`${marker}\n`).digest('hex'),
+      bytes: Buffer.byteLength(`${marker}\n`),
+      staged: false,
+      unstaged: true,
+      untracked: false,
+    },
+  ];
+  const patchSha256 = createHash('sha256').update(patch).digest('hex');
+  return {
+    schemaVersion: 1,
+    baseRevision: revision,
+    patch,
+    patchSha256,
+    snapshotSha256: createHash('sha256')
+      .update(
+        JSON.stringify(
+          workingTreeSnapshotHashPayload({
+            baseRevision: revision,
+            patchSha256,
+            files,
+          }),
+        ),
+      )
+      .digest('hex'),
+    files,
+    totalFiles: 1,
+    totalBytes: files.reduce((total, file) => total + file.bytes, 0),
+    capturedAt: now,
+  };
+}
+
 function operations(options?: {
   dirty?: boolean;
+  dirtyMarker?: string;
   gateExitCode?: number;
   gateOutput?: string;
 }) {
   const commands: { command: string; arguments: string[]; cwd?: string }[] = [];
+  const snapshot =
+    options?.dirty === true ? workingTreeSnapshot(options.dirtyMarker) : null;
   const instance = new LocalGitGitHubDevelopmentCampaignOperations({
     catalog: {
       schemaVersion: 1,
@@ -68,6 +121,7 @@ function operations(options?: {
       ],
     },
     clock: () => now,
+    inspectWorkingTree: () => Promise.resolve(snapshot),
     run: (command, arguments_, commandOptions) => {
       commands.push({
         command,
@@ -94,13 +148,9 @@ function operations(options?: {
             ? `${revision}\n`
             : key === 'remote get-url origin'
               ? 'git@github.com:4romgod/vera.git\n'
-              : key === 'status --porcelain=v1 --untracked-files=all'
-                ? options?.dirty === true
-                  ? ' M README.md\n'
-                  : ''
-                : key === 'ls-remote --heads origin refs/heads/main'
-                  ? `${revision}\trefs/heads/main\n`
-                  : '';
+              : key === 'ls-remote --heads origin refs/heads/main'
+                ? `${revision}\trefs/heads/main\n`
+                : '';
       return Promise.resolve({ stdout, stderr: '', exitCode: 0 });
     },
   });
@@ -156,20 +206,98 @@ void describe('local Git and GitHub development-campaign operations', () => {
     assert.ok(effect.protectedPathPrefixes.includes('private/'));
   });
 
-  void it('refuses to create authority from a dirty base checkout', async () => {
-    await assert.rejects(
-      operations({ dirty: true }).instance.prepare({
-        project,
-        policyId: 'fixture',
-        objective: 'Objective',
-        ticket: { reference: 'VERA-1', details: 'Details' },
-        delivery: {
-          commitMessage: 'feat: objective',
-          pullRequest: { title: 'feat: objective', body: '', draft: false },
+  void it('freezes owner changes as exact starting authority', async () => {
+    const effect = await operations({ dirty: true }).instance.prepare({
+      project,
+      policyId: 'fixture',
+      objective: 'Objective',
+      ticket: { reference: 'VERA-1', details: 'Details' },
+      delivery: {
+        commitMessage: 'feat: objective',
+        pullRequest: { title: 'feat: objective', body: '', draft: false },
+      },
+      capabilities: [
+        {
+          name: 'software_change',
+          version: 1,
+          destination: {
+            schemaVersion: 1,
+            adapterId: 'codex_cli',
+            provider: 'openai',
+            transport: 'local_process',
+            dataBoundary: 'third_party',
+          },
+          authority: {
+            approval: 'always',
+            projectContext: 'required',
+            networkAccess: 'provider_api',
+            dataClasses: [
+              'owner_request',
+              'project_context',
+              'artifact_content',
+            ],
+            sideEffects: ['third_party_disclosure', 'isolated_workspace_write'],
+            credentials: 'server_managed',
+          },
         },
-        capabilities: [],
+      ],
+    });
+
+    assert.ok(effect.workspace);
+    assert.equal(effect.workspace.mode, 'adopted');
+    assert.equal(effect.workspace.snapshot.totalFiles, 1);
+    assert.equal(
+      effect.authority.application,
+      'exact_adopted_and_generated_patch',
+    );
+  });
+
+  void it('requires renewed review when the adopted working tree drifts', async () => {
+    const effect = await operations({ dirty: true }).instance.prepare({
+      project,
+      policyId: 'fixture',
+      objective: 'Objective',
+      ticket: { reference: 'VERA-1', details: 'Details' },
+      delivery: {
+        commitMessage: 'feat: objective',
+        pullRequest: { title: 'feat: objective', body: '', draft: false },
+      },
+      capabilities: [
+        {
+          name: 'software_change',
+          version: 1,
+          destination: {
+            schemaVersion: 1,
+            adapterId: 'codex_cli',
+            provider: 'openai',
+            transport: 'local_process',
+            dataBoundary: 'third_party',
+          },
+          authority: {
+            approval: 'always',
+            projectContext: 'required',
+            networkAccess: 'provider_api',
+            dataClasses: [
+              'owner_request',
+              'project_context',
+              'artifact_content',
+            ],
+            sideEffects: ['third_party_disclosure', 'isolated_workspace_write'],
+            credentials: 'server_managed',
+          },
+        },
+      ],
+    });
+
+    await assert.rejects(
+      operations({
+        dirty: true,
+        dirtyMarker: 'later-change',
+      }).instance.assertProjectBase({
+        project,
+        effect,
       }),
-      { code: 'campaign_conflict' },
+      { code: 'review_required' },
     );
   });
 

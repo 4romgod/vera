@@ -1,7 +1,13 @@
+import { createHash } from 'node:crypto';
+
 import { z } from 'zod';
 
 import { CapabilityAuthoritySchema } from '../capabilities/capability-registry.ts';
 import { CapabilityDestinationSchema } from '../capabilities/capability-destination.ts';
+import {
+  WorkingTreeSnapshotReferenceSchema,
+  workingTreeSnapshotHashPayload,
+} from '../projects/project-context.ts';
 
 const GitRevisionSchema = z.string().regex(/^[a-f0-9]{40,64}$/u);
 const SafeIdentifierSchema = z
@@ -193,6 +199,17 @@ export const DevelopmentCampaignEffectSchema = z
       .strict(),
     baseBranch: z.string().min(1).max(200),
     baseRevision: GitRevisionSchema,
+    workspace: z
+      .discriminatedUnion('mode', [
+        z.object({ mode: z.literal('clean') }).strict(),
+        z
+          .object({
+            mode: z.literal('adopted'),
+            snapshot: WorkingTreeSnapshotReferenceSchema,
+          })
+          .strict(),
+      ])
+      .optional(),
     objective: z.string().trim().min(1).max(10_000),
     ticket: z
       .object({
@@ -239,7 +256,10 @@ export const DevelopmentCampaignEffectSchema = z
     authority: z
       .object({
         implementation: z.literal('bounded_capabilities'),
-        application: z.literal('exact_generated_patch'),
+        application: z.enum([
+          'exact_generated_patch',
+          'exact_adopted_and_generated_patch',
+        ]),
         verification: z.literal('configured_commands'),
         publication: z.literal('create_one_pull_request'),
         observation: z.literal('github_checks_and_reviews'),
@@ -250,7 +270,72 @@ export const DevelopmentCampaignEffectSchema = z
       })
       .strict(),
   })
-  .strict();
+  .strict()
+  .superRefine((effect, context) => {
+    const workspace = effect.workspace;
+    const adopted = workspace?.mode === 'adopted';
+    if (workspace?.mode === 'adopted') {
+      const snapshot = workspace.snapshot;
+      const paths = new Set(snapshot.files.map((file) => file.relativePath));
+      const totalBytes = snapshot.files.reduce(
+        (total, file) => total + file.bytes,
+        0,
+      );
+      const snapshotSha256 = createHash('sha256')
+        .update(JSON.stringify(workingTreeSnapshotHashPayload(snapshot)))
+        .digest('hex');
+      if (
+        snapshot.totalFiles !== snapshot.files.length ||
+        paths.size !== snapshot.files.length ||
+        snapshot.totalBytes !== totalBytes ||
+        snapshot.snapshotSha256 !== snapshotSha256 ||
+        snapshot.files.some(
+          (file) =>
+            (!file.staged && !file.unstaged) ||
+            (file.untracked &&
+              (file.operation !== 'create' || file.staged || !file.unstaged)),
+        )
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['workspace', 'snapshot'],
+          message: 'The adopted workspace snapshot is inconsistent.',
+        });
+      }
+    }
+    if (
+      workspace?.mode === 'adopted' &&
+      workspace.snapshot.baseRevision !== effect.baseRevision
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['workspace', 'snapshot', 'baseRevision'],
+        message: 'The adopted workspace must use the campaign base revision.',
+      });
+    }
+    if (
+      workspace?.mode === 'adopted' &&
+      (workspace.snapshot.totalFiles > effect.limits.maxChangedFiles ||
+        workspace.snapshot.totalBytes > effect.limits.maxChangedBytes)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['workspace', 'snapshot'],
+        message: 'The adopted workspace exceeds the campaign limits.',
+      });
+    }
+    if (
+      (adopted &&
+        effect.authority.application !== 'exact_adopted_and_generated_patch') ||
+      (!adopted && effect.authority.application !== 'exact_generated_patch')
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['authority', 'application'],
+        message: 'Workspace and application authority do not match.',
+      });
+    }
+  });
 
 const GateResultSchema = z
   .object({
@@ -553,6 +638,9 @@ export type DevelopmentCampaignPolicySummary = z.infer<
 >;
 export type DevelopmentCampaignEffect = z.infer<
   typeof DevelopmentCampaignEffectSchema
+>;
+export type DevelopmentCampaignWorkspace = NonNullable<
+  DevelopmentCampaignEffect['workspace']
 >;
 export type DevelopmentCampaign = z.infer<typeof DevelopmentCampaignSchema>;
 export type DevelopmentCampaignEvent = z.infer<

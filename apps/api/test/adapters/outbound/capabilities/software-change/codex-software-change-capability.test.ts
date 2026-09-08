@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { afterEach, describe, it } from 'node:test';
 
 import { CodexSoftwareChangeCapability } from '../../../../../src/adapters/outbound/capabilities/software-change/codex-software-change-capability.ts';
+import { workingTreeSnapshotHashPayload } from '../../../../../src/domain/projects/project-context.ts';
 import type { SoftwareChangeInvocation } from '../../../../../src/ports/capabilities/software-change-capability.ts';
 
 const temporaryDirectories: string[] = [];
@@ -53,6 +54,57 @@ function invocation(): SoftwareChangeInvocation {
       maxChangedFiles: 10,
     },
   };
+}
+
+function invocationWithOwnerChanges(): SoftwareChangeInvocation {
+  const value = invocation();
+  const revision = 'a'.repeat(40);
+  const ownerContent = "export const marker = 'owner-started';\n";
+  const patch = [
+    'diff --git a/src/feature.ts b/src/feature.ts',
+    '--- a/src/feature.ts',
+    '+++ b/src/feature.ts',
+    '@@ -1 +1 @@',
+    "-export const marker = 'approved-only';",
+    "+export const marker = 'owner-started';",
+    '',
+  ].join('\n');
+  const files = [
+    {
+      relativePath: 'src/feature.ts',
+      operation: 'update' as const,
+      beforeSha256: createHash('sha256').update(approvedContent).digest('hex'),
+      afterSha256: createHash('sha256').update(ownerContent).digest('hex'),
+      bytes: Buffer.byteLength(ownerContent),
+      staged: true,
+      unstaged: false,
+      untracked: false,
+    },
+  ];
+  const patchSha256 = createHash('sha256').update(patch).digest('hex');
+  value.context.manifest.revision = revision;
+  value.context.workingTree = {
+    schemaVersion: 1,
+    baseRevision: revision,
+    patch,
+    patchSha256,
+    snapshotSha256: createHash('sha256')
+      .update(
+        JSON.stringify(
+          workingTreeSnapshotHashPayload({
+            baseRevision: revision,
+            patchSha256,
+            files,
+          }),
+        ),
+      )
+      .digest('hex'),
+    files,
+    totalFiles: 1,
+    totalBytes: files.reduce((total, file) => total + file.bytes, 0),
+    capturedAt: '2026-08-24T18:00:00.000Z',
+  };
+  return value;
 }
 
 afterEach(async () => {
@@ -149,5 +201,52 @@ await writeFile(valueAfter('--output-last-message'), JSON.stringify({ schemaVers
       capability.execute(invocation()),
       /forbidden path AGENTS\.md/u,
     );
+  });
+
+  void it('materializes frozen owner changes and returns one combined base-relative patch', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'vera-fake-codex-adopted-'));
+    temporaryDirectories.push(directory);
+    const command = join(directory, 'fake-codex.mjs');
+    await writeFile(
+      command,
+      `#!/usr/bin/env node
+import { readFile, writeFile } from 'node:fs/promises';
+const args = process.argv.slice(2);
+const valueAfter = (flag) => args[args.indexOf(flag) + 1];
+const workspace = valueAfter('--cd');
+const source = await readFile(workspace + '/src/feature.ts', 'utf8');
+if (!source.includes('owner-started')) process.exit(23);
+await writeFile(workspace + '/src/feature.ts', "export const marker = 'completed';\\n");
+await writeFile(valueAfter('--output-last-message'), JSON.stringify({
+  schemaVersion: 1,
+  summary: 'Reviewed and completed the owner change.',
+  verification: [{ command: 'npm test', status: 'not_run', details: 'Synthetic fixture.' }],
+  risks: []
+}));
+`,
+      'utf8',
+    );
+    await chmod(command, 0o755);
+    const capability = new CodexSoftwareChangeCapability({ command });
+
+    const result = await capability.execute(invocationWithOwnerChanges());
+
+    assert.equal(result.change.files.length, 1);
+    const changedFile = result.change.files[0];
+    assert.ok(changedFile);
+    assert.equal(changedFile.operation, 'update');
+    assert.equal(
+      changedFile.beforeSha256,
+      createHash('sha256').update(approvedContent).digest('hex'),
+    );
+    assert.equal(
+      changedFile.afterSha256,
+      createHash('sha256')
+        .update("export const marker = 'completed';\n")
+        .digest('hex'),
+    );
+    assert.match(result.change.patch, /approved-only/u);
+    assert.match(result.change.patch, /completed/u);
+    assert.doesNotMatch(result.change.patch, /owner-started/u);
   });
 });

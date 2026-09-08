@@ -6097,6 +6097,9 @@
           },
           "baseBranch": { "type": "string", "minLength": 1, "maxLength": 200 },
           "baseRevision": { "type": "string", "pattern": "^[a-f0-9]{40,64}$" },
+          "workspace": {
+            "$ref": "#/components/schemas/DevelopmentCampaignResourceApprovalEffectWorkspace"
+          },
           "objective": { "type": "string", "minLength": 1, "maxLength": 10000 },
           "ticket": {
             "type": "object",
@@ -6187,7 +6190,10 @@
           },
           "application": {
             "type": "string",
-            "enum": ["exact_generated_patch"]
+            "enum": [
+              "exact_generated_patch",
+              "exact_adopted_and_generated_patch"
+            ]
           },
           "verification": { "type": "string", "enum": ["configured_commands"] },
           "publication": {
@@ -6284,6 +6290,19 @@
         "items": {
           "$ref": "#/components/schemas/MissionResourceEffectCampaignEffectQualityGatesItems"
         }
+      },
+      "DevelopmentCampaignResourceApprovalEffectWorkspace": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": { "mode": { "type": "string", "enum": ["clean"] } },
+            "required": ["mode"],
+            "additionalProperties": false
+          },
+          {
+            "$ref": "#/components/schemas/MissionResourceEffectCampaignEffectWorkspaceOneOfVariant2"
+          }
+        ]
       },
       "DevelopmentCampaignResourceAttempts": {
         "maxItems": 3,
@@ -8219,6 +8238,17 @@
         "required": ["id", "label", "executable", "arguments", "timeoutMs"],
         "additionalProperties": false
       },
+      "MissionResourceEffectCampaignEffectWorkspaceOneOfVariant2": {
+        "type": "object",
+        "properties": {
+          "mode": { "type": "string", "enum": ["adopted"] },
+          "snapshot": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTree"
+          }
+        },
+        "required": ["mode", "snapshot"],
+        "additionalProperties": false
+      },
       "MissionResourceEffectCapabilitiesItemsAuthorityDataClasses": {
         "type": "array",
         "items": {
@@ -8329,6 +8359,94 @@
           "channel",
           "missionId",
           "outcome"
+        ],
+        "additionalProperties": false
+      },
+      "MissionResourceOneOfVariant2SnapshotFilesItemsOneOfVariant1": {
+        "type": "object",
+        "properties": {
+          "relativePath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "staged": { "type": "boolean" },
+          "unstaged": { "type": "boolean" },
+          "untracked": { "type": "boolean" },
+          "operation": { "type": "string", "enum": ["create"] },
+          "afterSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+        },
+        "required": [
+          "relativePath",
+          "bytes",
+          "staged",
+          "unstaged",
+          "untracked",
+          "operation",
+          "afterSha256"
+        ],
+        "additionalProperties": false
+      },
+      "MissionResourceOneOfVariant2SnapshotFilesItemsOneOfVariant2": {
+        "type": "object",
+        "properties": {
+          "relativePath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "staged": { "type": "boolean" },
+          "unstaged": { "type": "boolean" },
+          "untracked": { "type": "boolean" },
+          "operation": { "type": "string", "enum": ["update"] },
+          "beforeSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "afterSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+        },
+        "required": [
+          "relativePath",
+          "bytes",
+          "staged",
+          "unstaged",
+          "untracked",
+          "operation",
+          "beforeSha256",
+          "afterSha256"
+        ],
+        "additionalProperties": false
+      },
+      "MissionResourceOneOfVariant2SnapshotFilesItemsOneOfVariant3": {
+        "type": "object",
+        "properties": {
+          "relativePath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "bytes": { "type": "number", "enum": [0] },
+          "staged": { "type": "boolean" },
+          "unstaged": { "type": "boolean" },
+          "untracked": { "type": "boolean" },
+          "operation": { "type": "string", "enum": ["delete"] },
+          "beforeSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+        },
+        "required": [
+          "relativePath",
+          "bytes",
+          "staged",
+          "unstaged",
+          "untracked",
+          "operation",
+          "beforeSha256"
         ],
         "additionalProperties": false
       },
@@ -10516,6 +10634,9 @@
           "contextManifest": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
           },
+          "workingTree": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTree"
+          },
           "destination": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
           },
@@ -10594,6 +10715,9 @@
           "contextManifest": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
           },
+          "workingTree": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTree"
+          },
           "destination": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
           },
@@ -10666,6 +10790,9 @@
           "contextManifest": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
           },
+          "workingTree": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTree"
+          },
           "destination": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
           },
@@ -10734,6 +10861,9 @@
           },
           "contextManifest": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
+          },
+          "workingTree": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTree"
           },
           "destination": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
@@ -10804,6 +10934,9 @@
           "contextManifest": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
           },
+          "workingTree": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTree"
+          },
           "destination": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
           },
@@ -10872,6 +11005,9 @@
           },
           "contextManifest": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
+          },
+          "workingTree": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTree"
           },
           "destination": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
@@ -10945,6 +11081,9 @@
           "contextManifest": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
           },
+          "workingTree": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTree"
+          },
           "destination": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
           },
@@ -11014,6 +11153,9 @@
           "contextManifest": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
           },
+          "workingTree": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTree"
+          },
           "destination": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
           },
@@ -11082,6 +11224,9 @@
           },
           "contextManifest": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
+          },
+          "workingTree": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTree"
           },
           "destination": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
@@ -11155,6 +11300,9 @@
           "contextManifest": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
           },
+          "workingTree": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTree"
+          },
           "destination": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
           },
@@ -11227,6 +11375,9 @@
           "contextManifest": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
           },
+          "workingTree": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTree"
+          },
           "destination": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
           },
@@ -11296,6 +11447,9 @@
           "contextManifest": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
           },
+          "workingTree": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTree"
+          },
           "destination": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
           },
@@ -11364,6 +11518,9 @@
           },
           "contextManifest": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
+          },
+          "workingTree": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTree"
           },
           "destination": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
@@ -11436,6 +11593,9 @@
           },
           "contextManifest": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
+          },
+          "workingTree": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTree"
           },
           "destination": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
@@ -11515,6 +11675,9 @@
           "contextManifest": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
           },
+          "workingTree": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTree"
+          },
           "destination": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
           },
@@ -11592,6 +11755,9 @@
           },
           "contextManifest": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
+          },
+          "workingTree": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTree"
           },
           "destination": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
@@ -12227,6 +12393,9 @@
           "contextManifest": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
           },
+          "workingTree": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTree"
+          },
           "destination": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
           },
@@ -12294,6 +12463,9 @@
           "contextManifest": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
           },
+          "workingTree": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTree"
+          },
           "destination": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
           },
@@ -12355,6 +12527,9 @@
           "contextManifest": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
           },
+          "workingTree": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTree"
+          },
           "destination": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
           },
@@ -12412,6 +12587,9 @@
           },
           "contextManifest": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
+          },
+          "workingTree": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTree"
           },
           "destination": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
@@ -12529,6 +12707,9 @@
           "contextManifest": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
           },
+          "workingTree": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTree"
+          },
           "destination": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
           },
@@ -12608,6 +12789,9 @@
           "contextManifest": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
           },
+          "workingTree": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTree"
+          },
           "destination": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
           },
@@ -12686,6 +12870,9 @@
           },
           "contextManifest": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
+          },
+          "workingTree": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTree"
           },
           "destination": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
@@ -12821,6 +13008,9 @@
           "contextManifest": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
           },
+          "workingTree": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTree"
+          },
           "destination": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
           },
@@ -12909,6 +13099,9 @@
           },
           "contextManifest": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
+          },
+          "workingTree": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTree"
           },
           "destination": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
@@ -13040,6 +13233,9 @@
           "contextManifest": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
           },
+          "workingTree": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTree"
+          },
           "destination": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
           },
@@ -13143,6 +13339,9 @@
           },
           "contextManifest": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
+          },
+          "workingTree": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTree"
           },
           "destination": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
@@ -13253,6 +13452,9 @@
           "contextManifest": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
           },
+          "workingTree": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTree"
+          },
           "destination": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
           },
@@ -13343,6 +13545,9 @@
           },
           "contextManifest": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
+          },
+          "workingTree": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTree"
           },
           "destination": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
@@ -13436,6 +13641,9 @@
           "contextManifest": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
           },
+          "workingTree": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTree"
+          },
           "destination": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
           },
@@ -13502,6 +13710,9 @@
           },
           "contextManifest": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
+          },
+          "workingTree": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTree"
           },
           "destination": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
@@ -13709,6 +13920,42 @@
           "$ref": "#/components/schemas/TaskResourceOutputOneOfGoalResultArtifactsItems"
         }
       },
+      "TaskResourceInvocationAnyOfWebResearchWorkingTree": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": { "type": "number", "enum": [1] },
+          "baseRevision": { "type": "string", "pattern": "^[a-f0-9]{40,64}$" },
+          "snapshotSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "patchSha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "files": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTreeFiles"
+          },
+          "totalFiles": { "type": "integer", "minimum": 1, "maximum": 100 },
+          "totalBytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "baseRevision",
+          "snapshotSha256",
+          "patchSha256",
+          "files",
+          "totalFiles",
+          "totalBytes"
+        ],
+        "additionalProperties": false
+      },
+      "TaskResourceInvocationAnyOfWebResearchWorkingTreeFiles": {
+        "minItems": 1,
+        "maxItems": 100,
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/TaskResourceItemsAnyOfWebResearchWorkingTreeFilesItems"
+        }
+      },
       "TaskResourceInvocationAnyOfWorkItemManagement": {
         "type": "object",
         "properties": {
@@ -13732,6 +13979,9 @@
           },
           "contextManifest": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchContextManifest"
+          },
+          "workingTree": {
+            "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchWorkingTree"
           },
           "destination": {
             "$ref": "#/components/schemas/TaskResourceInvocationAnyOfWebResearchDestination"
@@ -13954,6 +14204,19 @@
           "classification"
         ],
         "additionalProperties": false
+      },
+      "TaskResourceItemsAnyOfWebResearchWorkingTreeFilesItems": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/MissionResourceOneOfVariant2SnapshotFilesItemsOneOfVariant1"
+          },
+          {
+            "$ref": "#/components/schemas/MissionResourceOneOfVariant2SnapshotFilesItemsOneOfVariant2"
+          },
+          {
+            "$ref": "#/components/schemas/MissionResourceOneOfVariant2SnapshotFilesItemsOneOfVariant3"
+          }
+        ]
       },
       "TaskResourceItemsDecisionAnyOfCompleteGoalRequirementResolutionsItems": {
         "anyOf": [

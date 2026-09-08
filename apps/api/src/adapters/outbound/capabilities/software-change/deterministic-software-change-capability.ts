@@ -1,9 +1,37 @@
 import { createHash } from 'node:crypto';
 
+import type { SoftwareChange } from '../../../../domain/changes/software-change.ts';
 import type {
   SoftwareChangeCapability,
   SoftwareChangeInvocation,
 } from '../../../../ports/capabilities/software-change-capability.ts';
+
+function adoptedFiles(invocation: SoftwareChangeInvocation) {
+  return (invocation.context.workingTree?.files ?? []).map((file) => {
+    const identity = { relativePath: file.relativePath, bytes: file.bytes };
+    if (file.operation === 'create') {
+      return {
+        ...identity,
+        operation: 'create' as const,
+        afterSha256: file.afterSha256,
+      };
+    }
+    if (file.operation === 'delete') {
+      return {
+        ...identity,
+        operation: 'delete' as const,
+        beforeSha256: file.beforeSha256,
+        bytes: 0 as const,
+      };
+    }
+    return {
+      ...identity,
+      operation: 'update' as const,
+      beforeSha256: file.beforeSha256,
+      afterSha256: file.afterSha256,
+    };
+  });
+}
 
 function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted === true) {
@@ -30,26 +58,7 @@ export class DeterministicSoftwareChangeCapability
     invocation: SoftwareChangeInvocation,
     options?: { signal?: AbortSignal },
   ): Promise<{
-    change: {
-      schemaVersion: 1;
-      project: { id: string; name: string; revision: string };
-      ticket: { reference: string; details: string };
-      objective: string;
-      summary: string;
-      files: {
-        relativePath: string;
-        operation: 'create';
-        afterSha256: string;
-        bytes: number;
-      }[];
-      patch: string;
-      verification: {
-        command: string;
-        status: 'not_run';
-        details: string;
-      }[];
-      risks: string[];
-    };
+    change: SoftwareChange;
     model: {
       provider: string;
       model: string;
@@ -58,6 +67,15 @@ export class DeterministicSoftwareChangeCapability
   }> {
     throwIfAborted(options?.signal);
     const relativePath = 'VERA_DETERMINISTIC_CHANGE.md';
+    if (
+      invocation.context.workingTree?.files.some(
+        (file) => file.relativePath === relativePath,
+      ) === true
+    ) {
+      throw new Error(
+        'The deterministic change conflicts with an adopted working-tree path.',
+      );
+    }
     const content = `# Deterministic software change\n\n${invocation.arguments.objective}\n`;
     const addedLines = content
       .slice(0, -1)
@@ -84,6 +102,7 @@ export class DeterministicSoftwareChangeCapability
         objective: invocation.arguments.objective,
         summary: 'Produced a deterministic review-only change artifact.',
         files: [
+          ...adoptedFiles(invocation),
           {
             relativePath,
             operation: 'create',
@@ -91,7 +110,10 @@ export class DeterministicSoftwareChangeCapability
             bytes: Buffer.byteLength(content),
           },
         ],
-        patch,
+        patch:
+          invocation.context.workingTree === undefined
+            ? patch
+            : `${invocation.context.workingTree.patch}\n${patch}`,
         verification: [
           {
             command: 'not run by deterministic adapter',

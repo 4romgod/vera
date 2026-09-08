@@ -1,7 +1,7 @@
 # Vera Interface Design
 
 **Status:** Implemented design language
-**Last updated:** 6 September 2026
+**Last updated:** 7 September 2026
 
 ## Purpose
 
@@ -129,6 +129,9 @@ destinations.
   future turn.
 - Approval cards keep the action, target, network authority, side effects, and
   exact arguments inspectable before a decision.
+- Project approvals with existing owner changes list every frozen path,
+  operation, staged/unstaged/untracked provenance, size, and short snapshot
+  hash, and state whether the patch crosses a third-party boundary.
 - Attachment-analysis approvals list the exact filenames, types, sizes, and
   short hashes and say plainly whether extracted text or normalized images stay
   owner-controlled or are sent to a named third-party model boundary.
@@ -250,7 +253,10 @@ owner sees policy and effect before granting authority.
   the complete frozen envelope.
 - Approval is labelled “Approve bounded campaign,” never a vague “Continue.”
 - Cards keep objective, repository/base, merge method, gate names, file, byte,
-  duration ceilings, attempts, PR checks, and terminal failure visible.
+  duration ceilings, attempts, PR checks, and terminal failure visible. When a
+  campaign adopts existing work, the card also names the number of frozen
+  starting files and their staged, unstaged, and untracked breakdown before the
+  owner approves it.
 - Cancellation appears only while the server can truthfully prevent remote
   publication.
 - `review_required` is terminal for automation and tells the owner why the PR
@@ -266,8 +272,8 @@ Conversation creates the draft; the tab makes the consequential decision
 legible.
 
 - The approval card shows the objective, completion criteria, project, commit
-  and pull-request metadata, one-campaign ceiling, duration, and “no merge” in
-  plain language.
+  and pull-request metadata, one-campaign ceiling, duration, “no merge,” and any
+  exact adopted starting-work summary in plain language.
 - “Approve mission” means Vera may produce exactly one pull request. It never
   means recurring work, multiple outcomes, policy edits, or merge.
 - Active cards show durable mission state while the embedded campaign remains

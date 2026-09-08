@@ -1,8 +1,8 @@
 # Vera HTTP API
 
 **Status:** Accepted for implemented V1 paths
-**Version:** 1.8
-**Last updated:** 5 September 2026
+**Version:** 1.9
+**Last updated:** 7 September 2026
 
 ## Purpose
 
@@ -476,7 +476,7 @@ Example waiting response, abbreviated:
       "schemaVersion": 1,
       "projectId": "project_...",
       "sourceKind": "local_git",
-      "revision": "<git-commit>+working-tree",
+      "revision": "<exact-git-commit>",
       "entries": [
         {
           "relativePath": "apps/api/src/server.ts",
@@ -488,6 +488,26 @@ Example waiting response, abbreviated:
       ],
       "totalFiles": 1,
       "totalBytes": 1234
+    },
+    "workingTree": {
+      "schemaVersion": 1,
+      "baseRevision": "<exact-git-commit>",
+      "snapshotSha256": "<sha256>",
+      "patchSha256": "<sha256>",
+      "files": [
+        {
+          "relativePath": "apps/api/src/feature.ts",
+          "operation": "update",
+          "beforeSha256": "<sha256>",
+          "afterSha256": "<sha256>",
+          "bytes": 2048,
+          "staged": true,
+          "unstaged": false,
+          "untracked": false
+        }
+      ],
+      "totalFiles": 1,
+      "totalBytes": 2048
     },
     "destination": {
       "schemaVersion": 1,
@@ -508,10 +528,13 @@ Example waiting response, abbreviated:
 ```
 
 `proposedArguments` is the model-proposed routing input. `project`,
-`contextManifest`, destination, invocation identity, and limits are
-authoritative fields added by Vera code. Approval covers this complete
-disclosure. The corresponding hash-verified contents are frozen durably but are
-not echoed in ordinary API responses.
+`contextManifest`, optional `workingTree`, destination, invocation identity,
+and limits are authoritative fields added by Vera code. `workingTree` appears
+when the registered checkout has supported staged, unstaged, or untracked
+changes and freezes each path, operation, provenance, size, before/after hash,
+and the complete patch identity. Approval covers this complete disclosure. The
+corresponding hash-verified context contents and complete patch are frozen
+durably but are not echoed in ordinary API responses.
 
 Every new approval also records the selected declaration's `authority`:
 approval mode, project-context requirement, network access, data classes,
@@ -987,17 +1010,26 @@ Content-Type: application/json
 }
 ```
 
-Creation is read-only but strict: the registered checkout must be clean, on the
-configured base branch, and exactly synchronized with the remote. The response
-freezes that base revision, repository, exact enabled specialist destination
-and authority, complete gate definitions, protected paths, limits, delivery
-metadata, and explicit prohibitions on direct base pushes, force pushes, and
-policy mutation. The owner approves that one complete effect through the
-campaign decision route.
+Creation is read-only but strict: the registered checkout must be on the
+configured base branch and exactly synchronized with the remote. A clean
+checkout is recorded as `workspace.mode: "clean"`. Supported staged,
+unstaged, and untracked text changes are instead captured as
+`workspace.mode: "adopted"` with the exact base, patch digest, file-operation,
+hash, byte, and provenance evidence frozen into the response. Unsupported, unsafe, or
+over-limit changes fail explicitly rather than being omitted. The response also
+freezes the repository, exact enabled specialist destination and authority,
+complete gate definitions, protected paths, limits, delivery metadata, and
+explicit prohibitions on direct base pushes, force pushes, and policy mutation.
+The owner approves that one complete effect through the campaign decision
+route.
 
 After approval, the campaign worker owns the project-mutation lease for each
 transition and may approve only matching internal specialist, application, and
-publication effects. A failed local gate records bounded output, retires that
+publication effects. An adopted checkout is recaptured before each attempt and
+must still match the approved snapshot exactly. The specialist reviews it only
+inside an isolated repository, and the resulting artifact combines retained or
+corrected owner work with Vera's additions against the immutable base. A failed
+local gate records bounded output, retires that
 attempt from the campaign, and starts a complete replacement from the same base
 while attempts remain. Its managed worktree remains immutable evidence and is
 never reused by the replacement. Successful local verification creates one
@@ -1044,11 +1076,13 @@ development-campaign catalog, and setting `VERA_MISSION_CATALOG_FILE`.
 
 Ordinary conversation is the primary creation path. With a project selected,
 the owner can ask: “Run one bounded mission while I am away: choose one useful
-improvement and return one verified pull request. Do not merge.” Vera first
-creates a durable draft and replies with its mission ID. The Missions tab then
-shows the one approval containing objective, completion criteria, campaign
-effect, delivery metadata, time ceiling, and explicit no-merge/no-recurrence
-authority.
+improvement and return one verified pull request. Do not merge.” The owner may
+also ask Vera to review existing changes, complete the requested outcome, run
+the configured checks, and create a pull request. Vera first creates a durable
+draft and replies with its mission ID. The Missions tab then shows the one
+approval containing objective, completion criteria, campaign effect, any exact
+adopted working-tree snapshot, delivery metadata, time ceiling, and explicit
+no-merge/no-recurrence authority.
 
 Approval starts the embedded `pull_request_only` campaign. The mission is the
 only approval route for that subordinate campaign; direct campaign

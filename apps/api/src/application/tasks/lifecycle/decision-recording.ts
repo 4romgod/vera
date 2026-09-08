@@ -1,6 +1,9 @@
 import type { DecisionResult } from '../../../domain/model/execution-decision.ts';
 import type { Project } from '../../../domain/projects/project.ts';
-import type { ProjectContextBundle } from '../../../domain/projects/project-context.ts';
+import {
+  workingTreeSnapshotReference,
+  type ProjectContextBundle,
+} from '../../../domain/projects/project-context.ts';
 import {
   ApprovalSchema,
   type TaskAggregate,
@@ -303,6 +306,13 @@ export function createDecisionRecording(
                   displayName: approvedContext.project.displayName,
                 },
                 contextManifest: approvedContext.context.manifest,
+                ...(approvedContext.context.workingTree === undefined
+                  ? {}
+                  : {
+                      workingTree: workingTreeSnapshotReference(
+                        approvedContext.context.workingTree,
+                      ),
+                    }),
               }),
           destination: selectedDestination,
           authority: selectedAuthority,

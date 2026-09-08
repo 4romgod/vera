@@ -145,6 +145,13 @@ export function ApprovalCard(props: {
         </View>
       )}
 
+      {props.approval.workingTree === undefined ? null : (
+        <WorkingTreeDisclosure
+          snapshot={props.approval.workingTree}
+          thirdParty={effects.includes('third_party_disclosure')}
+        />
+      )}
+
       {props.approval.decisionEvidence === undefined ? null : (
         <ArtifactDisclosure
           artifacts={props.approval.decisionEvidence}
@@ -274,6 +281,81 @@ export function ApprovalCard(props: {
           onPress={() => props.onDecision('approved')}
         />
       </View>
+    </View>
+  );
+}
+
+function WorkingTreeDisclosure(props: {
+  snapshot: NonNullable<Approval['workingTree']>;
+  thirdParty: boolean;
+}) {
+  return (
+    <View
+      style={{
+        gap: spacing.sm,
+        borderWidth: 1,
+        borderColor: palette.lineSoft,
+        borderRadius: radius.md,
+        padding: spacing.md,
+        backgroundColor: palette.canvas,
+      }}
+    >
+      <Text
+        style={{
+          color: palette.muted,
+          fontSize: 10,
+          fontWeight: '700',
+          letterSpacing: 0.8,
+        }}
+      >
+        EXACT STARTING CHANGES
+      </Text>
+      <Text
+        selectable
+        style={{ color: palette.textSoft, fontSize: 12, lineHeight: 18 }}
+      >
+        {String(props.snapshot.totalFiles)} existing file
+        {props.snapshot.totalFiles === 1 ? '' : 's'} ·{' '}
+        {String(Math.ceil(props.snapshot.totalBytes / 1024))} KB · snapshot{' '}
+        {props.snapshot.snapshotSha256.slice(0, 12)}…
+      </Text>
+      {props.snapshot.files.map((file) => {
+        const states = [
+          file.staged ? 'staged' : undefined,
+          file.unstaged && !file.untracked ? 'unstaged' : undefined,
+          file.untracked ? 'untracked' : undefined,
+        ].filter((value): value is string => value !== undefined);
+        return (
+          <View key={file.relativePath} style={{ minWidth: 0, gap: 2 }}>
+            <Text
+              selectable
+              style={{
+                color: palette.textSoft,
+                fontSize: 13,
+                fontWeight: '600',
+              }}
+            >
+              {file.relativePath}
+            </Text>
+            <Text selectable style={{ color: palette.faint, fontSize: 10 }}>
+              {humanizeIdentifier(file.operation)} · {states.join(' + ')} ·{' '}
+              {String(Math.ceil(file.bytes / 1024))} KB
+            </Text>
+          </View>
+        );
+      })}
+      <Text
+        selectable
+        style={{
+          color: props.thirdParty ? palette.warning : palette.muted,
+          fontSize: 12,
+          lineHeight: 18,
+        }}
+      >
+        {props.thirdParty
+          ? 'Approval sends this exact frozen patch to the named third-party specialist. Vera will stop for review if any starting file changes before delivery.'
+          : 'Approval supplies this exact frozen patch to the owner-controlled specialist. Vera will stop for review if any starting file changes before delivery.'}
+      </Text>
     </View>
   );
 }

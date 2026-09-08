@@ -209,6 +209,11 @@ ADR-0055 lets the owner select among neural voices currently advertised by the
 configured provider without confusing them with operating-system fallback
 voices. Neural and fallback previews use their named engines, and an unavailable
 neural provider never causes a silent change of voice.
+ADR-0056 replaces the blanket clean-checkout prerequisite for software delivery
+with an exact approved working-tree snapshot. Vera may review and complete
+supported owner changes in an isolated workspace, while workspace drift,
+unsupported files, protected-path modification, merge, and force-push remain
+outside the frozen authority.
 
 ## ADR rules
 

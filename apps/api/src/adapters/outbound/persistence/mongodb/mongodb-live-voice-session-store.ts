@@ -40,7 +40,9 @@ export class MongoDbLiveVoiceSessionStore implements LiveVoiceSessionStore {
         socketTimeoutMS: options.timeoutMs,
       });
     this.database = this.client.db(options.database);
-    this.sessions = this.database.collection(COLLECTION);
+    this.sessions = this.database.collection(COLLECTION, {
+      ignoreUndefined: true,
+    });
   }
 
   public async create(session: LiveVoiceSession) {

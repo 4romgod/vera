@@ -344,6 +344,27 @@ void describe('live voice session lifecycle', () => {
     await recovered.close();
   });
 
+  void it('retries startup recovery after a transient store failure', async () => {
+    const { service, store } = await harness();
+    const findRecoverable = store.findRecoverable.bind(store);
+    let attempts = 0;
+    store.findRecoverable = () => {
+      attempts += 1;
+      if (attempts === 1)
+        return Promise.reject(new Error('temporary recovery failure'));
+      return findRecoverable();
+    };
+
+    await assert.rejects(
+      service.recoverInterrupted(),
+      /temporary recovery failure/u,
+    );
+    await service.checkReadiness();
+    await service.checkReadiness();
+    assert.equal(attempts, 2);
+    await service.close();
+  });
+
   void it('preserves request idempotency and one active session per owner', async () => {
     const { service } = await harness();
     const input = {

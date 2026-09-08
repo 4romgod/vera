@@ -1,14 +1,14 @@
-import { Room, RoomEvent } from 'livekit-client';
+import type { Room } from 'livekit-client';
 
 import {
   parseLiveVoiceEvent,
   type LiveVoiceEvent,
 } from './live-voice-events.ts';
 import {
-  initializeLiveKit,
   startLiveKitAudioSession,
   stopLiveKitAudioSession,
-} from './livekit-runtime.ts';
+} from '@/voice/livekit-runtime';
+import { loadLiveKitClient } from './livekit-client-loader.ts';
 
 export type LiveVoiceConnectionState =
   | 'connecting'
@@ -17,7 +17,7 @@ export type LiveVoiceConnectionState =
   | 'disconnected';
 
 export class LiveVoiceConnection {
-  private readonly room: Room;
+  private room: Room | undefined;
   private stopped = false;
 
   public constructor(
@@ -26,37 +26,44 @@ export class LiveVoiceConnection {
       state(state: LiveVoiceConnectionState): void;
     },
   ) {
-    initializeLiveKit();
-    this.room = new Room({
-      adaptiveStream: false,
-      dynacast: false,
-    });
-    this.room.on(
-      RoomEvent.DataReceived,
-      (payload, _participant, _kind, topic) => {
-        if (topic !== 'vera.voice.events.v1') return;
-        const event = parseLiveVoiceEvent(payload);
-        if (event !== null) callbacks.event(event);
-      },
-    );
-    this.room.on(RoomEvent.Reconnecting, () => callbacks.state('reconnecting'));
-    this.room.on(RoomEvent.Reconnected, () => callbacks.state('connected'));
-    this.room.on(RoomEvent.Disconnected, () => {
-      if (!this.stopped) callbacks.state('disconnected');
-    });
+    // LiveKit is loaded lazily in connect so React Native WebRTC globals are
+    // registered before livekit-client evaluates its runtime capabilities.
   }
 
   public async connect(url: string, token: string) {
     this.callbacks.state('connecting');
-    await startLiveKitAudioSession();
     try {
-      await this.room.connect(url, token, { autoSubscribe: false });
-      if (this.stopped) {
-        await this.room.disconnect();
+      const { Room: LiveKitRoom, RoomEvent } = await loadLiveKitClient();
+      if (this.stopped) return;
+      const room = new LiveKitRoom({
+        adaptiveStream: false,
+        dynacast: false,
+      });
+      this.room = room;
+      room.on(RoomEvent.DataReceived, (payload, _participant, _kind, topic) => {
+        if (topic !== 'vera.voice.events.v1') return;
+        const event = parseLiveVoiceEvent(payload);
+        if (event !== null) this.callbacks.event(event);
+      });
+      room.on(RoomEvent.Reconnecting, () =>
+        this.callbacks.state('reconnecting'),
+      );
+      room.on(RoomEvent.Reconnected, () => this.callbacks.state('connected'));
+      room.on(RoomEvent.Disconnected, () => {
+        if (!this.stopped) this.callbacks.state('disconnected');
+      });
+      await startLiveKitAudioSession();
+      if (this.isStopped()) {
         await stopLiveKitAudioSession().catch(() => undefined);
         return;
       }
-      await this.room.localParticipant.setMicrophoneEnabled(true, {
+      await room.connect(url, token, { autoSubscribe: false });
+      if (this.isStopped()) {
+        await room.disconnect();
+        await stopLiveKitAudioSession().catch(() => undefined);
+        return;
+      }
+      await room.localParticipant.setMicrophoneEnabled(true, {
         autoGainControl: true,
         echoCancellation: true,
         noiseSuppression: true,
@@ -71,10 +78,16 @@ export class LiveVoiceConnection {
   public async stop() {
     if (this.stopped) return;
     this.stopped = true;
-    await this.room.localParticipant
+    const room = this.room;
+    this.room = undefined;
+    await room?.localParticipant
       .setMicrophoneEnabled(false)
       .catch(() => undefined);
-    await this.room.disconnect();
+    await room?.disconnect();
     await stopLiveKitAudioSession().catch(() => undefined);
+  }
+
+  private isStopped() {
+    return this.stopped;
   }
 }

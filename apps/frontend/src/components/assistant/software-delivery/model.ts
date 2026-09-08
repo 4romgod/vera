@@ -2,9 +2,27 @@ import type {
   ArtifactReference,
   ArtifactResource,
   ChangeApplicationResource,
+  DevelopmentCampaignResource,
   SoftwareChangePublicationResource,
   TaskResource,
 } from '@vera/client';
+
+type CampaignWorkspace =
+  DevelopmentCampaignResource['approval']['effect']['workspace'];
+
+export function adoptedWorkspaceSummary(
+  workspace: CampaignWorkspace | undefined,
+): string | undefined {
+  if (workspace?.mode !== 'adopted') return undefined;
+  const staged = workspace.snapshot.files.filter((file) => file.staged).length;
+  const unstaged = workspace.snapshot.files.filter(
+    (file) => file.unstaged && !file.untracked,
+  ).length;
+  const untracked = workspace.snapshot.files.filter(
+    (file) => file.untracked,
+  ).length;
+  return `${String(workspace.snapshot.totalFiles)} existing file${workspace.snapshot.totalFiles === 1 ? '' : 's'} · ${String(staged)} staged · ${String(unstaged)} unstaged · ${String(untracked)} untracked`;
+}
 
 export type PublicationDraft = {
   baseBranch: string;

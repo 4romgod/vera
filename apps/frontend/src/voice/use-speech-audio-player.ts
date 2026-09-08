@@ -1,65 +1,51 @@
-import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
+import { createAudioPlayer, type AudioStatus } from 'expo-audio';
 import { useCallback, useEffect, useRef } from 'react';
 
+import { prepareSpeechAudio } from '@/voice/speech-audio-source';
 import {
-  prepareSpeechAudio,
-  type PreparedSpeechAudio,
-} from '@/voice/speech-audio-source';
-
-type PendingPlayback = {
-  source: PreparedSpeechAudio;
-  started: boolean;
-  resolve(): void;
-  reject(error: Error): void;
-};
+  startSingleUseSpeechPlayback,
+  type SingleUseSpeechPlayback,
+} from '@/voice/single-use-speech-playback';
 
 export function useSpeechAudioPlayer() {
-  const player = useAudioPlayer(null, { updateInterval: 100 });
-  const status = useAudioPlayerStatus(player);
-  const pending = useRef<PendingPlayback | undefined>(undefined);
-
-  const settle = useCallback((error?: Error) => {
-    const current = pending.current;
-    if (current === undefined) return;
-    pending.current = undefined;
-    current.source.release();
-    if (error === undefined) current.resolve();
-    else current.reject(error);
-  }, []);
+  const pending = useRef<SingleUseSpeechPlayback | undefined>(undefined);
 
   const stop = useCallback(() => {
-    player.pause();
-    settle(new Error('Speech playback was interrupted.'));
-  }, [player, settle]);
+    pending.current?.interrupt();
+    pending.current = undefined;
+  }, []);
 
   const play = useCallback(
     (bytes: ArrayBuffer): Promise<void> => {
       stop();
       const source = prepareSpeechAudio(bytes);
-      return new Promise<void>((resolve, reject) => {
-        pending.current = { source, started: false, resolve, reject };
-        player.replace(source.uri);
+      const playback = startSingleUseSpeechPlayback({
+        source,
+        createPlayer: () => {
+          const player = createAudioPlayer(null, { updateInterval: 100 });
+          const eventPlayer = player as typeof player & {
+            addListener(
+              event: 'playbackStatusUpdate',
+              listener: (status: AudioStatus) => void,
+            ): { remove(): void };
+          };
+          return {
+            addStatusListener: (listener) =>
+              eventPlayer.addListener('playbackStatusUpdate', listener),
+            pause: () => player.pause(),
+            play: () => player.play(),
+            release: () => player.remove(),
+            replace: (uri) => player.replace(uri),
+          };
+        },
+      });
+      pending.current = playback;
+      return playback.promise.finally(() => {
+        if (pending.current === playback) pending.current = undefined;
       });
     },
-    [player, stop],
+    [stop],
   );
-
-  useEffect(() => {
-    const current = pending.current;
-    if (current === undefined) return;
-    if (status.error !== null) {
-      settle(new Error(status.error));
-      return;
-    }
-    if (status.didJustFinish) {
-      settle();
-      return;
-    }
-    if (status.isLoaded && !current.started) {
-      current.started = true;
-      player.play();
-    }
-  }, [player, settle, status.didJustFinish, status.error, status.isLoaded]);
 
   useEffect(() => () => stop(), [stop]);
   return { play, stop };
