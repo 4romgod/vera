@@ -79,6 +79,46 @@ export class InMemoryExecutionStore implements ExecutionStore {
     );
   }
 
+  public findByClarificationAnswerKey(
+    principalId: string,
+    conversationId: string,
+    requestKey: string,
+  ): Promise<TaskAggregate | null> {
+    return Promise.resolve(
+      this.find(
+        (aggregate) =>
+          aggregate.task.principalId === principalId &&
+          aggregate.task.conversationId === conversationId &&
+          aggregate.run.clarification?.rounds.some(
+            (round) => round.answer?.requestKey === requestKey,
+          ) === true,
+      ),
+    );
+  }
+
+  public listAwaitingClarificationsByConversation(
+    principalId: string,
+    conversationId: string,
+    limit: number,
+  ): Promise<TaskAggregate[]> {
+    return Promise.resolve(
+      [...this.byTaskId.values()]
+        .filter(
+          (aggregate) =>
+            aggregate.task.principalId === principalId &&
+            aggregate.task.conversationId === conversationId &&
+            aggregate.run.status === 'awaiting_clarification',
+        )
+        .sort(
+          (left, right) =>
+            right.task.updatedAt.localeCompare(left.task.updatedAt) ||
+            right.task.id.localeCompare(left.task.id),
+        )
+        .slice(0, limit)
+        .map((aggregate) => structuredClone(aggregate)),
+    );
+  }
+
   public findLatestByExternalSignal(
     principalId: string,
     signalId: string,

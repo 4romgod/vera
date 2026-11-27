@@ -15,6 +15,7 @@ import {
   MachineServiceManagementGoalStepSchema,
 } from './goal-plan.ts';
 import type { CapabilityReference } from '../capabilities/capability-registry.ts';
+import { ClarificationRequestSchema } from '../tasks/intent-clarification.ts';
 
 const DecisionSummarySchema = z.string().trim().min(1).max(500);
 
@@ -145,6 +146,15 @@ export const AdaptiveGoalContinuationProposalSchema = z.union([
         .max(3),
     })
     .strict(),
+  ClarificationRequestSchema.safeExtend({
+    schemaVersion: z.literal(1),
+    kind: z.literal('request_clarification'),
+    decisionSummary: DecisionSummarySchema,
+    evidenceStepIds: z
+      .array(z.string().regex(/^step_[a-z0-9_]+$/u))
+      .min(1)
+      .max(3),
+  }).strict(),
 ]);
 
 export function createAdaptiveGoalContinuationProposalSchema(options: {
@@ -292,8 +302,18 @@ export function createAdaptiveGoalContinuationProposalSchema(options: {
         .max(3),
     })
     .strict();
+  const clarification = ClarificationRequestSchema.safeExtend({
+    schemaVersion: z.literal(1),
+    kind: z.literal('request_clarification'),
+    decisionSummary: DecisionSummarySchema,
+    evidenceStepIds: evidenceStepIdsSchema,
+  }).strict();
   const firstEnabledStep = enabledSteps[0];
-  if (firstEnabledStep === undefined) return complete;
+  if (firstEnabledStep === undefined) {
+    return (
+      completionAllowed ? z.union([clarification, complete]) : clarification
+    ) as z.ZodType<AdaptiveGoalContinuationProposal>;
+  }
   const enabledStep =
     enabledSteps.length === 1
       ? firstEnabledStep
@@ -310,7 +330,9 @@ export function createAdaptiveGoalContinuationProposalSchema(options: {
     })
     .strict();
   return (
-    completionAllowed ? z.union([continuation, complete]) : continuation
+    completionAllowed
+      ? z.union([continuation, complete, clarification])
+      : z.union([continuation, clarification])
   ) as z.ZodType<AdaptiveGoalContinuationProposal>;
 }
 
@@ -325,6 +347,13 @@ export const AdaptiveGoalContinuationDecisionSchema = z.union([
         .max(3),
     })
     .strict(),
+  ClarificationRequestSchema.safeExtend({
+    kind: z.literal('clarification_required'),
+    evidenceStepIds: z
+      .array(z.string().regex(/^step_[a-z0-9_]+$/u))
+      .min(1)
+      .max(3),
+  }).strict(),
   z
     .object({
       kind: z.literal('complete_goal'),
@@ -394,7 +423,7 @@ export const AdaptiveGoalExecutionSchema = z
       .optional(),
     currentStepIndex: z.number().int().nonnegative().max(2),
     steps: z.array(GoalExecutionStepSchema).min(1).max(3),
-    continuations: z.array(AdaptiveGoalContinuationResultSchema).max(3),
+    continuations: z.array(AdaptiveGoalContinuationResultSchema).max(8),
     finalResponse: z
       .object({
         message: z.string().trim().min(1).max(20_000),
@@ -456,9 +485,10 @@ export const AdaptiveGoalExecutionSchema = z
       }
     });
 
+    let observedStepCount = 1;
     goal.continuations.forEach((continuation, index) => {
       const observedStepIds = new Set(
-        goal.steps.slice(0, index + 1).map((step) => step.id),
+        goal.steps.slice(0, observedStepCount).map((step) => step.id),
       );
       if (
         continuation.decision.kind !== 'rejected' &&
@@ -474,7 +504,7 @@ export const AdaptiveGoalExecutionSchema = z
         });
       }
       if (continuation.decision.kind === 'continue_goal') {
-        const nextStep = goal.steps[index + 1];
+        const nextStep = goal.steps[observedStepCount];
         if (
           nextStep?.id !== continuation.decision.step.id ||
           nextStep.purpose !== continuation.decision.step.purpose ||
@@ -491,7 +521,12 @@ export const AdaptiveGoalExecutionSchema = z
               'An accepted adaptive continuation must match the next persisted step.',
           });
         }
-      } else if (index !== goal.continuations.length - 1) {
+        observedStepCount += 1;
+      } else if (
+        (continuation.decision.kind === 'complete_goal' ||
+          continuation.decision.kind === 'rejected') &&
+        index !== goal.continuations.length - 1
+      ) {
         context.addIssue({
           code: 'custom',
           path: ['continuations', index, 'decision'],

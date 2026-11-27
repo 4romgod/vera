@@ -128,6 +128,12 @@ export function externalSignalProgress(
     };
   }
   switch (task.run.status) {
+    case 'awaiting_clarification':
+      return {
+        status: 'needs_attention',
+        summary: 'Vera needs owner clarification before triage can continue.',
+        updatedAt: task.run.updatedAt,
+      };
     case 'deciding':
     case 'executing':
     case 'cancellation_requested':

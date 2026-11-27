@@ -130,6 +130,44 @@ const baseInput = {
 } as const;
 
 void describe('adaptive goal continuation decision', () => {
+  void it('can request another owner clarification after observing evidence', async () => {
+    const provider = new FakeModelProvider({
+      schemaVersion: 1,
+      kind: 'request_clarification',
+      decisionSummary: 'The evidence leaves the delivery time unresolved.',
+      question: 'What time should I create the reminder for?',
+      missingInformation: [
+        { key: 'reminder_time', description: 'Need the reminder time.' },
+      ],
+      resolvedFacts: [{ key: 'rain_expected', value: 'Yes.' }],
+      evidenceStepIds: ['step_1'],
+    });
+    const evaluate = createEvaluateGoalContinuation(provider, {
+      enabledCapabilities: [
+        { name: 'web_research', version: 1 },
+        { name: 'personal_reminder_management', version: 1 },
+      ],
+      createId: () => 'decision_clarify_time',
+      clock: () => '2030-01-01T00:01:00.000Z',
+    });
+
+    const result = await evaluate(baseInput);
+
+    assert.deepEqual(result.decision, {
+      kind: 'clarification_required',
+      question: 'What time should I create the reminder for?',
+      missingInformation: [
+        { key: 'reminder_time', description: 'Need the reminder time.' },
+      ],
+      resolvedFacts: [{ key: 'rain_expected', value: 'Yes.' }],
+      evidenceStepIds: ['step_1'],
+    });
+    assert.match(
+      provider.inputs[0]?.systemPrompt ?? '',
+      /clarification can take multiple rounds/u,
+    );
+  });
+
   void it('accepts one enabled next step grounded in completed evidence', async () => {
     const provider = new FakeModelProvider({
       schemaVersion: 1,

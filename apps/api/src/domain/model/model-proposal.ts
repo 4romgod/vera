@@ -39,6 +39,7 @@ import {
 } from '../software-delivery/software-delivery-arguments.ts';
 import { WorkItemActionArgumentsSchema } from '../work-items/work-item.ts';
 import { WorkItemManagementGoalStepSchema } from '../goals/goal-plan.ts';
+import { ClarificationRequestSchema } from '../tasks/intent-clarification.ts';
 
 const DecisionSummarySchema = z.string().trim().min(1).max(500);
 
@@ -70,6 +71,12 @@ const RespondProposalSchema = z
     message: z.string().trim().min(1).max(20_000),
   })
   .strict();
+
+const ClarificationProposalSchema = ClarificationRequestSchema.safeExtend({
+  schemaVersion: z.literal(1),
+  kind: z.literal('request_clarification'),
+  decisionSummary: DecisionSummarySchema,
+}).strict();
 
 const AttentionManagementProposalSchema = z
   .object({
@@ -286,6 +293,7 @@ const PursueAdaptiveGoalProposalSchema = z
 
 export const ModelProposalSchema = z.union([
   RespondProposalSchema,
+  ClarificationProposalSchema,
   WorkItemManagementProposalSchema,
   RoutineManagementProposalSchema,
   AttentionManagementProposalSchema,
@@ -400,7 +408,10 @@ export function createModelProposalSchema(options: {
       ? [MachineServiceManagementGoalStepSchema]
       : []),
   ];
-  const schemas: z.ZodType[] = [RespondProposalSchema];
+  const schemas: z.ZodType[] = [
+    RespondProposalSchema,
+    ClarificationProposalSchema,
+  ];
   if (workItemManagementEnabled) schemas.push(WorkItemManagementProposalSchema);
   if (attentionManagementEnabled)
     schemas.push(AttentionManagementProposalSchema);
@@ -504,7 +515,6 @@ export function createModelProposalSchema(options: {
       }),
     );
   }
-  if (schemas.length === 1) return RespondProposalSchema;
   return z.union(
     schemas as [z.ZodType, z.ZodType, ...z.ZodType[]],
   ) as z.ZodType<ModelProposal>;

@@ -112,6 +112,36 @@ export class MongoDbExecutionStore implements ExecutionStore {
     });
   }
 
+  public async findByClarificationAnswerKey(
+    principalId: string,
+    conversationId: string,
+    requestKey: string,
+  ): Promise<TaskAggregate | null> {
+    return this.findOne({
+      'task.principalId': principalId,
+      'task.conversationId': conversationId,
+      'run.clarification.rounds.answer.requestKey': requestKey,
+    });
+  }
+
+  public async listAwaitingClarificationsByConversation(
+    principalId: string,
+    conversationId: string,
+    limit: number,
+  ): Promise<TaskAggregate[]> {
+    await this.ensureConnected();
+    const documents = await this.collection
+      .find({
+        'task.principalId': principalId,
+        'task.conversationId': conversationId,
+        'run.status': 'awaiting_clarification',
+      })
+      .sort({ 'task.updatedAt': -1, 'task.id': -1 })
+      .limit(limit)
+      .toArray();
+    return documents.map((document) => this.parse(document));
+  }
+
   public async findLatestByExternalSignal(
     principalId: string,
     signalId: string,
@@ -288,6 +318,24 @@ export class MongoDbExecutionStore implements ExecutionStore {
       ),
       this.collection.createIndex({ 'run.status': 1 }),
       this.collection.createIndex({ 'run.status': 1, 'run.createdAt': 1 }),
+      this.collection.createIndex({
+        'task.principalId': 1,
+        'task.conversationId': 1,
+        'run.status': 1,
+        'task.updatedAt': -1,
+      }),
+      this.collection.createIndex(
+        {
+          'task.principalId': 1,
+          'task.conversationId': 1,
+          'run.clarification.rounds.answer.requestKey': 1,
+        },
+        {
+          partialFilterExpression: {
+            'run.clarification.rounds.answer.requestKey': { $exists: true },
+          },
+        },
+      ),
       this.collection.createIndex({
         'task.principalId': 1,
         'task.updatedAt': -1,

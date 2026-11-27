@@ -4,8 +4,8 @@
 request lifecycle, architectural invariants, initial modular API shape, V1
 operational storage, and the first Mac Mini deployment topology); general
 progress transport remains open
-**Version:** 1.7
-**Last updated:** 7 September 2026
+**Version:** 1.8
+**Last updated:** 8 September 2026
 **Accepted:** 24 August 2026 (owner) — post-V1 progress transport and deployment
 topology are deferred; V1 uses HTTP polling. The initial Fastify/Zod modular API
 is accepted by ADR-0009. MongoDB operational truth and the Redis scratchpad are
@@ -34,6 +34,8 @@ The owner-scoped Mac Mini service topology and explicit update boundary are
 accepted by ADR-0040.
 Private hands-free live conversation, durable turn identity, and observed
 speech-delivery acknowledgement are accepted by ADR-0048.
+Durable iterative intent clarification across initial decisions and adaptive
+goal continuations is accepted by ADR-0057.
 
 ## Purpose
 
@@ -753,6 +755,9 @@ lifecycle.
 ```mermaid
 stateDiagram-v2
     [*] --> deciding
+    deciding --> awaiting_clarification: consequential information unresolved
+    awaiting_clarification --> deciding: durable owner answer
+    awaiting_clarification --> cancelled: owner cancels
     deciding --> awaiting_approval: first or continued step validated
     awaiting_approval --> executing: exact approval granted
     executing --> deciding: observation durably recorded
@@ -764,6 +769,15 @@ stateDiagram-v2
 
 See
 [ADR-0024](decisions/0024-adapt-bounded-goals-from-validated-capability-evidence.md).
+
+The same nonterminal clarification boundary is available before the first
+capability and after an adaptive goal observes evidence. MongoDB retains every
+question, answer, resolved fact, and decision identity. The worker does not poll
+an unanswered task; a durable answer moves it back to `deciding`, where recovery
+can resume it normally. Human waiting time is excluded from active-duration
+accounting without resetting model-call or capability budgets. Exact approvals
+remain separate from clarification. See
+[ADR-0057](decisions/0057-clarify-uncertain-intent-through-a-durable-bounded-loop.md).
 
 Artifact application is a separate durable lifecycle rather than hidden inside
 that capability. The owner approves an exact artifact hash, immutable base

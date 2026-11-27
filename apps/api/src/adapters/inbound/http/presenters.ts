@@ -36,6 +36,9 @@ export function taskResponse(aggregate: TaskAggregate) {
     ...(aggregate.run.approval === undefined
       ? {}
       : { approval: aggregate.run.approval }),
+    ...(aggregate.run.clarification === undefined
+      ? {}
+      : { clarification: aggregate.run.clarification }),
     ...(aggregate.run.approvalHistory === undefined
       ? {}
       : { approvalHistory: aggregate.run.approvalHistory }),
@@ -92,6 +95,12 @@ export function taskResponse(aggregate: TaskAggregate) {
         ? {}
         : {
             approval: `/v1/approvals/${aggregate.run.approval.id}/decision`,
+          }),
+      ...(aggregate.run.status !== 'awaiting_clarification' ||
+      aggregate.task.conversationId !== undefined
+        ? {}
+        : {
+            clarificationAnswer: `/v1/tasks/${aggregate.task.id}/clarification-answers`,
           }),
       ...(aggregate.task.externalSignal === undefined
         ? {}

@@ -430,10 +430,16 @@ export class AutomationClient extends SoftwareDeliveryClient {
       if (
         (
           options?.until ??
-          ((current) =>
-            terminal.has(current.runStatus) &&
-            (current.conversationId === undefined ||
-              current.conversationReply?.status === 'projected'))
+          ((current) => {
+            const settled =
+              terminal.has(current.runStatus) ||
+              current.runStatus === 'awaiting_clarification';
+            return (
+              settled &&
+              (current.conversationId === undefined ||
+                current.conversationReply?.status === 'projected')
+            );
+          })
         )(task)
       ) {
         return task;

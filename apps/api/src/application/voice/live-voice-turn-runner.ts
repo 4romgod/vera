@@ -1,7 +1,7 @@
 import { setTimeout as delay } from 'node:timers/promises';
 
 import type { ConversationService } from '../conversations/conversation-service.ts';
-import type { TaskLifecycle } from '../tasks/task-lifecycle.ts';
+import { LifecycleError, type TaskLifecycle } from '../tasks/task-lifecycle.ts';
 import type { TranscriptionService } from '../transcriptions/transcription-service.ts';
 import type {
   LiveVoiceSession,
@@ -35,6 +35,34 @@ export function createLiveVoiceTurnRunner(options: {
   isSessionActive(sessionId: string): boolean;
   warning?: (error: unknown, context: Record<string, unknown>) => void;
 }) {
+  // The prior voice turn's question is only a hint: the owner may have
+  // cancelled that task or answered it by text since. A task that is no longer
+  // waiting falls back to the conversation-wide lookup instead of failing the
+  // new turn. Every other failure still propagates.
+  async function findPriorClarification(
+    principalId: string,
+    conversationId: string,
+    taskId: string,
+    answerRequestKey: string,
+  ) {
+    try {
+      return await options.tasks.findAwaitingClarification({
+        principalId,
+        conversationId,
+        taskId,
+        answerRequestKey,
+      });
+    } catch (error) {
+      if (
+        error instanceof LifecycleError &&
+        error.code === 'clarification_not_found'
+      ) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
   async function releaseDelivery(
     session: LiveVoiceSession,
     turnId: string,
@@ -120,12 +148,20 @@ export function createLiveVoiceTurnRunner(options: {
         }
         const reply = aggregate.run.conversationReply;
         if (
-          TerminalRunStatuses.has(aggregate.run.status) &&
+          (TerminalRunStatuses.has(aggregate.run.status) ||
+            aggregate.run.status === 'awaiting_clarification') &&
           (reply === undefined || reply.status === 'projected')
         ) {
           await options.state.updateTurn(session, turnId, (turn) => ({
             ...turn,
-            status: aggregate.run.status === 'succeeded' ? 'settled' : 'failed',
+            status:
+              aggregate.run.status === 'succeeded' ||
+              aggregate.run.status === 'awaiting_clarification'
+                ? 'settled'
+                : 'failed',
+            ...(aggregate.run.status === 'awaiting_clarification'
+              ? { clarificationRequested: true as const }
+              : {}),
             ...(aggregate.run.failure === undefined
               ? {}
               : { failure: aggregate.run.failure.message.slice(0, 2_000) }),
@@ -140,7 +176,10 @@ export function createLiveVoiceTurnRunner(options: {
           await releaseDelivery(
             session,
             turnId,
-            aggregate.run.status === 'succeeded' ? 'response' : 'failure',
+            aggregate.run.status === 'succeeded' ||
+              aggregate.run.status === 'awaiting_clarification'
+              ? 'response'
+              : 'failure',
             content,
             reply?.messageId,
           );
@@ -225,27 +264,65 @@ export function createLiveVoiceTurnRunner(options: {
           turnId: turn.id,
           text: transcript,
         });
+        const priorTurn = session.turns.at(-2);
+        const priorTaskId =
+          priorTurn?.clarificationRequested === true
+            ? priorTurn.taskId
+            : undefined;
+        const answerRequestKey = `live-voice:${turn.id}`;
+        const awaitingPriorClarification =
+          priorTaskId === undefined
+            ? null
+            : await findPriorClarification(
+                principalId,
+                session.conversationId,
+                priorTaskId,
+                answerRequestKey,
+              );
+        const awaitingClarification =
+          awaitingPriorClarification ??
+          (await options.tasks.findAwaitingClarification({
+            principalId,
+            conversationId: session.conversationId,
+            answerRequestKey,
+          }));
+        const projectId =
+          session.projectId ?? awaitingClarification?.task.projectId;
+        if (awaitingClarification !== null) {
+          await options.tasks.assertClarificationAnswerable({
+            taskId: awaitingClarification.task.id,
+            principalId,
+            requestKey: answerRequestKey,
+            content: transcript,
+            ...(projectId === undefined ? {} : { projectId }),
+          });
+        }
         const appended = await options.conversations.appendOwnerMessage({
           principalId,
           conversationId: session.conversationId,
-          requestKey: `live-voice:${turn.id}`,
+          requestKey: answerRequestKey,
           content: transcript,
-          ...(session.projectId === undefined
-            ? {}
-            : { projectId: session.projectId }),
+          ...(projectId === undefined ? {} : { projectId }),
         });
         const aggregate =
           appended.taskId === undefined
-            ? await options.tasks.submit({
-                principalId,
-                requestKey: appended.messageId,
-                message: transcript,
-                conversationId: session.conversationId,
-                messageId: appended.messageId,
-                ...(session.projectId === undefined
-                  ? {}
-                  : { projectId: session.projectId }),
-              })
+            ? awaitingClarification === null
+              ? await options.tasks.submit({
+                  principalId,
+                  requestKey: appended.messageId,
+                  message: transcript,
+                  conversationId: session.conversationId,
+                  messageId: appended.messageId,
+                  ...(projectId === undefined ? {} : { projectId }),
+                })
+              : await options.tasks.answerClarification({
+                  taskId: awaitingClarification.task.id,
+                  principalId,
+                  requestKey: answerRequestKey,
+                  messageId: appended.messageId,
+                  content: transcript,
+                  ...(projectId === undefined ? {} : { projectId }),
+                })
             : await options.tasks.getTask(principalId, appended.taskId);
         if (appended.taskId === undefined) {
           await options.conversations.attachTask({

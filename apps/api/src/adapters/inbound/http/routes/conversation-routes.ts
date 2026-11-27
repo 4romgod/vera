@@ -115,6 +115,17 @@ export function registerConversationRoutes(
       },
     },
     async (request, reply) => {
+      const awaitingClarification =
+        await taskLifecycle.findAwaitingClarification({
+          principalId: options.principalId,
+          conversationId: request.params.id,
+          ...(request.body.clarificationTaskId === undefined
+            ? {}
+            : { taskId: request.body.clarificationTaskId }),
+          answerRequestKey: request.headers['idempotency-key'],
+        });
+      const effectiveProjectId =
+        request.body.projectId ?? awaitingClarification?.task.projectId;
       if (
         request.body.attachmentIds !== undefined &&
         options.attachments === undefined
@@ -125,33 +136,61 @@ export function registerConversationRoutes(
         options.principalId,
         request.body.attachmentIds ?? [],
       );
+      if (awaitingClarification !== null) {
+        await taskLifecycle.assertClarificationAnswerable({
+          taskId: awaitingClarification.task.id,
+          principalId: options.principalId,
+          requestKey: request.headers['idempotency-key'],
+          content: request.body.content,
+          ...(effectiveProjectId === undefined
+            ? {}
+            : { projectId: effectiveProjectId }),
+          ...(attachments === undefined || attachments.length === 0
+            ? {}
+            : { attachments }),
+        });
+      }
       const appended = await options.conversations.appendOwnerMessage({
         principalId: options.principalId,
         conversationId: request.params.id,
         requestKey: request.headers['idempotency-key'],
         content: request.body.content,
-        ...(request.body.projectId === undefined
+        ...(effectiveProjectId === undefined
           ? {}
-          : { projectId: request.body.projectId }),
+          : { projectId: effectiveProjectId }),
         ...(attachments === undefined || attachments.length === 0
           ? {}
           : { attachments }),
       });
       const aggregate =
         appended.taskId === undefined
-          ? await taskLifecycle.submit({
-              principalId: options.principalId,
-              requestKey: appended.messageId,
-              message: request.body.content,
-              conversationId: request.params.id,
-              messageId: appended.messageId,
-              ...(request.body.projectId === undefined
-                ? {}
-                : { projectId: request.body.projectId }),
-              ...(attachments === undefined || attachments.length === 0
-                ? {}
-                : { attachments }),
-            })
+          ? awaitingClarification === null
+            ? await taskLifecycle.submit({
+                principalId: options.principalId,
+                requestKey: appended.messageId,
+                message: request.body.content,
+                conversationId: request.params.id,
+                messageId: appended.messageId,
+                ...(request.body.projectId === undefined
+                  ? {}
+                  : { projectId: request.body.projectId }),
+                ...(attachments === undefined || attachments.length === 0
+                  ? {}
+                  : { attachments }),
+              })
+            : await taskLifecycle.answerClarification({
+                taskId: awaitingClarification.task.id,
+                principalId: options.principalId,
+                requestKey: request.headers['idempotency-key'],
+                messageId: appended.messageId,
+                content: request.body.content,
+                ...(effectiveProjectId === undefined
+                  ? {}
+                  : { projectId: effectiveProjectId }),
+                ...(attachments === undefined || attachments.length === 0
+                  ? {}
+                  : { attachments }),
+              })
           : await taskLifecycle.getTask(options.principalId, appended.taskId);
       if (appended.taskId === undefined) {
         await options.conversations.attachTask({

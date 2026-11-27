@@ -9,7 +9,10 @@ import {
   createLiveVoiceSessionService,
 } from '../../../src/application/voice/live-voice-session-service.ts';
 import { TaskAggregateSchema } from '../../../src/domain/tasks/task-aggregate.ts';
-import type { TaskLifecycle } from '../../../src/application/tasks/task-lifecycle.ts';
+import {
+  LifecycleError,
+  type TaskLifecycle,
+} from '../../../src/application/tasks/task-lifecycle.ts';
 import type {
   LiveVoiceClientEvent,
   LiveVoiceTransport,
@@ -92,6 +95,60 @@ function terminalTask(taskId = 'task_voice_test') {
   });
 }
 
+function clarificationTask(taskId = 'task_voice_test') {
+  return TaskAggregateSchema.parse({
+    schemaVersion: 1,
+    version: 1,
+    task: {
+      id: taskId,
+      requestKey: 'message_voice_test',
+      principalId: 'owner_v1',
+      conversationId: 'conversation_voice_test',
+      messageId: 'message_voice_test',
+      message: 'Arrange it.',
+      status: 'active',
+      createdAt: now,
+      updatedAt: now,
+    },
+    run: {
+      id: 'run_voice_test',
+      status: 'awaiting_clarification',
+      createdAt: now,
+      updatedAt: now,
+      clarification: {
+        schemaVersion: 1,
+        status: 'awaiting_answer',
+        maxRounds: 6,
+        consecutiveNoProgressRounds: 0,
+        totalWaitingMs: 0,
+        rounds: [
+          {
+            id: 'clarification_voice_test',
+            decisionId: 'decision_voice_test',
+            question: 'What should I arrange?',
+            missingInformation: [
+              { key: 'outcome', description: 'The requested outcome.' },
+            ],
+            resolvedFacts: [],
+            askedAt: now,
+            questionMessageId: 'message_question_voice_test',
+          },
+        ],
+      },
+      conversationReply: {
+        status: 'projected',
+        messageId: 'message_question_voice_test',
+        requestKey:
+          'vera-clarification:task_voice_test:clarification_voice_test',
+        content: 'What should I arrange?',
+        createdAt: now,
+        projectedAt: now,
+      },
+    },
+    events: [],
+  });
+}
+
 function taskLifecycle(): TaskLifecycle {
   const aggregate = terminalTask();
   const unexpected = (): never => {
@@ -101,6 +158,9 @@ function taskLifecycle(): TaskLifecycle {
     submit: () => Promise.resolve(aggregate),
     getTask: () => Promise.resolve(aggregate),
     getRun: () => Promise.resolve(aggregate),
+    findAwaitingClarification: () => Promise.resolve(null),
+    assertClarificationAnswerable: unexpected,
+    answerClarification: unexpected,
     decideApproval: unexpected,
     cancelRun: unexpected,
     progressTask: unexpected,
@@ -109,7 +169,11 @@ function taskLifecycle(): TaskLifecycle {
 }
 
 async function harness(
-  options: { enabled?: boolean; reconnectGraceSeconds?: number } = {},
+  options: {
+    enabled?: boolean;
+    reconnectGraceSeconds?: number;
+    tasks?: TaskLifecycle;
+  } = {},
 ) {
   let id = 0;
   const warnings: unknown[] = [];
@@ -153,7 +217,7 @@ async function harness(
     ...(options.enabled === false ? {} : { transport }),
     transcriptions,
     conversations,
-    tasks: taskLifecycle(),
+    tasks: options.tasks ?? taskLifecycle(),
     sessionTtlSeconds: 1_800,
     reconnectGraceSeconds: options.reconnectGraceSeconds ?? 45,
     clock: () => now,
@@ -255,6 +319,146 @@ void describe('live voice session lifecycle', () => {
     assert.equal(ended.status, 'ended');
     assert.equal(transport.closed, 1);
     await service.close();
+  });
+
+  void it('binds a spoken clarification answer to the task that asked it', async () => {
+    const awaiting = clarificationTask();
+    const completed = terminalTask();
+    const selectedTaskIds: (string | undefined)[] = [];
+    let submitted = false;
+    let answered = false;
+    const unexpected = (): never => {
+      throw new Error('Unexpected task lifecycle call.');
+    };
+    const tasks: TaskLifecycle = {
+      submit: () => {
+        submitted = true;
+        return Promise.resolve(awaiting);
+      },
+      getTask: () => Promise.resolve(answered ? completed : awaiting),
+      getRun: () => Promise.resolve(answered ? completed : awaiting),
+      findAwaitingClarification: (input) => {
+        selectedTaskIds.push(input.taskId);
+        return Promise.resolve(!submitted || answered ? null : awaiting);
+      },
+      assertClarificationAnswerable: () => Promise.resolve(),
+      answerClarification: (input) => {
+        assert.equal(input.taskId, awaiting.task.id);
+        answered = true;
+        return Promise.resolve(completed);
+      },
+      decideApproval: unexpected,
+      cancelRun: unexpected,
+      progressTask: unexpected,
+      recoverInterrupted: () => Promise.resolve(),
+    };
+    const { service, transport, warnings } = await harness({ tasks });
+    const created = await service.create({
+      principalId: 'owner_v1',
+      requestKey: 'voice-clarification-session',
+      conversationId: 'conversation_voice_test',
+      takeover: false,
+    });
+    transport.emit({ type: 'owner_connected' });
+    transport.emit({
+      type: 'utterance_finalized',
+      audio: new Uint8Array([1]),
+      contentType: 'audio/wav',
+    });
+    await waitFor(
+      () =>
+        transport.events.filter((event) => event.type === 'speech_delivery')
+          .length === 1,
+      `clarification was not spoken: ${warnings.map(String).join('; ')}`,
+    );
+    transport.emit({
+      type: 'utterance_finalized',
+      audio: new Uint8Array([2]),
+      contentType: 'audio/wav',
+    });
+    await waitFor(
+      () => answered,
+      `clarification was not answered: ${warnings.map(String).join('; ')}`,
+    );
+
+    assert.equal(submitted, true);
+    assert.deepEqual(selectedTaskIds, [undefined, awaiting.task.id]);
+    const session = await service.get('owner_v1', created.session.id);
+    assert.equal(session.turns[1]?.taskId, awaiting.task.id);
+    await service.close();
+  });
+
+  void it('submits a new spoken request when the prior question is no longer open', async () => {
+    const awaiting = clarificationTask();
+    const completed = terminalTask();
+    let submissions = 0;
+    const unexpected = (): never => {
+      throw new Error('Unexpected task lifecycle call.');
+    };
+    const tasks: TaskLifecycle = {
+      submit: () => {
+        submissions += 1;
+        return Promise.resolve(submissions === 1 ? awaiting : completed);
+      },
+      getTask: () => Promise.resolve(submissions === 1 ? awaiting : completed),
+      getRun: () => Promise.resolve(completed),
+      findAwaitingClarification: (input) => {
+        // The owner cancelled the first task outside voice, so the exact
+        // lookup reports it as no longer waiting.
+        if (input.taskId !== undefined) {
+          return Promise.reject(
+            new LifecycleError(
+              `Task ${input.taskId} is not awaiting clarification in this conversation.`,
+              'clarification_not_found',
+            ),
+          );
+        }
+        return Promise.resolve(null);
+      },
+      assertClarificationAnswerable: unexpected,
+      answerClarification: unexpected,
+      decideApproval: unexpected,
+      cancelRun: unexpected,
+      progressTask: unexpected,
+      recoverInterrupted: () => Promise.resolve(),
+    };
+    const { service, transport, warnings } = await harness({ tasks });
+    const created = await service.create({
+      principalId: 'owner_v1',
+      requestKey: 'voice-stale-clarification-session',
+      conversationId: 'conversation_voice_test',
+      takeover: false,
+    });
+    transport.emit({ type: 'owner_connected' });
+    transport.emit({
+      type: 'utterance_finalized',
+      audio: new Uint8Array([1]),
+      contentType: 'audio/wav',
+    });
+    await waitFor(
+      () =>
+        transport.events.filter((event) => event.type === 'speech_delivery')
+          .length === 1,
+      `clarification was not spoken: ${warnings.map(String).join('; ')}`,
+    );
+    transport.emit({
+      type: 'utterance_finalized',
+      audio: new Uint8Array([2]),
+      contentType: 'audio/wav',
+    });
+    try {
+      await waitFor(
+        async () =>
+          submissions === 2 &&
+          (await service.get('owner_v1', created.session.id)).turns[1]
+            ?.status === 'settled',
+        `new request was not submitted: ${warnings.map(String).join('; ')}`,
+      );
+      const session = await service.get('owner_v1', created.session.id);
+      assert.equal(session.turns[1]?.failure, undefined);
+    } finally {
+      await service.close();
+    }
   });
 
   void it('buffers transport events emitted before open returns', async () => {

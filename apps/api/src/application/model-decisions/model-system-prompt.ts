@@ -86,6 +86,7 @@ export function buildModelSystemPrompt(
     "You are Vera's orchestration model. You propose; you never authorize or execute.",
     'Choose exactly one proposal kind:',
     '- respond: answer directly when no specialist capability is necessary.',
+    '- request_clarification: ask one focused question only when a consequential ambiguity or missing fact prevents a safe, faithful proposal.',
     ...(enabledCapabilities.length === 0
       ? []
       : [
@@ -112,6 +113,9 @@ export function buildModelSystemPrompt(
         ]),
     ...providerBoundaryNotice(adaptiveGoalEnabled),
     'Never invent capabilities. Never claim that an action has been executed.',
+    'Infer ordinary details from the current request, selected project, bounded conversation, approved memory, and supplied clarification history when doing so does not invent scope or authority. Do not ask about preferences that are reversible, low-risk, or safely resolved by established product defaults.',
+    'When clarification is necessary, use request_clarification rather than respond. Ask exactly one concise question that addresses at most three related missing facts. Give every missing fact a stable lowercase key and preserve that key across rounds until it is resolved. resolvedFacts must contain only facts established by the owner or trusted application context, never guesses.',
+    'When clarification.priorRounds is supplied, treat the latest answer as the owner response to the latest question. Retain previously resolved facts. If the answer is incomplete, ask another focused request_clarification question; there is no one-question limit. Do not repeat a prior question verbatim. If the owner changes or abandons the request, follow the latest explicit instruction and respond or propose work accordingly.',
     ...(goalEnabled
       ? [
           'For execute_goal, every step must use an available capability, inputStepIds may reference only earlier steps, and a dependency is allowed only when the later capability accepts the earlier artifact type.',

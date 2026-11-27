@@ -14,6 +14,10 @@ import {
 } from './contracts.ts';
 import type { TaskLifecycleFoundation } from './foundation.ts';
 import type { TaskLifecycleDecisionRecording } from './decision-recording.ts';
+import {
+  admitClarificationRequest,
+  DEFAULT_MAX_CLARIFICATION_ROUNDS,
+} from '../clarification-policy.ts';
 
 export function createAdaptiveGoalOperations(
   runtime: TaskLifecycleRuntime,
@@ -185,6 +189,96 @@ export function createAdaptiveGoalOperations(
           },
           createId,
         );
+
+        if (continuation.decision.kind === 'clarification_required') {
+          const admission = admitClarificationRequest(
+            candidate,
+            continuation.decision,
+          );
+          if (admission.kind === 'stall') {
+            if (candidate.run.clarification !== undefined) {
+              candidate.run.clarification.status = 'stalled';
+              candidate.run.clarification.stalledAt = continuation.decidedAt;
+            }
+            goal.status = 'failed';
+            candidate.run.status = 'failed';
+            candidate.task.status = 'failed';
+            candidate.run.failure = {
+              code: 'adaptive_goal_failure',
+              message: admission.message,
+            };
+            appendEvent(
+              candidate,
+              'clarification_stalled',
+              continuation.decidedAt,
+              { reason: admission.message },
+              createId,
+            );
+            appendEvent(
+              candidate,
+              'run_failed',
+              continuation.decidedAt,
+              { code: 'clarification_stalled' },
+              createId,
+            );
+            return true;
+          }
+          const clarificationId = createId('clarification');
+          const questionMessageId = createId('message');
+          const round = {
+            id: clarificationId,
+            decisionId: continuation.decisionId,
+            question: continuation.decision.question,
+            missingInformation: continuation.decision.missingInformation,
+            resolvedFacts: continuation.decision.resolvedFacts,
+            askedAt: continuation.decidedAt,
+            questionMessageId,
+          };
+          if (candidate.run.clarification === undefined) {
+            candidate.run.clarification = {
+              schemaVersion: 1,
+              status: 'awaiting_answer',
+              maxRounds: DEFAULT_MAX_CLARIFICATION_ROUNDS,
+              consecutiveNoProgressRounds:
+                admission.consecutiveNoProgressRounds,
+              totalWaitingMs: 0,
+              rounds: [round],
+            };
+          } else {
+            candidate.run.clarification.status = 'awaiting_answer';
+            candidate.run.clarification.consecutiveNoProgressRounds =
+              admission.consecutiveNoProgressRounds;
+            candidate.run.clarification.rounds.push(round);
+          }
+          candidate.run.status = 'awaiting_clarification';
+          appendEvent(
+            candidate,
+            'clarification_requested',
+            continuation.decidedAt,
+            {
+              clarificationId,
+              questionMessageId,
+              round: candidate.run.clarification.rounds.length,
+              missingInformationKeys:
+                continuation.decision.missingInformation.map(({ key }) => key),
+              evidenceStepIds: continuation.decision.evidenceStepIds,
+            },
+            createId,
+          );
+          return true;
+        }
+
+        if (candidate.run.clarification?.status === 'evaluating_answer') {
+          candidate.run.clarification.status = 'resolved';
+          candidate.run.clarification.resolvedAt = continuation.decidedAt;
+          appendEvent(
+            candidate,
+            'clarification_resolved',
+            continuation.decidedAt,
+            { rounds: candidate.run.clarification.rounds.length },
+            createId,
+          );
+        }
 
         if (continuation.decision.kind === 'rejected') {
           goal.status = 'failed';
@@ -433,6 +527,9 @@ export function createAdaptiveGoalOperations(
         currentTime: aggregate.task.createdAt,
         ownerTimeZone,
       },
+      ...(aggregate.run.clarification === undefined
+        ? {}
+        : { clarification: aggregate.run.clarification }),
     });
     const assembledContext =
       continuation.decision.kind === 'continue_goal'

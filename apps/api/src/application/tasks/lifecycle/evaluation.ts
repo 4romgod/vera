@@ -10,6 +10,7 @@ import type { TaskLifecycleDecisionRecording } from './decision-recording.ts';
 import type { TaskLifecycleAdaptiveGoalOperations } from './adaptive-goal.ts';
 import { shouldAssembleSoftwareDeliveryContext } from '../../software-delivery/software-delivery-context.ts';
 import { assertExternalSignalContextIntegrity } from '../../external-awareness/external-signal-context.ts';
+import { answeredClarificationRounds } from '../clarification-policy.ts';
 
 export function createEvaluationOperations(
   runtime: TaskLifecycleRuntime,
@@ -34,10 +35,17 @@ export function createEvaluationOperations(
         if (candidate.run.status !== 'deciding') return false;
         candidate.run.budget ??= structuredClone(budget);
         const elapsed =
-          Date.parse(consumedAt) - Date.parse(candidate.run.createdAt);
+          Date.parse(consumedAt) -
+          Date.parse(candidate.run.createdAt) -
+          (candidate.run.clarification?.totalWaitingMs ?? 0);
+        // Each durable owner answer grants exactly one evaluation call, so a
+        // clarification does not starve the work it unblocks. The grant stays
+        // finite because clarification rounds have a hard code-owned ceiling.
+        const modelCallLimit =
+          candidate.run.budget.limits.modelCalls +
+          answeredClarificationRounds(candidate);
         if (
-          candidate.run.budget.consumed.modelCalls >=
-            candidate.run.budget.limits.modelCalls ||
+          candidate.run.budget.consumed.modelCalls >= modelCallLimit ||
           elapsed >= candidate.run.budget.limits.maxDurationMs
         ) {
           candidate.run.status = 'failed';
@@ -78,7 +86,7 @@ export function createEvaluationOperations(
           {
             resource: 'model_calls',
             consumed: candidate.run.budget.consumed.modelCalls,
-            limit: candidate.run.budget.limits.modelCalls,
+            limit: modelCallLimit,
           },
           createId,
         );
@@ -110,7 +118,11 @@ export function createEvaluationOperations(
       if (conversationContext !== undefined) {
         try {
           const conversationId = budgetClaim.aggregate.task.conversationId;
-          const messageId = budgetClaim.aggregate.task.messageId;
+          const messageId =
+            budgetClaim.aggregate.run.clarification?.rounds
+              .filter((round) => round.answer !== undefined)
+              .at(-1)?.answer?.messageId ??
+            budgetClaim.aggregate.task.messageId;
           if (conversationId === undefined || messageId === undefined) {
             throw new Error(
               'Conversation context is attached to a non-conversation task.',
@@ -254,6 +266,9 @@ export function createEvaluationOperations(
           ...(budgetClaim.aggregate.task.attachments === undefined
             ? {}
             : { attachments: budgetClaim.aggregate.task.attachments }),
+          ...(budgetClaim.aggregate.run.clarification === undefined
+            ? {}
+            : { clarification: budgetClaim.aggregate.run.clarification }),
         },
       );
       if (

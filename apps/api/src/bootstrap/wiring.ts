@@ -688,6 +688,15 @@ export function createApp(
     },
     getTask: (principalId, taskId) => lifecycle.getTask(principalId, taskId),
     getRun: (principalId, runId) => lifecycle.getRun(principalId, runId),
+    findAwaitingClarification: (input) =>
+      lifecycle.findAwaitingClarification(input),
+    assertClarificationAnswerable: (input) =>
+      lifecycle.assertClarificationAnswerable(input),
+    async answerClarification(input) {
+      const aggregate = await lifecycle.answerClarification(input);
+      worker.wake();
+      return aggregate;
+    },
     async decideApproval(input) {
       const aggregate = await lifecycle.decideApproval(input);
       worker.wake();

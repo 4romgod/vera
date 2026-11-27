@@ -566,6 +566,7 @@
         "properties": {
           "content": { "type": "string", "minLength": 1, "maxLength": 20000 },
           "projectId": { "type": "string", "pattern": "^project_.*" },
+          "clarificationTaskId": { "type": "string", "pattern": "^task_.*" },
           "attachmentIds": {
             "maxItems": 5,
             "type": "array",
@@ -589,6 +590,7 @@
             "type": "string",
             "enum": [
               "deciding",
+              "awaiting_clarification",
               "awaiting_approval",
               "executing",
               "succeeded",
@@ -621,6 +623,118 @@
           "createdAt": { "$ref": "#/components/schemas/DateTime" },
           "updatedAt": { "$ref": "#/components/schemas/DateTime" },
           "decision": { "$ref": "#/components/schemas/TaskResourceDecision" },
+          "clarification": {
+            "type": "object",
+            "properties": {
+              "schemaVersion": { "type": "number", "enum": [1] },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "awaiting_answer",
+                  "evaluating_answer",
+                  "resolved",
+                  "stalled",
+                  "cancelled"
+                ]
+              },
+              "maxRounds": { "type": "integer", "minimum": 1, "maximum": 8 },
+              "consecutiveNoProgressRounds": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2
+              },
+              "totalWaitingMs": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "rounds": {
+                "minItems": 1,
+                "maxItems": 8,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "question": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2000
+                    },
+                    "missingInformation": {
+                      "$ref": "#/components/schemas/TaskResourceClarificationRoundsItemsMissingInformation"
+                    },
+                    "resolvedFacts": {
+                      "$ref": "#/components/schemas/TaskResourceClarificationRoundsItemsResolvedFacts"
+                    },
+                    "id": { "type": "string", "pattern": "^clarification_.*" },
+                    "decisionId": {
+                      "type": "string",
+                      "pattern": "^decision_.*"
+                    },
+                    "askedAt": { "$ref": "#/components/schemas/DateTime" },
+                    "questionMessageId": {
+                      "type": "string",
+                      "pattern": "^message_.*"
+                    },
+                    "answer": {
+                      "type": "object",
+                      "properties": {
+                        "messageId": {
+                          "type": "string",
+                          "pattern": "^message_.*"
+                        },
+                        "requestKey": { "type": "string", "minLength": 1 },
+                        "content": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 20000
+                        },
+                        "projectId": {
+                          "type": "string",
+                          "pattern": "^project_.*"
+                        },
+                        "attachments": {
+                          "$ref": "#/components/schemas/TaskResourceAttachments"
+                        },
+                        "answeredAt": {
+                          "$ref": "#/components/schemas/DateTime"
+                        }
+                      },
+                      "required": [
+                        "messageId",
+                        "requestKey",
+                        "content",
+                        "answeredAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "question",
+                    "missingInformation",
+                    "resolvedFacts",
+                    "id",
+                    "decisionId",
+                    "askedAt",
+                    "questionMessageId"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "resolvedAt": { "$ref": "#/components/schemas/DateTime" },
+              "stalledAt": { "$ref": "#/components/schemas/DateTime" },
+              "cancelledAt": { "$ref": "#/components/schemas/DateTime" }
+            },
+            "required": [
+              "schemaVersion",
+              "status",
+              "maxRounds",
+              "consecutiveNoProgressRounds",
+              "totalWaitingMs",
+              "rounds"
+            ],
+            "additionalProperties": false
+          },
           "approval": { "$ref": "#/components/schemas/TaskResourceApproval" },
           "approvalHistory": {
             "maxItems": 2,
@@ -1520,7 +1634,7 @@
                     }
                   },
                   "continuations": {
-                    "maxItems": 3,
+                    "maxItems": 8,
                     "type": "array",
                     "items": {
                       "type": "object",
@@ -1614,6 +1728,54 @@
                                     "requirementResolutions"
                                   ],
                                   "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "question": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 2000
+                                    },
+                                    "missingInformation": {
+                                      "$ref": "#/components/schemas/TaskResourceClarificationRoundsItemsMissingInformation"
+                                    },
+                                    "resolvedFacts": {
+                                      "$ref": "#/components/schemas/TaskResourceClarificationRoundsItemsResolvedFacts"
+                                    },
+                                    "schemaVersion": {
+                                      "type": "number",
+                                      "enum": [1]
+                                    },
+                                    "kind": {
+                                      "type": "string",
+                                      "enum": ["request_clarification"]
+                                    },
+                                    "decisionSummary": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 500
+                                    },
+                                    "evidenceStepIds": {
+                                      "minItems": 1,
+                                      "maxItems": 3,
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "pattern": "^step_[a-z0-9_]+$"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "question",
+                                    "missingInformation",
+                                    "resolvedFacts",
+                                    "schemaVersion",
+                                    "kind",
+                                    "decisionSummary",
+                                    "evidenceStepIds"
+                                  ],
+                                  "additionalProperties": false
                                 }
                               ]
                             },
@@ -1643,6 +1805,43 @@
                                 }
                               },
                               "required": ["kind", "step", "evidenceStepIds"],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "question": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 2000
+                                },
+                                "missingInformation": {
+                                  "$ref": "#/components/schemas/TaskResourceClarificationRoundsItemsMissingInformation"
+                                },
+                                "resolvedFacts": {
+                                  "$ref": "#/components/schemas/TaskResourceClarificationRoundsItemsResolvedFacts"
+                                },
+                                "kind": {
+                                  "type": "string",
+                                  "enum": ["clarification_required"]
+                                },
+                                "evidenceStepIds": {
+                                  "minItems": 1,
+                                  "maxItems": 3,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "pattern": "^step_[a-z0-9_]+$"
+                                  }
+                                }
+                              },
+                              "required": [
+                                "question",
+                                "missingInformation",
+                                "resolvedFacts",
+                                "kind",
+                                "evidenceStepIds"
+                              ],
                               "additionalProperties": false
                             },
                             {
@@ -1763,6 +1962,7 @@
               "run": { "type": "string" },
               "events": { "type": "string" },
               "approval": { "type": "string" },
+              "clarificationAnswer": { "type": "string" },
               "externalSignal": { "type": "string" },
               "externalSignalResolution": { "type": "string" }
             },
@@ -3029,6 +3229,20 @@
         "required": ["message"],
         "additionalProperties": false
       },
+      "PostV1TasksIdClarificationAnswersRequest": {
+        "type": "object",
+        "properties": {
+          "content": { "type": "string", "minLength": 1, "maxLength": 20000 },
+          "projectId": { "type": "string", "pattern": "^project_.*" },
+          "attachmentIds": {
+            "maxItems": 5,
+            "type": "array",
+            "items": { "type": "string", "pattern": "^attachment_.*" }
+          }
+        },
+        "required": ["content"],
+        "additionalProperties": false
+      },
       "RunEventsResource": {
         "type": "object",
         "properties": {
@@ -3053,6 +3267,11 @@
                     "task_created",
                     "run_started",
                     "model_decision_recorded",
+                    "clarification_requested",
+                    "clarification_answered",
+                    "clarification_resolved",
+                    "clarification_stalled",
+                    "clarification_cancelled",
                     "approval_requested",
                     "approval_approved",
                     "approval_rejected",
@@ -9159,6 +9378,7 @@
           "messageId": { "type": "string", "pattern": "^message_.*" },
           "taskId": { "type": "string", "pattern": "^task_.*" },
           "runId": { "type": "string", "pattern": "^run_.*" },
+          "clarificationRequested": { "type": "boolean", "enum": [true] },
           "failure": { "type": "string", "minLength": 1, "maxLength": 2000 },
           "createdAt": { "$ref": "#/components/schemas/DateTime" },
           "updatedAt": { "$ref": "#/components/schemas/DateTime" }
@@ -9350,6 +9570,34 @@
           "channel",
           "reminderId",
           "scheduledFor"
+        ],
+        "additionalProperties": false
+      },
+      "RequestClarificationDecision": {
+        "type": "object",
+        "properties": {
+          "question": { "type": "string", "minLength": 1, "maxLength": 2000 },
+          "missingInformation": {
+            "$ref": "#/components/schemas/TaskResourceClarificationRoundsItemsMissingInformation"
+          },
+          "resolvedFacts": {
+            "$ref": "#/components/schemas/TaskResourceClarificationRoundsItemsResolvedFacts"
+          },
+          "schemaVersion": { "type": "number", "enum": [1] },
+          "kind": { "type": "string", "enum": ["request_clarification"] },
+          "decisionSummary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "question",
+          "missingInformation",
+          "resolvedFacts",
+          "schemaVersion",
+          "kind",
+          "decisionSummary"
         ],
         "additionalProperties": false
       },
@@ -11887,6 +12135,37 @@
         ],
         "additionalProperties": false
       },
+      "TaskResourceClarificationRoundsItemsMissingInformation": {
+        "minItems": 1,
+        "maxItems": 3,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "key": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+            "description": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            }
+          },
+          "required": ["key", "description"],
+          "additionalProperties": false
+        }
+      },
+      "TaskResourceClarificationRoundsItemsResolvedFacts": {
+        "maxItems": 12,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "key": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+            "value": { "type": "string", "minLength": 1, "maxLength": 2000 }
+          },
+          "required": ["key", "value"],
+          "additionalProperties": false
+        }
+      },
       "TaskResourceContinuationsItemsDecisionAnyOfCompleteGoalRequirementResolutions": {
         "minItems": 1,
         "maxItems": 3,
@@ -11996,6 +12275,9 @@
             "additionalProperties": false
           },
           {
+            "$ref": "#/components/schemas/TaskResourceDecisionDecisionAnyOfClarificationRequired"
+          },
+          {
             "$ref": "#/components/schemas/WorkItemManagementApprovalRequiredDecision"
           },
           {
@@ -12093,6 +12375,21 @@
         ],
         "additionalProperties": false
       },
+      "TaskResourceDecisionDecisionAnyOfClarificationRequired": {
+        "type": "object",
+        "properties": {
+          "question": { "type": "string", "minLength": 1, "maxLength": 2000 },
+          "missingInformation": {
+            "$ref": "#/components/schemas/TaskResourceClarificationRoundsItemsMissingInformation"
+          },
+          "resolvedFacts": {
+            "$ref": "#/components/schemas/TaskResourceClarificationRoundsItemsResolvedFacts"
+          },
+          "kind": { "type": "string", "enum": ["clarification_required"] }
+        },
+        "required": ["question", "missingInformation", "resolvedFacts", "kind"],
+        "additionalProperties": false
+      },
       "TaskResourceDecisionDecisionAnyOfGoalPlanned": {
         "type": "object",
         "properties": {
@@ -12184,6 +12481,7 @@
       "TaskResourceDecisionProposalAnyOfVariant1": {
         "anyOf": [
           { "$ref": "#/components/schemas/RespondDecision" },
+          { "$ref": "#/components/schemas/RequestClarificationDecision" },
           {
             "$ref": "#/components/schemas/WorkItemManagementInvocationDecision"
           },
@@ -17735,6 +18033,71 @@
         "operationId": "getV1TasksId",
         "tags": ["tasks"],
         "summary": "GET /v1/tasks/{id}"
+      }
+    },
+    "/v1/tasks/{id}/clarification-answers": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostV1TasksIdClarificationAnswersRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": { "type": "string", "minLength": 1, "maxLength": 200 },
+            "in": "path",
+            "name": "id",
+            "required": true
+          },
+          {
+            "schema": { "type": "string", "minLength": 8, "maxLength": 200 },
+            "in": "header",
+            "name": "idempotency-key",
+            "required": true
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TaskResource" }
+              }
+            }
+          },
+          "400": {
+            "description": "The request did not satisfy the declared path, query, header, or body schema.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist for the current owner.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected error occurred or an operation failed internally.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        },
+        "operationId": "postV1TasksIdClarificationAnswers",
+        "tags": ["tasks"],
+        "summary": "POST /v1/tasks/{id}/clarification-answers"
       }
     },
     "/v1/runs/{id}": {

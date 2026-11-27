@@ -10,6 +10,10 @@ import {
 } from '../../../domain/tasks/task-aggregate.ts';
 import { appendEvent, type TaskLifecycleRuntime } from './contracts.ts';
 import type { TaskLifecycleFoundation } from './foundation.ts';
+import {
+  admitClarificationRequest,
+  DEFAULT_MAX_CLARIFICATION_ROUNDS,
+} from '../clarification-policy.ts';
 
 export function createDecisionRecording(
   runtime: TaskLifecycleRuntime,
@@ -116,6 +120,90 @@ export function createDecisionRecording(
           { decisionId: decision.decisionId, kind: decision.decision.kind },
           createId,
         );
+
+        if (decision.decision.kind === 'clarification_required') {
+          const admission = admitClarificationRequest(
+            candidate,
+            decision.decision,
+          );
+          if (admission.kind === 'stall') {
+            const clarification = candidate.run.clarification;
+            if (clarification !== undefined) {
+              clarification.status = 'stalled';
+              clarification.stalledAt = now;
+            }
+            candidate.run.status = 'succeeded';
+            candidate.task.status = 'completed';
+            candidate.run.output = {
+              kind: 'response',
+              message: admission.message,
+            };
+            appendEvent(
+              candidate,
+              'clarification_stalled',
+              now,
+              { reason: admission.message },
+              createId,
+            );
+            appendEvent(candidate, 'run_succeeded', now, {}, createId);
+            return true;
+          }
+          const clarificationId = createId('clarification');
+          const questionMessageId = createId('message');
+          const round = {
+            id: clarificationId,
+            decisionId: decision.decisionId,
+            question: decision.decision.question,
+            missingInformation: decision.decision.missingInformation,
+            resolvedFacts: decision.decision.resolvedFacts,
+            askedAt: now,
+            questionMessageId,
+          };
+          if (candidate.run.clarification === undefined) {
+            candidate.run.clarification = {
+              schemaVersion: 1,
+              status: 'awaiting_answer',
+              maxRounds: DEFAULT_MAX_CLARIFICATION_ROUNDS,
+              consecutiveNoProgressRounds:
+                admission.consecutiveNoProgressRounds,
+              totalWaitingMs: 0,
+              rounds: [round],
+            };
+          } else {
+            candidate.run.clarification.status = 'awaiting_answer';
+            candidate.run.clarification.consecutiveNoProgressRounds =
+              admission.consecutiveNoProgressRounds;
+            candidate.run.clarification.rounds.push(round);
+          }
+          candidate.run.status = 'awaiting_clarification';
+          appendEvent(
+            candidate,
+            'clarification_requested',
+            now,
+            {
+              clarificationId,
+              questionMessageId,
+              round: candidate.run.clarification.rounds.length,
+              missingInformationKeys: decision.decision.missingInformation.map(
+                ({ key }) => key,
+              ),
+            },
+            createId,
+          );
+          return true;
+        }
+
+        if (candidate.run.clarification?.status === 'evaluating_answer') {
+          candidate.run.clarification.status = 'resolved';
+          candidate.run.clarification.resolvedAt = now;
+          appendEvent(
+            candidate,
+            'clarification_resolved',
+            now,
+            { rounds: candidate.run.clarification.rounds.length },
+            createId,
+          );
+        }
 
         if (decision.decision.kind === 'respond') {
           candidate.run.status = 'succeeded';

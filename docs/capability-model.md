@@ -2,8 +2,8 @@
 
 **Status:** Accepted (capability declaration shape, invocation lifecycle,
 selection checks, and resource/delegation budget model)
-**Version:** 1.1
-**Last updated:** 7 September 2026
+**Version:** 1.2
+**Last updated:** 8 September 2026
 **Accepted:** 24 August 2026 (owner); declarative runtime, catalog, and
 `web_research@1` accepted by ADR-0020 on 25 August 2026; bounded composition
 accepted by ADR-0021 on 26 August 2026; provider-neutral integration actions
@@ -20,6 +20,8 @@ external connections with `work_item_management@1` are accepted by ADR-0045 on
 is accepted by ADR-0046 on 5 September 2026.
 Adaptive adoption of observed repository work is accepted by ADR-0056 on 7
 September 2026.
+Durable bounded clarification before and between adaptive capability steps is
+accepted by ADR-0057 on 8 September 2026.
 
 ## Purpose
 
@@ -327,6 +329,24 @@ restricted to an orchestration provider whose adapter declares
 approved disclosure they can receive, but do not receive adaptive artifact
 evidence merely because their startup profile was selected. See
 [ADR-0024](decisions/0024-adapt-bounded-goals-from-validated-capability-evidence.md).
+
+## Intent clarification
+
+`request_clarification` is a model proposal, not a capability and not an
+effect. It is present in every initial decision contract and in adaptive-goal
+continuation contracts. Vera code admits only a focused bounded question with
+stable missing-information keys and persists it before presentation. The owner
+answer returns through the ordinary task boundary and can lead to another
+question, a response, or a separately approved capability.
+
+The model should infer reversible or low-risk defaults and ask only when the
+unknown would materially change the outcome, destination, disclosure,
+authority, or side effect. Code rejects exact repeated questions, detects two
+consecutive no-progress rounds, caps the ledger at six rounds, and continues to
+enforce the run's smaller model-call budget. Clarification state follows the
+configured orchestration provider's existing disclosure boundary; adaptive
+evidence remains restricted to an owner-controlled provider. See
+[ADR-0057](decisions/0057-clarify-uncertain-intent-through-a-durable-bounded-loop.md).
 
 ## Integration actions and owner state
 

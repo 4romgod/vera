@@ -85,6 +85,7 @@ function fakeApi(overrides: Partial<VeraApi>): VeraApi {
     getConversation: unavailable,
     appendMessage: unavailable,
     submitTask: unavailable,
+    answerClarification: unavailable,
     getTask: unavailable,
     getRun: unavailable,
     getRunEvents: unavailable,
@@ -1086,6 +1087,8 @@ void describe('Vera CLI', () => {
         'Plan it.',
         '--project',
         'project_test',
+        '--clarification-task',
+        'task_clarification',
       ],
       {
         client,
@@ -1100,7 +1103,44 @@ void describe('Vera CLI', () => {
       conversationId: 'conversation_test',
       content: 'Plan it.',
       projectId: 'project_test',
+      clarificationTaskId: 'task_clarification',
       idempotencyKey: 'message-test-key',
+    });
+  });
+
+  void it('answers a direct task clarification through the shared client', async () => {
+    let received: Parameters<VeraApi['answerClarification']>[0] | undefined;
+    const client = fakeApi({
+      answerClarification: (input) => {
+        received = input;
+        return Promise.resolve(task('succeeded'));
+      },
+    });
+
+    const exitCode = await runCli(
+      [
+        'task',
+        'answer',
+        'task_clarification',
+        '--content',
+        'Use Vera.',
+        '--project',
+        'project_test',
+      ],
+      {
+        client,
+        stdout: { write: () => true },
+        stderr: { write: () => true },
+        createIdempotencyKey: () => 'clarification-answer-key',
+      },
+    );
+
+    assert.equal(exitCode, 0);
+    assert.deepEqual(received, {
+      taskId: 'task_clarification',
+      content: 'Use Vera.',
+      projectId: 'project_test',
+      idempotencyKey: 'clarification-answer-key',
     });
   });
 

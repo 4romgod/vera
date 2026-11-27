@@ -1,7 +1,7 @@
 # Vera Interface Design
 
 **Status:** Implemented design language
-**Last updated:** 7 September 2026
+**Last updated:** 8 September 2026
 
 ## Purpose
 
@@ -112,6 +112,12 @@ destinations.
   and never silently changes Vera to a system voice.
 - Run progress, cancellation, and approval remain inside the conversation where
   the relevant intent was expressed.
+- A clarification question appears as Vera's next ordinary durable message, not
+  as a terminal error or a separate wizard. The next typed, record/review, or
+  live-voice answer resumes that exact task. Repeated questions remain visible
+  as one conversation, while every later consequential action still renders a
+  fresh approval. If several tasks in one conversation await answers, the client
+  must preserve or request exact task selection rather than guess.
 - Every owner and Vera message ends with a quiet metadata row. It exposes a
   copy action with visible success or failure feedback and the message's durable
   creation time; older messages add the date so the delivery context is never

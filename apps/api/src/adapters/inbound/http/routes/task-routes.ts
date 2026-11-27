@@ -5,12 +5,14 @@ import type { AttachmentService } from '../../../../application/attachments/atta
 import { taskResponse } from '../presenters.ts';
 import {
   ApprovalDecisionRequestJsonSchema,
+  ClarificationAnswerRequestJsonSchema,
   IdempotencyHeadersJsonSchema,
   ResourceIdParamsJsonSchema,
   SubmitTaskRequestJsonSchema,
   TaskEventsResponseJsonSchema,
   TaskLifecycleResponseJsonSchema,
   type ApprovalDecisionRequest,
+  type ClarificationAnswerRequest,
   type IdempotencyHeaders,
   type ResourceIdParams,
   type SubmitTaskRequest,
@@ -78,6 +80,53 @@ export function registerTaskRoutes(
           request.params.id,
         ),
       ),
+  );
+
+  app.post<{
+    Params: ResourceIdParams;
+    Body: ClarificationAnswerRequest;
+    Headers: IdempotencyHeaders;
+  }>(
+    '/v1/tasks/:id/clarification-answers',
+    {
+      schema: {
+        params: ResourceIdParamsJsonSchema,
+        body: ClarificationAnswerRequestJsonSchema,
+        headers: IdempotencyHeadersJsonSchema,
+        response: { 202: TaskLifecycleResponseJsonSchema },
+      },
+    },
+    async (request, reply) => {
+      const attachments =
+        request.body.attachmentIds === undefined
+          ? undefined
+          : await options.attachments?.resolveReferences(
+              options.principalId,
+              request.body.attachmentIds,
+            );
+      if (
+        request.body.attachmentIds !== undefined &&
+        options.attachments === undefined
+      ) {
+        throw new Error('Attachment service is not configured.');
+      }
+      const aggregate = await options.taskLifecycle.answerClarification({
+        taskId: request.params.id,
+        principalId: options.principalId,
+        requestKey: request.headers['idempotency-key'],
+        content: request.body.content,
+        ...(request.body.projectId === undefined
+          ? {}
+          : { projectId: request.body.projectId }),
+        ...(attachments === undefined || attachments.length === 0
+          ? {}
+          : { attachments }),
+      });
+      return reply
+        .status(202)
+        .header('location', `/v1/tasks/${aggregate.task.id}`)
+        .send(taskResponse(aggregate));
+    },
   );
 
   app.get<{ Params: ResourceIdParams }>(

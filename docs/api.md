@@ -1,8 +1,8 @@
 # Vera HTTP API
 
 **Status:** Accepted for implemented V1 paths
-**Version:** 1.9
-**Last updated:** 7 September 2026
+**Version:** 2.0
+**Last updated:** 8 September 2026
 
 ## Purpose
 
@@ -90,6 +90,7 @@ must not be exposed to an untrusted or shared network.
 | `GET /v1/conversations/{conversationId}` | Retrieve messages and task links | `200` |
 | `DELETE /v1/conversations/{conversationId}` | Remove a conversation from owner-visible history | `200` |
 | `POST /v1/conversations/{conversationId}/messages` | Add owner intent and create its task | `202` |
+| `POST /v1/tasks/{taskId}/clarification-answers` | Answer a direct task's current clarification and resume the same run | `202` |
 | `POST /v1/tasks` | Submit owner intent as a durable task and first run | `202` |
 | `GET /v1/tasks/{taskId}` | Retrieve the current task/run projection | `200` |
 | `GET /v1/runs/{runId}` | Retrieve the current task/run projection by run | `200` |
@@ -344,6 +345,9 @@ silently redisclose attachment content.
 ```mermaid
 stateDiagram-v2
     [*] --> deciding: durable task created
+    deciding --> awaiting_clarification: consequential information unresolved
+    awaiting_clarification --> deciding: durable owner answer
+    awaiting_clarification --> cancelled: owner cancels
     deciding --> succeeded: direct response
     deciding --> rejected: proposal rejected
     deciding --> failed: model or internal failure
@@ -366,13 +370,32 @@ Task status is a coarser projection:
 
 | Run status | Task status |
 |---|---|
-| `deciding`, `awaiting_approval`, `executing`, `cancellation_requested` | `active` |
+| `deciding`, `awaiting_clarification`, `awaiting_approval`, `executing`, `cancellation_requested` | `active` |
 | `succeeded` | `completed` |
 | `rejected` | `rejected` |
 | `failed` | `failed` |
 | `cancelled` | `cancelled` |
 
 Terminal runs are not reopened. Retry as a new run is not implemented yet.
+
+An `awaiting_clarification` response includes the versioned `clarification`
+ledger. Direct tasks additionally expose `links.clarificationAnswer`; answering
+requires `Idempotency-Key` and a closed body containing `content` plus optional
+`projectId` and `attachmentIds`. Conversation tasks are answered through the
+ordinary message endpoint so the owner answer remains part of durable dialogue.
+At most five distinct attachments may be accumulated across the original task
+and all of its clarification answers.
+Clients should send `clarificationTaskId` when they know it. If omitted, the API
+continues automatically only when exactly one task in that conversation awaits
+an answer; multiple candidates return `409 clarification_ambiguous`.
+
+The answer resumes the same task and run. It may yield another projected
+question, a fresh exact approval, or a terminal response. Reusing an answer's
+idempotency key with identical input returns the same operation; changed input
+returns `409 idempotency_key_reused`. A conversation retry resolves to the task
+that recorded the answer even when `clarificationTaskId` is omitted. An answer
+is validated before its owner message is stored, so a rejected answer leaves no
+unanswered message in the conversation. Clarification never counts as approval.
 
 For a compound request, the optional `goal` projection contains the objective,
 authoritative project identity when applicable, current step, and at most three
@@ -709,11 +732,12 @@ turns from the exact same `projectId` scope; unscoped messages form their own
 scope. The task response exposes `conversationContextManifest` with hashes,
 limits, totals, and exclusion counts, without duplicating message content.
 
-Every terminal conversation task has a `conversationReply` projection with a
-stable message ID and `pending` or `projected` status. The worker recovers a
-pending projection idempotently. A polling client should treat a conversation
-task as settled only after this status is `projected`, even if the run has
-already reached a terminal status.
+Every terminal conversation task, and every task awaiting clarification, has a
+`conversationReply` projection with a stable message ID and `pending` or
+`projected` status. The worker recovers a pending projection idempotently. A
+polling client should treat a conversation interaction as settled only after
+this status is `projected`; `awaiting_clarification` remains nonterminal and the
+next owner message resumes that exact run.
 
 `DELETE /v1/conversations/{conversationId}` idempotently removes a
 conversation from owner-visible reads. The API retains a durable tombstone so

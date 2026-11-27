@@ -53,6 +53,7 @@ import {
 import { WorkItemActionArgumentsSchema } from '../../domain/work-items/work-item.ts';
 import { validateSoftwareDeliveryReference } from './resolve-software-delivery-reference.ts';
 import type { ExternalSignalContextBundle } from '../../domain/external-awareness/external-signal-context.ts';
+import type { IntentClarification } from '../../domain/tasks/intent-clarification.ts';
 
 export type EvaluateModelDecision = (
   message: string,
@@ -64,6 +65,7 @@ export type EvaluateModelDecision = (
     attachments?: AttachmentReference[];
     softwareDeliveryContext?: SoftwareDeliveryContext;
     externalSignalContext?: ExternalSignalContextBundle;
+    clarification?: IntentClarification;
   },
 ) => Promise<DecisionResult>;
 
@@ -341,6 +343,15 @@ function decide(
 
   if (proposal.kind === 'respond') {
     return { kind: 'respond', message: proposal.message };
+  }
+
+  if (proposal.kind === 'request_clarification') {
+    return {
+      kind: 'clarification_required',
+      question: proposal.question,
+      missingInformation: proposal.missingInformation,
+      resolvedFacts: proposal.resolvedFacts,
+    };
   }
 
   if (proposal.kind === 'execute_goal') {
@@ -899,6 +910,36 @@ export function createEvaluateModelDecision(
                 messages: context.conversationContext.messages.map(
                   ({ role, content }) => ({ role, content }),
                 ),
+              },
+            }),
+        ...(context?.clarification === undefined
+          ? {}
+          : {
+              clarification: {
+                originalRequest: message,
+                priorRounds: context.clarification.rounds.map((round) => ({
+                  question: round.question,
+                  missingInformation: round.missingInformation,
+                  resolvedFacts: round.resolvedFacts,
+                  ...(round.answer === undefined
+                    ? {}
+                    : {
+                        answer: {
+                          content: round.answer.content,
+                          ...(round.answer.projectId === undefined
+                            ? {}
+                            : { projectId: round.answer.projectId }),
+                          attachments:
+                            round.answer.attachments?.map(
+                              ({ filename, mediaType, byteLength }) => ({
+                                filename,
+                                mediaType,
+                                byteLength,
+                              }),
+                            ) ?? [],
+                        },
+                      }),
+                })),
               },
             }),
         ...(context?.memoryContext === undefined ||
