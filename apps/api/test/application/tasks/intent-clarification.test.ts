@@ -686,4 +686,146 @@ void describe('durable intent clarification', () => {
     assert.equal(completed.run.goal?.status, 'succeeded');
     assert.equal(calls, 2);
   });
+
+  void it('grants each answered round its own evaluation within the model-call budget', async () => {
+    const store = new InMemoryExecutionStore();
+    const resources = new InMemoryOwnerResourceStore();
+    const keys = ['outcome', 'audience', 'deadline', 'format'];
+    const decisions: DecisionResult[] = [
+      ...keys.map((key, index) =>
+        clarificationDecision({
+          id: `decision_round_${String(index + 1)}`,
+          question: `What is the ${key}?`,
+          missingKey: key,
+        }),
+      ),
+      responseDecision('Everything needed is now known.'),
+    ];
+    const evaluate: EvaluateModelDecision = () => {
+      const decision = decisions.shift();
+      if (decision === undefined) throw new Error('Unexpected evaluation.');
+      return Promise.resolve(decision);
+    };
+    const lifecycle = lifecycleHarness({ store, resources, evaluate });
+    let current = await lifecycle.submit({
+      principalId: 'owner_v1',
+      requestKey: 'budget-request',
+      message: 'Prepare it.',
+    });
+    for (const [index, key] of keys.entries()) {
+      assert.equal(
+        current.run.status,
+        'awaiting_clarification',
+        JSON.stringify(current.run.failure),
+      );
+      current = await lifecycle.answerClarification({
+        principalId: 'owner_v1',
+        taskId: current.task.id,
+        requestKey: `budget-answer-${String(index + 1)}`,
+        content: `The ${key} is settled.`,
+      });
+    }
+
+    // Five model calls exceed the default four-call work budget; the four
+    // owner answers each grant one evaluation, so the clarified task finishes.
+    assert.equal(
+      current.run.status,
+      'succeeded',
+      JSON.stringify(current.run.failure),
+    );
+    assert.equal(current.run.budget?.consumed.modelCalls, 5);
+    assert.equal(decisions.length, 0);
+  });
+
+  void it('resolves a retried conversation answer to the task that recorded it', async () => {
+    const store = new InMemoryExecutionStore();
+    const resources = new InMemoryOwnerResourceStore();
+    await store.create(
+      TaskAggregateSchema.parse({
+        schemaVersion: 1,
+        version: 1,
+        task: {
+          id: 'task_answered',
+          requestKey: 'request-answered',
+          principalId: 'owner_v1',
+          conversationId: 'conversation_retry',
+          message: 'Book it.',
+          status: 'active',
+          createdAt: now,
+          updatedAt: now,
+        },
+        run: {
+          id: 'run_answered',
+          status: 'deciding',
+          createdAt: now,
+          updatedAt: now,
+          clarification: {
+            schemaVersion: 1,
+            status: 'evaluating_answer',
+            maxRounds: 6,
+            consecutiveNoProgressRounds: 0,
+            totalWaitingMs: 0,
+            rounds: [
+              {
+                id: 'clarification_answered',
+                decisionId: 'decision_answered',
+                question: 'Which day?',
+                missingInformation: [
+                  { key: 'day', description: 'Need the day.' },
+                ],
+                resolvedFacts: [],
+                askedAt: now,
+                questionMessageId: 'message_question',
+                answer: {
+                  messageId: 'message_answer',
+                  requestKey: 'retry-key',
+                  content: 'Friday.',
+                  answeredAt: now,
+                },
+              },
+            ],
+          },
+        },
+        events: [],
+      }),
+    );
+    const lifecycle = lifecycleHarness({
+      store,
+      resources,
+      evaluate: () => Promise.reject(new Error('Unexpected evaluation.')),
+    });
+
+    const retried = await lifecycle.findAwaitingClarification({
+      principalId: 'owner_v1',
+      conversationId: 'conversation_retry',
+      answerRequestKey: 'retry-key',
+    });
+    assert.equal(retried?.task.id, 'task_answered');
+    assert.equal(
+      await lifecycle.findAwaitingClarification({
+        principalId: 'owner_v1',
+        conversationId: 'conversation_other',
+        answerRequestKey: 'retry-key',
+      }),
+      null,
+    );
+    await lifecycle.assertClarificationAnswerable({
+      principalId: 'owner_v1',
+      taskId: 'task_answered',
+      requestKey: 'retry-key',
+      content: 'Friday.',
+    });
+    await assert.rejects(
+      lifecycle.assertClarificationAnswerable({
+        principalId: 'owner_v1',
+        taskId: 'task_answered',
+        requestKey: 'retry-key',
+        content: 'Saturday.',
+      }),
+      (error: unknown) =>
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'idempotency_key_reused',
+    );
+  });
 });

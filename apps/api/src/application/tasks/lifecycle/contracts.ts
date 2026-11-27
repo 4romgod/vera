@@ -80,6 +80,14 @@ export type TaskLifecycle = {
     projectId?: string;
     attachments?: AttachmentReference[];
   }): Promise<TaskAggregate>;
+  assertClarificationAnswerable(input: {
+    taskId: string;
+    principalId: string;
+    requestKey: string;
+    content: string;
+    projectId?: string;
+    attachments?: AttachmentReference[];
+  }): Promise<void>;
   findAwaitingClarification(input: {
     principalId: string;
     conversationId: string;

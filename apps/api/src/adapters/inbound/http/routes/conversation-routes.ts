@@ -136,6 +136,20 @@ export function registerConversationRoutes(
         options.principalId,
         request.body.attachmentIds ?? [],
       );
+      if (awaitingClarification !== null) {
+        await taskLifecycle.assertClarificationAnswerable({
+          taskId: awaitingClarification.task.id,
+          principalId: options.principalId,
+          requestKey: request.headers['idempotency-key'],
+          content: request.body.content,
+          ...(effectiveProjectId === undefined
+            ? {}
+            : { projectId: effectiveProjectId }),
+          ...(attachments === undefined || attachments.length === 0
+            ? {}
+            : { attachments }),
+        });
+      }
       const appended = await options.conversations.appendOwnerMessage({
         principalId: options.principalId,
         conversationId: request.params.id,

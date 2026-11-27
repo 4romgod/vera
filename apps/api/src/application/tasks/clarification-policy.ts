@@ -8,6 +8,14 @@ type ClarificationAdmission =
   | { kind: 'ask'; consecutiveNoProgressRounds: number }
   | { kind: 'stall'; message: string };
 
+export function answeredClarificationRounds(aggregate: TaskAggregate): number {
+  return (
+    aggregate.run.clarification?.rounds.filter(
+      (round) => round.answer !== undefined,
+    ).length ?? 0
+  );
+}
+
 function normalizedQuestion(question: string): string {
   return question.trim().toLocaleLowerCase().replaceAll(/\s+/gu, ' ');
 }

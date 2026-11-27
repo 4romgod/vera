@@ -690,6 +690,8 @@ export function createApp(
     getRun: (principalId, runId) => lifecycle.getRun(principalId, runId),
     findAwaitingClarification: (input) =>
       lifecycle.findAwaitingClarification(input),
+    assertClarificationAnswerable: (input) =>
+      lifecycle.assertClarificationAnswerable(input),
     async answerClarification(input) {
       const aggregate = await lifecycle.answerClarification(input);
       worker.wake();

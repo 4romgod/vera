@@ -79,6 +79,23 @@ export class InMemoryExecutionStore implements ExecutionStore {
     );
   }
 
+  public findByClarificationAnswerKey(
+    principalId: string,
+    conversationId: string,
+    requestKey: string,
+  ): Promise<TaskAggregate | null> {
+    return Promise.resolve(
+      this.find(
+        (aggregate) =>
+          aggregate.task.principalId === principalId &&
+          aggregate.task.conversationId === conversationId &&
+          aggregate.run.clarification?.rounds.some(
+            (round) => round.answer?.requestKey === requestKey,
+          ) === true,
+      ),
+    );
+  }
+
   public listAwaitingClarificationsByConversation(
     principalId: string,
     conversationId: string,

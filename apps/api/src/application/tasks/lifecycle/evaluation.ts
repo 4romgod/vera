@@ -10,6 +10,7 @@ import type { TaskLifecycleDecisionRecording } from './decision-recording.ts';
 import type { TaskLifecycleAdaptiveGoalOperations } from './adaptive-goal.ts';
 import { shouldAssembleSoftwareDeliveryContext } from '../../software-delivery/software-delivery-context.ts';
 import { assertExternalSignalContextIntegrity } from '../../external-awareness/external-signal-context.ts';
+import { answeredClarificationRounds } from '../clarification-policy.ts';
 
 export function createEvaluationOperations(
   runtime: TaskLifecycleRuntime,
@@ -37,9 +38,14 @@ export function createEvaluationOperations(
           Date.parse(consumedAt) -
           Date.parse(candidate.run.createdAt) -
           (candidate.run.clarification?.totalWaitingMs ?? 0);
+        // Each durable owner answer grants exactly one evaluation call, so a
+        // clarification does not starve the work it unblocks. The grant stays
+        // finite because clarification rounds have a hard code-owned ceiling.
+        const modelCallLimit =
+          candidate.run.budget.limits.modelCalls +
+          answeredClarificationRounds(candidate);
         if (
-          candidate.run.budget.consumed.modelCalls >=
-            candidate.run.budget.limits.modelCalls ||
+          candidate.run.budget.consumed.modelCalls >= modelCallLimit ||
           elapsed >= candidate.run.budget.limits.maxDurationMs
         ) {
           candidate.run.status = 'failed';
@@ -80,7 +86,7 @@ export function createEvaluationOperations(
           {
             resource: 'model_calls',
             consumed: candidate.run.budget.consumed.modelCalls,
-            limit: candidate.run.budget.limits.modelCalls,
+            limit: modelCallLimit,
           },
           createId,
         );

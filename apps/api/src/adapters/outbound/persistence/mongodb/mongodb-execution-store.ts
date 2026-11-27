@@ -112,6 +112,18 @@ export class MongoDbExecutionStore implements ExecutionStore {
     });
   }
 
+  public async findByClarificationAnswerKey(
+    principalId: string,
+    conversationId: string,
+    requestKey: string,
+  ): Promise<TaskAggregate | null> {
+    return this.findOne({
+      'task.principalId': principalId,
+      'task.conversationId': conversationId,
+      'run.clarification.rounds.answer.requestKey': requestKey,
+    });
+  }
+
   public async listAwaitingClarificationsByConversation(
     principalId: string,
     conversationId: string,
@@ -312,6 +324,18 @@ export class MongoDbExecutionStore implements ExecutionStore {
         'run.status': 1,
         'task.updatedAt': -1,
       }),
+      this.collection.createIndex(
+        {
+          'task.principalId': 1,
+          'task.conversationId': 1,
+          'run.clarification.rounds.answer.requestKey': 1,
+        },
+        {
+          partialFilterExpression: {
+            'run.clarification.rounds.answer.requestKey': { $exists: true },
+          },
+        },
+      ),
       this.collection.createIndex({
         'task.principalId': 1,
         'task.updatedAt': -1,

@@ -9,7 +9,10 @@ import {
   createLiveVoiceSessionService,
 } from '../../../src/application/voice/live-voice-session-service.ts';
 import { TaskAggregateSchema } from '../../../src/domain/tasks/task-aggregate.ts';
-import type { TaskLifecycle } from '../../../src/application/tasks/task-lifecycle.ts';
+import {
+  LifecycleError,
+  type TaskLifecycle,
+} from '../../../src/application/tasks/task-lifecycle.ts';
 import type {
   LiveVoiceClientEvent,
   LiveVoiceTransport,
@@ -156,6 +159,7 @@ function taskLifecycle(): TaskLifecycle {
     getTask: () => Promise.resolve(aggregate),
     getRun: () => Promise.resolve(aggregate),
     findAwaitingClarification: () => Promise.resolve(null),
+    assertClarificationAnswerable: unexpected,
     answerClarification: unexpected,
     decideApproval: unexpected,
     cancelRun: unexpected,
@@ -337,6 +341,7 @@ void describe('live voice session lifecycle', () => {
         selectedTaskIds.push(input.taskId);
         return Promise.resolve(!submitted || answered ? null : awaiting);
       },
+      assertClarificationAnswerable: () => Promise.resolve(),
       answerClarification: (input) => {
         assert.equal(input.taskId, awaiting.task.id);
         answered = true;
@@ -381,6 +386,79 @@ void describe('live voice session lifecycle', () => {
     const session = await service.get('owner_v1', created.session.id);
     assert.equal(session.turns[1]?.taskId, awaiting.task.id);
     await service.close();
+  });
+
+  void it('submits a new spoken request when the prior question is no longer open', async () => {
+    const awaiting = clarificationTask();
+    const completed = terminalTask();
+    let submissions = 0;
+    const unexpected = (): never => {
+      throw new Error('Unexpected task lifecycle call.');
+    };
+    const tasks: TaskLifecycle = {
+      submit: () => {
+        submissions += 1;
+        return Promise.resolve(submissions === 1 ? awaiting : completed);
+      },
+      getTask: () => Promise.resolve(submissions === 1 ? awaiting : completed),
+      getRun: () => Promise.resolve(completed),
+      findAwaitingClarification: (input) => {
+        // The owner cancelled the first task outside voice, so the exact
+        // lookup reports it as no longer waiting.
+        if (input.taskId !== undefined) {
+          return Promise.reject(
+            new LifecycleError(
+              `Task ${input.taskId} is not awaiting clarification in this conversation.`,
+              'clarification_not_found',
+            ),
+          );
+        }
+        return Promise.resolve(null);
+      },
+      assertClarificationAnswerable: unexpected,
+      answerClarification: unexpected,
+      decideApproval: unexpected,
+      cancelRun: unexpected,
+      progressTask: unexpected,
+      recoverInterrupted: () => Promise.resolve(),
+    };
+    const { service, transport, warnings } = await harness({ tasks });
+    const created = await service.create({
+      principalId: 'owner_v1',
+      requestKey: 'voice-stale-clarification-session',
+      conversationId: 'conversation_voice_test',
+      takeover: false,
+    });
+    transport.emit({ type: 'owner_connected' });
+    transport.emit({
+      type: 'utterance_finalized',
+      audio: new Uint8Array([1]),
+      contentType: 'audio/wav',
+    });
+    await waitFor(
+      () =>
+        transport.events.filter((event) => event.type === 'speech_delivery')
+          .length === 1,
+      `clarification was not spoken: ${warnings.map(String).join('; ')}`,
+    );
+    transport.emit({
+      type: 'utterance_finalized',
+      audio: new Uint8Array([2]),
+      contentType: 'audio/wav',
+    });
+    try {
+      await waitFor(
+        async () =>
+          submissions === 2 &&
+          (await service.get('owner_v1', created.session.id)).turns[1]
+            ?.status === 'settled',
+        `new request was not submitted: ${warnings.map(String).join('; ')}`,
+      );
+      const session = await service.get('owner_v1', created.session.id);
+      assert.equal(session.turns[1]?.failure, undefined);
+    } finally {
+      await service.close();
+    }
   });
 
   void it('buffers transport events emitted before open returns', async () => {

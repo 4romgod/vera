@@ -41,6 +41,121 @@ export function createTaskLifecycleApi(
     progress,
     continueAdaptiveGoalInline,
   } = operations;
+
+  type ClarificationAnswerInput = Parameters<
+    TaskLifecycle['answerClarification']
+  >[0];
+
+  // Every answer precondition is checked here, so a caller can validate an
+  // answer before durably appending its conversation message and avoid an
+  // owner message that no task will ever answer.
+  async function admitClarificationAnswer(
+    input: Omit<ClarificationAnswerInput, 'messageId'> & {
+      messageId?: string;
+    },
+    mode: { requireMessage: boolean },
+  ): Promise<
+    | { kind: 'replay'; aggregate: TaskAggregate }
+    | {
+        kind: 'fresh';
+        existing: TaskAggregate;
+        projectId: string | undefined;
+        combinedAttachments: NonNullable<TaskAggregate['task']['attachments']>;
+      }
+  > {
+    const existing = await options.store.findByTaskId(
+      input.principalId,
+      input.taskId,
+    );
+    if (existing === null) {
+      throw new LifecycleError(
+        `Task ${input.taskId} was not found.`,
+        'task_not_found',
+      );
+    }
+    const projectId = input.projectId ?? existing.task.projectId;
+    const priorAnswer = existing.run.clarification?.rounds
+      .map((round) => round.answer)
+      .find((answer) => answer?.requestKey === input.requestKey);
+    if (priorAnswer !== undefined) {
+      if (
+        priorAnswer.content !== input.content ||
+        priorAnswer.projectId !== projectId ||
+        JSON.stringify(priorAnswer.attachments ?? []) !==
+          JSON.stringify(input.attachments ?? [])
+      ) {
+        throw new LifecycleError(
+          `Idempotency key ${input.requestKey} is already associated with a different clarification answer.`,
+          'idempotency_key_reused',
+        );
+      }
+      return { kind: 'replay', aggregate: existing };
+    }
+    if (
+      existing.run.status !== 'awaiting_clarification' ||
+      existing.run.clarification?.status !== 'awaiting_answer'
+    ) {
+      throw new LifecycleError(
+        `Task ${input.taskId} is not awaiting clarification.`,
+        'clarification_not_found',
+      );
+    }
+    if (
+      existing.task.conversationId !== undefined &&
+      existing.run.conversationReply?.status !== 'projected'
+    ) {
+      throw new LifecycleError(
+        'The clarification question is not ready for an answer.',
+        'clarification_not_ready',
+      );
+    }
+    if (
+      mode.requireMessage &&
+      existing.task.conversationId !== undefined &&
+      input.messageId === undefined
+    ) {
+      throw new LifecycleError(
+        'Conversation clarification answers must be durable conversation messages.',
+        'conversation_message_mismatch',
+      );
+    }
+    if (
+      existing.task.projectId !== undefined &&
+      projectId !== existing.task.projectId
+    ) {
+      throw new LifecycleError(
+        'A task cannot change its established project scope during clarification.',
+        'conversation_message_mismatch',
+      );
+    }
+    const combinedAttachments = [
+      ...(existing.task.attachments ?? []),
+      ...(input.attachments ?? []),
+    ].filter(
+      (attachment, index, all) =>
+        all.findIndex(({ id }) => id === attachment.id) === index,
+    );
+    if (combinedAttachments.length > 5) {
+      throw new LifecycleError(
+        'A task can use at most five attachments across its request and clarification answers.',
+        'clarification_attachment_limit_exceeded',
+      );
+    }
+    if (projectId !== undefined) {
+      const project = await options.resources.findProjectById(
+        input.principalId,
+        projectId,
+      );
+      if (project === null) {
+        throw new LifecycleError(
+          `Project ${projectId} was not found.`,
+          'project_not_found',
+        );
+      }
+    }
+    return { kind: 'fresh', existing, projectId, combinedAttachments };
+  }
+
   return {
     async submit(input) {
       const assignedBudget = RunBudgetSchema.parse({
@@ -293,6 +408,17 @@ export function createTaskLifecycleApi(
         }
         return selected;
       }
+      if (input.answerRequestKey !== undefined) {
+        // A retried answer whose first attempt was recorded but not yet linked
+        // to its conversation message must resolve to the same task, not start
+        // a new one or fail because the task already left the waiting state.
+        const answered = await options.store.findByClarificationAnswerKey(
+          input.principalId,
+          input.conversationId,
+          input.answerRequestKey,
+        );
+        if (answered !== null) return answered;
+      }
       const candidates =
         await options.store.listAwaitingClarificationsByConversation(
           input.principalId,
@@ -308,96 +434,18 @@ export function createTaskLifecycleApi(
       return candidates[0] ?? null;
     },
 
+    async assertClarificationAnswerable(input) {
+      await admitClarificationAnswer(input, { requireMessage: false });
+    },
+
     async answerClarification(input) {
-      const existing = await options.store.findByTaskId(
-        input.principalId,
-        input.taskId,
-      );
-      if (existing === null) {
-        throw new LifecycleError(
-          `Task ${input.taskId} was not found.`,
-          'task_not_found',
-        );
+      const admission = await admitClarificationAnswer(input, {
+        requireMessage: true,
+      });
+      if (admission.kind === 'replay') {
+        return finalizeConversationReply(admission.aggregate);
       }
-      const projectId = input.projectId ?? existing.task.projectId;
-      const priorAnswer = existing.run.clarification?.rounds
-        .map((round) => round.answer)
-        .find((answer) => answer?.requestKey === input.requestKey);
-      if (priorAnswer !== undefined) {
-        if (
-          priorAnswer.content !== input.content ||
-          priorAnswer.projectId !== projectId ||
-          JSON.stringify(priorAnswer.attachments ?? []) !==
-            JSON.stringify(input.attachments ?? [])
-        ) {
-          throw new LifecycleError(
-            `Idempotency key ${input.requestKey} is already associated with a different clarification answer.`,
-            'idempotency_key_reused',
-          );
-        }
-        return finalizeConversationReply(existing);
-      }
-      if (
-        existing.run.status !== 'awaiting_clarification' ||
-        existing.run.clarification?.status !== 'awaiting_answer'
-      ) {
-        throw new LifecycleError(
-          `Task ${input.taskId} is not awaiting clarification.`,
-          'clarification_not_found',
-        );
-      }
-      if (
-        existing.task.conversationId !== undefined &&
-        existing.run.conversationReply?.status !== 'projected'
-      ) {
-        throw new LifecycleError(
-          'The clarification question is not ready for an answer.',
-          'clarification_not_ready',
-        );
-      }
-      if (
-        existing.task.conversationId !== undefined &&
-        input.messageId === undefined
-      ) {
-        throw new LifecycleError(
-          'Conversation clarification answers must be durable conversation messages.',
-          'conversation_message_mismatch',
-        );
-      }
-      if (
-        existing.task.projectId !== undefined &&
-        projectId !== existing.task.projectId
-      ) {
-        throw new LifecycleError(
-          'A task cannot change its established project scope during clarification.',
-          'conversation_message_mismatch',
-        );
-      }
-      const combinedAttachments = [
-        ...(existing.task.attachments ?? []),
-        ...(input.attachments ?? []),
-      ].filter(
-        (attachment, index, all) =>
-          all.findIndex(({ id }) => id === attachment.id) === index,
-      );
-      if (combinedAttachments.length > 5) {
-        throw new LifecycleError(
-          'A task can use at most five attachments across its request and clarification answers.',
-          'clarification_attachment_limit_exceeded',
-        );
-      }
-      if (projectId !== undefined) {
-        const project = await options.resources.findProjectById(
-          input.principalId,
-          projectId,
-        );
-        if (project === null) {
-          throw new LifecycleError(
-            `Project ${projectId} was not found.`,
-            'project_not_found',
-          );
-        }
-      }
+      const { existing, projectId, combinedAttachments } = admission;
       const messageId = input.messageId ?? createId('message');
       const conversationContext =
         existing.task.conversationId === undefined

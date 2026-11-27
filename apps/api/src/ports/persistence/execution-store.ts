@@ -22,6 +22,11 @@ export type ExecutionStore = {
     principalId: string,
     approvalId: string,
   ): Promise<TaskAggregate | null>;
+  findByClarificationAnswerKey(
+    principalId: string,
+    conversationId: string,
+    requestKey: string,
+  ): Promise<TaskAggregate | null>;
   listAwaitingClarificationsByConversation(
     principalId: string,
     conversationId: string,

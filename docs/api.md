@@ -392,7 +392,10 @@ an answer; multiple candidates return `409 clarification_ambiguous`.
 The answer resumes the same task and run. It may yield another projected
 question, a fresh exact approval, or a terminal response. Reusing an answer's
 idempotency key with identical input returns the same operation; changed input
-returns `409 idempotency_key_reused`. Clarification never counts as approval.
+returns `409 idempotency_key_reused`. A conversation retry resolves to the task
+that recorded the answer even when `clarificationTaskId` is omitted. An answer
+is validated before its owner message is stored, so a rejected answer leaves no
+unanswered message in the conversation. Clarification never counts as approval.
 
 For a compound request, the optional `goal` projection contains the objective,
 authoritative project identity when applicable, current step, and at most three

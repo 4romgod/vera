@@ -177,6 +177,20 @@ function createClarificationHarness() {
     },
   ];
   const resources = new InMemoryOwnerResourceStore();
+  for (const name of ['alpha', 'beta']) {
+    void resources.createProject({
+      schemaVersion: 1,
+      id: `project_${name}`,
+      principalId: 'owner_v1',
+      registrationKey: `project-${name}`,
+      displayName: name,
+      normalizedName: name,
+      source: { kind: 'local_git', rootPath: `/test/${name}` },
+      status: 'active',
+      createdAt: '2026-08-24T18:00:00.000Z',
+      updatedAt: '2026-08-24T18:00:00.000Z',
+    });
+  }
   const lifecycle = createTaskLifecycle({
     store: new InMemoryExecutionStore(),
     scratchpad: new InMemoryScratchpad(),
@@ -367,6 +381,54 @@ void describe('task lifecycle HTTP API', () => {
         { role: 'owner', taskId: pending.taskId },
         { role: 'vera', taskId: pending.taskId },
       ],
+    );
+  });
+
+  void it('rejects an invalid clarification answer without storing its message', async () => {
+    const app = createClarificationHarness();
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/conversations',
+      headers: { 'idempotency-key': 'clarification-invalid-conversation' },
+      payload: { title: 'Invalid clarification answer' },
+    });
+    assert.equal(created.statusCode, 201, created.body);
+    const conversationId = created.json<{ id: string }>().id;
+    const asked = await app.inject({
+      method: 'POST',
+      url: `/v1/conversations/${conversationId}/messages`,
+      headers: { 'idempotency-key': 'clarification-invalid-question' },
+      payload: { content: 'Send it.', projectId: 'project_alpha' },
+    });
+    assert.equal(asked.statusCode, 202, asked.body);
+    const pending = asked.json<{ taskId: string; runStatus: string }>();
+    assert.equal(pending.runStatus, 'awaiting_clarification');
+
+    const rejected = await app.inject({
+      method: 'POST',
+      url: `/v1/conversations/${conversationId}/messages`,
+      headers: { 'idempotency-key': 'clarification-invalid-answer' },
+      payload: {
+        content: 'Send it to Sam.',
+        projectId: 'project_beta',
+        clarificationTaskId: pending.taskId,
+      },
+    });
+    assert.equal(rejected.statusCode, 409, rejected.body);
+    assert.equal(
+      rejected.json<{ error: { code: string } }>().error.code,
+      'conversation_message_mismatch',
+    );
+    const conversation = await app.inject({
+      method: 'GET',
+      url: `/v1/conversations/${conversationId}`,
+    });
+    assert.equal(conversation.statusCode, 200, conversation.body);
+    assert.deepEqual(
+      conversation
+        .json<{ messages: { role: string }[] }>()
+        .messages.map(({ role }) => role),
+      ['owner', 'vera'],
     );
   });
 

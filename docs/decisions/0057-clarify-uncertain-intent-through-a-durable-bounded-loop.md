@@ -30,7 +30,10 @@ same task and run, rebuilds bounded context, and may lead to another question,
 an approval, a capability step, or completion. Terminal runs are never reopened.
 
 The loop is bounded by both the run's existing model-call budget and a hard
-six-round ceiling. Vera refuses an exact repeated question and stops after two
+six-round ceiling. Each durable owner answer grants exactly one additional model
+call to evaluate that answer, so clarification cannot starve the work it
+unblocks; the total stays finite at the configured budget plus at most six
+answer evaluations. Vera refuses an exact repeated question and stops after two
 consecutive rounds that do not resolve any previously missing key. Human waiting
 time is durably measured and excluded from the active execution-duration budget.
 

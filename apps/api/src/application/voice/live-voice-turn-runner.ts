@@ -1,7 +1,7 @@
 import { setTimeout as delay } from 'node:timers/promises';
 
 import type { ConversationService } from '../conversations/conversation-service.ts';
-import type { TaskLifecycle } from '../tasks/task-lifecycle.ts';
+import { LifecycleError, type TaskLifecycle } from '../tasks/task-lifecycle.ts';
 import type { TranscriptionService } from '../transcriptions/transcription-service.ts';
 import type {
   LiveVoiceSession,
@@ -35,6 +35,34 @@ export function createLiveVoiceTurnRunner(options: {
   isSessionActive(sessionId: string): boolean;
   warning?: (error: unknown, context: Record<string, unknown>) => void;
 }) {
+  // The prior voice turn's question is only a hint: the owner may have
+  // cancelled that task or answered it by text since. A task that is no longer
+  // waiting falls back to the conversation-wide lookup instead of failing the
+  // new turn. Every other failure still propagates.
+  async function findPriorClarification(
+    principalId: string,
+    conversationId: string,
+    taskId: string,
+    answerRequestKey: string,
+  ) {
+    try {
+      return await options.tasks.findAwaitingClarification({
+        principalId,
+        conversationId,
+        taskId,
+        answerRequestKey,
+      });
+    } catch (error) {
+      if (
+        error instanceof LifecycleError &&
+        error.code === 'clarification_not_found'
+      ) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
   async function releaseDelivery(
     session: LiveVoiceSession,
     turnId: string,
@@ -241,27 +269,38 @@ export function createLiveVoiceTurnRunner(options: {
           priorTurn?.clarificationRequested === true
             ? priorTurn.taskId
             : undefined;
+        const answerRequestKey = `live-voice:${turn.id}`;
         const awaitingPriorClarification =
           priorTaskId === undefined
             ? null
-            : await options.tasks.findAwaitingClarification({
+            : await findPriorClarification(
                 principalId,
-                conversationId: session.conversationId,
-                taskId: priorTaskId,
-                answerRequestKey: `live-voice:${turn.id}`,
-              });
+                session.conversationId,
+                priorTaskId,
+                answerRequestKey,
+              );
         const awaitingClarification =
           awaitingPriorClarification ??
           (await options.tasks.findAwaitingClarification({
             principalId,
             conversationId: session.conversationId,
+            answerRequestKey,
           }));
         const projectId =
           session.projectId ?? awaitingClarification?.task.projectId;
+        if (awaitingClarification !== null) {
+          await options.tasks.assertClarificationAnswerable({
+            taskId: awaitingClarification.task.id,
+            principalId,
+            requestKey: answerRequestKey,
+            content: transcript,
+            ...(projectId === undefined ? {} : { projectId }),
+          });
+        }
         const appended = await options.conversations.appendOwnerMessage({
           principalId,
           conversationId: session.conversationId,
-          requestKey: `live-voice:${turn.id}`,
+          requestKey: answerRequestKey,
           content: transcript,
           ...(projectId === undefined ? {} : { projectId }),
         });
@@ -279,7 +318,7 @@ export function createLiveVoiceTurnRunner(options: {
               : await options.tasks.answerClarification({
                   taskId: awaitingClarification.task.id,
                   principalId,
-                  requestKey: `live-voice:${turn.id}`,
+                  requestKey: answerRequestKey,
                   messageId: appended.messageId,
                   content: transcript,
                   ...(projectId === undefined ? {} : { projectId }),

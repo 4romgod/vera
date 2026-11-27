@@ -56,6 +56,7 @@ import {
 } from '@/components/assistant/attention-actions';
 import { createAssistantRequestKey } from '@/components/assistant/request-key';
 import { openNotificationTarget } from '@/components/assistant/open-notification-target';
+import { isRunSettledForConversation } from '@/components/assistant/run-settlement';
 const EMPTY_MESSAGES: ConversationMessageResource[] = [];
 export function AssistantScreen() {
   const router = useRouter();
@@ -692,14 +693,7 @@ export function AssistantScreen() {
     try {
       const next = await client.waitForRun(run.runId, {
         signal: controller.signal,
-        until: (task) =>
-          task.runStatus === 'awaiting_clarification' ||
-          task.runStatus === 'awaiting_approval' ||
-          (['succeeded', 'rejected', 'failed', 'cancelled'].includes(
-            task.runStatus,
-          ) &&
-            (task.conversationId === undefined ||
-              task.conversationReply?.status === 'projected')),
+        until: isRunSettledForConversation,
         onUpdate: (update) => {
           if (followGeneration.current === generation) setActiveRun(update);
         },
