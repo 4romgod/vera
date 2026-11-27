@@ -1,7 +1,7 @@
 # Vera Architecture Decision Records
 
 **Status:** Active index
-**Last updated:** 5 September 2026
+**Last updated:** 8 September 2026
 
 ## Purpose
 
@@ -77,6 +77,8 @@ erasing why a choice was made.
 | [0053](0053-synthesize-speech-through-a-local-provider-boundary.md) | Accepted | Synthesize Vera's consistent neural voice through a provider-neutral API port and owner-controlled Pocket TTS sidecar. |
 | [0054](0054-remove-conversations-through-a-durable-tombstone.md) | Accepted | Remove conversations from owner-visible history while retaining a minimal tombstone for task settlement and audit integrity. |
 | [0055](0055-select-neural-and-device-fallback-voices-explicitly.md) | Accepted | Discover allowed neural voices through Vera and keep neural and device-fallback selection and preview behavior explicit. |
+| [0056](0056-coordinate-software-delivery-from-observed-repository-state.md) | Accepted | Coordinate software delivery from inspected repository state instead of requiring a clean checkout. |
+| [0057](0057-clarify-uncertain-intent-through-a-durable-bounded-loop.md) | Accepted | Resolve consequential uncertainty through a bounded, restart-safe clarification loop on the same task and run. |
 
 ADRs 0001–0008 were accepted 24 August 2026 following the owner's review of
 the foundation documentation. ADR-0007 accepted a semantic boundary without

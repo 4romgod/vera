@@ -34,7 +34,9 @@ export function createEvaluationOperations(
         if (candidate.run.status !== 'deciding') return false;
         candidate.run.budget ??= structuredClone(budget);
         const elapsed =
-          Date.parse(consumedAt) - Date.parse(candidate.run.createdAt);
+          Date.parse(consumedAt) -
+          Date.parse(candidate.run.createdAt) -
+          (candidate.run.clarification?.totalWaitingMs ?? 0);
         if (
           candidate.run.budget.consumed.modelCalls >=
             candidate.run.budget.limits.modelCalls ||
@@ -110,7 +112,11 @@ export function createEvaluationOperations(
       if (conversationContext !== undefined) {
         try {
           const conversationId = budgetClaim.aggregate.task.conversationId;
-          const messageId = budgetClaim.aggregate.task.messageId;
+          const messageId =
+            budgetClaim.aggregate.run.clarification?.rounds
+              .filter((round) => round.answer !== undefined)
+              .at(-1)?.answer?.messageId ??
+            budgetClaim.aggregate.task.messageId;
           if (conversationId === undefined || messageId === undefined) {
             throw new Error(
               'Conversation context is attached to a non-conversation task.',
@@ -254,6 +260,9 @@ export function createEvaluationOperations(
           ...(budgetClaim.aggregate.task.attachments === undefined
             ? {}
             : { attachments: budgetClaim.aggregate.task.attachments }),
+          ...(budgetClaim.aggregate.run.clarification === undefined
+            ? {}
+            : { clarification: budgetClaim.aggregate.run.clarification }),
         },
       );
       if (

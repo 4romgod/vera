@@ -10,6 +10,7 @@ import {
   TaskOutputSchema,
   TaskStatusSchema,
 } from '../../../domain/tasks/task-aggregate.ts';
+import { IntentClarificationSchema } from '../../../domain/tasks/intent-clarification.ts';
 import { DecisionResultSchema } from '../../../domain/model/execution-decision.ts';
 import {
   ImplementationPlanArtifactSchema,
@@ -133,6 +134,7 @@ export const CreateConversationMessageRequestSchema = z
   .object({
     content: z.string().trim().min(1).max(20_000),
     projectId: z.string().startsWith('project_').optional(),
+    clarificationTaskId: z.string().startsWith('task_').optional(),
     attachmentIds: z
       .array(z.string().startsWith('attachment_'))
       .max(5)
@@ -143,6 +145,13 @@ export const CreateConversationMessageRequestSchema = z
 
 export type CreateConversationMessageRequest = z.infer<
   typeof CreateConversationMessageRequestSchema
+>;
+
+export const ClarificationAnswerRequestSchema =
+  CreateConversationMessageRequestSchema.omit({ clarificationTaskId: true });
+
+export type ClarificationAnswerRequest = z.infer<
+  typeof ClarificationAnswerRequestSchema
 >;
 
 export const HandleExternalSignalRequestSchema = z
@@ -436,6 +445,7 @@ export const TaskLifecycleResponseSchema = z
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
     decision: DecisionResultSchema.optional(),
+    clarification: IntentClarificationSchema.optional(),
     approval: ApprovalSchema.optional(),
     approvalHistory: z.array(ApprovalSchema).max(2).optional(),
     invocation: CapabilityInvocationSchema.optional(),
@@ -465,6 +475,7 @@ export const TaskLifecycleResponseSchema = z
         run: z.string(),
         events: z.string(),
         approval: z.string().optional(),
+        clarificationAnswer: z.string().optional(),
         externalSignal: z.string().optional(),
         externalSignalResolution: z.string().optional(),
       })
@@ -726,6 +737,11 @@ export const CreateConversationRequestJsonSchema = z.toJSONSchema(
 
 export const CreateConversationMessageRequestJsonSchema = z.toJSONSchema(
   CreateConversationMessageRequestSchema,
+  { target: 'draft-7' },
+);
+
+export const ClarificationAnswerRequestJsonSchema = z.toJSONSchema(
+  ClarificationAnswerRequestSchema,
   { target: 'draft-7' },
 );
 

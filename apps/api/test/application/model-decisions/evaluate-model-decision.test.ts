@@ -17,6 +17,32 @@ function evaluator(candidate: unknown) {
 }
 
 void describe('model decision boundary', () => {
+  void it('admits a structured clarification request for every capability set', async () => {
+    const provider = new FakeModelProvider({
+      schemaVersion: 1,
+      kind: 'request_clarification',
+      decisionSummary: 'The requested target is ambiguous.',
+      question: 'Which project should I use?',
+      missingInformation: [
+        { key: 'project', description: 'The target project.' },
+      ],
+      resolvedFacts: [],
+    });
+    const result = await createEvaluateModelDecision(
+      provider,
+      () => 'decision_clarification',
+      { enabledCapabilities: [] },
+    )('Please fix it.');
+    assert.deepEqual(result.decision, {
+      kind: 'clarification_required',
+      question: 'Which project should I use?',
+      missingInformation: [
+        { key: 'project', description: 'The target project.' },
+      ],
+      resolvedFacts: [],
+    });
+  });
+
   void it('accepts a repository watch only for the exact selected project', async () => {
     const candidate = {
       schemaVersion: 1,

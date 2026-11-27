@@ -14,6 +14,7 @@ import {
   type AdaptiveGoalContinuationResult,
   type AdaptiveGoalRequirement,
 } from '../../domain/goals/adaptive-goal.ts';
+import type { IntentClarification } from '../../domain/tasks/intent-clarification.ts';
 import {
   ModelProviderError,
   type ModelProvider,
@@ -36,6 +37,7 @@ export type EvaluateGoalContinuation = (input: {
   remainingCapabilityInvocations: number;
   selectedProject?: { id: string; displayName: string };
   temporalContext: { currentTime: string; ownerTimeZone: string };
+  clarification?: IntentClarification;
 }) => Promise<AdaptiveGoalContinuationResult>;
 
 export function buildContinuationSystemPrompt(
@@ -44,7 +46,9 @@ export function buildContinuationSystemPrompt(
   return [
     "You are Vera's bounded goal continuation model. You propose; you never authorize or execute.",
     'You are given the owner request, the completion criteria, and validated observations from capability artifacts.',
-    'Choose exactly one action: continue_goal with one necessary next capability, or complete_goal with the useful final answer.',
+    'Choose exactly one action: continue_goal with one necessary next capability, complete_goal with the useful final answer, or request_clarification when a consequential detail cannot be inferred safely.',
+    'Infer reversible, low-risk, or defaultable details from the request and evidence. Ask only when the unresolved detail would materially change the outcome, authority, destination, disclosure, or side effect.',
+    'A clarification can take multiple rounds. Ask one focused question covering at most three related missing facts, use stable missingInformation keys, retain grounded resolvedFacts, and never repeat a prior question.',
     'Use continue_goal only when another capability is necessary to satisfy the owner request. Vera code will require separate exact approval before it executes.',
     'Use complete_goal when the evidence already satisfies the completion criteria or shows that a conditional action is unnecessary.',
     "The requirements list is Vera's durable outcome contract. You must resolve every requirement exactly once before complete_goal.",
@@ -156,6 +160,21 @@ export function createEvaluateGoalContinuation(
         completedCapabilities: input.observations.map(
           (observation) => observation.capability,
         ),
+        ...(input.clarification === undefined
+          ? {}
+          : {
+              clarification: {
+                originalRequest: input.ownerMessage,
+                priorRounds: input.clarification.rounds.map((round) => ({
+                  question: round.question,
+                  missingInformation: round.missingInformation,
+                  resolvedFacts: round.resolvedFacts,
+                  ...(round.answer === undefined
+                    ? {}
+                    : { answer: { content: round.answer.content } }),
+                })),
+              },
+            }),
       }),
       outputSchema,
     });
@@ -192,6 +211,29 @@ export function createEvaluateGoalContinuation(
         'invalid_continuation',
         'The continuation cited missing or duplicate evidence steps.',
       );
+    }
+
+    if (parsed.data.kind === 'request_clarification') {
+      return {
+        decisionId: createId(),
+        proposal: parsed.data,
+        decision: {
+          kind: 'clarification_required',
+          question: parsed.data.question,
+          missingInformation: parsed.data.missingInformation,
+          resolvedFacts: parsed.data.resolvedFacts,
+          evidenceStepIds: parsed.data.evidenceStepIds,
+        },
+        model: {
+          provider: generation.provider,
+          model: generation.model,
+          durationMs: generation.durationMs,
+          ...(generation.usage === undefined
+            ? {}
+            : { usage: generation.usage }),
+        },
+        decidedAt,
+      };
     }
 
     if (parsed.data.kind === 'complete_goal') {

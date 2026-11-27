@@ -38,6 +38,8 @@ function lifecycle(progressTask: TaskLifecycle['progressTask']): TaskLifecycle {
     submit: unavailable,
     getTask: unavailable,
     getRun: unavailable,
+    findAwaitingClarification: unavailable,
+    answerClarification: unavailable,
     decideApproval: unavailable,
     cancelRun: unavailable,
     progressTask,

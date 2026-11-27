@@ -591,10 +591,15 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
         error.code === 'idempotency_key_reused' ||
         error.code === 'concurrent_transition_failed' ||
         error.code === 'conversation_message_mismatch' ||
+        error.code === 'clarification_not_ready' ||
+        error.code === 'clarification_already_answered' ||
+        error.code === 'clarification_ambiguous' ||
         error.code === 'external_signal_not_active' ||
         error.code === 'external_signal_scope_mismatch'
           ? 409
-          : 404;
+          : error.code === 'clarification_attachment_limit_exceeded'
+            ? 422
+            : 404;
       void reply.status(statusCode).send({
         error: { code: error.code, message: error.message },
       });

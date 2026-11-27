@@ -22,6 +22,11 @@ export type ExecutionStore = {
     principalId: string,
     approvalId: string,
   ): Promise<TaskAggregate | null>;
+  listAwaitingClarificationsByConversation(
+    principalId: string,
+    conversationId: string,
+    limit: number,
+  ): Promise<TaskAggregate[]>;
   findLatestByExternalSignal(
     principalId: string,
     signalId: string,

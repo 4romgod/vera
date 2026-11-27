@@ -56,9 +56,7 @@ import {
 } from '@/components/assistant/attention-actions';
 import { createAssistantRequestKey } from '@/components/assistant/request-key';
 import { openNotificationTarget } from '@/components/assistant/open-notification-target';
-
 const EMPTY_MESSAGES: ConversationMessageResource[] = [];
-
 export function AssistantScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
@@ -585,9 +583,7 @@ export function AssistantScreen() {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      void refreshNotifications().catch(() => {
-        // The durable inbox remains visible at its last successful snapshot.
-      });
+      void refreshNotifications().catch(() => undefined);
     }, 5_000);
     return () => clearInterval(interval);
   }, [refreshNotifications]);
@@ -697,6 +693,7 @@ export function AssistantScreen() {
       const next = await client.waitForRun(run.runId, {
         signal: controller.signal,
         until: (task) =>
+          task.runStatus === 'awaiting_clarification' ||
           task.runStatus === 'awaiting_approval' ||
           (['succeeded', 'rejected', 'failed', 'cancelled'].includes(
             task.runStatus,
@@ -717,7 +714,10 @@ export function AssistantScreen() {
           );
           setConversation(refreshedConversation);
         }
-        if (voiceRunIds.current.delete(next.runId)) {
+        if (
+          next.runStatus !== 'awaiting_clarification' &&
+          voiceRunIds.current.delete(next.runId)
+        ) {
           const replyId = next.conversationReply?.messageId;
           const reply = refreshedConversation?.messages.find(
             (message) => message.id === replyId && message.role === 'vera',
@@ -767,6 +767,10 @@ export function AssistantScreen() {
         conversationId: current.id,
         content: normalized,
         idempotencyKey: createAssistantRequestKey(),
+        ...(activeRun?.runStatus !== 'awaiting_clarification' ||
+        activeRun.conversationId !== current.id
+          ? {}
+          : { clarificationTaskId: activeRun.taskId }),
         ...(selectedProjectId === undefined
           ? {}
           : { projectId: selectedProjectId }),

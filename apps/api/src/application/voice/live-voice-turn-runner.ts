@@ -120,12 +120,20 @@ export function createLiveVoiceTurnRunner(options: {
         }
         const reply = aggregate.run.conversationReply;
         if (
-          TerminalRunStatuses.has(aggregate.run.status) &&
+          (TerminalRunStatuses.has(aggregate.run.status) ||
+            aggregate.run.status === 'awaiting_clarification') &&
           (reply === undefined || reply.status === 'projected')
         ) {
           await options.state.updateTurn(session, turnId, (turn) => ({
             ...turn,
-            status: aggregate.run.status === 'succeeded' ? 'settled' : 'failed',
+            status:
+              aggregate.run.status === 'succeeded' ||
+              aggregate.run.status === 'awaiting_clarification'
+                ? 'settled'
+                : 'failed',
+            ...(aggregate.run.status === 'awaiting_clarification'
+              ? { clarificationRequested: true as const }
+              : {}),
             ...(aggregate.run.failure === undefined
               ? {}
               : { failure: aggregate.run.failure.message.slice(0, 2_000) }),
@@ -140,7 +148,10 @@ export function createLiveVoiceTurnRunner(options: {
           await releaseDelivery(
             session,
             turnId,
-            aggregate.run.status === 'succeeded' ? 'response' : 'failure',
+            aggregate.run.status === 'succeeded' ||
+              aggregate.run.status === 'awaiting_clarification'
+              ? 'response'
+              : 'failure',
             content,
             reply?.messageId,
           );
@@ -225,27 +236,54 @@ export function createLiveVoiceTurnRunner(options: {
           turnId: turn.id,
           text: transcript,
         });
+        const priorTurn = session.turns.at(-2);
+        const priorTaskId =
+          priorTurn?.clarificationRequested === true
+            ? priorTurn.taskId
+            : undefined;
+        const awaitingPriorClarification =
+          priorTaskId === undefined
+            ? null
+            : await options.tasks.findAwaitingClarification({
+                principalId,
+                conversationId: session.conversationId,
+                taskId: priorTaskId,
+                answerRequestKey: `live-voice:${turn.id}`,
+              });
+        const awaitingClarification =
+          awaitingPriorClarification ??
+          (await options.tasks.findAwaitingClarification({
+            principalId,
+            conversationId: session.conversationId,
+          }));
+        const projectId =
+          session.projectId ?? awaitingClarification?.task.projectId;
         const appended = await options.conversations.appendOwnerMessage({
           principalId,
           conversationId: session.conversationId,
           requestKey: `live-voice:${turn.id}`,
           content: transcript,
-          ...(session.projectId === undefined
-            ? {}
-            : { projectId: session.projectId }),
+          ...(projectId === undefined ? {} : { projectId }),
         });
         const aggregate =
           appended.taskId === undefined
-            ? await options.tasks.submit({
-                principalId,
-                requestKey: appended.messageId,
-                message: transcript,
-                conversationId: session.conversationId,
-                messageId: appended.messageId,
-                ...(session.projectId === undefined
-                  ? {}
-                  : { projectId: session.projectId }),
-              })
+            ? awaitingClarification === null
+              ? await options.tasks.submit({
+                  principalId,
+                  requestKey: appended.messageId,
+                  message: transcript,
+                  conversationId: session.conversationId,
+                  messageId: appended.messageId,
+                  ...(projectId === undefined ? {} : { projectId }),
+                })
+              : await options.tasks.answerClarification({
+                  taskId: awaitingClarification.task.id,
+                  principalId,
+                  requestKey: `live-voice:${turn.id}`,
+                  messageId: appended.messageId,
+                  content: transcript,
+                  ...(projectId === undefined ? {} : { projectId }),
+                })
             : await options.tasks.getTask(principalId, appended.taskId);
         if (appended.taskId === undefined) {
           await options.conversations.attachTask({

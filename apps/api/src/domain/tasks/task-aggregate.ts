@@ -86,6 +86,7 @@ import {
   WorkItemResultSchema,
 } from '../work-items/work-item.ts';
 import { ExternalSignalContextBundleSchema } from '../external-awareness/external-signal-context.ts';
+import { IntentClarificationSchema } from './intent-clarification.ts';
 
 export const TaskStatusSchema = z.enum([
   'active',
@@ -97,6 +98,7 @@ export const TaskStatusSchema = z.enum([
 
 export const RunStatusSchema = z.enum([
   'deciding',
+  'awaiting_clarification',
   'awaiting_approval',
   'executing',
   'succeeded',
@@ -600,6 +602,11 @@ export const TaskEventTypeSchema = z.enum([
   'task_created',
   'run_started',
   'model_decision_recorded',
+  'clarification_requested',
+  'clarification_answered',
+  'clarification_resolved',
+  'clarification_stalled',
+  'clarification_cancelled',
   'approval_requested',
   'approval_approved',
   'approval_rejected',
@@ -679,6 +686,7 @@ export const TaskAggregateSchema = z
         createdAt: z.iso.datetime(),
         updatedAt: z.iso.datetime(),
         decision: DecisionResultSchema.optional(),
+        clarification: IntentClarificationSchema.optional(),
         approval: ApprovalSchema.optional(),
         approvalHistory: z.array(ApprovalSchema).max(2).optional(),
         invocation: CapabilityInvocationSchema.optional(),

@@ -1172,6 +1172,79 @@ void describe('Vera HTTP client', () => {
     });
   });
 
+  void it('links conversation and direct clarification answers to the same task', async () => {
+    const requests: { input: string; init?: RequestInit }[] = [];
+    const client = new VeraClient({
+      baseUrl: 'http://vera.test',
+      fetch: (input, init) => {
+        requests.push({
+          input:
+            typeof input === 'string'
+              ? input
+              : input instanceof URL
+                ? input.href
+                : input.url,
+          ...(init === undefined ? {} : { init }),
+        });
+        return Promise.resolve(
+          Response.json(
+            {
+              schemaVersion: 1,
+              taskId: 'task_clarification',
+              runId: 'run_clarification',
+              taskStatus: 'active',
+              runStatus: 'deciding',
+              message: 'continue',
+              createdAt: fixtureTime,
+              updatedAt: fixtureTime,
+              links: { task: '/task', run: '/run', events: '/events' },
+            },
+            { status: 202 },
+          ),
+        );
+      },
+    });
+
+    await client.appendMessage({
+      conversationId: 'conversation_test',
+      content: 'Use the Vera project.',
+      clarificationTaskId: 'task_clarification',
+      idempotencyKey: 'conversation-clarification-answer',
+    });
+    await client.answerClarification({
+      taskId: 'task_clarification',
+      content: 'Use the Vera project.',
+      idempotencyKey: 'direct-clarification-answer',
+    });
+
+    assert.deepEqual(
+      requests.map(({ input, init }) => ({
+        input,
+        key: new Headers(init?.headers).get('idempotency-key'),
+        body:
+          typeof init?.body === 'string'
+            ? (JSON.parse(init.body) as unknown)
+            : undefined,
+      })),
+      [
+        {
+          input: 'http://vera.test/v1/conversations/conversation_test/messages',
+          key: 'conversation-clarification-answer',
+          body: {
+            content: 'Use the Vera project.',
+            clarificationTaskId: 'task_clarification',
+          },
+        },
+        {
+          input:
+            'http://vera.test/v1/tasks/task_clarification/clarification-answers',
+          key: 'direct-clarification-answer',
+          body: { content: 'Use the Vera project.' },
+        },
+      ],
+    );
+  });
+
   void it('does not declare a content type for bodyless generated requests', async () => {
     const client = new VeraClient({
       baseUrl: 'http://vera.test',

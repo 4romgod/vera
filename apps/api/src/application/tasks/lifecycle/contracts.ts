@@ -27,6 +27,11 @@ export type LifecycleErrorCode =
   | 'conversation_not_found'
   | 'conversation_message_not_found'
   | 'conversation_message_mismatch'
+  | 'clarification_not_found'
+  | 'clarification_not_ready'
+  | 'clarification_already_answered'
+  | 'clarification_ambiguous'
+  | 'clarification_attachment_limit_exceeded'
   | 'external_signal_not_found'
   | 'external_signal_not_active'
   | 'external_signal_scope_mismatch'
@@ -66,6 +71,21 @@ export type TaskLifecycle = {
     decision: 'approved' | 'rejected';
     principalId: string;
   }): Promise<TaskAggregate>;
+  answerClarification(input: {
+    taskId: string;
+    principalId: string;
+    messageId?: string;
+    requestKey: string;
+    content: string;
+    projectId?: string;
+    attachments?: AttachmentReference[];
+  }): Promise<TaskAggregate>;
+  findAwaitingClarification(input: {
+    principalId: string;
+    conversationId: string;
+    taskId?: string;
+    answerRequestKey?: string;
+  }): Promise<TaskAggregate | null>;
   cancelRun(input: {
     runId: string;
     principalId: string;

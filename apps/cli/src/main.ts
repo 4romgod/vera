@@ -51,9 +51,10 @@ const usage = `Usage:
   vera conversation create [--title <title>] [--key <key>]
   vera conversation list
   vera conversation show <conversation-id>
-  vera conversation message <conversation-id> --content <content> [--project <project-id>] [--key <key>]
-  vera chat --message <message> [--conversation <conversation-id>] [--title <title>] [--project <project-id>] [--key <key>] [--approve]
+  vera conversation message <conversation-id> --content <content> [--project <project-id>] [--clarification-task <task-id>] [--key <key>]
+  vera chat --message <message> [--conversation <conversation-id>] [--title <title>] [--project <project-id>] [--clarification-task <task-id>] [--key <key>] [--approve]
   vera task submit --message <message> [--project <project-id>] [--key <key>]
+  vera task answer <task-id> --content <content> [--project <project-id>] [--key <key>]
   vera task show <task-id>
   vera run show <run-id>
   vera run wait <run-id> [--timeout-ms <milliseconds>]
@@ -150,6 +151,14 @@ function isTerminal(task: TaskResource): boolean {
 
 function isConversationTerminal(task: TaskResource): boolean {
   return isTerminal(task) && task.conversationReply?.status === 'projected';
+}
+
+function isConversationSettled(task: TaskResource): boolean {
+  return (
+    isConversationTerminal(task) ||
+    (task.runStatus === 'awaiting_clarification' &&
+      task.conversationReply?.status === 'projected')
+  );
 }
 
 function isApplicationTerminal(
@@ -525,6 +534,7 @@ export async function runCli(
   }
   if (resource === 'conversation' && action === 'message') {
     const projectId = option(args, '--project');
+    const clarificationTaskId = option(args, '--clarification-task');
     print(
       stdout,
       await client.appendMessage({
@@ -532,6 +542,7 @@ export async function runCli(
         content: requiredOption(args, '--content'),
         idempotencyKey: option(args, '--key') ?? createKey(),
         ...(projectId === undefined ? {} : { projectId }),
+        ...(clarificationTaskId === undefined ? {} : { clarificationTaskId }),
       }),
     );
     return 0;
@@ -543,6 +554,7 @@ export async function runCli(
       throw new Error('--message must contain non-whitespace text.');
     }
     const projectId = option(args, '--project');
+    const clarificationTaskId = option(args, '--clarification-task');
     const requestedConversationId = option(args, '--conversation');
     const conversation =
       requestedConversationId === undefined
@@ -555,11 +567,12 @@ export async function runCli(
       conversationId: conversation.id,
       content: message,
       idempotencyKey: option(args, '--key') ?? createKey(),
+      ...(clarificationTaskId === undefined ? {} : { clarificationTaskId }),
       ...(projectId === undefined ? {} : { projectId }),
     });
     const review = await client.waitForRun(submitted.runId, {
       until: (task) =>
-        task.runStatus === 'awaiting_approval' || isConversationTerminal(task),
+        task.runStatus === 'awaiting_approval' || isConversationSettled(task),
     });
     let completed = review;
     while (completed.runStatus === 'awaiting_approval') {
@@ -572,7 +585,7 @@ export async function runCli(
         stderr,
       });
     }
-    const finalTask = isConversationTerminal(completed)
+    const finalTask = isConversationSettled(completed)
       ? completed
       : await client.waitForRun(completed.runId);
     const refreshed = await client.getConversation(conversation.id);
@@ -598,7 +611,9 @@ export async function runCli(
         ? {}
         : { memoryContext: finalTask.memoryContextManifest }),
     });
-    return finalTask.runStatus === 'succeeded' ? 0 : 2;
+    return ['succeeded', 'awaiting_clarification'].includes(finalTask.runStatus)
+      ? 0
+      : 2;
   }
 
   if (resource === 'task' && action === 'submit') {
@@ -613,6 +628,19 @@ export async function runCli(
   }
   if (resource === 'task' && action === 'show') {
     print(stdout, await client.getTask(positional(args, 2, 'task-id')));
+    return 0;
+  }
+  if (resource === 'task' && action === 'answer') {
+    const projectId = option(args, '--project');
+    print(
+      stdout,
+      await client.answerClarification({
+        taskId: positional(args, 2, 'task-id'),
+        content: requiredOption(args, '--content'),
+        idempotencyKey: option(args, '--key') ?? createKey(),
+        ...(projectId === undefined ? {} : { projectId }),
+      }),
+    );
     return 0;
   }
 
@@ -817,7 +845,7 @@ export async function runCli(
     });
     let completed = await client.waitForRun(submitted.runId, {
       until: (task) =>
-        task.runStatus === 'awaiting_approval' || isConversationTerminal(task),
+        task.runStatus === 'awaiting_approval' || isConversationSettled(task),
     });
     while (completed.runStatus === 'awaiting_approval') {
       completed = await resolveApproval({
@@ -829,7 +857,7 @@ export async function runCli(
         stderr,
       });
     }
-    const finalTask = isConversationTerminal(completed)
+    const finalTask = isConversationSettled(completed)
       ? completed
       : await client.waitForRun(completed.runId);
     const conversation =
@@ -840,7 +868,9 @@ export async function runCli(
       task: finalTask,
       ...(conversation === undefined ? {} : { conversation }),
     });
-    return finalTask.runStatus === 'succeeded' ? 0 : 2;
+    return ['succeeded', 'awaiting_clarification'].includes(finalTask.runStatus)
+      ? 0
+      : 2;
   }
   if (resource === 'signal' && action === 'status') {
     print(

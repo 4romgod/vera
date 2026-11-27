@@ -20,6 +20,7 @@ const VoiceTurnSchema = z
     messageId: z.string().startsWith('message_').optional(),
     taskId: z.string().startsWith('task_').optional(),
     runId: z.string().startsWith('run_').optional(),
+    clarificationRequested: z.literal(true).optional(),
     failure: z.string().trim().min(1).max(2_000).optional(),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),

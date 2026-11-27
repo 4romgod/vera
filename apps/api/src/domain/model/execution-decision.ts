@@ -25,6 +25,7 @@ import {
   SoftwareDeliveryRepairArgumentsSchema,
 } from '../software-delivery/software-delivery-arguments.ts';
 import { WorkItemActionArgumentsSchema } from '../work-items/work-item.ts';
+import { ClarificationRequestSchema } from '../tasks/intent-clarification.ts';
 
 const ResponseDecisionSchema = z
   .object({
@@ -32,6 +33,11 @@ const ResponseDecisionSchema = z
     message: z.string(),
   })
   .strict();
+
+const ClarificationRequiredDecisionSchema =
+  ClarificationRequestSchema.safeExtend({
+    kind: z.literal('clarification_required'),
+  }).strict();
 
 const WorkItemManagementApprovalDecisionSchema = z
   .object({
@@ -277,6 +283,7 @@ const AdaptiveGoalPlannedDecisionSchema = z
 
 export const ExecutionDecisionSchema = z.union([
   ResponseDecisionSchema,
+  ClarificationRequiredDecisionSchema,
   WorkItemManagementApprovalDecisionSchema,
   RoutineManagementApprovalDecisionSchema,
   AttentionManagementApprovalDecisionSchema,

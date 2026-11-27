@@ -1123,6 +1123,57 @@ async function verifyScenarios(mongo, redis) {
   assert.equal(collidingOwnerCompleted.runStatus, 'succeeded');
   assert.equal(collidingOwnerCompleted.conversationReply?.status, 'projected');
 
+  const clarificationTaskId = 'task_persistent_clarification';
+  const clarificationRunId = 'run_persistent_clarification';
+  const clarificationAskedAt = new Date().toISOString();
+  runIds.add(clarificationRunId);
+  await mongo
+    .db(database)
+    .collection('task_execution_aggregates')
+    .insertOne({
+      schemaVersion: 1,
+      version: 1,
+      task: {
+        id: clarificationTaskId,
+        requestKey: 'persistent-verification-clarification-task',
+        principalId: 'owner_v1',
+        message: 'Please arrange it.',
+        status: 'active',
+        createdAt: clarificationAskedAt,
+        updatedAt: clarificationAskedAt,
+      },
+      run: {
+        id: clarificationRunId,
+        status: 'awaiting_clarification',
+        createdAt: clarificationAskedAt,
+        updatedAt: clarificationAskedAt,
+        clarification: {
+          schemaVersion: 1,
+          status: 'awaiting_answer',
+          maxRounds: 6,
+          consecutiveNoProgressRounds: 0,
+          totalWaitingMs: 0,
+          rounds: [
+            {
+              id: 'clarification_persistent_verification',
+              decisionId: 'decision_persistent_clarification',
+              question: 'What should I arrange?',
+              missingInformation: [
+                {
+                  key: 'outcome',
+                  description: 'The outcome the owner wants arranged.',
+                },
+              ],
+              resolvedFacts: [],
+              askedAt: clarificationAskedAt,
+              questionMessageId: 'message_persistent_clarification_question',
+            },
+          ],
+        },
+      },
+      events: [],
+    });
+
   await waitForLeaseRelease(mongo, submitted.runId);
   await crashServer();
   started = await startServer(port);
@@ -1161,6 +1212,39 @@ async function verifyScenarios(mongo, redis) {
     pending.approval.contextManifest,
   );
   pending = pendingAfterCrash;
+
+  const persistedClarification = await client.getTask(clarificationTaskId);
+  assert.equal(persistedClarification.runStatus, 'awaiting_clarification');
+  assert.equal(
+    persistedClarification.clarification?.rounds[0]?.question,
+    'What should I arrange?',
+  );
+  const resumedClarification = rememberRun(
+    await client.answerClarification({
+      taskId: clarificationTaskId,
+      content: 'Arrange a meeting with Sam.',
+      idempotencyKey: 'persistent-verification-clarification-answer',
+    }),
+  );
+  assert.equal(resumedClarification.taskId, clarificationTaskId);
+  assert.equal(resumedClarification.runId, clarificationRunId);
+  const clarified = await client.waitForRun(clarificationRunId, {
+    timeoutMs: operationTimeoutMs,
+    intervalMs: 25,
+  });
+  assert.equal(clarified.runStatus, 'succeeded');
+  assert.equal(clarified.clarification?.status, 'resolved');
+  const clarificationEvents = await client.getRunEvents(clarificationRunId);
+  assert.deepEqual(
+    clarificationEvents.events.map(({ type }) => type),
+    [
+      'clarification_answered',
+      'budget_consumed',
+      'model_decision_recorded',
+      'clarification_resolved',
+      'run_succeeded',
+    ],
+  );
 
   const duplicateApprovals = await Promise.all([
     client.decideApproval(pending.approval.id, 'approved'),
@@ -1973,7 +2057,7 @@ async function verifyScenarios(mongo, redis) {
     .collection('integration_connections')
     .find({})
     .toArray();
-  assert.equal(aggregates.length, 24);
+  assert.equal(aggregates.length, 25);
   assert.equal(artifacts.length, 18);
   assert.equal(personalTasks.length, 1);
   assert.equal(personalTasks[0]?.id, personalTaskId);
@@ -2025,6 +2109,7 @@ async function verifyScenarios(mongo, redis) {
     cliJourneyVerified: true,
     boundedGoalVerified: true,
     adaptiveGoalVerified: true,
+    durableClarificationVerified: true,
     managedChangeApplicationVerified: true,
     durableResearchVerified: true,
     durablePersonalTasksVerified: true,

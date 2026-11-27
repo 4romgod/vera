@@ -86,6 +86,7 @@ import {
   postV1IntegrationConnectionsIdRevocation,
   postV1RunsIdCancellation,
   postV1Tasks,
+  postV1TasksIdClarificationAnswers,
   putV1NotificationDevicesIdPreferences,
   deleteV1VoiceSessionsId,
   getV1Voice,
@@ -794,6 +795,7 @@ export class OwnerDataClient extends VeraHttpTransport {
     conversationId: string;
     content: string;
     projectId?: string;
+    clarificationTaskId?: string;
     attachmentIds?: string[];
     idempotencyKey: string;
   }): Promise<TaskResource> {
@@ -807,6 +809,9 @@ export class OwnerDataClient extends VeraHttpTransport {
           ...(input.projectId === undefined
             ? {}
             : { projectId: input.projectId }),
+          ...(input.clarificationTaskId === undefined
+            ? {}
+            : { clarificationTaskId: input.clarificationTaskId }),
           ...(input.attachmentIds === undefined ||
           input.attachmentIds.length === 0
             ? {}
@@ -845,6 +850,32 @@ export class OwnerDataClient extends VeraHttpTransport {
       getV1TasksId({
         client: this.generatedClient,
         path: { id: taskId },
+      }),
+    );
+  }
+
+  public answerClarification(input: {
+    taskId: string;
+    content: string;
+    projectId?: string;
+    attachmentIds?: string[];
+    idempotencyKey: string;
+  }): Promise<TaskResource> {
+    return this.generatedRequest(
+      postV1TasksIdClarificationAnswers({
+        client: this.generatedClient,
+        headers: { 'idempotency-key': input.idempotencyKey },
+        path: { id: input.taskId },
+        body: {
+          content: input.content,
+          ...(input.projectId === undefined
+            ? {}
+            : { projectId: input.projectId }),
+          ...(input.attachmentIds === undefined ||
+          input.attachmentIds.length === 0
+            ? {}
+            : { attachmentIds: input.attachmentIds }),
+        },
       }),
     );
   }

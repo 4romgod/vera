@@ -315,6 +315,13 @@ export function createTaskLifecycleFoundation(runtime: TaskLifecycleRuntime) {
   }
 
   function conversationReplyContent(aggregate: TaskAggregate): string {
+    if (aggregate.run.status === 'awaiting_clarification') {
+      const round = aggregate.run.clarification?.rounds.at(-1);
+      if (round === undefined || round.answer !== undefined) {
+        throw new Error('The clarification question is not ready to project.');
+      }
+      return round.question;
+    }
     if (aggregate.run.output?.kind === 'response') {
       return aggregate.run.output.message;
     }
@@ -543,9 +550,10 @@ export function createTaskLifecycleFoundation(runtime: TaskLifecycleRuntime) {
       aggregate.task.conversationId !== undefined &&
       aggregate.task.messageId !== undefined &&
       aggregate.run.conversationReply === undefined &&
-      ['succeeded', 'rejected', 'failed', 'cancelled'].includes(
-        aggregate.run.status,
-      )
+      (aggregate.run.status === 'awaiting_clarification' ||
+        ['succeeded', 'rejected', 'failed', 'cancelled'].includes(
+          aggregate.run.status,
+        ))
     );
   }
 
@@ -554,10 +562,24 @@ export function createTaskLifecycleFoundation(runtime: TaskLifecycleRuntime) {
     eventAt: string,
   ): void {
     const suffix = aggregate.task.id.slice('task_'.length);
+    const clarificationRound =
+      aggregate.run.status === 'awaiting_clarification'
+        ? aggregate.run.clarification?.rounds.at(-1)
+        : undefined;
+    const messageId =
+      clarificationRound?.questionMessageId ??
+      (aggregate.run.clarification === undefined
+        ? `message_reply_${suffix}`
+        : `message_reply_final_${suffix}`);
     aggregate.run.conversationReply = {
       status: 'pending',
-      messageId: `message_reply_${suffix}`,
-      requestKey: `vera-reply:${aggregate.task.id}`,
+      messageId,
+      requestKey:
+        clarificationRound === undefined
+          ? aggregate.run.clarification === undefined
+            ? `vera-reply:${aggregate.task.id}`
+            : `vera-reply:${aggregate.task.id}:final`
+          : `vera-clarification:${clarificationRound.id}`,
       content: conversationReplyContent(aggregate),
       createdAt: aggregate.run.updatedAt,
     };

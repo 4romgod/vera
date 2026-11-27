@@ -36,6 +36,7 @@ export function RunFooter(props: {
       'rejected',
       'failed',
       'cancelled',
+      'awaiting_clarification',
       'awaiting_approval',
     ].includes(run.runStatus)
   ) {

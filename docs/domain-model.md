@@ -2,8 +2,8 @@
 
 **Status:** Accepted (core vocabulary and critical distinctions); the open
 questions below are explicitly excluded from this acceptance
-**Version:** 0.9
-**Last updated:** 5 September 2026
+**Version:** 1.0
+**Last updated:** 8 September 2026
 **Accepted:** 24 August 2026 (owner) — accepts the Core concepts and
 Critical distinctions sections as Vera's shared language.
 
@@ -102,6 +102,25 @@ Key invariants:
   exact same project scope (or the unscoped scope); and
 - each terminal conversation task durably contributes one Vera reply linked to
   that task.
+
+### Intent clarification
+
+A versioned, ordered ledger of information Vera must obtain before it can
+safely continue an existing task. A clarification belongs to one run; each
+round binds one model decision, one focused question, stable missing-information
+keys, already resolved facts, one durable question message, and at most one
+durable owner answer.
+
+Key invariants:
+
+- `awaiting_clarification` is nonterminal and never reopens a terminal run;
+- an answer continues the exact same task and run and supplies information, not
+  approval or additional authority;
+- question and answer identities, scope, and attachments remain attributable;
+- multiple rounds retain earlier facts and answers across restarts;
+- hard model-call, round, duration, and no-progress limits bound the loop; and
+- when one conversation has multiple waiting tasks, Vera requires exact task
+  identity instead of inferring which authority-bearing lifecycle to resume.
 
 ### Live voice session
 
